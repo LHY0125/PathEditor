@@ -15,7 +15,7 @@ BIN_DIR = bin
 # -mwindows: Create GUI app (no console)
 # -DUNICODE -D_UNICODE: Use Wide Character API
 CFLAGS = -Wall -O2 -I$(INCLUDE_DIR) -I$(LOCAL_INCLUDE_DIR) -D_WIN32 -DUNICODE -D_UNICODE -fexec-charset=UTF-8
-LDFLAGS = -L$(LIB_DIR) -liup -lgdi32 -lcomdlg32 -lcomctl32 -luuid -lole32 -ladvapi32 -mwindows
+LDFLAGS = -L$(LIB_DIR) -liup -liupcd -lgdi32 -lcomdlg32 -lcomctl32 -luuid -lole32 -ladvapi32 -mwindows
 
 # Source
 SRC = src/main.c src/utils.c src/registry.c src/callbacks.c

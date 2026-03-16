@@ -39,10 +39,13 @@ int main(int argc, char **argv)
     list_path = IupFlatList();
     IupSetAttribute(list_path, "EXPAND", "YES");
     IupSetAttribute(list_path, "HLINE", "YES");
-    IupSetAttribute(list_path, "HLINECOLOR", "200 200 200");
+    IupSetAttribute(list_path, "HLINECOLOR", "100 100 100"); // 灰色
     IupSetAttribute(list_path, "ITEMPADDING", "5x5");
+    IupSetAttribute(list_path, "BACKCOLOR", "255 255 255");
+    IupSetAttribute(list_path, "BORDER", "YES");
+    IupSetAttribute(list_path, "CANFOCUS", "YES");
     // IupFlatList 不支持 VISIBLELINES，高度由 EXPAND 和布局决定
-    
+
     // 创建右侧按钮
     btn_new = IupButton("新建(N)", NULL);
     btn_edit = IupButton("编辑(E)", NULL);
