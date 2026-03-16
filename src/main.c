@@ -8,10 +8,32 @@
 #include "registry.h"
 #include "callbacks.h"
 
+// 全局变量定义
+StringList raw_sys_paths = {0};
+StringList raw_user_paths = {0};
+
 // 全局控件定义
-Ihandle *dlg, *list_path, *lbl_status;
-Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down;
-Ihandle *btn_ok, *btn_cancel, *btn_help;
+Ihandle *dlg, *tabs_main, *list_sys, *list_user, *lbl_status;   // 主窗口、标签页、系统路径列表、用户路径列表、状态标签
+Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down; // 右侧按钮
+Ihandle *btn_ok, *btn_cancel, *btn_help; // 确认取消帮助按钮
+Ihandle *btn_clean;     // 一键清理按钮
+Ihandle *txt_search;    // 搜索框
+
+// 辅助函数：创建列表控件
+Ihandle *create_path_list()
+{
+    Ihandle *list = IupFlatList();
+    IupSetAttribute(list, "EXPAND", "YES");
+    IupSetAttribute(list, "ITEMPADDING", "5x5");
+    IupSetAttribute(list, "BACKCOLOR", "255 255 255");
+    IupSetAttribute(list, "BORDER", "YES");
+    IupSetAttribute(list, "CANFOCUS", "YES");
+    IupSetAttribute(list, "HLINE", "NO");
+    IupSetCallback(list, "DBLCLICK_CB", (Icallback)list_dblclick_cb);
+    IupSetCallback(list, "DROPFILES_CB", (Icallback)list_dropfiles_cb);
+    IupSetCallback(list, "K_ANY", (Icallback)list_k_any_cb);
+    return list;
+}
 
 // 主函数
 int main(int argc, char **argv)
@@ -22,15 +44,24 @@ int main(int argc, char **argv)
     IupOpen(&argc, &argv);
     IupSetGlobal("UTF8MODE", "YES");
 
-    // 创建列表控件
-    list_path = IupFlatList();
-    IupSetAttribute(list_path, "EXPAND", "YES");
-    IupSetAttribute(list_path, "ITEMPADDING", "5x5");
-    IupSetAttribute(list_path, "BACKCOLOR", "255 255 255");
-    IupSetAttribute(list_path, "BORDER", "YES");
-    IupSetAttribute(list_path, "CANFOCUS", "YES");
-    IupSetAttribute(list_path, "HLINE", "NO"); // 禁用横线，使用斑马纹
-    // IupFlatList 不支持 VISIBLELINES，高度由 EXPAND 和布局决定
+    // 创建两个列表控件
+    list_sys = create_path_list();
+    list_user = create_path_list();
+
+    // 创建搜索框
+    txt_search = IupText(NULL);
+    IupSetAttribute(txt_search, "EXPAND", "HORIZONTAL");
+    IupSetAttribute(txt_search, "CUEBANNER", "输入关键词搜索...");
+    IupSetCallback(txt_search, "VALUECHANGED_CB", (Icallback)txt_search_cb);
+
+    // 创建 Tabs
+    tabs_main = IupTabs(
+        IupVbox(list_sys, NULL),
+        IupVbox(list_user, NULL),
+        NULL);
+    IupSetAttribute(tabs_main, "TABTITLE0", "系统变量 (System)");
+    IupSetAttribute(tabs_main, "TABTITLE1", "用户变量 (User)");
+    IupSetAttribute(tabs_main, "TABTYPE", "TOP");
 
     // 创建右侧按钮
     btn_new = IupButton("新建(N)", NULL);
@@ -39,6 +70,7 @@ int main(int argc, char **argv)
     btn_del = IupButton("删除(D)", NULL);
     btn_up = IupButton("上移(U)", NULL);
     btn_down = IupButton("下移(O)", NULL);
+    btn_clean = IupButton("一键清理", NULL);
 
     // 设置按钮回调
     IupSetCallback(btn_new, "ACTION", (Icallback)btn_new_cb);
@@ -47,9 +79,7 @@ int main(int argc, char **argv)
     IupSetCallback(btn_del, "ACTION", (Icallback)btn_del_cb);
     IupSetCallback(btn_up, "ACTION", (Icallback)btn_up_cb);
     IupSetCallback(btn_down, "ACTION", (Icallback)btn_down_cb);
-
-    // 设置双击回调
-    IupSetCallback(list_path, "DBLCLICK_CB", (Icallback)list_dblclick_cb);
+    IupSetCallback(btn_clean, "ACTION", (Icallback)btn_clean_cb);
 
     // 设置按钮大小 (宽度和高度都增加约1/4)
     IupSetAttribute(btn_new, "RASTERSIZE", "100x32");
@@ -58,17 +88,20 @@ int main(int argc, char **argv)
     IupSetAttribute(btn_del, "RASTERSIZE", "100x32");
     IupSetAttribute(btn_up, "RASTERSIZE", "100x32");
     IupSetAttribute(btn_down, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_clean, "RASTERSIZE", "100x32");
 
     Ihandle *vbox_btns = IupVbox(
         btn_new, btn_edit, btn_browse, btn_del,
         IupFill(), // 间隔
+        btn_clean, // 放在上移下移之前，或者最下面，这里放在中间偏下
+        IupFill(),
         btn_up, btn_down,
         NULL);
     IupSetAttribute(vbox_btns, "GAP", "5");
     IupSetAttribute(vbox_btns, "MARGIN", "0x0");
 
-    // 上部布局：列表 + 按钮
-    Ihandle *hbox_main = IupHbox(list_path, vbox_btns, NULL);
+    // 上部布局：Tabs + 按钮
+    Ihandle *hbox_main = IupHbox(tabs_main, vbox_btns, NULL);
     IupSetAttribute(hbox_main, "GAP", "10");
     IupSetAttribute(hbox_main, "MARGIN", "10x10");
 
@@ -96,7 +129,8 @@ int main(int argc, char **argv)
 
     // 总体布局
     Ihandle *vbox_all = IupVbox(
-        IupLabel("系统变量 Path:"),
+        IupLabel("环境变量编辑器:"),
+        txt_search,
         hbox_main,
         hbox_bottom,
         NULL);
@@ -106,7 +140,7 @@ int main(int argc, char **argv)
     // 创建对话框
     dlg = IupDialog(vbox_all);
     IupSetAttribute(dlg, "TITLE", "编辑环境变量 (IUP版)");
-    IupSetAttribute(dlg, "SIZE", "450x350");
+    IupSetAttribute(dlg, "SIZE", "500x400"); // 稍微调大一点
     IupSetAttribute(dlg, "MINBOX", "NO");
     IupSetAttribute(dlg, "MAXBOX", "NO");
 
@@ -116,13 +150,23 @@ int main(int argc, char **argv)
         IupMessage("警告", "程序未以管理员身份运行，您只能查看，无法保存更改！");
         IupSetAttribute(dlg, "TITLE", "编辑环境变量 (只读模式)");
         IupSetAttribute(lbl_status, "TITLE", "状态: 只读模式 (权限不足)");
+
+        // 禁用修改类按钮
+        IupSetAttribute(btn_new, "ACTIVE", "NO");
+        IupSetAttribute(btn_edit, "ACTIVE", "NO");
+        IupSetAttribute(btn_browse, "ACTIVE", "NO");
+        IupSetAttribute(btn_del, "ACTIVE", "NO");
+        IupSetAttribute(btn_up, "ACTIVE", "NO");
+        IupSetAttribute(btn_down, "ACTIVE", "NO");
+        IupSetAttribute(btn_clean, "ACTIVE", "NO");
+        IupSetAttribute(btn_ok, "ACTIVE", "NO");
     }
 
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
 
     // IUP List APPEND 属性需要在控件 Map 之后才能生效
     // IupShowXY 会触发 Map
-    load_path();
+    load_all_paths();
 
     IupMainLoop();
     IupClose();

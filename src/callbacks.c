@@ -27,8 +27,8 @@ int show_custom_input_dialog(const char *title, const char *label_text, char *bu
             text,
             IupHbox(
                 IupFill(),
-                IupButton("确定", "1"), // "1" will be returned by IupPopup
-                IupButton("取消", "0"), // "0" will be returned by IupPopup
+                IupButton("确定", "1"), // "1" 会被返回
+                IupButton("取消", "0"), // "0" 会被返回
                 NULL),
             NULL));
 
@@ -132,6 +132,20 @@ int custom_input_dialog(const char *title, const char *label_text, char *buffer,
     return result;
 }
 
+// 辅助函数：获取当前选中的列表
+Ihandle *get_current_list()
+{
+    // 获取当前选中的 Tab 索引
+    // 注意：IupTabs 的 VALUE 属性在某些版本可能返回 handle，某些版本返回 pos
+    // 这里使用 IupGetInt(tabs_main, "VALUEPOS") 更稳妥
+    int pos = IupGetInt(tabs_main, "VALUEPOS");
+    if (pos == 0)
+        return list_sys;
+    if (pos == 1)
+        return list_user;
+    return list_sys; // 默认
+}
+
 // 按钮回调：新建
 int btn_new_cb(Ihandle *self)
 {
@@ -140,13 +154,14 @@ int btn_new_cb(Ihandle *self)
     {
         if (strlen(buffer) > 0)
         {
-            int count = IupGetInt(list_path, "COUNT");
+            Ihandle *current_list = get_current_list();
+            int count = IupGetInt(current_list, "COUNT");
             count++;
-            IupSetAttributeId(list_path, "", count, buffer);
-            IupSetInt(list_path, "COUNT", count);
-            IupSetInt(list_path, "VALUE", count);
+            IupSetAttributeId(current_list, "", count, buffer);
+            IupSetInt(current_list, "COUNT", count);
+            IupSetInt(current_list, "VALUE", count);
 
-            refresh_list_style();
+            refresh_single_list_style(current_list);
         }
     }
     return IUP_DEFAULT;
@@ -155,11 +170,12 @@ int btn_new_cb(Ihandle *self)
 // 按钮回调：编辑
 int btn_edit_cb(Ihandle *self)
 {
-    int selected = IupGetInt(list_path, "VALUE");
+    Ihandle *current_list = get_current_list();
+    int selected = IupGetInt(current_list, "VALUE");
     if (selected == 0)
         return IUP_DEFAULT;
 
-    char *current_val = IupGetAttributeId(list_path, "", selected);
+    char *current_val = IupGetAttributeId(current_list, "", selected);
     char buffer[4096]; // 假设单个路径不超过4096
     if (current_val)
     {
@@ -175,8 +191,8 @@ int btn_edit_cb(Ihandle *self)
     {
         if (strlen(buffer) > 0)
         {
-            IupSetAttributeId(list_path, "", selected, buffer);
-            refresh_list_style();
+            IupSetAttributeId(current_list, "", selected, buffer);
+            refresh_single_list_style(current_list);
         }
     }
     return IUP_DEFAULT;
@@ -185,11 +201,11 @@ int btn_edit_cb(Ihandle *self)
 // 双击回调
 int list_dblclick_cb(Ihandle *self, int item, char *text)
 {
-    // 这里的 item 是点击的行号
+    // 这里的 self 就是触发双击的列表控件
     if (item > 0)
     {
         // 选中该行
-        IupSetInt(list_path, "VALUE", item);
+        IupSetInt(self, "VALUE", item);
         // 调用编辑逻辑
         btn_edit_cb(NULL);
     }
@@ -210,42 +226,100 @@ int btn_browse_cb(Ihandle *self)
         char *value = IupGetAttribute(filedlg, "VALUE");
         if (value)
         {
-            int count = IupGetInt(list_path, "COUNT");
+            Ihandle *current_list = get_current_list();
+            int count = IupGetInt(current_list, "COUNT");
             count++;
-            IupSetAttributeId(list_path, "", count, value);
-            IupSetInt(list_path, "COUNT", count);
-            IupSetInt(list_path, "VALUE", count);
+            IupSetAttributeId(current_list, "", count, value);
+            IupSetInt(current_list, "COUNT", count);
+            IupSetInt(current_list, "VALUE", count);
 
-            refresh_list_style();
+            refresh_single_list_style(current_list);
         }
     }
     IupDestroy(filedlg);
     return IUP_DEFAULT;
 }
 
+// 辅助函数：从 raw_data 中删除指定字符串
+static void remove_from_raw_data(StringList *list, const char *str)
+{
+    if (!list || !str)
+        return;
+    for (int i = 0; i < list->count; i++)
+    {
+        if (strcmp(list->items[i], str) == 0)
+        {
+            free(list->items[i]);
+            // 移动后续元素
+            for (int j = i; j < list->count - 1; j++)
+            {
+                list->items[j] = list->items[j + 1];
+            }
+            list->count--;
+            break; // 假设没有重复，只删除第一个匹配
+        }
+    }
+}
+
 // 按钮回调：删除
 int btn_del_cb(Ihandle *self)
 {
-    int selected = IupGetInt(list_path, "VALUE");
+    Ihandle *current_list = get_current_list();
+    int selected = IupGetInt(current_list, "VALUE");
+
     if (selected == 0)
+    {
+        IupMessage("提示", "请先选择要删除的项");
         return IUP_DEFAULT;
+    }
 
-    IupSetAttribute(list_path, "REMOVEITEM", "SELECTED");
+    // 获取当前要删除的内容
+    char *val = IupGetAttributeId(current_list, "", selected);
 
-    // 重新刷新，因为删除了中间项，后面的奇偶性变了
-    refresh_list_style();
+    // 确认删除
+    // char msg[1024];
+    // snprintf(msg, sizeof(msg), "确定要删除以下路径吗？\n\n%s", val ? val : "(空)");
+    // if (IupAlarm("确认删除", msg, "是", "否", NULL) != 1)
+    //     return IUP_DEFAULT;
+
+    // 从 raw_data 缓存中同步删除
+    int pos = IupGetInt(tabs_main, "VALUEPOS");
+    StringList *raw_data = (pos == 0) ? &raw_sys_paths : &raw_user_paths;
+
+    // 注意：必须先保存 val 的副本，因为 REMOVEITEM 可能会导致 val 指针失效（如果它是指向列表内部缓冲区的）
+    char *val_copy = val ? _strdup(val) : NULL;
+
+    // 先从界面删除
+    // IupSetAttribute(current_list, "REMOVEITEM", "SELECTED");
+    // 改为按索引删除，防止失去焦点导致 SELECTED 失效
+    IupSetInt(current_list, "REMOVEITEM", selected);
+
+    // 再从缓存删除
+    if (val_copy && raw_data)
+    {
+        remove_from_raw_data(raw_data, val_copy);
+        free(val_copy);
+    }
+
+    // 重新刷新
+    refresh_single_list_style(current_list);
+
+    // 更新状态栏，告知用户删除了什么
+    IupSetAttribute(lbl_status, "TITLE", "状态: 已删除选中项");
+
     return IUP_DEFAULT;
 }
 
 // 按钮回调：上移
 int btn_up_cb(Ihandle *self)
 {
-    int selected = IupGetInt(list_path, "VALUE");
+    Ihandle *current_list = get_current_list();
+    int selected = IupGetInt(current_list, "VALUE");
     if (selected <= 1)
         return IUP_DEFAULT; // 已经是第一个或未选中
 
-    char *current = IupGetAttributeId(list_path, "", selected);
-    char *prev = IupGetAttributeId(list_path, "", selected - 1);
+    char *current = IupGetAttributeId(current_list, "", selected);
+    char *prev = IupGetAttributeId(current_list, "", selected - 1);
 
     // 交换内容
     char buf_curr[4096], buf_prev[4096];
@@ -254,26 +328,27 @@ int btn_up_cb(Ihandle *self)
     strncpy(buf_prev, prev, 4096);
     buf_prev[4095] = '\0';
 
-    IupSetAttributeId(list_path, "", selected, buf_prev);
-    IupSetAttributeId(list_path, "", selected - 1, buf_curr);
+    IupSetAttributeId(current_list, "", selected, buf_prev);
+    IupSetAttributeId(current_list, "", selected - 1, buf_curr);
 
-    IupSetInt(list_path, "VALUE", selected - 1);
+    IupSetInt(current_list, "VALUE", selected - 1);
 
     // 刷新样式（虽然颜色不需要变，但为了保险）
-    refresh_list_style();
+    refresh_single_list_style(current_list);
     return IUP_DEFAULT;
 }
 
 // 按钮回调：下移
 int btn_down_cb(Ihandle *self)
 {
-    int selected = IupGetInt(list_path, "VALUE");
-    int count = IupGetInt(list_path, "COUNT");
+    Ihandle *current_list = get_current_list();
+    int selected = IupGetInt(current_list, "VALUE");
+    int count = IupGetInt(current_list, "COUNT");
     if (selected == 0 || selected >= count)
         return IUP_DEFAULT;
 
-    char *current = IupGetAttributeId(list_path, "", selected);
-    char *next = IupGetAttributeId(list_path, "", selected + 1);
+    char *current = IupGetAttributeId(current_list, "", selected);
+    char *next = IupGetAttributeId(current_list, "", selected + 1);
 
     char buf_curr[4096], buf_next[4096];
     strncpy(buf_curr, current, 4096);
@@ -281,19 +356,164 @@ int btn_down_cb(Ihandle *self)
     strncpy(buf_next, next, 4096);
     buf_next[4095] = '\0';
 
-    IupSetAttributeId(list_path, "", selected, buf_next);
-    IupSetAttributeId(list_path, "", selected + 1, buf_curr);
+    IupSetAttributeId(current_list, "", selected, buf_next);
+    IupSetAttributeId(current_list, "", selected + 1, buf_curr);
 
-    IupSetInt(list_path, "VALUE", selected + 1);
+    IupSetInt(current_list, "VALUE", selected + 1);
 
-    refresh_list_style();
+    refresh_single_list_style(current_list);
+    return IUP_DEFAULT;
+}
+
+// 按钮回调：一键清理
+int btn_clean_cb(Ihandle *self)
+{
+    Ihandle *current_list = get_current_list();
+    int count = IupGetInt(current_list, "COUNT");
+    if (count == 0)
+        return IUP_DEFAULT;
+
+    // 弹出确认对话框
+    if (IupAlarm("确认清理", "此操作将移除当前列表中所有【无效路径】和【重复路径】。\n确定要继续吗？", "确定", "取消", NULL) != 1)
+    {
+        return IUP_DEFAULT;
+    }
+
+    // 从后往前遍历删除，避免索引错位
+    for (int i = count; i >= 1; i--)
+    {
+        char *item = IupGetAttributeId(current_list, "", i);
+        if (!item)
+            continue;
+
+        int should_remove = 0;
+
+        // 1. 检查有效性
+        if (!is_path_valid(item))
+        {
+            should_remove = 1;
+        }
+        else
+        {
+            // 2. 检查重复 (检查当前项之前是否出现过)
+            // 注意：这里需要再次遍历，性能稍低但最稳妥
+            for (int j = 1; j < i; j++)
+            {
+                char *prev_item = IupGetAttributeId(current_list, "", j);
+                if (prev_item && _stricmp(item, prev_item) == 0)
+                {
+                    should_remove = 1;
+                    break;
+                }
+            }
+        }
+
+        if (should_remove)
+        {
+            IupSetAttributeId(current_list, "REMOVEITEM", i, NULL);
+        }
+    }
+
+    refresh_single_list_style(current_list);
+    IupMessage("提示", "清理完成！");
+    return IUP_DEFAULT;
+}
+
+// 搜索回调
+int txt_search_cb(Ihandle *self)
+{
+    char *filter = IupGetAttribute(self, "VALUE");
+    if (!filter)
+        return IUP_DEFAULT;
+
+    // 获取当前选中的 Tab 索引
+    int pos = IupGetInt(tabs_main, "VALUEPOS");
+    Ihandle *current_list = (pos == 0) ? list_sys : list_user;
+    StringList *raw_data = (pos == 0) ? &raw_sys_paths : &raw_user_paths;
+
+    // 清空列表
+    IupSetAttribute(current_list, "REMOVEITEM", "ALL");
+
+    // 重新填充
+    int count = 0;
+    for (int i = 0; i < raw_data->count; i++)
+    {
+        // 如果 filter 为空，或包含 filter (不区分大小写)
+        if (strlen(filter) == 0 || stristr(raw_data->items[i], filter) != NULL)
+        {
+            count++;
+            IupSetAttributeId(current_list, "", count, raw_data->items[i]);
+        }
+    }
+
+    IupSetInt(current_list, "COUNT", count);
+    refresh_single_list_style(current_list);
+
+    return IUP_DEFAULT;
+}
+
+// 拖拽回调
+int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y)
+{
+    // 获取当前列表和原始数据
+    // 注意：拖拽的目标列表可能是 list_sys 或 list_user，由 self 参数决定
+    // 但为了确保数据一致性，我们还是重新获取一下
+    Ihandle *current_list = self;
+    StringList *raw_data = NULL;
+    if (self == list_sys)
+        raw_data = &raw_sys_paths;
+    else if (self == list_user)
+        raw_data = &raw_user_paths;
+    else
+        return IUP_DEFAULT; // 异常情况
+
+    // 检查拖入的是否为目录
+    DWORD attr = GetFileAttributesA(filename);
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+    {
+        // 如果正在搜索，先清空搜索框
+        IupSetAttribute(txt_search, "VALUE", "");
+
+        // 添加到列表末尾
+        int count = IupGetInt(current_list, "COUNT");
+        count++;
+        IupSetAttributeId(current_list, "", count, filename);
+        IupSetInt(current_list, "COUNT", count);
+        IupSetInt(current_list, "VALUE", count); // 选中新添加的项
+
+        // 同时添加到原始数据缓存，确保搜索时能搜到
+        if (raw_data)
+        {
+            add_string_list(raw_data, filename);
+        }
+
+        refresh_single_list_style(current_list);
+    }
+    else
+    {
+        // 如果拖入的不是文件夹，可以在状态栏提示
+        IupSetAttribute(lbl_status, "TITLE", "提示: 只能拖拽文件夹添加到 PATH");
+    }
+
+    return IUP_DEFAULT;
+}
+
+// 键盘按键回调
+int list_k_any_cb(Ihandle *self, int c)
+{
+    // 处理 Delete 键
+    if (c == K_DEL)
+    {
+        btn_del_cb(NULL);
+        return IUP_IGNORE; // 阻止默认处理
+    }
     return IUP_DEFAULT;
 }
 
 // 按钮回调：确定
 int btn_ok_cb(Ihandle *self)
 {
-    save_path();
+    save_all_paths();
     return IUP_DEFAULT;
 }
 
