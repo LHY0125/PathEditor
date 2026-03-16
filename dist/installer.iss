@@ -27,6 +27,7 @@ OutputBaseFilename=PathEditorSetup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=d:\Code\doing_exercises\programs\PathEditor\ico\PathEditor.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

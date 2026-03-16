@@ -19,7 +19,8 @@ LDFLAGS = -L$(LIB_DIR) -liup -liupcd -lgdi32 -lcomdlg32 -lcomctl32 -luuid -lole3
 
 # Source
 SRC = src/main.c src/utils.c src/registry.c src/callbacks.c
-OBJ = $(OBJ_DIR)/main.o $(OBJ_DIR)/utils.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/callbacks.o
+RES = ico/resources.rc
+OBJ = $(OBJ_DIR)/main.o $(OBJ_DIR)/utils.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/callbacks.o $(OBJ_DIR)/resources.o
 EXE = $(BIN_DIR)/PathEditor.exe
 
 all: $(BIN_DIR) $(OBJ_DIR) $(EXE)
@@ -44,6 +45,9 @@ $(OBJ_DIR)/registry.o: src/registry.c
 
 $(OBJ_DIR)/callbacks.o: src/callbacks.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(OBJ_DIR)/resources.o: ico/resources.rc
+	$(WINDRES) -i $< -o $@
 
 clean:
 	if exist $(OBJ_DIR)\*.o del /Q $(OBJ_DIR)\*.o
