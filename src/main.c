@@ -36,11 +36,13 @@ int main(int argc, char **argv)
     IupSetGlobal("UTF8MODE", "YES");
 
     // 创建列表控件
-    list_path = IupList(NULL);
+    list_path = IupFlatList();
     IupSetAttribute(list_path, "EXPAND", "YES");
-    IupSetAttribute(list_path, "VISIBLELINES", "15");
-    IupSetAttribute(list_path, "MULTIPLE", "NO");
-
+    IupSetAttribute(list_path, "HLINE", "YES");
+    IupSetAttribute(list_path, "HLINECOLOR", "200 200 200");
+    IupSetAttribute(list_path, "ITEMPADDING", "5x5");
+    // IupFlatList 不支持 VISIBLELINES，高度由 EXPAND 和布局决定
+    
     // 创建右侧按钮
     btn_new = IupButton("新建(N)", NULL);
     btn_edit = IupButton("编辑(E)", NULL);

@@ -11,3 +11,9 @@
 *.bak
 Thumbs.db
 Desktop.ini
+
+# 忽略obj目录
+/obj/
+
+# 忽略dist目录
+/dist/
