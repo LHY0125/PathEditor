@@ -92,12 +92,11 @@ int custom_input_dialog(const char *title, const char *label_text, char *buffer,
 
     Ihandle *btn_ok = IupButton("确定", NULL);
     IupSetCallback(btn_ok, "ACTION", on_dialog_ok);
-    IupSetAttribute(btn_ok, "RASTERSIZE", "80x25");
-    // 设置为默认按钮
+    IupSetAttribute(btn_ok, "RASTERSIZE", "100x32");
 
     Ihandle *btn_cancel = IupButton("取消", NULL);
     IupSetCallback(btn_cancel, "ACTION", on_dialog_cancel);
-    IupSetAttribute(btn_cancel, "RASTERSIZE", "80x25");
+    IupSetAttribute(btn_cancel, "RASTERSIZE", "100x32");
 
     Ihandle *vbox = IupVbox(
         IupLabel(label_text),
