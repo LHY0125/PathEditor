@@ -53,13 +53,16 @@ int main(int argc, char **argv)
     IupSetCallback(btn_up, "ACTION", (Icallback)btn_up_cb);
     IupSetCallback(btn_down, "ACTION", (Icallback)btn_down_cb);
 
-    // 设置按钮大小 (宽度)
-    IupSetAttribute(btn_new, "RASTERSIZE", "80x");
-    IupSetAttribute(btn_edit, "RASTERSIZE", "80x");
-    IupSetAttribute(btn_browse, "RASTERSIZE", "80x");
-    IupSetAttribute(btn_del, "RASTERSIZE", "80x");
-    IupSetAttribute(btn_up, "RASTERSIZE", "80x");
-    IupSetAttribute(btn_down, "RASTERSIZE", "80x");
+    // 设置双击回调
+    IupSetCallback(list_path, "DBLCLICK_CB", (Icallback)list_dblclick_cb);
+
+    // 设置按钮大小 (宽度和高度都增加约1/4)
+    IupSetAttribute(btn_new, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_edit, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_browse, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_del, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_up, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_down, "RASTERSIZE", "100x32");
 
     Ihandle *vbox_btns = IupVbox(
         btn_new, btn_edit, btn_browse, btn_del,
@@ -87,9 +90,9 @@ int main(int argc, char **argv)
     IupSetCallback(btn_cancel, "ACTION", (Icallback)btn_cancel_cb);
     IupSetCallback(btn_help, "ACTION", (Icallback)btn_help_cb);
 
-    IupSetAttribute(btn_ok, "RASTERSIZE", "80x25");
-    IupSetAttribute(btn_cancel, "RASTERSIZE", "80x25");
-    IupSetAttribute(btn_help, "RASTERSIZE", "80x25");
+    IupSetAttribute(btn_ok, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_cancel, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_help, "RASTERSIZE", "100x32");
 
     Ihandle *hbox_bottom = IupHbox(lbl_status, IupFill(), btn_help, btn_ok, btn_cancel, NULL);
     IupSetAttribute(hbox_bottom, "GAP", "10");

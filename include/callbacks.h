@@ -3,6 +3,7 @@
 
 #include <iup.h>
 
+// 按钮回调
 int btn_new_cb(Ihandle* self);
 int btn_edit_cb(Ihandle* self);
 int btn_browse_cb(Ihandle* self);
@@ -12,5 +13,8 @@ int btn_down_cb(Ihandle* self);
 int btn_ok_cb(Ihandle* self);
 int btn_cancel_cb(Ihandle* self);
 int btn_help_cb(Ihandle* self);
+
+// 双击回调
+int list_dblclick_cb(Ihandle* self, int item, char* text);
 
 #endif // CALLBACKS_H
