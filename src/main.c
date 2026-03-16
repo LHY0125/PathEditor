@@ -21,14 +21,6 @@ Ihandle *btn_ok, *btn_cancel, *btn_help;
 // 主函数
 int main(int argc, char **argv)
 {
-    // 设置控制台编码为UTF-8,防止中文乱码
-#ifdef _WIN32
-    system("chcp 65001 > nul"); // 设置控制台编码为UTF-8
-    SetConsoleOutputCP(65001);  // 设置控制台输出编码
-    SetConsoleCP(65001);        // 设置控制台输入编码
-    _mkdir("records");
-#endif
-
     // 强制设置 UTF8MODE 环境变量，必须在 IupOpen 之前
     putenv("IUP_UTF8MODE=YES");
 
@@ -38,12 +30,11 @@ int main(int argc, char **argv)
     // 创建列表控件
     list_path = IupFlatList();
     IupSetAttribute(list_path, "EXPAND", "YES");
-    IupSetAttribute(list_path, "HLINE", "YES");
-    IupSetAttribute(list_path, "HLINECOLOR", "100 100 100"); // 灰色
     IupSetAttribute(list_path, "ITEMPADDING", "5x5");
     IupSetAttribute(list_path, "BACKCOLOR", "255 255 255");
     IupSetAttribute(list_path, "BORDER", "YES");
     IupSetAttribute(list_path, "CANFOCUS", "YES");
+    IupSetAttribute(list_path, "HLINE", "NO"); // 禁用横线，使用斑马纹
     // IupFlatList 不支持 VISIBLELINES，高度由 EXPAND 和布局决定
 
     // 创建右侧按钮

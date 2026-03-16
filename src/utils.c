@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "globals.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <iup.h>
@@ -36,4 +37,25 @@ int check_admin()
         return 1;
     }
     return 0;
+}
+
+// 刷新列表样式（斑马纹）
+void refresh_list_style()
+{
+    if (!list_path)
+        return;
+    int count = IupGetInt(list_path, "COUNT");
+    for (int i = 1; i <= count; i++)
+    {
+        // 奇数行：白色
+        // 偶数行：极浅灰色 (245 245 245)
+        if (i % 2 == 0)
+        {
+            IupSetAttributeId(list_path, "ITEMBGCOLOR", i, "245 245 245");
+        }
+        else
+        {
+            IupSetAttributeId(list_path, "ITEMBGCOLOR", i, "255 255 255");
+        }
+    }
 }

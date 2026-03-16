@@ -1,6 +1,7 @@
 #include "callbacks.h"
 #include "globals.h"
 #include "registry.h"
+#include "utils.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -17,6 +18,8 @@ int btn_new_cb(Ihandle *self)
             IupSetAttributeId(list_path, "", count, buffer);
             IupSetInt(list_path, "COUNT", count);
             IupSetInt(list_path, "VALUE", count);
+
+            refresh_list_style();
         }
     }
     return IUP_DEFAULT;
@@ -63,6 +66,8 @@ int btn_browse_cb(Ihandle *self)
             IupSetAttributeId(list_path, "", count, value);
             IupSetInt(list_path, "COUNT", count);
             IupSetInt(list_path, "VALUE", count);
+
+            refresh_list_style();
         }
     }
     IupDestroy(filedlg);
@@ -77,6 +82,9 @@ int btn_del_cb(Ihandle *self)
         return IUP_DEFAULT;
 
     IupSetAttribute(list_path, "REMOVEITEM", "SELECTED");
+
+    // 重新刷新，因为删除了中间项，后面的奇偶性变了
+    refresh_list_style();
     return IUP_DEFAULT;
 }
 
@@ -101,6 +109,9 @@ int btn_up_cb(Ihandle *self)
     IupSetAttributeId(list_path, "", selected - 1, buf_curr);
 
     IupSetInt(list_path, "VALUE", selected - 1);
+
+    // 刷新样式（虽然颜色不需要变，但为了保险）
+    refresh_list_style();
     return IUP_DEFAULT;
 }
 
@@ -125,6 +136,8 @@ int btn_down_cb(Ihandle *self)
     IupSetAttributeId(list_path, "", selected + 1, buf_curr);
 
     IupSetInt(list_path, "VALUE", selected + 1);
+
+    refresh_list_style();
     return IUP_DEFAULT;
 }
 

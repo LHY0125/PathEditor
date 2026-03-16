@@ -84,7 +84,10 @@ void load_path()
 
             IupSetInt(list_path, "COUNT", count); // 显式设置列表项数量
             IupSetInt(list_path, "VALUE", 1);     // 选中第一项
-
+            
+            // 刷新斑马纹样式
+            refresh_list_style();
+            
             char status_msg[100];
             sprintf(status_msg, "状态: 已加载 %d 个条目", count);
             IupSetAttribute(lbl_status, "TITLE", status_msg);

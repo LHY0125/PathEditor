@@ -13,4 +13,7 @@ wchar_t* utf8_to_wide(const char* str);
 // 检查管理员权限
 int check_admin();
 
+// 刷新列表样式（斑马纹）
+void refresh_list_style();
+
 #endif // UTILS_H
