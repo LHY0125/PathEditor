@@ -8,11 +8,6 @@
 #include "registry.h"
 #include "callbacks.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#include <direct.h>
-#endif
-
 // 全局控件定义
 Ihandle *dlg, *list_path, *lbl_status;
 Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down;
