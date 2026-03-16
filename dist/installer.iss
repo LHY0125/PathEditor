@@ -2,8 +2,8 @@
 
 #define MyAppName "Path Editor"
 #define MyAppVersion "1.0"
-#define MyAppPublisher "My Company"
-#define MyAppURL "https://www.example.com/"
+#define MyAppPublisher "LHY"
+#define MyAppURL "https://github.com/LHY0125/PathEditor"
 #define MyAppExeName "PathEditor.exe"
 
 [Setup]
@@ -22,7 +22,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
-OutputDir=d:\Code\doing_exercises\exercise\系统PATH\dist\dist
+OutputDir=d:\Code\doing_exercises\programs\PathEditor\dist\dist
 OutputBaseFilename=PathEditorSetup
 Compression=lzma
 SolidCompression=yes
@@ -36,8 +36,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "d:\Code\doing_exercises\exercise\系统PATH\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\exercise\系统PATH\bin\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "d:\Code\doing_exercises\programs\PathEditor\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "d:\Code\doing_exercises\programs\PathEditor\bin\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

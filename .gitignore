@@ -1,7 +1,7 @@
 /.trae/
 /.vscode/
 /build/
-*.exe
+
 *.o
 *.obj
 *.pdb
@@ -17,3 +17,6 @@ Desktop.ini
 
 # 忽略dist目录
 /dist/
+
+# 忽略.ps1文件
+*.ps1
