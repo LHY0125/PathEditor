@@ -1,0 +1,13 @@
+/.trae/
+/.vscode/
+/build/
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
