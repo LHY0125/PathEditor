@@ -12,4 +12,6 @@ Ihandle *create_main_buttons();
 // 创建底部按钮区域
 Ihandle *create_bottom_buttons();
 
+Ihandle *create_main_dialog();
+
 #endif // UI_H

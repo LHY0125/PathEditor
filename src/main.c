@@ -1,137 +1,86 @@
-#include <windows.h>
 #include <iup.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <wchar.h>
 #include "globals.h"
 #include "utils.h"
 #include "registry.h"
-#include "callbacks.h"
 #include "ui.h"
+#include "cb_main.h"
 
-// 定义 Windows 消息常量
-#ifndef WM_COPYGLOBALDATA
-#define WM_COPYGLOBALDATA 0x0049
-#endif
+// 全局控件定义
+Ihandle *dlg;                                                           // 主对话框
+Ihandle *tabs_main;                                                     // 主选项卡
+Ihandle *list_sys, *list_user, *list_merged;                            // 列表控件
+Ihandle *lbl_status;                                                    // 状态栏
+Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down; // 右侧按钮
+Ihandle *btn_undo, *btn_redo;                                           // 撤销重做按钮
+Ihandle *btn_import, *btn_export;                                       // 导入导出按钮
+Ihandle *btn_ok, *btn_cancel, *btn_help;                                // 确认取消帮助按钮
+Ihandle *btn_clean;                                                     // 一键清理按钮
+Ihandle *btn_theme;                                                     // 主题切换按钮
+Ihandle *txt_search;                                                    // 搜索框
 
-#ifndef MSGFLT_ADD
-#define MSGFLT_ADD 1
-#endif
+// 历史记录栈
+HistoryStack undo_stack = {0};
+HistoryStack redo_stack = {0};
 
 // 全局变量定义
 StringList raw_sys_paths = {0};
 StringList raw_user_paths = {0};
-
-// 全局控件定义
-Ihandle *dlg, *tabs_main, *list_sys, *list_user, *lbl_status;           // 主窗口、标签页、系统路径列表、用户路径列表、状态标签
-Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down; // 右侧按钮
-Ihandle *btn_ok, *btn_cancel, *btn_help;                                // 确认取消帮助按钮
-Ihandle *btn_clean;                                                     // 一键清理按钮
-Ihandle *txt_search;                                                    // 搜索框
+int is_dark_mode = 0; // 默认浅色模式
 
 // 主函数
 int main(int argc, char **argv)
 {
-    // 强制设置 UTF8MODE 环境变量，必须在 IupOpen 之前
-    putenv("IUP_UTF8MODE=YES");
+    // 初始化 IUP
+    if (IupOpen(&argc, &argv) == IUP_ERROR)
+    {
+        return 1;
+    }
 
-    IupOpen(&argc, &argv);
+    // 开启 UTF-8 支持
     IupSetGlobal("UTF8MODE", "YES");
 
-    // 在管理员模式下，解决无法拖拽文件到列表框的问题 (UIPI)
-    // 需要加载 User32.dll 获取 ChangeWindowMessageFilter 函数
-    HMODULE hUser32 = LoadLibraryW(L"user32.dll");
+    // 启用 UIPI 绕过，允许拖拽
+    HMODULE hUser32 = LoadLibraryA("user32.dll");
     if (hUser32)
     {
         typedef BOOL(WINAPI * ChangeWindowMessageFilterProc)(UINT, DWORD);
-        ChangeWindowMessageFilterProc pChangeWindowMessageFilter =
-            (ChangeWindowMessageFilterProc)GetProcAddress(hUser32, "ChangeWindowMessageFilter");
-
+        ChangeWindowMessageFilterProc pChangeWindowMessageFilter = (ChangeWindowMessageFilterProc)GetProcAddress(hUser32, "ChangeWindowMessageFilter");
         if (pChangeWindowMessageFilter)
         {
-            pChangeWindowMessageFilter(WM_DROPFILES, MSGFLT_ADD);
-            pChangeWindowMessageFilter(WM_COPYDATA, MSGFLT_ADD);
-            pChangeWindowMessageFilter(WM_COPYGLOBALDATA, MSGFLT_ADD);
+            // WM_DROPFILES = 0x0233, WM_COPYDATA = 0x004A, MSGFLT_ADD = 1
+            pChangeWindowMessageFilter(0x0233, 1);
+            pChangeWindowMessageFilter(0x004A, 1);
         }
         FreeLibrary(hUser32);
     }
 
-    // 创建两个列表控件
-    list_sys = create_path_list();
-    list_user = create_path_list();
+    // 初始化历史栈
+    init_history_stack(&undo_stack);
+    init_history_stack(&redo_stack);
 
-    // 创建搜索框
-    txt_search = IupText(NULL);
-    IupSetAttribute(txt_search, "EXPAND", "HORIZONTAL");
-    IupSetAttribute(txt_search, "CUEBANNER", "输入关键词搜索...");
-    IupSetCallback(txt_search, "VALUECHANGED_CB", (Icallback)txt_search_cb);
+    // 创建主界面
+    dlg = create_main_dialog();
 
-    // 创建 Tabs
-    tabs_main = IupTabs(
-        IupVbox(list_sys, NULL),
-        IupVbox(list_user, NULL),
-        NULL);
-    IupSetAttribute(tabs_main, "TABTITLE0", "系统变量 (System)");
-    IupSetAttribute(tabs_main, "TABTITLE1", "用户变量 (User)");
-    IupSetAttribute(tabs_main, "TABTYPE", "TOP");
-
-    // 创建右侧按钮区域
-    Ihandle *vbox_btns = create_main_buttons();
-
-    // 上部布局：Tabs + 按钮
-    Ihandle *hbox_main = IupHbox(tabs_main, vbox_btns, NULL);
-    IupSetAttribute(hbox_main, "GAP", "10");
-    IupSetAttribute(hbox_main, "MARGIN", "10x10");
-
-    // 状态标签
-    lbl_status = IupLabel("状态: 就绪");
-    IupSetAttribute(lbl_status, "EXPAND", "HORIZONTAL");
-
-    // 创建底部按钮区域
-    Ihandle *hbox_bottom = create_bottom_buttons();
-
-    // 总体布局
-    Ihandle *vbox_all = IupVbox(
-        IupLabel("环境变量编辑器:"),
-        txt_search,
-        hbox_main,
-        hbox_bottom,
-        NULL);
-    IupSetAttribute(vbox_all, "MARGIN", "10x10");
-    IupSetAttribute(vbox_all, "GAP", "5");
-
-    // 创建对话框
-    dlg = IupDialog(vbox_all);
-    IupSetAttribute(dlg, "TITLE", "编辑环境变量 (IUP版)");
-    IupSetAttribute(dlg, "SIZE", "500x400"); // 稍微调大一点
-    IupSetAttribute(dlg, "MINBOX", "NO");
-    IupSetAttribute(dlg, "MAXBOX", "NO");
+    // 设置全局按键回调 (如果在 ui.c 中未设置)
+    IupSetCallback(dlg, "K_ANY", (Icallback)dialog_k_any_cb);
 
     // 加载数据
     if (!check_admin())
     {
-        IupMessage("警告", "程序未以管理员身份运行，您只能查看，无法保存更改！");
-        IupSetAttribute(dlg, "TITLE", "编辑环境变量 (只读模式)");
-        IupSetAttribute(lbl_status, "TITLE", "状态: 只读模式 (权限不足)");
-
-        // 禁用修改类按钮
-        IupSetAttribute(btn_new, "ACTIVE", "NO");
-        IupSetAttribute(btn_edit, "ACTIVE", "NO");
-        IupSetAttribute(btn_browse, "ACTIVE", "NO");
-        IupSetAttribute(btn_del, "ACTIVE", "NO");
-        IupSetAttribute(btn_up, "ACTIVE", "NO");
-        IupSetAttribute(btn_down, "ACTIVE", "NO");
-        IupSetAttribute(btn_clean, "ACTIVE", "NO");
-        IupSetAttribute(btn_ok, "ACTIVE", "NO");
+        IupMessage("警告", "未检测到管理员权限！\n您可能无法保存更改。\n请右键以【管理员身份运行】。");
     }
 
-    IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
-
-    // IUP List APPEND 属性需要在控件 Map 之后才能生效
-    // IupShowXY 会触发 Map
     load_all_paths();
 
+    // 显示对话框
+    IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
+
+    // 进入主循环
     IupMainLoop();
+
+    // 清理资源
     IupClose();
     return 0;
 }

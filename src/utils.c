@@ -42,14 +42,41 @@ int check_admin()
     return 0;
 }
 
+// 展开环境变量
+char* expand_env_vars(const char* path)
+{
+    if (!path) return NULL;
+    
+    // 先转换为宽字符，因为ExpandEnvironmentStringsW不支持UTF-8
+    wchar_t *wpath = utf8_to_wide(path);
+    if (!wpath) return NULL;
+    
+    DWORD size = ExpandEnvironmentStringsW(wpath, NULL, 0);
+    if (size == 0) {
+        free(wpath);
+        return NULL;
+    }
+    
+    wchar_t *wexpanded = (wchar_t *)malloc(size * sizeof(wchar_t));
+    ExpandEnvironmentStringsW(wpath, wexpanded, size);
+    free(wpath);
+    
+    char *expanded = wide_to_utf8(wexpanded);
+    free(wexpanded);
+    
+    return expanded;
+}
+
 // 检查路径是否存在
 static int path_exists(const char *path)
 {
-    // 如果包含 %，说明是变量，无法直接检查存在性，默认视为有效
-    if (strchr(path, '%'))
-        return 1;
+    char *expanded_path = expand_env_vars(path);
+    if (!expanded_path)
+        return 0;
 
-    wchar_t *wpath = utf8_to_wide(path);
+    wchar_t *wpath = utf8_to_wide(expanded_path);
+    free(expanded_path);
+    
     if (!wpath)
         return 0;
 
@@ -84,7 +111,11 @@ void refresh_single_list_style(Ihandle *list)
             continue;
 
         // 默认颜色：黑字
-        char fg_color[32] = "0 0 0";
+        char fg_color[32];
+        if (is_dark_mode)
+            strcpy(fg_color, "255 255 255");
+        else
+            strcpy(fg_color, "0 0 0");
 
         // 1. 检查有效性
         if (!path_exists(item))
@@ -108,13 +139,19 @@ void refresh_single_list_style(Ihandle *list)
         IupSetAttributeId(list, "ITEMFGCOLOR", i, fg_color);
 
         // 斑马纹背景
-        if (i % 2 == 0)
+        if (is_dark_mode)
         {
-            IupSetAttributeId(list, "ITEMBGCOLOR", i, "245 245 245");
+            if (i % 2 == 0)
+                IupSetAttributeId(list, "ITEMBGCOLOR", i, "60 60 60");
+            else
+                IupSetAttributeId(list, "ITEMBGCOLOR", i, "50 50 50");
         }
         else
         {
-            IupSetAttributeId(list, "ITEMBGCOLOR", i, "255 255 255");
+            if (i % 2 == 0)
+                IupSetAttributeId(list, "ITEMBGCOLOR", i, "245 245 245");
+            else
+                IupSetAttributeId(list, "ITEMBGCOLOR", i, "255 255 255");
         }
     }
 }
@@ -230,4 +267,73 @@ void clear_string_list(StringList *list)
     list->items = NULL;
     list->count = 0;
     list->capacity = 0;
+}
+
+// 复制字符串列表
+void copy_string_list(StringList *dest, StringList *src)
+{
+    init_string_list(dest);
+    if (!src || src->count == 0)
+        return;
+    for (int i = 0; i < src->count; i++)
+    {
+        add_string_list(dest, src->items[i]);
+    }
+}
+
+// 初始化历史栈
+void init_history_stack(HistoryStack *stack)
+{
+    stack->top = NULL;
+    stack->count = 0;
+}
+
+// 压入历史
+void push_history(HistoryStack *stack, StringList *sys, StringList *user)
+{
+    HistoryNode *node = (HistoryNode *)malloc(sizeof(HistoryNode));
+    if (!node)
+        return;
+
+    copy_string_list(&node->sys_paths, sys);
+    copy_string_list(&node->user_paths, user);
+
+    node->next = stack->top;
+    stack->top = node;
+    stack->count++;
+
+    // 简单限制：如果超过 50 个，就不处理底部了（太麻烦），反正内存够用
+}
+
+// 弹出历史
+int pop_history(HistoryStack *stack, StringList *out_sys, StringList *out_user)
+{
+    if (!stack->top)
+        return 0;
+
+    HistoryNode *node = stack->top;
+    stack->top = node->next;
+    stack->count--;
+
+    // 转移所有权，避免复制
+    *out_sys = node->sys_paths;
+    *out_user = node->user_paths;
+
+    free(node);
+    return 1;
+}
+
+// 清空历史栈
+void clear_history_stack(HistoryStack *stack)
+{
+    while (stack->top)
+    {
+        HistoryNode *node = stack->top;
+        stack->top = node->next;
+
+        clear_string_list(&node->sys_paths);
+        clear_string_list(&node->user_paths);
+        free(node);
+    }
+    stack->count = 0;
 }
