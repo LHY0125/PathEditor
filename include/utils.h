@@ -14,6 +14,9 @@ wchar_t* utf8_to_wide(const char* str);
 // 检查管理员权限
 int check_admin();
 
+// 展开环境变量
+char* expand_env_vars(const char* path);
+
 // 检查路径是否有效（存在且为目录）
 int is_path_valid(const char *path);
 

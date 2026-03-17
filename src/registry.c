@@ -84,7 +84,7 @@ void load_all_paths()
     load_single_path(HKEY_CURRENT_USER, REG_PATH_USER, list_user, &raw_user_paths);
 
     refresh_list_style();
-    IupSetAttribute(lbl_status, "TITLE", "状态: 已加载系统和用户变量");
+    IupSetAttribute(lbl_status, "TITLE", "状态: 已加载变量");
 }
 
 // 内部辅助函数：保存单个列表
