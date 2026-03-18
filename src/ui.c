@@ -59,7 +59,7 @@ Ihandle *create_main_buttons()
         NULL);
     IupSetAttribute(vbox_btns, "GAP", UI_VBOX_GAP);
     IupSetAttribute(vbox_btns, "MARGIN", UI_VBOX_MARGIN);
-    
+
     return vbox_btns;
 }
 

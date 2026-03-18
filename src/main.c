@@ -10,6 +10,13 @@
 #include "ui.h"
 #include "config.h"
 
+/*
+编译命令：
+Remove-Item -Path "obj\*.o" -Force -ErrorAction SilentlyContinue && mingw32-make
+打包命令：
+build_installer.bat
+*/
+
 // 主函数
 int main(int argc, char **argv)
 {
@@ -84,7 +91,8 @@ int main(int argc, char **argv)
     // 创建对话框
     dlg = IupDialog(vbox_all);
     IupSetAttribute(dlg, "TITLE", "编辑环境变量 (IUP版)");
-    IupSetAttribute(dlg, "SIZE", UI_DLG_SIZE); // 稍微调大一点
+    IupSetAttribute(dlg, "RASTERSIZE", UI_DLG_SIZE);      // 对话框初始大小 (像素)
+    IupSetAttribute(dlg, "MINSIZE", UI_DLG_MINSIZE);      // 对话框最小大小 (像素)
     IupSetAttribute(dlg, "MINBOX", "NO");
     IupSetAttribute(dlg, "MAXBOX", "NO");
 
