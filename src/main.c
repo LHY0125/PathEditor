@@ -90,9 +90,9 @@ int main(int argc, char **argv)
 
     // 创建对话框
     dlg = IupDialog(vbox_all);
-    IupSetAttribute(dlg, "TITLE", "编辑环境变量 (IUP版)");
-    IupSetAttribute(dlg, "RASTERSIZE", UI_DLG_SIZE);      // 对话框初始大小 (像素)
-    IupSetAttribute(dlg, "MINSIZE", UI_DLG_MINSIZE);      // 对话框最小大小 (像素)
+    IupSetAttribute(dlg, "TITLE", APP_NAME);                // 对话框标题
+    IupSetAttribute(dlg, "RASTERSIZE", UI_DLG_SIZE);        // 对话框初始大小 (像素)
+    IupSetAttribute(dlg, "MINSIZE", UI_DLG_MINSIZE);        // 对话框最小大小 (像素)
     IupSetAttribute(dlg, "MINBOX", "NO");
     IupSetAttribute(dlg, "MAXBOX", "NO");
 
