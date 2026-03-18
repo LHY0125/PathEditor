@@ -7,7 +7,12 @@
 #include "ui.h"
 #include "cb_main.h"
 
-
+/*
+编译命令：
+Remove-Item -Path "obj\*.o" -Force -ErrorAction SilentlyContinue && mingw32-make
+打包命令：
+build_installer.bat
+*/
 
 // 主函数
 int main(int argc, char **argv)
