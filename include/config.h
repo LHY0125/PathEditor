@@ -6,7 +6,8 @@
 // ============================================================================
 
 // 应用程序名称
-#define APP_NAME "PathEditor"    // 应用程序名称
+#define APP_NAME "PathEditor"    // 编辑环境变量应用程序名称
+#define APP_NAME_READONLY "PathEditor (只读模式)" // 编辑环境变量只读模式标题
 
 // 对话框设置
 #define UI_DLG_SIZE "800x800"    // 对话框默认大小 (像素)

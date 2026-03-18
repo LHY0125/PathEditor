@@ -100,7 +100,7 @@ int main(int argc, char **argv)
     if (!check_admin())
     {
         IupMessage("警告", "程序未以管理员身份运行，您只能查看，无法保存更改！");
-        IupSetAttribute(dlg, "TITLE", "编辑环境变量 (只读模式)");
+        IupSetAttribute(dlg, "TITLE", APP_NAME_READONLY);    // 对话框标题 (只读模式)
         IupSetAttribute(lbl_status, "TITLE", "状态: 只读模式 (权限不足)");
 
         // 禁用修改类按钮
