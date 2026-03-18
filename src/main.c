@@ -8,26 +8,7 @@
 #include "registry.h"
 #include "callbacks.h"
 #include "ui.h"
-
-// 定义 Windows 消息常量
-#ifndef WM_COPYGLOBALDATA
-#define WM_COPYGLOBALDATA 0x0049
-#endif
-
-#ifndef MSGFLT_ADD
-#define MSGFLT_ADD 1
-#endif
-
-// 全局变量定义
-StringList raw_sys_paths = {0};
-StringList raw_user_paths = {0};
-
-// 全局控件定义
-Ihandle *dlg, *tabs_main, *list_sys, *list_user, *lbl_status;           // 主窗口、标签页、系统路径列表、用户路径列表、状态标签
-Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down; // 右侧按钮
-Ihandle *btn_ok, *btn_cancel, *btn_help;                                // 确认取消帮助按钮
-Ihandle *btn_clean;                                                     // 一键清理按钮
-Ihandle *txt_search;                                                    // 搜索框
+#include "config.h"
 
 // 主函数
 int main(int argc, char **argv)
@@ -80,8 +61,8 @@ int main(int argc, char **argv)
 
     // 上部布局：Tabs + 按钮
     Ihandle *hbox_main = IupHbox(tabs_main, vbox_btns, NULL);
-    IupSetAttribute(hbox_main, "GAP", "10");
-    IupSetAttribute(hbox_main, "MARGIN", "10x10");
+    IupSetAttribute(hbox_main, "GAP", UI_HBOX_GAP);
+    IupSetAttribute(hbox_main, "MARGIN", UI_HBOX_MARGIN);
 
     // 状态标签
     lbl_status = IupLabel("状态: 就绪");
@@ -97,13 +78,13 @@ int main(int argc, char **argv)
         hbox_main,
         hbox_bottom,
         NULL);
-    IupSetAttribute(vbox_all, "MARGIN", "10x10");
-    IupSetAttribute(vbox_all, "GAP", "5");
+    IupSetAttribute(vbox_all, "MARGIN", UI_VBOX_ALL_MARGIN);
+    IupSetAttribute(vbox_all, "GAP", UI_VBOX_ALL_GAP);
 
     // 创建对话框
     dlg = IupDialog(vbox_all);
     IupSetAttribute(dlg, "TITLE", "编辑环境变量 (IUP版)");
-    IupSetAttribute(dlg, "SIZE", "500x400"); // 稍微调大一点
+    IupSetAttribute(dlg, "SIZE", UI_DLG_SIZE); // 稍微调大一点
     IupSetAttribute(dlg, "MINBOX", "NO");
     IupSetAttribute(dlg, "MAXBOX", "NO");
 

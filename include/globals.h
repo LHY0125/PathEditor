@@ -3,6 +3,16 @@
 
 #include <iup.h>
 
+// 定义 Windows 消息常量
+#ifndef WM_COPYGLOBALDATA
+#define WM_COPYGLOBALDATA 0x0049
+#endif
+
+// 消息过滤器常量
+#ifndef MSGFLT_ADD
+#define MSGFLT_ADD 1
+#endif
+
 // 注册表路径常量
 #define REG_PATH_SYS L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"
 #define REG_PATH_USER L"Environment"

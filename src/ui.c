@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "globals.h"
 #include "callbacks.h"
+#include "config.h"
 #include <stdlib.h>
 
 // 创建列表控件
@@ -8,8 +9,8 @@ Ihandle *create_path_list()
 {
     Ihandle *list = IupFlatList();
     IupSetAttribute(list, "EXPAND", "YES");
-    IupSetAttribute(list, "ITEMPADDING", "5x5");
-    IupSetAttribute(list, "BACKCOLOR", "255 255 255");
+    IupSetAttribute(list, "ITEMPADDING", UI_LIST_ITEM_PADDING);
+    IupSetAttribute(list, "BACKCOLOR", UI_LIST_BACKCOLOR);
     IupSetAttribute(list, "BORDER", "YES");
     IupSetAttribute(list, "CANFOCUS", "YES");
     IupSetAttribute(list, "HLINE", "NO");
@@ -40,14 +41,14 @@ Ihandle *create_main_buttons()
     IupSetCallback(btn_down, "ACTION", (Icallback)btn_down_cb);
     IupSetCallback(btn_clean, "ACTION", (Icallback)btn_clean_cb);
 
-    // 设置按钮大小 (宽度和高度都增加约1/4)
-    IupSetAttribute(btn_new, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_edit, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_browse, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_del, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_up, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_down, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_clean, "RASTERSIZE", "100x32");
+    // 设置按钮大小
+    IupSetAttribute(btn_new, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_edit, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_browse, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_del, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_up, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_down, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_clean, "RASTERSIZE", UI_BTN_RASTERSIZE);
 
     Ihandle *vbox_btns = IupVbox(
         btn_new, btn_edit, btn_browse, btn_del,
@@ -56,8 +57,8 @@ Ihandle *create_main_buttons()
         IupFill(),
         btn_up, btn_down,
         NULL);
-    IupSetAttribute(vbox_btns, "GAP", "5");
-    IupSetAttribute(vbox_btns, "MARGIN", "0x0");
+    IupSetAttribute(vbox_btns, "GAP", UI_VBOX_GAP);
+    IupSetAttribute(vbox_btns, "MARGIN", UI_VBOX_MARGIN);
     
     return vbox_btns;
 }
@@ -74,14 +75,14 @@ Ihandle *create_bottom_buttons()
     IupSetCallback(btn_cancel, "ACTION", (Icallback)btn_cancel_cb);
     IupSetCallback(btn_help, "ACTION", (Icallback)btn_help_cb);
 
-    IupSetAttribute(btn_ok, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_cancel, "RASTERSIZE", "100x32");
-    IupSetAttribute(btn_help, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_ok, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_cancel, "RASTERSIZE", UI_BTN_RASTERSIZE);
+    IupSetAttribute(btn_help, "RASTERSIZE", UI_BTN_RASTERSIZE);
 
     Ihandle *hbox_bottom = IupHbox(lbl_status, IupFill(), btn_help, btn_ok, btn_cancel, NULL);
-    IupSetAttribute(hbox_bottom, "GAP", "10");
-    IupSetAttribute(hbox_bottom, "MARGIN", "10x10");
-    IupSetAttribute(hbox_bottom, "ALIGNMENT", "ACENTER");
+    IupSetAttribute(hbox_bottom, "GAP", UI_HBOX_GAP);
+    IupSetAttribute(hbox_bottom, "MARGIN", UI_HBOX_MARGIN);
+    IupSetAttribute(hbox_bottom, "ALIGNMENT", UI_HBOX_ALIGNMENT);
 
     return hbox_bottom;
 }

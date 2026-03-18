@@ -18,9 +18,9 @@ CFLAGS = -Wall -O2 -I$(INCLUDE_DIR) -I$(LOCAL_INCLUDE_DIR) -D_WIN32 -DUNICODE -D
 LDFLAGS = -L$(LIB_DIR) -liup -liupcd -lgdi32 -lcomdlg32 -lcomctl32 -luuid -lole32 -ladvapi32 -mwindows
 
 # Source
-SRC = src/main.c src/utils.c src/registry.c src/callbacks.c src/ui.c
+SRC = src/main.c src/utils.c src/registry.c src/callbacks.c src/ui.c src/globals.c
 RES = ico/resources.rc
-OBJ = $(OBJ_DIR)/main.o $(OBJ_DIR)/utils.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/callbacks.o $(OBJ_DIR)/ui.o $(OBJ_DIR)/resources.o
+OBJ = $(OBJ_DIR)/main.o $(OBJ_DIR)/utils.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/callbacks.o $(OBJ_DIR)/ui.o $(OBJ_DIR)/globals.o $(OBJ_DIR)/resources.o
 EXE = $(BIN_DIR)/PathEditor.exe
 
 all: $(BIN_DIR) $(OBJ_DIR) $(EXE)
@@ -47,6 +47,9 @@ $(OBJ_DIR)/callbacks.o: src/callbacks.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(OBJ_DIR)/ui.o: src/ui.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(OBJ_DIR)/globals.o: src/globals.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(OBJ_DIR)/resources.o: ico/resources.rc
