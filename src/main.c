@@ -7,27 +7,7 @@
 #include "ui.h"
 #include "cb_main.h"
 
-// 全局控件定义
-Ihandle *dlg;                                                           // 主对话框
-Ihandle *tabs_main;                                                     // 主选项卡
-Ihandle *list_sys, *list_user, *list_merged;                            // 列表控件
-Ihandle *lbl_status;                                                    // 状态栏
-Ihandle *btn_new, *btn_edit, *btn_browse, *btn_del, *btn_up, *btn_down; // 右侧按钮
-Ihandle *btn_undo, *btn_redo;                                           // 撤销重做按钮
-Ihandle *btn_import, *btn_export;                                       // 导入导出按钮
-Ihandle *btn_ok, *btn_cancel, *btn_help;                                // 确认取消帮助按钮
-Ihandle *btn_clean;                                                     // 一键清理按钮
-Ihandle *btn_theme;                                                     // 主题切换按钮
-Ihandle *txt_search;                                                    // 搜索框
 
-// 历史记录栈
-HistoryStack undo_stack = {0};
-HistoryStack redo_stack = {0};
-
-// 全局变量定义
-StringList raw_sys_paths = {0};
-StringList raw_user_paths = {0};
-int is_dark_mode = 0; // 默认浅色模式
 
 // 主函数
 int main(int argc, char **argv)
