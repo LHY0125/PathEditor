@@ -5,7 +5,7 @@ project(PathEditor VERSION 3.0 LANGUAGES C)
 enable_language(RC)
 
 # 设置 C 标准
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # 定义源文件
