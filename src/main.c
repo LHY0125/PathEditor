@@ -16,6 +16,8 @@ cmake -B build -G "MinGW Makefiles"
 cmake --build build
 !打包命令：
 build_installer.bat
+!运行命令：
+build\\PathEditor.exe
 */
 
 // 定义 Windows 消息常量
@@ -118,5 +120,6 @@ int main(int argc, char **argv)
 
     destroy_app_context(ctx);
     IupClose();
+
     return 0;
 }
