@@ -1,4 +1,5 @@
 #include <iup.h>
+#include <iupcontrols.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "globals.h"
@@ -24,6 +25,10 @@ int main(int argc, char **argv)
     {
         return 1;
     }
+
+    // 初始化扩展库
+    IupImageLibOpen();
+    IupControlsOpen();
 
     // 开启 UTF-8 支持
     IupSetGlobal("UTF8MODE", "YES");

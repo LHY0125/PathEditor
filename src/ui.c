@@ -1,4 +1,5 @@
 #include "ui.h"
+#include <iupcontrols.h>
 #include "config.h"
 #include "globals.h"
 #include "ui_utils.h"
@@ -10,18 +11,26 @@
 // 创建列表控件
 Ihandle *create_path_list()
 {
-    Ihandle *list = IupFlatList();
+    Ihandle *list = IupMatrix(NULL);
+    IupSetAttribute(list, "NUMCOL", "2");
+    IupSetAttribute(list, "NUMLIN", "0");
+    IupSetAttribute(list, "MARKMODE", "LIN");
+    IupSetAttribute(list, "MARKMULTIPLE", "YES");
+    IupSetAttribute(list, "READONLY", "NO");
+    IupSetAttribute(list, "0:1", "路径");
+    IupSetAttribute(list, "0:2", "状态");
+    IupSetAttribute(list, "ALIGNMENT1", "ALEFT");
+    IupSetAttribute(list, "ALIGNMENT2", "ACENTER");
     IupSetAttribute(list, "EXPAND", "YES");
-    IupSetAttribute(list, "MULTIPLE", "YES");
     IupSetAttribute(list, "ITEMPADDING", UI_LIST_ITEM_PADDING);
     IupSetAttribute(list, "BACKCOLOR", UI_LIST_BGCOLOR);
     IupSetAttribute(list, "BORDER", "YES");
     IupSetAttribute(list, "CANFOCUS", "YES");
-    IupSetAttribute(list, "HLINE", "NO");
-    IupSetCallback(list, "DBLCLICK_CB", (Icallback)list_dblclick_cb);
+    IupSetCallback(list, "CLICK_CB", (Icallback)list_dblclick_cb);
+    IupSetCallback(list, "EDITION_CB", (Icallback)matrix_edition_cb);
     IupSetCallback(list, "DROPFILES_CB", (Icallback)list_dropfiles_cb);
     IupSetCallback(list, "K_ANY", (Icallback)list_k_any_cb);
-    IupSetCallback(list, "MOTION_CB", (Icallback)list_motion_cb);
+    IupSetCallback(list, "MOUSEMOVE_CB", (Icallback)list_motion_cb);
     return list;
 }
 
@@ -30,14 +39,32 @@ Ihandle *create_main_buttons()
 {
     // 创建右侧按钮
     btn_new = IupButton("新建(N)", NULL);
+    IupSetAttribute(btn_new, "IMAGE", "IUP_FileNew");
+    IupSetAttribute(btn_new, "TITLE", "新建(N)");
     btn_edit = IupButton("编辑(E)", NULL);
+    IupSetAttribute(btn_edit, "IMAGE", "IUP_EditCopy");
+    IupSetAttribute(btn_edit, "TITLE", "编辑(E)");
     btn_browse = IupButton("浏览(B)...", NULL);
+    IupSetAttribute(btn_browse, "IMAGE", "IUP_FileOpen");
+    IupSetAttribute(btn_browse, "TITLE", "浏览(B)...");
     btn_del = IupButton("删除(D)", NULL);
+    IupSetAttribute(btn_del, "IMAGE", "IUP_EditErase");
+    IupSetAttribute(btn_del, "TITLE", "删除(D)");
     btn_undo = IupButton("撤销(Z)", NULL);
+    IupSetAttribute(btn_undo, "IMAGE", "IUP_EditUndo");
+    IupSetAttribute(btn_undo, "TITLE", "撤销(Z)");
     btn_redo = IupButton("重做(Y)", NULL);
+    IupSetAttribute(btn_redo, "IMAGE", "IUP_EditRedo");
+    IupSetAttribute(btn_redo, "TITLE", "重做(Y)");
     btn_up = IupButton("上移(U)", NULL);
+    IupSetAttribute(btn_up, "IMAGE", "IUP_ArrowUp");
+    IupSetAttribute(btn_up, "TITLE", "上移(U)");
     btn_down = IupButton("下移(O)", NULL);
+    IupSetAttribute(btn_down, "IMAGE", "IUP_ArrowDown");
+    IupSetAttribute(btn_down, "TITLE", "下移(O)");
     btn_clean = IupButton("一键清理", NULL);
+    IupSetAttribute(btn_clean, "IMAGE", "IUP_ToolsSettings");
+    IupSetAttribute(btn_clean, "TITLE", "一键清理");
 
     // 设置按钮回调
     IupSetCallback(btn_new, "ACTION", (Icallback)btn_new_cb);
@@ -81,10 +108,14 @@ Ihandle *create_bottom_buttons()
 {
     // 创建底部按钮
     btn_help = IupButton("帮助(H)", NULL);
+    IupSetAttribute(btn_help, "IMAGE", "IUP_MessageInfo");
+    IupSetAttribute(btn_help, "TITLE", "帮助(H)"); // Force title
     IupSetCallback(btn_help, "ACTION", (Icallback)btn_help_cb);
     IupSetAttribute(btn_help, "RASTERSIZE", UI_BUTTON_SMALL_SIZE);
 
     btn_theme = IupButton("深色模式", NULL);
+    IupSetAttribute(btn_theme, "IMAGE", "IUP_WebFormat"); // Fixed icon
+    IupSetAttribute(btn_theme, "TITLE", "深色模式");      // Force title
     IupSetCallback(btn_theme, "ACTION", (Icallback)btn_theme_cb);
     IupSetAttribute(btn_theme, "RASTERSIZE", UI_BUTTON_SMALL_SIZE);
 
@@ -92,18 +123,26 @@ Ihandle *create_bottom_buttons()
     IupSetAttribute(lbl_status, "EXPAND", "HORIZONTAL");
 
     btn_import = IupButton("导入配置", NULL);
+    IupSetAttribute(btn_import, "IMAGE", "IUP_FileOpen");
+    IupSetAttribute(btn_import, "TITLE", "导入配置"); // Force title
     IupSetCallback(btn_import, "ACTION", (Icallback)btn_import_cb);
     IupSetAttribute(btn_import, "RASTERSIZE", UI_BUTTON_SIZE);
 
     btn_export = IupButton("导出配置", NULL);
+    IupSetAttribute(btn_export, "IMAGE", "IUP_FileSave"); // Fixed icon
+    IupSetAttribute(btn_export, "TITLE", "导出配置");     // Force title
     IupSetCallback(btn_export, "ACTION", (Icallback)btn_export_cb);
     IupSetAttribute(btn_export, "RASTERSIZE", UI_BUTTON_SIZE);
 
     btn_ok = IupButton("确定(O)", NULL);
+    IupSetAttribute(btn_ok, "IMAGE", "IUP_FileSave");
+    IupSetAttribute(btn_ok, "TITLE", "确定(O)"); // Force title
     IupSetCallback(btn_ok, "ACTION", (Icallback)btn_ok_cb);
     IupSetAttribute(btn_ok, "RASTERSIZE", UI_BUTTON_SIZE);
 
     btn_cancel = IupButton("取消(C)", NULL);
+    IupSetAttribute(btn_cancel, "IMAGE", "IUP_MessageError");
+    IupSetAttribute(btn_cancel, "TITLE", "取消(C)"); // Force title
     IupSetCallback(btn_cancel, "ACTION", (Icallback)btn_cancel_cb);
     IupSetAttribute(btn_cancel, "RASTERSIZE", UI_BUTTON_SIZE);
 
@@ -133,7 +172,7 @@ Ihandle *create_main_dialog()
     list_merged = create_path_list();
 
     IupSetAttribute(list_merged, "READONLY", "YES");
-    IupSetAttribute(list_merged, "MULTIPLE", "NO");
+    IupSetAttribute(list_merged, "MARKMULTIPLE", "NO");
     IupSetAttribute(list_merged, "BGCOLOR", UI_LIST_MERGED_BGCOLOR); // 灰色背景
 
     // 创建标签页

@@ -45,18 +45,24 @@ endif()
 # 设置头文件搜索路径
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib/include
+    ${CMAKE_SOURCE_DIR}/libs/IUP/include
 )
 
-# 设置库文件搜索路径
+# 设置库文件搜索路径（IUP 库和 CD 库）
 target_link_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib
+    ${CMAKE_SOURCE_DIR}/libs/IUP
+    ${CMAKE_SOURCE_DIR}/libs/CD
 )
 
 # 链接所需库
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    iupcontrols
+    iupimglib
     iup
     iupcd
+    cd
+    freetype6
+    zlib1
     gdi32
     comdlg32
     comctl32
@@ -65,11 +71,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     advapi32
 )
 
-# 编译完成后，将 DLL 文件复制到构建输出目录
-file(GLOB IUP_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib/*.dll")
+# 编译完成后，将所需的 DLL 文件复制到构建输出目录
+# 我们只复制当前程序真正依赖的 DLL，避免 build 文件夹臃肿
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${IUP_DLLS}
+    "${CMAKE_SOURCE_DIR}/libs/IUP/iup.dll"
+    "${CMAKE_SOURCE_DIR}/libs/IUP/iupimglib.dll"
+    "${CMAKE_SOURCE_DIR}/libs/IUP/iupcontrols.dll"
+    "${CMAKE_SOURCE_DIR}/libs/IUP/iupcd.dll"
+    "${CMAKE_SOURCE_DIR}/libs/CD/cd.dll"
+    "${CMAKE_SOURCE_DIR}/libs/CD/freetype6.dll"
+    "${CMAKE_SOURCE_DIR}/libs/CD/zlib1.dll"
     "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-    COMMENT "Copying DLLs to build directory..."
+    COMMENT "Copying essential DLLs to build directory..."
 )

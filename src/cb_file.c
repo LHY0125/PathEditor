@@ -25,10 +25,10 @@ int btn_browse_cb(Ihandle *self)
             record_history();
 
             Ihandle *current_list = get_current_list();
-            int count = IupGetInt(current_list, "COUNT");
+            int count = IupGetInt(current_list, "NUMLIN");
             count++;
-            IupSetAttributeId(current_list, "", count, value);
-            IupSetInt(current_list, "COUNT", count);
+            IupSetInt(current_list, "NUMLIN", count);
+            IupSetAttributeId2(current_list, "", count, 1, value);
             
             // 更新选中状态
             set_single_selection(current_list, count);
@@ -101,7 +101,7 @@ int btn_redo_cb(Ihandle *self)
 int btn_export_cb(Ihandle *self)
 {
     Ihandle *current_list = get_current_list();
-    int count = IupGetInt(current_list, "COUNT");
+    int count = IupGetInt(current_list, "NUMLIN");
     if (count == 0) {
         IupMessage("提示", "当前列表为空，无法导出");
         return IUP_DEFAULT;
@@ -133,7 +133,7 @@ int btn_export_cb(Ihandle *self)
             FILE *fp = fopen(final_path, "w");
             if (fp) {
                 for (int i = 1; i <= count; i++) {
-                    char *item = IupGetAttributeId(current_list, "", i);
+                    char *item = IupGetAttributeId2(current_list, "", i, 1);
                     if (item) fprintf(fp, "%s\n", item);
                 }
                 fclose(fp);
@@ -181,10 +181,10 @@ int btn_import_cb(Ihandle *self)
                     }
                     if (len > 0) {
                         // Add to UI
-                        int count = IupGetInt(current_list, "COUNT");
+                        int count = IupGetInt(current_list, "NUMLIN");
                         count++;
-                        IupSetAttributeId(current_list, "", count, line);
-                        IupSetInt(current_list, "COUNT", count);
+                        IupSetInt(current_list, "NUMLIN", count);
+                        IupSetAttributeId2(current_list, "", count, 1, line);
                         
                         // Add to raw_data
                         if (raw_data) add_string_list(raw_data, line);
@@ -234,10 +234,10 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
         IupSetAttribute(txt_search, "VALUE", "");
 
         // 添加到列表末尾
-        int count = IupGetInt(current_list, "COUNT");
+        int count = IupGetInt(current_list, "NUMLIN");
         count++;
-        IupSetAttributeId(current_list, "", count, filename);
-        IupSetInt(current_list, "COUNT", count);
+        IupSetInt(current_list, "NUMLIN", count);
+        IupSetAttributeId2(current_list, "", count, 1, filename);
         
         // 更新选中状态
         set_single_selection(current_list, count);

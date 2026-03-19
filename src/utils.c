@@ -43,27 +43,30 @@ int check_admin()
 }
 
 // 展开环境变量
-char* expand_env_vars(const char* path)
+char *expand_env_vars(const char *path)
 {
-    if (!path) return NULL;
-    
+    if (!path)
+        return NULL;
+
     // 先转换为宽字符，因为ExpandEnvironmentStringsW不支持UTF-8
     wchar_t *wpath = utf8_to_wide(path);
-    if (!wpath) return NULL;
-    
+    if (!wpath)
+        return NULL;
+
     DWORD size = ExpandEnvironmentStringsW(wpath, NULL, 0);
-    if (size == 0) {
+    if (size == 0)
+    {
         free(wpath);
         return NULL;
     }
-    
+
     wchar_t *wexpanded = (wchar_t *)malloc(size * sizeof(wchar_t));
     ExpandEnvironmentStringsW(wpath, wexpanded, size);
     free(wpath);
-    
+
     char *expanded = wide_to_utf8(wexpanded);
     free(wexpanded);
-    
+
     return expanded;
 }
 
@@ -76,7 +79,7 @@ static int path_exists(const char *path)
 
     wchar_t *wpath = utf8_to_wide(expanded_path);
     free(expanded_path);
-    
+
     if (!wpath)
         return 0;
 
@@ -99,61 +102,75 @@ void refresh_single_list_style(Ihandle *list)
 {
     if (!list)
         return;
-    int count = IupGetInt(list, "COUNT");
-
-    // 用于查重的简单数组（实际项目可以用哈希表）
-    // 为了简单，我们只用双重循环检查重复，性能在几百个条目下没问题
+    int count = IupGetInt(list, "NUMLIN");
 
     for (int i = 1; i <= count; i++)
     {
-        char *item = IupGetAttributeId(list, "", i);
+        char *item = IupGetAttributeId2(list, "", i, 1);
         if (!item)
             continue;
 
-        // 默认颜色：黑字
-        char fg_color[32];
-        if (is_dark_mode)
-            strcpy(fg_color, "255 255 255");
-        else
-            strcpy(fg_color, "0 0 0");
+        const char *status_str = "正常";
+        char bg_color[32] = "";
 
         // 1. 检查有效性
         if (!path_exists(item))
         {
-            // 无效路径：红色
-            sprintf(fg_color, "255 0 0");
-        }
-
-        // 2. 检查重复 (只检查当前项之前的项，如果之前出现过，当前项标橙)
-        for (int j = 1; j < i; j++)
-        {
-            char *prev_item = IupGetAttributeId(list, "", j);
-            if (prev_item && _stricmp(item, prev_item) == 0) // Windows 路径不区分大小写
-            {
-                // 重复路径：橙色
-                sprintf(fg_color, "255 128 0");
-                break;
-            }
-        }
-
-        IupSetAttributeId(list, "ITEMFGCOLOR", i, fg_color);
-
-        // 斑马纹背景
-        if (is_dark_mode)
-        {
-            if (i % 2 == 0)
-                IupSetAttributeId(list, "ITEMBGCOLOR", i, "60 60 60");
-            else
-                IupSetAttributeId(list, "ITEMBGCOLOR", i, "50 50 50");
+            // 无效路径：红色背景
+            strcpy(bg_color, "255 100 100"); // 柔和的红色
+            status_str = "无效";
         }
         else
         {
-            if (i % 2 == 0)
-                IupSetAttributeId(list, "ITEMBGCOLOR", i, "245 245 245");
-            else
-                IupSetAttributeId(list, "ITEMBGCOLOR", i, "255 255 255");
+            // 2. 检查重复 (只检查当前项之前的项，如果之前出现过，当前项标橙)
+            for (int j = 1; j < i; j++)
+            {
+                char *prev_item = IupGetAttributeId2(list, "", j, 1);
+                if (prev_item && _stricmp(item, prev_item) == 0) // Windows 路径不区分大小写
+                {
+                    // 重复路径：橙色背景
+                    strcpy(bg_color, "255 165 0");
+                    status_str = "重复";
+                    break;
+                }
+            }
         }
+
+        IupSetAttributeId2(list, "", i, 2, status_str);
+
+        // 如果没有特殊状态，使用斑马纹背景
+        if (strlen(bg_color) == 0)
+        {
+            if (is_dark_mode)
+            {
+                if (i % 2 == 0)
+                    strcpy(bg_color, "60 60 60");
+                else
+                    strcpy(bg_color, "50 50 50");
+            }
+            else
+            {
+                if (i % 2 == 0)
+                    strcpy(bg_color, "245 245 245");
+                else
+                    strcpy(bg_color, "255 255 255");
+            }
+        }
+
+        char attr_bg[32];
+        sprintf(attr_bg, "BGCOLOR%d:*", i);
+        IupSetAttribute(list, attr_bg, bg_color);
+
+        // 恢复前景色
+        char attr_fg[32];
+        sprintf(attr_fg, "FGCOLOR%d:*", i);
+        if (is_dark_mode)
+            IupSetAttribute(list, attr_fg, "255 255 255");
+        else
+            IupSetAttribute(list, attr_fg, "0 0 0");
     }
+
+    IupSetAttribute(list, "REDRAW", "ALL"); // Ensure Matrix repaints colors
 }
 
 // 刷新所有列表样式
