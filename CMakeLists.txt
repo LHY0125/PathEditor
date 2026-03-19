@@ -65,11 +65,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     advapi32
 )
 
-# 编译完成后，将 DLL 文件复制到构建输出目录
-file(GLOB IUP_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/IUP/*.dll")
+# 编译完成后，仅将程序实际需要的核心 DLL 文件复制到构建输出目录
+set(IUP_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/IUP/iup.dll")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${IUP_DLLS}
+    ${IUP_REQUIRED_DLLS}
     "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-    COMMENT "Copying DLLs to build directory..."
+    COMMENT "Copying required DLLs to build directory..."
 )
