@@ -3,11 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
-#include "globals.h"
-#include "utils.h"
-#include "registry.h"
-#include "callbacks.h"
-#include "ui.h"
+#include "core/app_context.h"
+#include "utils/string_ext.h"
+#include "utils/os_env.h"
+#include "controller/callbacks.h"
+#include "ui/main_window.h"
 #include "config.h"
 
 /*
@@ -17,6 +17,16 @@ cmake --build build
 !打包命令：
 build_installer.bat
 */
+
+// 定义 Windows 消息常量
+#ifndef WM_COPYGLOBALDATA
+#define WM_COPYGLOBALDATA 0x0049
+#endif
+
+// 消息过滤器常量
+#ifndef MSGFLT_ADD
+#define MSGFLT_ADD 1
+#endif
 
 // 主函数
 int main(int argc, char **argv)
@@ -45,74 +55,57 @@ int main(int argc, char **argv)
         FreeLibrary(hUser32);
     }
 
-    // 创建两个列表控件
-    list_sys = create_path_list();
-    list_user = create_path_list();
+    // 禁用默认的全局按键处理
+    IupSetGlobal("INPUTCALLBACKS", "NO");
 
-    // 创建搜索框
-    txt_search = IupText(NULL);
-    IupSetAttribute(txt_search, "EXPAND", "HORIZONTAL");
-    IupSetAttribute(txt_search, "CUEBANNER", "输入关键词搜索...");
-    IupSetCallback(txt_search, "VALUECHANGED_CB", (Icallback)txt_search_cb);
+    // 创建应用上下文
+    AppContext *ctx = create_app_context();
+    if (!ctx)
+    {
+        IupMessage("错误", "无法分配内存创建应用上下文");
+        IupClose();
+        return 1;
+    }
 
-    // 创建 Tabs
-    tabs_main = IupTabs(
-        IupVbox(list_sys, NULL),
-        IupVbox(list_user, NULL),
-        NULL);
-    IupSetAttribute(tabs_main, "TABTITLE0", "系统变量 (System)");
-    IupSetAttribute(tabs_main, "TABTITLE1", "用户变量 (User)");
-    IupSetAttribute(tabs_main, "TABTYPE", "TOP");
+    Ihandle *dlg = create_main_window();
 
-    // 创建右侧按钮区域
-    Ihandle *vbox_btns = create_main_buttons();
+    // 绑定上下文到对话框
+    IupSetAttribute(dlg, "APP_CONTEXT", (char *)ctx);
+    // 注册主窗口句柄，方便其他地方获取
+    IupSetHandle("MAIN_DIALOG", dlg);
 
-    // 上部布局：Tabs + 按钮
-    Ihandle *hbox_main = IupHbox(tabs_main, vbox_btns, NULL);
-    IupSetAttribute(hbox_main, "GAP", UI_HBOX_GAP);
-    IupSetAttribute(hbox_main, "MARGIN", UI_HBOX_MARGIN);
-
-    // 状态标签
-    lbl_status = IupLabel("状态: 就绪");
-    IupSetAttribute(lbl_status, "EXPAND", "HORIZONTAL");
-
-    // 创建底部按钮区域
-    Ihandle *hbox_bottom = create_bottom_buttons();
-
-    // 总体布局
-    Ihandle *vbox_all = IupVbox(
-        IupLabel("环境变量编辑器:"),
-        txt_search,
-        hbox_main,
-        hbox_bottom,
-        NULL);
-    IupSetAttribute(vbox_all, "MARGIN", UI_VBOX_ALL_MARGIN);
-    IupSetAttribute(vbox_all, "GAP", UI_VBOX_ALL_GAP);
-
-    // 创建对话框
-    dlg = IupDialog(vbox_all);
-    IupSetAttribute(dlg, "TITLE", APP_NAME);                // 对话框标题
-    IupSetAttribute(dlg, "RASTERSIZE", UI_DLG_SIZE);        // 对话框初始大小 (像素)
-    IupSetAttribute(dlg, "MINSIZE", UI_DLG_MINSIZE);        // 对话框最小大小 (像素)
-    IupSetAttribute(dlg, "MINBOX", "NO");
-    IupSetAttribute(dlg, "MAXBOX", "NO");
-
-    // 加载数据
+    // 检查管理员权限
     if (!check_admin())
     {
-        IupMessage("警告", "程序未以管理员身份运行，您只能查看，无法保存更改！");
-        IupSetAttribute(dlg, "TITLE", APP_NAME_READONLY);    // 对话框标题 (只读模式)
-        IupSetAttribute(lbl_status, "TITLE", "状态: 只读模式 (权限不足)");
+        Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+        if (lbl_status)
+            IupSetAttribute(lbl_status, "TITLE", "状态: ⚠️ 只读模式 (无管理员权限)");
 
-        // 禁用修改类按钮
-        IupSetAttribute(btn_new, "ACTIVE", "NO");
-        IupSetAttribute(btn_edit, "ACTIVE", "NO");
-        IupSetAttribute(btn_browse, "ACTIVE", "NO");
-        IupSetAttribute(btn_del, "ACTIVE", "NO");
-        IupSetAttribute(btn_up, "ACTIVE", "NO");
-        IupSetAttribute(btn_down, "ACTIVE", "NO");
-        IupSetAttribute(btn_clean, "ACTIVE", "NO");
-        IupSetAttribute(btn_ok, "ACTIVE", "NO");
+        Ihandle *btn_new = IupGetDialogChild(dlg, "BTN_NEW");
+        Ihandle *btn_edit = IupGetDialogChild(dlg, "BTN_EDIT");
+        Ihandle *btn_browse = IupGetDialogChild(dlg, "BTN_BROWSE");
+        Ihandle *btn_del = IupGetDialogChild(dlg, "BTN_DEL");
+        Ihandle *btn_up = IupGetDialogChild(dlg, "BTN_UP");
+        Ihandle *btn_down = IupGetDialogChild(dlg, "BTN_DOWN");
+        Ihandle *btn_clean = IupGetDialogChild(dlg, "BTN_CLEAN");
+        Ihandle *btn_ok = IupGetDialogChild(dlg, "BTN_OK");
+
+        if (btn_new)
+            IupSetAttribute(btn_new, "ACTIVE", "NO");
+        if (btn_edit)
+            IupSetAttribute(btn_edit, "ACTIVE", "NO");
+        if (btn_browse)
+            IupSetAttribute(btn_browse, "ACTIVE", "NO");
+        if (btn_del)
+            IupSetAttribute(btn_del, "ACTIVE", "NO");
+        if (btn_up)
+            IupSetAttribute(btn_up, "ACTIVE", "NO");
+        if (btn_down)
+            IupSetAttribute(btn_down, "ACTIVE", "NO");
+        if (btn_clean)
+            IupSetAttribute(btn_clean, "ACTIVE", "NO");
+        if (btn_ok)
+            IupSetAttribute(btn_ok, "ACTIVE", "NO");
     }
 
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
@@ -122,6 +115,8 @@ int main(int argc, char **argv)
     load_all_paths();
 
     IupMainLoop();
+
+    destroy_app_context(ctx);
     IupClose();
     return 0;
 }
