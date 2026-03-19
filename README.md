@@ -54,11 +54,13 @@
 
 * Windows 操作系统
 * GCC 编译器 (推荐 MinGW-w64)
-* Make 工具
+* CMake 工具 (推荐使用 CMake 构建)
 * IUP 库 (已包含在 `libs` 目录下)
 * Inno Setup 6 (仅打包需要)
 
-### 编译步骤
+### 编译步骤 (推荐使用 CMake)
+
+本项目已迁移至 CMake 构建系统，支持生成更标准的构建文件并集成到各大 IDE。
 
 1. 克隆仓库：
 
@@ -67,14 +69,20 @@
    cd PathEditor
    ```
 
-2. 编译项目：
+2. 使用 CMake 配置和编译：
 
    ```bash
-   mingw32-make
+   # 生成构建系统 (以 MinGW 为例)
+   cmake -B build -G "MinGW Makefiles"
+   
+   # 编译项目
+   cmake --build build
    ```
 
 3. 运行：
-   编译成功后，可执行文件位于 `bin/PathEditor.exe`。
+   编译成功后，可执行文件位于 `build/PathEditor.exe`。
+
+*(注：项目依然保留了传统的 `mingw32-make` 方式，您可以直接在根目录运行 `mingw32-make` 进行编译，产物位于 `bin/` 目录。)*
 
 ### 打包 (可选)
 
