@@ -11,9 +11,10 @@
 #include "config.h"
 
 /*
-编译命令：
-Remove-Item -Path "obj\*.o" -Force -ErrorAction SilentlyContinue && mingw32-make
-打包命令：
+!编译命令：
+cmake -B build -G "MinGW Makefiles"
+cmake --build build
+!打包命令：
 build_installer.bat
 */
 

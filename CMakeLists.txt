@@ -1,17 +1,22 @@
 cmake_minimum_required(VERSION 3.10)
 project(PathEditor C)
 
-# Compile flags and definitions
+# 设置 C 标准
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF) # 禁用特定编译器的扩展（如 gnu17），强制使用标准 C17
+
+# 编译选项和宏定义
 add_compile_options(-Wall -O2 -fexec-charset=UTF-8)
 add_compile_definitions(_WIN32 UNICODE _UNICODE)
 
-# Include directories
+# 头文件包含目录
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib/include
 )
 
-# Source files
+# 源代码文件
 set(SOURCES
     src/main.c
     src/utils.c
@@ -21,20 +26,20 @@ set(SOURCES
     src/globals.c
 )
 
-# Resource file
+# 资源文件
 set(RESOURCES
     ico/resources.rc
 )
 
-# Library directories
+# 库文件目录
 link_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib
 )
 
-# Create WIN32 executable (automatically adds -mwindows and handles .rc files)
+# 创建 WIN32 可执行文件 (自动添加 -mwindows 并处理 .rc 资源文件)
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${RESOURCES})
 
-# Link libraries
+# 链接依赖库
 target_link_libraries(${PROJECT_NAME} PRIVATE
     iup
     iupcd
@@ -46,7 +51,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     advapi32
 )
 
-# Copy DLLs to the build directory after building
+# 编译完成后，将 DLL 文件复制到构建输出目录
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib/"
