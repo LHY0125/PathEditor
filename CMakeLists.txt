@@ -7,6 +7,7 @@ enable_language(RC)
 # 设置 C 标准
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF) # 禁用特定编译器的扩展（如 gnu17），强制使用标准 C17
 
 # 定义源文件
 set(SOURCES
