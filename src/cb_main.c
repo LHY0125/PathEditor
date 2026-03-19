@@ -22,7 +22,7 @@ int txt_search_cb(Ihandle *self)
     StringList *raw_data = (pos == 0) ? &raw_sys_paths : &raw_user_paths;
 
     // 清空列表
-    IupSetInt(current_list, "NUMLIN", 0);
+    IupSetAttribute(current_list, "REMOVEITEM", "ALL");
 
     // 重新填充
     int count = 0;
@@ -32,11 +32,11 @@ int txt_search_cb(Ihandle *self)
         if (strlen(filter) == 0 || stristr(raw_data->items[i], filter) != NULL)
         {
             count++;
-            IupSetInt(current_list, "NUMLIN", count);
-            IupSetAttributeId2(current_list, "", count, 1, raw_data->items[i]);
+            IupSetAttributeId(current_list, "", count, raw_data->items[i]);
         }
     }
 
+    IupSetInt(current_list, "COUNT", count);
     refresh_single_list_style(current_list);
 
     return IUP_DEFAULT;
@@ -54,12 +54,13 @@ int list_k_any_cb(Ihandle *self, int c)
     return IUP_DEFAULT;
 }
 
-// 鼠标移动回调 (用于 IupMatrix 的 MOUSEMOVE_CB)
-int list_motion_cb(Ihandle *self, int lin, int col)
+// 鼠标移动回调
+int list_motion_cb(Ihandle *self, int x, int y, char *status)
 {
-    if (lin > 0)
+    int pos = IupConvertXYToPos(self, x, y);
+    if (pos > 0)
     {
-        char *item = IupGetAttributeId2(self, "", lin, 1);
+        char *item = IupGetAttributeId(self, "", pos);
         if (item)
         {
             char *expanded = expand_env_vars(item);
@@ -161,25 +162,24 @@ int tabs_tabchange_cb(Ihandle *self, int new_pos, int old_pos)
     if (new_pos == 2)
     {
         // 合并预览模式
-        IupSetInt(list_merged, "NUMLIN", 0);
+        IupSetAttribute(list_merged, "REMOVEITEM", "ALL");
         int count = 0;
 
         // 添加系统变量
         for (int i = 0; i < raw_sys_paths.count; i++)
         {
             count++;
-            IupSetInt(list_merged, "NUMLIN", count);
-            IupSetAttributeId2(list_merged, "", count, 1, raw_sys_paths.items[i]);
+            IupSetAttributeId(list_merged, "", count, raw_sys_paths.items[i]);
         }
 
         // 添加用户变量
         for (int i = 0; i < raw_user_paths.count; i++)
         {
             count++;
-            IupSetInt(list_merged, "NUMLIN", count);
-            IupSetAttributeId2(list_merged, "", count, 1, raw_user_paths.items[i]);
+            IupSetAttributeId(list_merged, "", count, raw_user_paths.items[i]);
         }
 
+        IupSetInt(list_merged, "COUNT", count);
         refresh_single_list_style(list_merged);
 
         // 禁用编辑按钮

@@ -38,13 +38,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "d:\Code\doing_exercises\programs\PathEditor\build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\iup.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\iupimglib.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\iupcontrols.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\iupcd.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\cd.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\freetype6.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\build\zlib1.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "d:\Code\doing_exercises\programs\PathEditor\build\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

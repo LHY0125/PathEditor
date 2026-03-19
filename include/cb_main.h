@@ -6,7 +6,7 @@
 // 主界面交互回调
 int txt_search_cb(Ihandle *self);
 int list_k_any_cb(Ihandle *self, int c);
-int list_motion_cb(Ihandle *self, int lin, int col);
+int list_motion_cb(Ihandle *self, int x, int y, char *status);
 int dialog_k_any_cb(Ihandle *self, int c);
 int btn_ok_cb(Ihandle *self);
 int btn_cancel_cb(Ihandle *self);

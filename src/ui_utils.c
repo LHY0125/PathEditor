@@ -8,13 +8,13 @@
 // 获取第一个选中的索引（1-based），如果没有选中则返回 0
 int get_first_selected_index(Ihandle *list)
 {
-    char *value = IupGetAttribute(list, "MARKED");
+    char *value = IupGetAttribute(list, "VALUE");
     if (!value)
         return 0;
     int len = strlen(value);
     for (int i = 0; i < len; i++)
     {
-        if (value[i] == '1')
+        if (value[i] == '+')
             return i + 1;
     }
     return 0;
@@ -23,7 +23,7 @@ int get_first_selected_index(Ihandle *list)
 // 设置单选（1-based）
 void set_single_selection(Ihandle *list, int index)
 {
-    int count = IupGetInt(list, "NUMLIN");
+    int count = IupGetInt(list, "COUNT");
     if (count <= 0)
         return;
 
@@ -33,29 +33,28 @@ void set_single_selection(Ihandle *list, int index)
 
     for (int i = 0; i < count; i++)
     {
-        new_val[i] = '0';
+        new_val[i] = '-';
     }
     new_val[count] = '\0';
 
     if (index >= 1 && index <= count)
     {
-        new_val[index - 1] = '1';
+        new_val[index - 1] = '+';
     }
 
-    IupSetAttribute(list, "MARKED", new_val);
+    IupSetAttribute(list, "VALUE", new_val);
     free(new_val);
 }
 
 // 从原始数据刷新UI
 void refresh_ui_from_raw(Ihandle *list, StringList *raw)
 {
-    IupSetInt(list, "NUMLIN", 0);
-    IupSetInt(list, "NUMLIN", raw->count);
+    IupSetAttribute(list, "REMOVEITEM", "ALL");
     for (int i = 0; i < raw->count; i++)
     {
-        IupSetAttributeId2(list, "", i + 1, 1, raw->items[i]);
+        IupSetAttributeId(list, "", i + 1, raw->items[i]);
     }
-    IupSetAttribute(list, "REDRAW", "ALL"); // Force matrix redraw
+    IupSetInt(list, "COUNT", raw->count);
     refresh_single_list_style(list);
 }
 

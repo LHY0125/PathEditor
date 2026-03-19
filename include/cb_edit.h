@@ -6,8 +6,7 @@
 // 编辑相关回调
 int btn_new_cb(Ihandle *self);
 int btn_edit_cb(Ihandle *self);
-int list_dblclick_cb(Ihandle *self, int lin, int col, char *status);
-int matrix_edition_cb(Ihandle *self, int lin, int col, int mode, int update);
+int list_dblclick_cb(Ihandle *self, int item, char *text);
 int btn_del_cb(Ihandle *self);
 int btn_up_cb(Ihandle *self);
 int btn_down_cb(Ihandle *self);
