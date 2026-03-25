@@ -2,6 +2,7 @@
 #include "core/app_context.h"
 #include "core/registry_service.h"
 #include "core/path_manager.h"
+#include "core/lua_config.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
 #include "ui/ui_utils.h"
@@ -117,7 +118,7 @@ int btn_browse_cb(Ihandle *self)
     Ihandle *dlg = IupGetDialog(self);
     Ihandle *filedlg = IupFileDlg();
     IupSetAttribute(filedlg, "DIALOGTYPE", "DIR");
-    IupSetAttribute(filedlg, "TITLE", "选择目录");
+    IupSetAttribute(filedlg, "TITLE", lua_config_get_string("dialog", "select_dir"));
 
     IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
 
@@ -160,7 +161,7 @@ int btn_del_cb(Ihandle *self)
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
     if (lbl_status)
-        IupSetAttribute(lbl_status, "TITLE", "状态: 已删除选中项");
+        IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "deleted"));
 
     return IUP_DEFAULT;
 }
@@ -288,7 +289,7 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
     {
         Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "提示: 只能拖拽文件夹添加到 PATH");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "drag_folder_only"));
     }
 
     return IUP_DEFAULT;
@@ -331,7 +332,7 @@ int btn_ok_cb(Ihandle *self)
         SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
         IupMessage("成功", "系统和用户 PATH 环境变量均已更新！");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "状态: 全部保存成功");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "saved"));
     }
     else if (sys_ok)
     {
@@ -345,7 +346,7 @@ int btn_ok_cb(Ihandle *self)
     {
         IupMessage("错误", "保存失败！");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "状态: 保存失败");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "error"));
     }
     return IUP_DEFAULT;
 }
@@ -403,5 +404,5 @@ void load_all_paths(void)
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
     if (lbl_status)
-        IupSetAttribute(lbl_status, "TITLE", "状态: 已加载系统和用户变量");
+        IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
 }

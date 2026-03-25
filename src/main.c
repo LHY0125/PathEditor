@@ -4,11 +4,11 @@
 #include <stdlib.h>
 #include <wchar.h>
 #include "core/app_context.h"
+#include "core/lua_config.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
 #include "controller/callbacks.h"
 #include "ui/main_window.h"
-#include "config.h"
 
 /*
 !编译命令：
@@ -38,6 +38,11 @@ int main(int argc, char **argv)
 
     IupOpen(&argc, &argv);
     IupSetGlobal("UTF8MODE", "YES");
+
+    if (lua_config_init() != 0)
+    {
+        IupMessage("警告", "Lua 配置系统初始化失败，将使用默认值");
+    }
 
     // 在管理员模式下，解决无法拖拽文件到列表框的问题 (UIPI)
     // 需要加载 User32.dll 获取 ChangeWindowMessageFilter 函数
@@ -81,7 +86,7 @@ int main(int argc, char **argv)
     {
         Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "状态: ⚠️ 只读模式 (无管理员权限)");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "readonly"));
 
         Ihandle *btn_new = IupGetDialogChild(dlg, "BTN_NEW");
         Ihandle *btn_edit = IupGetDialogChild(dlg, "BTN_EDIT");
@@ -119,6 +124,7 @@ int main(int argc, char **argv)
     IupMainLoop();
 
     destroy_app_context(ctx);
+    lua_config_destroy();
     IupClose();
 
     return 0;
