@@ -11,6 +11,8 @@ int btn_del_cb(Ihandle *self);
 int btn_up_cb(Ihandle *self);
 int btn_down_cb(Ihandle *self);
 int btn_clean_cb(Ihandle *self);
+int btn_import_cb(Ihandle *self);
+int btn_export_cb(Ihandle *self);
 int btn_ok_cb(Ihandle *self);
 int btn_cancel_cb(Ihandle *self);
 int btn_help_cb(Ihandle *self);

@@ -61,6 +61,11 @@ Ihandle *create_main_window(void)
     Ihandle *btn_clean = IupButton(lua_config_get_string("button", "clean"), NULL);
     IupSetAttribute(btn_clean, "NAME", "BTN_CLEAN");
 
+    Ihandle *btn_import = IupButton(lua_config_get_string("button", "import"), NULL);
+    IupSetAttribute(btn_import, "NAME", "BTN_IMPORT");
+    Ihandle *btn_export = IupButton(lua_config_get_string("button", "export"), NULL);
+    IupSetAttribute(btn_export, "NAME", "BTN_EXPORT");
+
     // 设置按钮回调
     IupSetCallback(btn_new, "ACTION", (Icallback)btn_new_cb);
     IupSetCallback(btn_edit, "ACTION", (Icallback)btn_edit_cb);
@@ -69,6 +74,8 @@ Ihandle *create_main_window(void)
     IupSetCallback(btn_up, "ACTION", (Icallback)btn_up_cb);
     IupSetCallback(btn_down, "ACTION", (Icallback)btn_down_cb);
     IupSetCallback(btn_clean, "ACTION", (Icallback)btn_clean_cb);
+    IupSetCallback(btn_import, "ACTION", (Icallback)btn_import_cb);
+    IupSetCallback(btn_export, "ACTION", (Icallback)btn_export_cb);
 
     // 设置按钮大小
     const char *btn_size = lua_config_get_string("button", "rastersize");
@@ -79,6 +86,8 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_up, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_down, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_clean, "RASTERSIZE", btn_size);
+    IupSetAttribute(btn_import, "RASTERSIZE", btn_size);
+    IupSetAttribute(btn_export, "RASTERSIZE", btn_size);
 
     // 创建操作按钮垂直布局
     Ihandle *vbox_btns = IupVbox(
@@ -86,6 +95,7 @@ Ihandle *create_main_window(void)
         IupFill(),
         btn_clean,
         IupFill(),
+        btn_import, btn_export,
         btn_up, btn_down,
         NULL);
     IupSetAttribute(vbox_btns, "GAP", lua_config_get_string("layout", "vbox_gap"));

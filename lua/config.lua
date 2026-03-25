@@ -31,6 +31,8 @@ local config = {
         up = "上移(U)",
         down = "下移(O)",
         clean = "一键清理",
+        import = "导入(I)",
+        export = "导出(E)",
         ok = "确定",
         cancel = "取消",
         help = "帮助(?)"
@@ -41,7 +43,9 @@ local config = {
         title = "环境变量编辑器:",
         search_placeholder = "输入关键词搜索...",
         tab_sys = "系统变量 (System)",
-        tab_user = "用户变量 (User)"
+        tab_user = "用户变量 (User)",
+        export_title = "导出 PATH",
+        import_title = "导入 PATH"
     },
 
     -- 布局设置
@@ -64,7 +68,8 @@ local config = {
         error = "状态: ✗ 保存失败",
         deleted = "状态: 已删除选中项",
         loaded = "状态: 已加载系统和用户变量",
-        drag_folder_only = "提示: 只能拖拽文件夹添加到 PATH"
+        drag_folder_only = "提示: 只能拖拽文件夹添加到 PATH",
+        admin_warning = "未检测到管理员权限，只能查看和导出 PATH，无法保存更改。"
     }
 }
 

@@ -3,6 +3,7 @@
 #include "core/registry_service.h"
 #include "core/path_manager.h"
 #include "core/lua_config.h"
+#include "core/import_export.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
 #include "ui/ui_utils.h"
@@ -358,25 +359,106 @@ int btn_cancel_cb(Ihandle *self)
     return IUP_DEFAULT;
 }
 
-// 按钮回调：帮助
-int btn_help_cb(Ihandle *self)
+// 按钮回调：导入
+int btn_import_cb(Ihandle *self)
 {
-    IupMessage("使用说明",
-               "1. 本程序用于编辑系统环境变量 PATH。\n"
-               "2. 必须以【管理员身份】运行才能保存更改。\n"
-               "3. 操作说明：\n"
-               "   - 新建：添加新路径到列表末尾。\n"
-               "   - 编辑：修改选中的路径。\n"
-               "   - 浏览：从文件系统选择目录添加。\n"
-               "   - 删除：移除选中的路径。\n"
-               "   - 上移/下移：调整路径优先级。\n"
-               "4. 点击【确定】保存更改并生效。\n"
-               "5. 注意：某些正在运行的程序可能需要重启才能识别新的环境变量。\n\n"
-               "--------------------------------------------------\n"
-               "作者：LHY\n"
-               "邮箱：3364451258@qq.com\n"
-               "GitHub：https://github.com/LHY0125/PathEditor\n"
-               "记得给我的项目点个star！");
+    Ihandle *dlg = IupGetDialog(self);
+    AppContext *ctx = get_app_context(dlg);
+    if (!ctx)
+        return IUP_DEFAULT;
+
+    if (!check_admin())
+    {
+        IupMessage("错误", "需要管理员权限才能导入 PATH！");
+        return IUP_DEFAULT;
+    }
+
+    Ihandle *filedlg = IupFileDlg();
+    IupSetAttribute(filedlg, "DIALOGTYPE", "OPEN");
+    IupSetAttribute(filedlg, "TITLE", lua_config_get_string("label", "import_title"));
+    IupSetAttribute(filedlg, "FILTER", "json");
+    IupSetAttribute(filedlg, "EXTFILTER", "JSON 文件 (*.json)|*.json|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*");
+
+    IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
+
+    if (IupGetInt(filedlg, "STATUS") != -1)
+    {
+        char *filepath = IupGetAttribute(filedlg, "VALUE");
+        if (filepath)
+        {
+            Ihandle *tabs_main = IupGetDialogChild(dlg, "TABS_MAIN");
+            int pos = IupGetInt(tabs_main, "VALUEPOS");
+
+            StringList *target_list = (pos == 0) ? &ctx->sys_paths : &ctx->user_paths;
+
+            if (import_paths_from_file(filepath, target_list) == 0)
+            {
+                Ihandle *current_list = get_current_list(dlg);
+                sync_string_list_to_ui(current_list, target_list);
+
+                char msg[256];
+                snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", target_list->count);
+                IupMessage("导入成功", msg);
+
+                Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+                if (lbl_status)
+                    IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
+            }
+            else
+            {
+                IupMessage("错误", "导入失败，请检查文件格式是否正确！");
+            }
+        }
+    }
+    IupDestroy(filedlg);
+    return IUP_DEFAULT;
+}
+
+// 按钮回调：导出
+int btn_export_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    AppContext *ctx = get_app_context(dlg);
+    if (!ctx)
+        return IUP_DEFAULT;
+
+    Ihandle *tabs_main = IupGetDialogChild(dlg, "TABS_MAIN");
+    int pos = IupGetInt(tabs_main, "VALUEPOS");
+
+    StringList *source_list = (pos == 0) ? &ctx->sys_paths : &ctx->user_paths;
+    int is_system = (pos == 0);
+
+    Ihandle *filedlg = IupFileDlg();
+    IupSetAttribute(filedlg, "DIALOGTYPE", "SAVE");
+    IupSetAttribute(filedlg, "TITLE", lua_config_get_string("label", "export_title"));
+    IupSetAttribute(filedlg, "FILTER", "json");
+    IupSetAttribute(filedlg, "EXTFILTER", "JSON 文件 (*.json)|*.json");
+    IupSetAttribute(filedlg, "DEFAULTEXT", "json");
+
+    char default_name[64];
+    snprintf(default_name, sizeof(default_name), "path_%s.json", is_system ? "system" : "user");
+    IupSetAttribute(filedlg, "VALUE", default_name);
+
+    IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
+
+    if (IupGetInt(filedlg, "STATUS") != -1)
+    {
+        char *filepath = IupGetAttribute(filedlg, "VALUE");
+        if (filepath)
+        {
+            if (export_paths_to_file(source_list, filepath, is_system) == 0)
+            {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "成功导出 %d 个路径到：\n%s", source_list->count, filepath);
+                IupMessage("导出成功", msg);
+            }
+            else
+            {
+                IupMessage("错误", "导出失败！");
+            }
+        }
+    }
+    IupDestroy(filedlg);
     return IUP_DEFAULT;
 }
 
@@ -405,4 +487,27 @@ void load_all_paths(void)
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
     if (lbl_status)
         IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
+}
+
+// 按钮回调：帮助
+int btn_help_cb(Ihandle *self)
+{
+    IupMessage("使用说明",
+               "1. 本程序用于编辑系统环境变量 PATH。\n"
+               "2. 必须以【管理员身份】运行才能保存更改。\n"
+               "3. 操作说明：\n"
+               "   - 新建：添加新路径到列表末尾。\n"
+               "   - 编辑：修改选中的路径。\n"
+               "   - 浏览：从文件系统选择目录添加。\n"
+               "   - 删除：移除选中的路径。\n"
+               "   - 上移/下移：调整路径优先级。\n"
+               "   - 导入/导出：备份和恢复 PATH 配置。\n"
+               "4. 点击【确定】保存更改并生效。\n"
+               "5. 注意：某些正在运行的程序可能需要重启才能识别新的环境变量。\n\n"
+               "--------------------------------------------------\n"
+               "作者：LHY\n"
+               "邮箱：3364451258@qq.com\n"
+               "GitHub：https://github.com/LHY0125/PathEditor\n"
+               "记得给我的项目点个star！");
+    return IUP_DEFAULT;
 }

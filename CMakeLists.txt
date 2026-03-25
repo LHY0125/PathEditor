@@ -21,6 +21,7 @@ set(SOURCES
     src/core/path_manager.c
     src/core/app_context.c
     src/core/lua_config.c
+    src/core/import_export.c
     src/controller/callbacks.c
     ico/resources.rc
 )

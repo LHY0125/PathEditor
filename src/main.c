@@ -84,6 +84,8 @@ int main(int argc, char **argv)
     // 检查管理员权限
     if (!check_admin())
     {
+        IupMessage("警告", lua_config_get_string("status", "admin_warning"));
+
         Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "readonly"));
@@ -113,6 +115,13 @@ int main(int argc, char **argv)
             IupSetAttribute(btn_clean, "ACTIVE", "NO");
         if (btn_ok)
             IupSetAttribute(btn_ok, "ACTIVE", "NO");
+
+        Ihandle *btn_import = IupGetDialogChild(dlg, "BTN_IMPORT");
+        Ihandle *btn_export = IupGetDialogChild(dlg, "BTN_EXPORT");
+        if (btn_import)
+            IupSetAttribute(btn_import, "ACTIVE", "NO");
+        if (btn_export)
+            IupSetAttribute(btn_export, "ACTIVE", "NO");
     }
 
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
