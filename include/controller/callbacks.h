@@ -16,6 +16,7 @@ int btn_export_cb(Ihandle *self);
 int btn_ok_cb(Ihandle *self);
 int btn_cancel_cb(Ihandle *self);
 int btn_help_cb(Ihandle *self);
+int btn_lang_cb(Ihandle *self);
 
 // 搜索回调
 int txt_search_cb(Ihandle *self);

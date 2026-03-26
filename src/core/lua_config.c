@@ -245,3 +245,38 @@ int lua_config_is_loaded(void)
 {
     return G_loaded;
 }
+
+int lua_config_set_string(const char *section, const char *key, const char *value)
+{
+    if (section == NULL || key == NULL || value == NULL)
+    {
+        return -1;
+    }
+
+    if (G_L == NULL)
+    {
+        return -1;
+    }
+
+    lua_getglobal(G_L, "config");
+    if (!lua_istable(G_L, -1))
+    {
+        lua_settop(G_L, 0);
+        return -1;
+    }
+
+    lua_getfield(G_L, -1, section);
+    if (!lua_istable(G_L, -1))
+    {
+        lua_pop(G_L, 1);
+        lua_createtable(G_L, 0, 4);
+        lua_setfield(G_L, -2, section);
+        lua_getfield(G_L, -1, section);
+    }
+
+    lua_pushstring(G_L, value);
+    lua_setfield(G_L, -2, key);
+    lua_settop(G_L, 0);
+
+    return 0;
+}

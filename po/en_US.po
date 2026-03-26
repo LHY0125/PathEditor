@@ -1,0 +1,105 @@
+# English translations for PathEditor.
+# Copyright (C) 2026 THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PathEditor package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PathEditor 3.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-03-26 10:00+0800\n"
+"PO-Revision-Date: 2026-03-26 19:59+0800\n"
+"Last-Translator: LHY <3364451258@qq.com>\n"
+"Language-Team: English\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.9\n"
+
+#: src/main.c
+msgid "Environment Variable Editor"
+msgstr "Environment Variable Editor"
+
+#: src/main.c
+msgid "System Variables"
+msgstr "System Variables"
+
+#: src/main.c
+msgid "User Variables"
+msgstr "User Variables"
+
+#: src/ui/main_window.c
+msgid "New"
+msgstr "New"
+
+#: src/ui/main_window.c
+msgid "Edit"
+msgstr "Edit"
+
+#: src/ui/main_window.c
+msgid "Delete"
+msgstr "Delete"
+
+#: src/ui/main_window.c
+msgid "Browse"
+msgstr "Browse"
+
+#: src/ui/main_window.c
+msgid "Move Up"
+msgstr "Move Up"
+
+#: src/ui/main_window.c
+msgid "Move Down"
+msgstr "Move Down"
+
+#: src/ui/main_window.c
+msgid "Clean Invalid"
+msgstr "Clean Invalid"
+
+#: src/ui/main_window.c
+msgid "OK"
+msgstr "OK"
+
+#: src/ui/main_window.c
+msgid "Cancel"
+msgstr "Cancel"
+
+#: src/ui/main_window.c
+msgid "Import"
+msgstr "Import"
+
+#: src/ui/main_window.c
+msgid "Export"
+msgstr "Export"
+
+#: src/ui/main_window.c
+msgid "Search..."
+msgstr "Search..."
+
+#: src/main.c
+msgid "Warning"
+msgstr "Warning"
+
+#: src/main.c
+msgid "Error"
+msgstr "Error"
+
+#: src/main.c
+msgid "Running in read-only mode"
+msgstr "Running in read-only mode"
+
+#: src/main.c
+msgid "Please run as administrator"
+msgstr "Please run as administrator to modify environment variables"
+
+#: src/ui/main_window.c
+msgid "Language"
+msgstr "Language"
+
+#: src/ui/dialogs.c
+msgid "Chinese (Simplified)"
+msgstr "Chinese (Simplified)"
+
+#: src/ui/dialogs.c
+msgid "English"
+msgstr "English"

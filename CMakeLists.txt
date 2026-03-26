@@ -1,3 +1,4 @@
+# 定义项目信息
 cmake_minimum_required(VERSION 3.10)
 project(PathEditor VERSION 3.0 LANGUAGES C)
 
@@ -16,6 +17,7 @@ set(SOURCES
     src/utils/os_env.c
     src/utils/safe_string.c
     src/utils/logger.c
+    src/utils/i18n.c
     src/ui/ui_utils.c
     src/ui/dialogs.c
     src/ui/main_window.c
@@ -56,12 +58,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include/utils
     ${CMAKE_SOURCE_DIR}/libs/IUP/include
     ${CMAKE_SOURCE_DIR}/libs/lua/include
+    ${CMAKE_SOURCE_DIR}/libs/gettext/include
 )
 
 # 设置库文件搜索路径
 target_link_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libs/IUP
     ${CMAKE_SOURCE_DIR}/libs/lua
+    ${CMAKE_SOURCE_DIR}/libs/gettext/lib
 )
 
 # 链接所需库
@@ -75,11 +79,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     uuid
     ole32
     advapi32
+    intl
+    iconv
 )
 
 # 编译完成后，复制程序实际需要的核心 DLL 文件到构建输出目录
 set(IUP_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/IUP/iup.dll")
 set(LUA_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/lua/lua55.dll")
+set(GETTEXT_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/gettext/bin/libintl-8.dll")
+set(ICONV_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/gettext/bin/libiconv-2.dll")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${IUP_REQUIRED_DLLS}
@@ -91,4 +99,22 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     ${LUA_REQUIRED_DLLS}
     "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
     COMMENT "Copying Lua DLL to build directory..."
+)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${GETTEXT_REQUIRED_DLLS}
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMENT "Copying gettext DLL to build directory..."
+)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${ICONV_REQUIRED_DLLS}
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMENT "Copying iconv DLL to build directory..."
+)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/locale
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/locale"
+    COMMENT "Copying locale directory to build directory..."
 )

@@ -9,8 +9,10 @@
 #include "utils/error_code.h"
 #include "utils/safe_string.h"
 #include "utils/logger.h"
+#include "utils/i18n.h"
 #include "ui/ui_utils.h"
 #include "ui/dialogs.h"
+#include "ui/main_window.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -572,6 +574,15 @@ void load_all_paths(void)
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
     if (lbl_status)
         IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
+}
+
+// 按钮回调：语言切换
+int btn_lang_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    language_select_dialog();
+    refresh_main_window_ui(dlg);
+    return IUP_DEFAULT;
 }
 
 // 按钮回调：帮助

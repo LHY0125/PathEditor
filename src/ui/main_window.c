@@ -1,7 +1,9 @@
 #include "ui/main_window.h"
 #include "controller/callbacks.h"
 #include "core/lua_config.h"
+#include "utils/i18n.h"
 #include <stddef.h>
+#include <string.h>
 
 // 创建路径列表控件
 static Ihandle *create_path_list(const char *name)
@@ -66,6 +68,11 @@ Ihandle *create_main_window(void)
     Ihandle *btn_export = IupButton(lua_config_get_string("button", "export"), NULL);
     IupSetAttribute(btn_export, "NAME", "BTN_EXPORT");
 
+    // 创建语言切换按钮
+    Ihandle *btn_lang = IupButton(_("Language"), NULL);
+    IupSetAttribute(btn_lang, "NAME", "BTN_LANG");
+    IupSetCallback(btn_lang, "ACTION", (Icallback)btn_lang_cb);
+
     // 设置按钮回调
     IupSetCallback(btn_new, "ACTION", (Icallback)btn_new_cb);
     IupSetCallback(btn_edit, "ACTION", (Icallback)btn_edit_cb);
@@ -88,6 +95,7 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_clean, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_import, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_export, "RASTERSIZE", btn_size);
+    IupSetAttribute(btn_lang, "RASTERSIZE", btn_size);
 
     // 创建操作按钮垂直布局
     Ihandle *vbox_btns = IupVbox(
@@ -130,7 +138,7 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_help, "RASTERSIZE", btn_size);
 
     // 创建底部按钮水平布局
-    Ihandle *hbox_bottom = IupHbox(lbl_status, IupFill(), btn_help, btn_ok, btn_cancel, NULL);
+    Ihandle *hbox_bottom = IupHbox(lbl_status, IupFill(), btn_help, btn_lang, btn_ok, btn_cancel, NULL);
     IupSetAttribute(hbox_bottom, "GAP", lua_config_get_string("layout", "hbox_gap"));
     IupSetAttribute(hbox_bottom, "MARGIN", lua_config_get_string("layout", "hbox_margin"));
     IupSetAttribute(hbox_bottom, "ALIGNMENT", lua_config_get_string("layout", "hbox_alignment"));
@@ -154,4 +162,67 @@ Ihandle *create_main_window(void)
     IupSetAttribute(dlg, "MAXBOX", "NO");
 
     return dlg;
+}
+
+void refresh_main_window_ui(Ihandle *main_dlg)
+{
+    if (!main_dlg)
+        return;
+
+    IupSetAttribute(main_dlg, "TITLE", lua_config_get_string("app", "name"));
+
+    IupSetAttribute(main_dlg, "TABTITLE0", lua_config_get_string("label", "tab_sys"));
+    IupSetAttribute(main_dlg, "TABTITLE1", lua_config_get_string("label", "tab_user"));
+
+    Ihandle *btn = IupGetDialogChild(main_dlg, "BTN_NEW");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "new"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_EDIT");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "edit"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_BROWSE");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "browse"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_DEL");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "del"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_UP");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "up"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_DOWN");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "down"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_CLEAN");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "clean"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_IMPORT");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "import"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_EXPORT");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "export"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_LANG");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", _("Language"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_OK");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "ok"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_CANCEL");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "cancel"));
+
+    btn = IupGetDialogChild(main_dlg, "BTN_HELP");
+    if (btn)
+        IupSetAttribute(btn, "TITLE", lua_config_get_string("button", "help"));
 }

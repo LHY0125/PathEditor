@@ -70,6 +70,25 @@ local config = {
         loaded = "状态: 已加载系统和用户变量",
         drag_folder_only = "提示: 只能拖拽文件夹添加到 PATH",
         admin_warning = "未检测到管理员权限，只能查看和导出 PATH，无法保存更改。"
+    },
+
+    -- 语言选择对话框
+    language = {
+        dialog_title = "Language",
+        label = "Language",
+        option_cn = "中文 (简体中文)",
+        option_en = "English",
+        dialog_size = "250x150",
+        list_size = "200x",
+        margin = "15x15",
+        gap = "10"
+    },
+
+    -- 输入对话框
+    input_dialog = {
+        text_size = "500x",
+        margin = "15x15",
+        gap = "10"
     }
 }
 

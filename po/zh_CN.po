@@ -1,0 +1,105 @@
+# Chinese (Simplified) translations for PathEditor.
+# Copyright (C) 2026 THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PathEditor package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PathEditor 3.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-03-26 10:00+0800\n"
+"PO-Revision-Date: 2026-03-26 19:58+0800\n"
+"Last-Translator: LHY <3364451258@qq.com>\n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.9\n"
+
+#: src/main.c
+msgid "Environment Variable Editor"
+msgstr "系统环境变量编辑器"
+
+#: src/main.c
+msgid "System Variables"
+msgstr "系统变量"
+
+#: src/main.c
+msgid "User Variables"
+msgstr "用户变量"
+
+#: src/ui/main_window.c
+msgid "New"
+msgstr "新建"
+
+#: src/ui/main_window.c
+msgid "Edit"
+msgstr "编辑"
+
+#: src/ui/main_window.c
+msgid "Delete"
+msgstr "删除"
+
+#: src/ui/main_window.c
+msgid "Browse"
+msgstr "浏览"
+
+#: src/ui/main_window.c
+msgid "Move Up"
+msgstr "上移"
+
+#: src/ui/main_window.c
+msgid "Move Down"
+msgstr "下移"
+
+#: src/ui/main_window.c
+msgid "Clean Invalid"
+msgstr "一键清理"
+
+#: src/ui/main_window.c
+msgid "OK"
+msgstr "确定"
+
+#: src/ui/main_window.c
+msgid "Cancel"
+msgstr "取消"
+
+#: src/ui/main_window.c
+msgid "Import"
+msgstr "导入"
+
+#: src/ui/main_window.c
+msgid "Export"
+msgstr "导出"
+
+#: src/ui/main_window.c
+msgid "Search..."
+msgstr "搜索..."
+
+#: src/main.c
+msgid "Warning"
+msgstr "警告"
+
+#: src/main.c
+msgid "Error"
+msgstr "错误"
+
+#: src/main.c
+msgid "Running in read-only mode"
+msgstr "只读模式运行"
+
+#: src/main.c
+msgid "Please run as administrator"
+msgstr "请以管理员身份运行以修改环境变量"
+
+#: src/ui/main_window.c
+msgid "Language"
+msgstr "语言"
+
+#: src/ui/dialogs.c
+msgid "Chinese (Simplified)"
+msgstr "中文 (简体中文)"
+
+#: src/ui/dialogs.c
+msgid "English"
+msgstr "English"

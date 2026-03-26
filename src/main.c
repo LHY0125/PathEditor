@@ -3,11 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
+#include <libintl.h>
 #include "core/app_context.h"
 #include "core/lua_config.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
 #include "utils/logger.h"
+#include "utils/i18n.h"
 #include "controller/callbacks.h"
 #include "ui/main_window.h"
 
@@ -46,10 +48,13 @@ int main(int argc, char **argv)
 
     if (lua_config_init() != 0)
     {
-        IupMessage("警告", "Lua 配置系统初始化失败，将使用默认值");
+        IupMessage(_("Warning"), "Lua 配置系统初始化失败，将使用默认值");
     }
 
     log_info("Lua config initialized");
+
+    // 初始化国际化系统
+    i18n_init(NULL);
 
     // 在管理员模式下，解决无法拖拽文件到列表框的问题 (UIPI)
     // 需要加载 User32.dll 获取 ChangeWindowMessageFilter 函数
@@ -76,7 +81,7 @@ int main(int argc, char **argv)
     AppContext *ctx = create_app_context();
     if (!ctx)
     {
-        IupMessage("错误", "无法分配内存创建应用上下文");
+        IupMessage(_("Error"), "无法分配内存创建应用上下文");
         IupClose();
         return 1;
     }
@@ -91,11 +96,11 @@ int main(int argc, char **argv)
     // 检查管理员权限
     if (!check_admin())
     {
-        IupMessage("警告", lua_config_get_string("status", "admin_warning"));
+        IupMessage(_("Warning"), _(lua_config_get_string("status", "admin_warning")));
 
         Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "readonly"));
+            IupSetAttribute(lbl_status, "TITLE", _(lua_config_get_string("status", "readonly")));
 
         Ihandle *btn_new = IupGetDialogChild(dlg, "BTN_NEW");
         Ihandle *btn_edit = IupGetDialogChild(dlg, "BTN_EDIT");

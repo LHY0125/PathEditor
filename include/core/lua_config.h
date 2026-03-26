@@ -31,4 +31,11 @@ int lua_config_reload(void);
 // 返回值: 1 已加载, 0 未加载
 int lua_config_is_loaded(void);
 
+// 设置字符串配置值
+// section: 配置章节名
+// key: 配置键名
+// value: 配置值
+// 返回值: 0 成功, -1 失败
+int lua_config_set_string(const char *section, const char *key, const char *value);
+
 #endif // LUA_CONFIG_H
