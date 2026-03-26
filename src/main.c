@@ -4,11 +4,12 @@
 #include <stdlib.h>
 #include <wchar.h>
 #include "core/app_context.h"
+#include "core/lua_config.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
+#include "utils/logger.h"
 #include "controller/callbacks.h"
 #include "ui/main_window.h"
-#include "config.h"
 
 /*
 !编译命令：
@@ -17,7 +18,7 @@ cmake --build build
 !打包命令：
 build_installer.bat
 !运行命令：
-build\\PathEditor.exe
+powershell -Command "Start-Process 'build\\PathEditor.exe' -Verb RunAs"
 */
 
 // 定义 Windows 消息常量
@@ -33,11 +34,22 @@ build\\PathEditor.exe
 // 主函数
 int main(int argc, char **argv)
 {
+    // 初始化日志系统
+    log_init(NULL, LOG_LEVEL_INFO);
+    log_info("PathEditor starting...");
+
     // 强制设置 UTF8MODE 环境变量，必须在 IupOpen 之前
     putenv("IUP_UTF8MODE=YES");
 
     IupOpen(&argc, &argv);
     IupSetGlobal("UTF8MODE", "YES");
+
+    if (lua_config_init() != 0)
+    {
+        IupMessage("警告", "Lua 配置系统初始化失败，将使用默认值");
+    }
+
+    log_info("Lua config initialized");
 
     // 在管理员模式下，解决无法拖拽文件到列表框的问题 (UIPI)
     // 需要加载 User32.dll 获取 ChangeWindowMessageFilter 函数
@@ -79,9 +91,11 @@ int main(int argc, char **argv)
     // 检查管理员权限
     if (!check_admin())
     {
+        IupMessage("警告", lua_config_get_string("status", "admin_warning"));
+
         Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "状态: ⚠️ 只读模式 (无管理员权限)");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "readonly"));
 
         Ihandle *btn_new = IupGetDialogChild(dlg, "BTN_NEW");
         Ihandle *btn_edit = IupGetDialogChild(dlg, "BTN_EDIT");
@@ -108,6 +122,13 @@ int main(int argc, char **argv)
             IupSetAttribute(btn_clean, "ACTIVE", "NO");
         if (btn_ok)
             IupSetAttribute(btn_ok, "ACTIVE", "NO");
+
+        Ihandle *btn_import = IupGetDialogChild(dlg, "BTN_IMPORT");
+        Ihandle *btn_export = IupGetDialogChild(dlg, "BTN_EXPORT");
+        if (btn_import)
+            IupSetAttribute(btn_import, "ACTIVE", "NO");
+        if (btn_export)
+            IupSetAttribute(btn_export, "ACTIVE", "NO");
     }
 
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
@@ -118,7 +139,10 @@ int main(int argc, char **argv)
 
     IupMainLoop();
 
+    log_info("PathEditor exiting...");
     destroy_app_context(ctx);
+    lua_config_destroy();
+    log_destroy();
     IupClose();
 
     return 0;

@@ -1,4 +1,6 @@
 #include "ui/dialogs.h"
+#include "core/lua_config.h"
+#include "utils/safe_string.h"
 #include <iup.h>
 #include <string.h>
 
@@ -27,13 +29,13 @@ int custom_input_dialog(const char *title, const char *label_text, char *buffer,
     IupSetAttribute(text, "RASTERSIZE", "500x");
     IupSetAttribute(text, "NAME", "INPUT_TEXT");
 
-    Ihandle *btn_ok = IupButton("确定", NULL);
+    Ihandle *btn_ok = IupButton(lua_config_get_string("button", "ok"), NULL);
     IupSetCallback(btn_ok, "ACTION", on_dialog_ok);
-    IupSetAttribute(btn_ok, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_ok, "RASTERSIZE", lua_config_get_string("button", "rastersize"));
 
-    Ihandle *btn_cancel = IupButton("取消", NULL);
+    Ihandle *btn_cancel = IupButton(lua_config_get_string("button", "cancel"), NULL);
     IupSetCallback(btn_cancel, "ACTION", on_dialog_cancel);
-    IupSetAttribute(btn_cancel, "RASTERSIZE", "100x32");
+    IupSetAttribute(btn_cancel, "RASTERSIZE", lua_config_get_string("button", "rastersize"));
 
     Ihandle *vbox = IupVbox(
         IupLabel(label_text),
@@ -60,8 +62,7 @@ int custom_input_dialog(const char *title, const char *label_text, char *buffer,
         char *val = IupGetAttribute(text, "VALUE");
         if (val)
         {
-            strncpy(buffer, val, buffer_size);
-            buffer[buffer_size - 1] = '\0';
+            safe_strcpy(buffer, buffer_size, val);
         }
     }
 

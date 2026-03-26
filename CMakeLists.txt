@@ -14,12 +14,16 @@ set(SOURCES
     src/main.c
     src/utils/string_ext.c
     src/utils/os_env.c
+    src/utils/safe_string.c
+    src/utils/logger.c
     src/ui/ui_utils.c
     src/ui/dialogs.c
     src/ui/main_window.c
     src/core/registry_service.c
     src/core/path_manager.c
     src/core/app_context.c
+    src/core/lua_config.c
+    src/core/import_export.c
     src/controller/callbacks.c
     ico/resources.rc
 )
@@ -51,15 +55,18 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include/controller
     ${CMAKE_SOURCE_DIR}/include/utils
     ${CMAKE_SOURCE_DIR}/libs/IUP/include
+    ${CMAKE_SOURCE_DIR}/libs/lua/include
 )
 
 # 设置库文件搜索路径
 target_link_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libs/IUP
+    ${CMAKE_SOURCE_DIR}/libs/lua
 )
 
 # 链接所需库
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    lua55
     iup
     iupcd
     gdi32
@@ -70,11 +77,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     advapi32
 )
 
-# 编译完成后，仅将程序实际需要的核心 DLL 文件复制到构建输出目录
+# 编译完成后，复制程序实际需要的核心 DLL 文件到构建输出目录
 set(IUP_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/IUP/iup.dll")
+set(LUA_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/lua/lua55.dll")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${IUP_REQUIRED_DLLS}
     "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
     COMMENT "Copying required DLLs to build directory..."
+)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${LUA_REQUIRED_DLLS}
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMENT "Copying Lua DLL to build directory..."
 )

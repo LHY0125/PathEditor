@@ -2,8 +2,13 @@
 #include "core/app_context.h"
 #include "core/registry_service.h"
 #include "core/path_manager.h"
+#include "core/lua_config.h"
+#include "core/import_export.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
+#include "utils/error_code.h"
+#include "utils/safe_string.h"
+#include "utils/logger.h"
 #include "ui/ui_utils.h"
 #include "ui/dialogs.h"
 #include <string.h>
@@ -83,8 +88,7 @@ int btn_edit_cb(Ihandle *self)
         return IUP_DEFAULT;
 
     char buffer[4096];
-    strncpy(buffer, raw_data->items[selected - 1], 4096);
-    buffer[4095] = '\0';
+    safe_strcpy(buffer, sizeof(buffer), raw_data->items[selected - 1]);
 
     if (custom_input_dialog("编辑环境变量", "编辑路径:", buffer, sizeof(buffer)))
     {
@@ -117,7 +121,7 @@ int btn_browse_cb(Ihandle *self)
     Ihandle *dlg = IupGetDialog(self);
     Ihandle *filedlg = IupFileDlg();
     IupSetAttribute(filedlg, "DIALOGTYPE", "DIR");
-    IupSetAttribute(filedlg, "TITLE", "选择目录");
+    IupSetAttribute(filedlg, "TITLE", lua_config_get_string("dialog", "select_dir"));
 
     IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
 
@@ -154,13 +158,17 @@ int btn_del_cb(Ihandle *self)
     }
 
     StringList *raw_data = get_current_raw_data(dlg);
-    path_manager_remove_at(raw_data, selected - 1);
+    ErrorCode result = path_manager_remove_at(raw_data, selected - 1);
+    if (result != ERR_OK)
+    {
+        log_error("Failed to remove path at index %d", selected - 1);
+    }
 
     sync_string_list_to_ui(current_list, raw_data);
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
     if (lbl_status)
-        IupSetAttribute(lbl_status, "TITLE", "状态: 已删除选中项");
+        IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "deleted"));
 
     return IUP_DEFAULT;
 }
@@ -175,7 +183,11 @@ int btn_up_cb(Ihandle *self)
         return IUP_DEFAULT;
 
     StringList *raw_data = get_current_raw_data(dlg);
-    path_manager_move_up(raw_data, selected - 1);
+    ErrorCode result = path_manager_move_up(raw_data, selected - 1);
+    if (result != ERR_OK)
+    {
+        log_error("Failed to move path up at index %d", selected - 1);
+    }
 
     sync_string_list_to_ui(current_list, raw_data);
     IupSetInt(current_list, "VALUE", selected - 1);
@@ -194,7 +206,11 @@ int btn_down_cb(Ihandle *self)
     if (selected == 0 || selected >= raw_data->count)
         return IUP_DEFAULT;
 
-    path_manager_move_down(raw_data, selected - 1);
+    ErrorCode result = path_manager_move_down(raw_data, selected - 1);
+    if (result != ERR_OK)
+    {
+        log_error("Failed to move path down at index %d", selected - 1);
+    }
 
     sync_string_list_to_ui(current_list, raw_data);
     IupSetInt(current_list, "VALUE", selected + 1);
@@ -215,7 +231,9 @@ int btn_clean_cb(Ihandle *self)
         return IUP_DEFAULT;
     }
 
-    int removed = path_manager_clean(raw_data);
+    int before_count = raw_data->count;
+    path_manager_clean(raw_data);
+    int removed = before_count - raw_data->count;
 
     Ihandle *current_list = get_current_list(dlg);
     sync_string_list_to_ui(current_list, raw_data);
@@ -288,7 +306,7 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
     {
         Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "提示: 只能拖拽文件夹添加到 PATH");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "drag_folder_only"));
     }
 
     return IUP_DEFAULT;
@@ -321,31 +339,33 @@ int btn_ok_cb(Ihandle *self)
 
     backup_registry();
 
-    int sys_ok = save_system_paths(&ctx->sys_paths);
-    int user_ok = save_user_paths(&ctx->user_paths);
+    ErrorCode sys_ok = save_system_paths(&ctx->sys_paths);
+    ErrorCode user_ok = save_user_paths(&ctx->user_paths);
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
 
-    if (sys_ok && user_ok)
+    if (sys_ok == ERR_OK && user_ok == ERR_OK)
     {
+        log_info("Saved system paths: %d, user paths: %d", ctx->sys_paths.count, ctx->user_paths.count);
         SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
         IupMessage("成功", "系统和用户 PATH 环境变量均已更新！");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "状态: 全部保存成功");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "saved"));
     }
-    else if (sys_ok)
+    else if (sys_ok == ERR_OK)
     {
         IupMessage("提示", "系统变量保存成功，但用户变量保存失败。");
     }
-    else if (user_ok)
+    else if (user_ok == ERR_OK)
     {
         IupMessage("提示", "用户变量保存成功，但系统变量保存失败。");
     }
     else
     {
+        log_error("Failed to save paths: sys=%d, user=%d", sys_ok, user_ok);
         IupMessage("错误", "保存失败！");
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", "状态: 保存失败");
+            IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "error"));
     }
     return IUP_DEFAULT;
 }
@@ -355,6 +375,203 @@ int btn_cancel_cb(Ihandle *self)
 {
     IupExitLoop();
     return IUP_DEFAULT;
+}
+
+// 按钮回调：导入
+int btn_import_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    AppContext *ctx = get_app_context(dlg);
+    if (!ctx)
+        return IUP_DEFAULT;
+
+    if (!check_admin())
+    {
+        IupMessage("错误", "需要管理员权限才能导入 PATH！");
+        return IUP_DEFAULT;
+    }
+
+    Ihandle *filedlg = IupFileDlg();
+    IupSetAttribute(filedlg, "DIALOGTYPE", "OPEN");
+    IupSetAttribute(filedlg, "TITLE", lua_config_get_string("label", "import_title"));
+    IupSetAttribute(filedlg, "FILTER", "json");
+    IupSetAttribute(filedlg, "EXTFILTER", "JSON 文件 (*.json)|*.json|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*");
+
+    IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
+
+    if (IupGetInt(filedlg, "STATUS") != -1)
+    {
+        char *filepath = IupGetAttribute(filedlg, "VALUE");
+        if (filepath)
+        {
+            ExportData imported;
+            ErrorCode import_result = import_paths_from_file(filepath, &imported);
+            if (import_result == ERR_OK)
+            {
+                int has_system = imported.system.count > 0;
+                int has_user = imported.user.count > 0;
+
+                if (!has_system && !has_user)
+                {
+                    IupMessage("错误", "文件中没有找到有效的路径！");
+                    return IUP_DEFAULT;
+                }
+
+                int choice = 0;
+                if (has_system && has_user)
+                {
+                    choice = IupAlarm("导入选项", "请选择导入目标：",
+                                      "仅系统变量", "仅用户变量", "全部导入");
+                }
+                else if (has_system)
+                {
+                    choice = 3;
+                }
+                else
+                {
+                    choice = 2;
+                }
+
+                int total_imported = 0;
+
+                if (choice == 1 || choice == 3)
+                {
+                    clear_string_list(&ctx->sys_paths);
+                    for (int i = 0; i < imported.system.count; i++)
+                    {
+                        add_string_list(&ctx->sys_paths, imported.system.items[i]);
+                    }
+                    Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
+                    sync_string_list_to_ui(list_sys, &ctx->sys_paths);
+                    total_imported += imported.system.count;
+                }
+
+                if (choice == 2 || choice == 3)
+                {
+                    clear_string_list(&ctx->user_paths);
+                    for (int i = 0; i < imported.user.count; i++)
+                    {
+                        add_string_list(&ctx->user_paths, imported.user.items[i]);
+                    }
+                    Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");
+                    sync_string_list_to_ui(list_user, &ctx->user_paths);
+                    total_imported += imported.user.count;
+                }
+
+                char msg[256];
+                snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", total_imported);
+                IupMessage("导入成功", msg);
+
+                Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+                if (lbl_status)
+                    IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
+            }
+            else
+            {
+                log_error("Import failed: error code %d", import_result);
+                IupMessage("错误", "导入失败，请检查文件格式是否正确！");
+            }
+        }
+    }
+    IupDestroy(filedlg);
+    return IUP_DEFAULT;
+}
+
+// 按钮回调：导出
+int btn_export_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    AppContext *ctx = get_app_context(dlg);
+    if (!ctx)
+        return IUP_DEFAULT;
+
+    ExportData data;
+    data.system = ctx->sys_paths;
+    data.user = ctx->user_paths;
+
+    Ihandle *filedlg = IupFileDlg();
+    IupSetAttribute(filedlg, "DIALOGTYPE", "SAVE");
+    IupSetAttribute(filedlg, "TITLE", lua_config_get_string("label", "export_title"));
+    IupSetAttribute(filedlg, "FILTER", "json");
+    IupSetAttribute(filedlg, "EXTFILTER", "JSON 文件 (*.json)|*.json");
+    IupSetAttribute(filedlg, "DEFAULTEXT", "json");
+
+    char default_name[64];
+    snprintf(default_name, sizeof(default_name), "path_all.json");
+    IupSetAttribute(filedlg, "VALUE", default_name);
+
+    IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
+
+    if (IupGetInt(filedlg, "STATUS") != -1)
+    {
+        char *filepath = IupGetAttribute(filedlg, "VALUE");
+        if (filepath)
+        {
+            char final_path[MAX_PATH];
+            if (strchr(filepath, '.') == NULL)
+            {
+                snprintf(final_path, sizeof(final_path), "%s.json", filepath);
+            }
+            else
+            {
+                safe_strcpy(final_path, sizeof(final_path), filepath);
+            }
+            filepath = final_path;
+
+            ErrorCode export_result = export_paths_to_file(&data, filepath);
+            if (export_result == ERR_OK)
+            {
+                char msg[512];
+                snprintf(msg, sizeof(msg), "成功导出！\n系统变量: %d 个\n用户变量: %d 个\n\n保存位置: %s",
+                         data.system.count, data.user.count, filepath);
+                IupMessage("导出成功", msg);
+            }
+            else
+            {
+                log_error("Export failed: error code %d", export_result);
+                IupMessage("错误", "导出失败！");
+            }
+        }
+    }
+    IupDestroy(filedlg);
+    return IUP_DEFAULT;
+}
+
+// 载入所有路径
+void load_all_paths(void)
+{
+    Ihandle *dlg = get_main_dlg();
+    if (!dlg)
+        return;
+    AppContext *ctx = get_app_context(dlg);
+    if (!ctx)
+        return;
+
+    if (load_system_paths(&ctx->sys_paths) != ERR_OK)
+    {
+        log_error("Failed to load system paths");
+        IupMessage("错误", "无法打开系统环境变量注册表键，请尝试以管理员身份运行。");
+    }
+    else
+    {
+        log_info("Loaded system paths: %d", ctx->sys_paths.count);
+    }
+
+    ErrorCode user_result = load_user_paths(&ctx->user_paths);
+    if (user_result == ERR_OK)
+    {
+        log_info("Loaded user paths: %d", ctx->user_paths.count);
+    }
+
+    Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
+    Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");
+
+    sync_string_list_to_ui(list_sys, &ctx->sys_paths);
+    sync_string_list_to_ui(list_user, &ctx->user_paths);
+
+    Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+    if (lbl_status)
+        IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
 }
 
 // 按钮回调：帮助
@@ -369,6 +586,7 @@ int btn_help_cb(Ihandle *self)
                "   - 浏览：从文件系统选择目录添加。\n"
                "   - 删除：移除选中的路径。\n"
                "   - 上移/下移：调整路径优先级。\n"
+               "   - 导入/导出：备份和恢复 PATH 配置。\n"
                "4. 点击【确定】保存更改并生效。\n"
                "5. 注意：某些正在运行的程序可能需要重启才能识别新的环境变量。\n\n"
                "--------------------------------------------------\n"
@@ -376,32 +594,6 @@ int btn_help_cb(Ihandle *self)
                "邮箱：3364451258@qq.com\n"
                "GitHub：https://github.com/LHY0125/PathEditor\n"
                "记得给我的项目点个star！");
+
     return IUP_DEFAULT;
-}
-
-// 载入所有路径
-void load_all_paths(void)
-{
-    Ihandle *dlg = get_main_dlg();
-    if (!dlg)
-        return;
-    AppContext *ctx = get_app_context(dlg);
-    if (!ctx)
-        return;
-
-    if (!load_system_paths(&ctx->sys_paths))
-    {
-        IupMessage("错误", "无法打开系统环境变量注册表键，请尝试以管理员身份运行。");
-    }
-    load_user_paths(&ctx->user_paths);
-
-    Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
-    Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");
-
-    sync_string_list_to_ui(list_sys, &ctx->sys_paths);
-    sync_string_list_to_ui(list_user, &ctx->user_paths);
-
-    Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
-    if (lbl_status)
-        IupSetAttribute(lbl_status, "TITLE", "状态: 已加载系统和用户变量");
 }
