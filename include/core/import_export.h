@@ -5,10 +5,15 @@
 
 #define EXPORT_VERSION "1.0"
 
-// 导出 PATH 到文件
-int export_paths_to_file(const StringList *list, const char *filepath, int is_system);
+typedef struct {
+    StringList system;
+    StringList user;
+} ExportData;
 
-// 从文件导入 PATH
-int import_paths_from_file(const char *filepath, StringList *list);
+// 导出 PATH 到文件
+int export_paths_to_file(const ExportData *data, const char *filepath);
+
+// 从文件导入 PATH (返回是否包含全部格式)
+int import_paths_from_file(const char *filepath, ExportData *data);
 
 #endif // IMPORT_EXPORT_H

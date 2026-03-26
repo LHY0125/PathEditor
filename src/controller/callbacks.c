@@ -386,18 +386,61 @@ int btn_import_cb(Ihandle *self)
         char *filepath = IupGetAttribute(filedlg, "VALUE");
         if (filepath)
         {
-            Ihandle *tabs_main = IupGetDialogChild(dlg, "TABS_MAIN");
-            int pos = IupGetInt(tabs_main, "VALUEPOS");
-
-            StringList *target_list = (pos == 0) ? &ctx->sys_paths : &ctx->user_paths;
-
-            if (import_paths_from_file(filepath, target_list) == 0)
+            ExportData imported;
+            if (import_paths_from_file(filepath, &imported) == 0)
             {
-                Ihandle *current_list = get_current_list(dlg);
-                sync_string_list_to_ui(current_list, target_list);
+                int has_system = imported.system.count > 0;
+                int has_user = imported.user.count > 0;
+
+                if (!has_system && !has_user)
+                {
+                    IupMessage("错误", "文件中没有找到有效的路径！");
+                    return IUP_DEFAULT;
+                }
+
+                int choice = 0;
+                if (has_system && has_user)
+                {
+                    choice = IupAlarm("导入选项", "请选择导入目标：",
+                                      "仅系统变量", "仅用户变量", "全部导入");
+                }
+                else if (has_system)
+                {
+                    choice = 3;
+                }
+                else
+                {
+                    choice = 2;
+                }
+
+                int total_imported = 0;
+
+                if (choice == 1 || choice == 3)
+                {
+                    clear_string_list(&ctx->sys_paths);
+                    for (int i = 0; i < imported.system.count; i++)
+                    {
+                        add_string_list(&ctx->sys_paths, imported.system.items[i]);
+                    }
+                    Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
+                    sync_string_list_to_ui(list_sys, &ctx->sys_paths);
+                    total_imported += imported.system.count;
+                }
+
+                if (choice == 2 || choice == 3)
+                {
+                    clear_string_list(&ctx->user_paths);
+                    for (int i = 0; i < imported.user.count; i++)
+                    {
+                        add_string_list(&ctx->user_paths, imported.user.items[i]);
+                    }
+                    Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");
+                    sync_string_list_to_ui(list_user, &ctx->user_paths);
+                    total_imported += imported.user.count;
+                }
 
                 char msg[256];
-                snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", target_list->count);
+                snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", total_imported);
                 IupMessage("导入成功", msg);
 
                 Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
@@ -422,11 +465,9 @@ int btn_export_cb(Ihandle *self)
     if (!ctx)
         return IUP_DEFAULT;
 
-    Ihandle *tabs_main = IupGetDialogChild(dlg, "TABS_MAIN");
-    int pos = IupGetInt(tabs_main, "VALUEPOS");
-
-    StringList *source_list = (pos == 0) ? &ctx->sys_paths : &ctx->user_paths;
-    int is_system = (pos == 0);
+    ExportData data;
+    data.system = ctx->sys_paths;
+    data.user = ctx->user_paths;
 
     Ihandle *filedlg = IupFileDlg();
     IupSetAttribute(filedlg, "DIALOGTYPE", "SAVE");
@@ -436,7 +477,7 @@ int btn_export_cb(Ihandle *self)
     IupSetAttribute(filedlg, "DEFAULTEXT", "json");
 
     char default_name[64];
-    snprintf(default_name, sizeof(default_name), "path_%s.json", is_system ? "system" : "user");
+    snprintf(default_name, sizeof(default_name), "path_all.json");
     IupSetAttribute(filedlg, "VALUE", default_name);
 
     IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
@@ -446,10 +487,23 @@ int btn_export_cb(Ihandle *self)
         char *filepath = IupGetAttribute(filedlg, "VALUE");
         if (filepath)
         {
-            if (export_paths_to_file(source_list, filepath, is_system) == 0)
+            char final_path[MAX_PATH];
+            if (strchr(filepath, '.') == NULL)
             {
-                char msg[256];
-                snprintf(msg, sizeof(msg), "成功导出 %d 个路径到：\n%s", source_list->count, filepath);
+                snprintf(final_path, sizeof(final_path), "%s.json", filepath);
+            }
+            else
+            {
+                strncpy(final_path, filepath, sizeof(final_path) - 1);
+                final_path[sizeof(final_path) - 1] = '\0';
+            }
+            filepath = final_path;
+
+            if (export_paths_to_file(&data, filepath) == 0)
+            {
+                char msg[512];
+                snprintf(msg, sizeof(msg), "成功导出！\n系统变量: %d 个\n用户变量: %d 个\n\n保存位置: %s",
+                         data.system.count, data.user.count, filepath);
                 IupMessage("导出成功", msg);
             }
             else
@@ -509,5 +563,6 @@ int btn_help_cb(Ihandle *self)
                "邮箱：3364451258@qq.com\n"
                "GitHub：https://github.com/LHY0125/PathEditor\n"
                "记得给我的项目点个star！");
+
     return IUP_DEFAULT;
 }
