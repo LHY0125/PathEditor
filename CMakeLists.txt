@@ -14,6 +14,8 @@ set(SOURCES
     src/main.c
     src/utils/string_ext.c
     src/utils/os_env.c
+    src/utils/safe_string.c
+    src/utils/logger.c
     src/ui/ui_utils.c
     src/ui/dialogs.c
     src/ui/main_window.c
