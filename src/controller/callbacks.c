@@ -158,7 +158,11 @@ int btn_del_cb(Ihandle *self)
     }
 
     StringList *raw_data = get_current_raw_data(dlg);
-    path_manager_remove_at(raw_data, selected - 1);
+    ErrorCode result = path_manager_remove_at(raw_data, selected - 1);
+    if (result != ERR_OK)
+    {
+        log_error("Failed to remove path at index %d", selected - 1);
+    }
 
     sync_string_list_to_ui(current_list, raw_data);
 
@@ -179,7 +183,11 @@ int btn_up_cb(Ihandle *self)
         return IUP_DEFAULT;
 
     StringList *raw_data = get_current_raw_data(dlg);
-    path_manager_move_up(raw_data, selected - 1);
+    ErrorCode result = path_manager_move_up(raw_data, selected - 1);
+    if (result != ERR_OK)
+    {
+        log_error("Failed to move path up at index %d", selected - 1);
+    }
 
     sync_string_list_to_ui(current_list, raw_data);
     IupSetInt(current_list, "VALUE", selected - 1);
@@ -198,7 +206,11 @@ int btn_down_cb(Ihandle *self)
     if (selected == 0 || selected >= raw_data->count)
         return IUP_DEFAULT;
 
-    path_manager_move_down(raw_data, selected - 1);
+    ErrorCode result = path_manager_move_down(raw_data, selected - 1);
+    if (result != ERR_OK)
+    {
+        log_error("Failed to move path down at index %d", selected - 1);
+    }
 
     sync_string_list_to_ui(current_list, raw_data);
     IupSetInt(current_list, "VALUE", selected + 1);
@@ -219,7 +231,9 @@ int btn_clean_cb(Ihandle *self)
         return IUP_DEFAULT;
     }
 
-    int removed = path_manager_clean(raw_data);
+    int before_count = raw_data->count;
+    path_manager_clean(raw_data);
+    int removed = before_count - raw_data->count;
 
     Ihandle *current_list = get_current_list(dlg);
     sync_string_list_to_ui(current_list, raw_data);
@@ -391,7 +405,8 @@ int btn_import_cb(Ihandle *self)
         if (filepath)
         {
             ExportData imported;
-            if (import_paths_from_file(filepath, &imported) == 0)
+            ErrorCode import_result = import_paths_from_file(filepath, &imported);
+            if (import_result == ERR_OK)
             {
                 int has_system = imported.system.count > 0;
                 int has_user = imported.user.count > 0;
@@ -453,6 +468,7 @@ int btn_import_cb(Ihandle *self)
             }
             else
             {
+                log_error("Import failed: error code %d", import_result);
                 IupMessage("错误", "导入失败，请检查文件格式是否正确！");
             }
         }
@@ -502,7 +518,8 @@ int btn_export_cb(Ihandle *self)
             }
             filepath = final_path;
 
-            if (export_paths_to_file(&data, filepath) == 0)
+            ErrorCode export_result = export_paths_to_file(&data, filepath);
+            if (export_result == ERR_OK)
             {
                 char msg[512];
                 snprintf(msg, sizeof(msg), "成功导出！\n系统变量: %d 个\n用户变量: %d 个\n\n保存位置: %s",
@@ -511,6 +528,7 @@ int btn_export_cb(Ihandle *self)
             }
             else
             {
+                log_error("Export failed: error code %d", export_result);
                 IupMessage("错误", "导出失败！");
             }
         }

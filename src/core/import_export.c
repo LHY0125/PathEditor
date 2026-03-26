@@ -1,5 +1,7 @@
 #include "core/import_export.h"
 #include "utils/os_env.h"
+#include "utils/error_code.h"
+#include "utils/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,14 +61,17 @@ static char *escape_json_string(const char *str)
 }
 
 // 导出路径数据到 JSON 文件
-int export_paths_to_file(const ExportData *data, const char *filepath)
+ErrorCode export_paths_to_file(const ExportData *data, const char *filepath)
 {
     if (!data || !filepath)
-        return -1;
+        return ERR_NULL_PTR;
 
     FILE *fp = fopen(filepath, "w");
     if (!fp)
-        return -1;
+    {
+        log_error("Failed to open file for export: %s", filepath);
+        return ERR_FILE_NOT_FOUND;
+    }
 
     fprintf(fp, "\xEF\xBB\xBF");
 
@@ -111,7 +116,9 @@ int export_paths_to_file(const ExportData *data, const char *filepath)
     fprintf(fp, "}\n");
 
     fclose(fp);
-    return 0;
+    log_info("Exported paths to file: sys=%d, user=%d, file=%s",
+             data->system.count, data->user.count, filepath);
+    return ERR_OK;
 }
 
 // 移除字符串首尾的空格、制表符、换行符和回车符
@@ -148,11 +155,11 @@ static int is_json_file(const char *filepath)
     return ext && strcasecmp(ext, ".json") == 0;
 }
 
-// 从文件导入 PATH (返回是否包含全部格式)
-int import_paths_from_file(const char *filepath, ExportData *data)
+// 从文件导入 PATH
+ErrorCode import_paths_from_file(const char *filepath, ExportData *data)
 {
     if (!filepath || !data)
-        return -1;
+        return ERR_NULL_PTR;
 
     init_string_list(&data->system);
     init_string_list(&data->user);
@@ -161,7 +168,10 @@ int import_paths_from_file(const char *filepath, ExportData *data)
     {
         FILE *fp = fopen(filepath, "rb");
         if (!fp)
-            return -1;
+        {
+            log_error("Failed to open file for import: %s", filepath);
+            return ERR_FILE_NOT_FOUND;
+        }
 
         StringList list;
         init_string_list(&list);
@@ -178,12 +188,16 @@ int import_paths_from_file(const char *filepath, ExportData *data)
         fclose(fp);
 
         data->system = list;
-        return 0;
+        log_info("Imported paths from TXT file: %d paths, file=%s", list.count, filepath);
+        return ERR_OK;
     }
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp)
-        return -1;
+    {
+        log_error("Failed to open file for import: %s", filepath);
+        return ERR_FILE_NOT_FOUND;
+    }
 
     char buffer[8192];
     int in_system = 0;
@@ -292,5 +306,7 @@ int import_paths_from_file(const char *filepath, ExportData *data)
     }
 
     fclose(fp);
-    return 0;
+    log_info("Imported paths from JSON file: sys=%d, user=%d, file=%s",
+             data->system.count, data->user.count, filepath);
+    return ERR_OK;
 }

@@ -18,7 +18,7 @@ cmake --build build
 !打包命令：
 build_installer.bat
 !运行命令：
-build\\PathEditor.exe
+powershell -Command "Start-Process 'build\\PathEditor.exe' -Verb RunAs"
 */
 
 // 定义 Windows 消息常量
