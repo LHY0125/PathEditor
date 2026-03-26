@@ -6,6 +6,7 @@
 #include "core/import_export.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
+#include "utils/error_code.h"
 #include "ui/ui_utils.h"
 #include "ui/dialogs.h"
 #include <string.h>
@@ -323,23 +324,23 @@ int btn_ok_cb(Ihandle *self)
 
     backup_registry();
 
-    int sys_ok = save_system_paths(&ctx->sys_paths);
-    int user_ok = save_user_paths(&ctx->user_paths);
+    ErrorCode sys_ok = save_system_paths(&ctx->sys_paths);
+    ErrorCode user_ok = save_user_paths(&ctx->user_paths);
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
 
-    if (sys_ok && user_ok)
+    if (sys_ok == ERR_OK && user_ok == ERR_OK)
     {
         SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
         IupMessage("成功", "系统和用户 PATH 环境变量均已更新！");
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "saved"));
     }
-    else if (sys_ok)
+    else if (sys_ok == ERR_OK)
     {
         IupMessage("提示", "系统变量保存成功，但用户变量保存失败。");
     }
-    else if (user_ok)
+    else if (user_ok == ERR_OK)
     {
         IupMessage("提示", "用户变量保存成功，但系统变量保存失败。");
     }
@@ -526,7 +527,7 @@ void load_all_paths(void)
     if (!ctx)
         return;
 
-    if (!load_system_paths(&ctx->sys_paths))
+    if (load_system_paths(&ctx->sys_paths) != ERR_OK)
     {
         IupMessage("错误", "无法打开系统环境变量注册表键，请尝试以管理员身份运行。");
     }
