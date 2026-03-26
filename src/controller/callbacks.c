@@ -7,6 +7,8 @@
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
 #include "utils/error_code.h"
+#include "utils/safe_string.h"
+#include "utils/logger.h"
 #include "ui/ui_utils.h"
 #include "ui/dialogs.h"
 #include <string.h>
@@ -86,8 +88,7 @@ int btn_edit_cb(Ihandle *self)
         return IUP_DEFAULT;
 
     char buffer[4096];
-    strncpy(buffer, raw_data->items[selected - 1], 4096);
-    buffer[4095] = '\0';
+    safe_strcpy(buffer, sizeof(buffer), raw_data->items[selected - 1]);
 
     if (custom_input_dialog("编辑环境变量", "编辑路径:", buffer, sizeof(buffer)))
     {
@@ -331,6 +332,7 @@ int btn_ok_cb(Ihandle *self)
 
     if (sys_ok == ERR_OK && user_ok == ERR_OK)
     {
+        log_info("Saved system paths: %d, user paths: %d", ctx->sys_paths.count, ctx->user_paths.count);
         SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
         IupMessage("成功", "系统和用户 PATH 环境变量均已更新！");
         if (lbl_status)
@@ -346,6 +348,7 @@ int btn_ok_cb(Ihandle *self)
     }
     else
     {
+        log_error("Failed to save paths: sys=%d, user=%d", sys_ok, user_ok);
         IupMessage("错误", "保存失败！");
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "error"));
@@ -495,8 +498,7 @@ int btn_export_cb(Ihandle *self)
             }
             else
             {
-                strncpy(final_path, filepath, sizeof(final_path) - 1);
-                final_path[sizeof(final_path) - 1] = '\0';
+                safe_strcpy(final_path, sizeof(final_path), filepath);
             }
             filepath = final_path;
 
@@ -529,9 +531,19 @@ void load_all_paths(void)
 
     if (load_system_paths(&ctx->sys_paths) != ERR_OK)
     {
+        log_error("Failed to load system paths");
         IupMessage("错误", "无法打开系统环境变量注册表键，请尝试以管理员身份运行。");
     }
-    load_user_paths(&ctx->user_paths);
+    else
+    {
+        log_info("Loaded system paths: %d", ctx->sys_paths.count);
+    }
+
+    ErrorCode user_result = load_user_paths(&ctx->user_paths);
+    if (user_result == ERR_OK)
+    {
+        log_info("Loaded user paths: %d", ctx->user_paths.count);
+    }
 
     Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
     Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");

@@ -7,6 +7,7 @@
 #include "core/lua_config.h"
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
+#include "utils/logger.h"
 #include "controller/callbacks.h"
 #include "ui/main_window.h"
 
@@ -33,6 +34,10 @@ build\\PathEditor.exe
 // 主函数
 int main(int argc, char **argv)
 {
+    // 初始化日志系统
+    log_init(NULL, LOG_LEVEL_INFO);
+    log_info("PathEditor starting...");
+
     // 强制设置 UTF8MODE 环境变量，必须在 IupOpen 之前
     putenv("IUP_UTF8MODE=YES");
 
@@ -43,6 +48,8 @@ int main(int argc, char **argv)
     {
         IupMessage("警告", "Lua 配置系统初始化失败，将使用默认值");
     }
+
+    log_info("Lua config initialized");
 
     // 在管理员模式下，解决无法拖拽文件到列表框的问题 (UIPI)
     // 需要加载 User32.dll 获取 ChangeWindowMessageFilter 函数
@@ -132,8 +139,10 @@ int main(int argc, char **argv)
 
     IupMainLoop();
 
+    log_info("PathEditor exiting...");
     destroy_app_context(ctx);
     lua_config_destroy();
+    log_destroy();
     IupClose();
 
     return 0;

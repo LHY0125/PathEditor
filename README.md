@@ -53,7 +53,6 @@
   * 统一错误码系统 (`utils/error_code.h`)
   * 安全字符串函数 (`utils/safe_string.h`)
   * 日志系统 (`utils/logger.h`)
-  * 布局配置结构体 (`core/layout_config.h`)
 
 ## 📦 下载与安装
 
