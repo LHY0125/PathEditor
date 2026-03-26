@@ -30,11 +30,11 @@ int custom_input_dialog(const char *title, const char *label_text, char *buffer,
     IupSetAttribute(text, "RASTERSIZE", lua_config_get_string("input_dialog", "text_size"));
     IupSetAttribute(text, "NAME", "INPUT_TEXT");
 
-    Ihandle *btn_ok = IupButton(lua_config_get_string("button", "ok"), NULL);
+    Ihandle *btn_ok = IupButton(_(lua_config_get_string("button", "ok")), NULL);
     IupSetCallback(btn_ok, "ACTION", on_dialog_ok);
     IupSetAttribute(btn_ok, "RASTERSIZE", lua_config_get_string("button", "rastersize"));
 
-    Ihandle *btn_cancel = IupButton(lua_config_get_string("button", "cancel"), NULL);
+    Ihandle *btn_cancel = IupButton(_(lua_config_get_string("button", "cancel")), NULL);
     IupSetCallback(btn_cancel, "ACTION", on_dialog_cancel);
     IupSetAttribute(btn_cancel, "RASTERSIZE", lua_config_get_string("button", "rastersize"));
 

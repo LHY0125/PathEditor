@@ -5,14 +5,14 @@ local config = {
     -- 应用程序信息
     app = {
         name = "PathEditor",
-        name_readonly = "PathEditor (只读模式)"
+        name_readonly = "PathEditor (Read-only)"
     },
 
     -- 对话框设置
     dialog = {
         size = "800x800",
         minsize = "800x800",
-        select_dir = "选择目录"
+        select_dir = "Select Directory"
     },
 
     -- 列表控件设置
@@ -21,31 +21,31 @@ local config = {
         backcolor = "255 255 255"
     },
 
-    -- 按钮设置
+    -- 按钮设置（使用英文原文，供 gettext 翻译）
     button = {
         rastersize = "100x32",
-        new = "新建(N)",
-        edit = "编辑(E)",
-        browse = "浏览(B)...",
-        del = "删除(D)",
-        up = "上移(U)",
-        down = "下移(O)",
-        clean = "一键清理",
-        import = "导入(I)",
-        export = "导出(E)",
-        ok = "确定",
-        cancel = "取消",
-        help = "帮助(?)"
+        new = "New",
+        edit = "Edit",
+        browse = "Browse",
+        del = "Delete",
+        up = "Move Up",
+        down = "Move Down",
+        clean = "Clean Invalid",
+        import = "Import",
+        export = "Export",
+        ok = "OK",
+        cancel = "Cancel",
+        help = "Help"
     },
 
-    -- 标签文本
+    -- 标签文本（使用英文原文，供 gettext 翻译）
     label = {
-        title = "环境变量编辑器:",
-        search_placeholder = "输入关键词搜索...",
-        tab_sys = "系统变量 (System)",
-        tab_user = "用户变量 (User)",
-        export_title = "导出 PATH",
-        import_title = "导入 PATH"
+        title = "Environment Variable Editor:",
+        search_placeholder = "Search...",
+        tab_sys = "System Variables",
+        tab_user = "User Variables",
+        export_title = "Export PATH",
+        import_title = "Import PATH"
     },
 
     -- 布局设置
@@ -59,24 +59,24 @@ local config = {
         hbox_alignment = "ACENTER"
     },
 
-    -- 状态栏
+    -- 状态栏（使用英文原文，供 gettext 翻译）
     status = {
-        normal = "状态: 就绪",
-        readonly = "状态: ⚠️ 只读模式 (无管理员权限)",
-        saving = "状态: 保存中...",
-        saved = "状态: ✓ 保存成功",
-        error = "状态: ✗ 保存失败",
-        deleted = "状态: 已删除选中项",
-        loaded = "状态: 已加载系统和用户变量",
-        drag_folder_only = "提示: 只能拖拽文件夹添加到 PATH",
-        admin_warning = "未检测到管理员权限，只能查看和导出 PATH，无法保存更改。"
+        normal = "Status: Ready",
+        readonly = "Status: Read-only (No admin)",
+        saving = "Status: Saving...",
+        saved = "Status: Saved",
+        error = "Status: Error",
+        deleted = "Status: Deleted",
+        loaded = "Status: Loaded",
+        drag_folder_only = "Tip: Only folders can be added to PATH",
+        admin_warning = "No admin rights. You can only view and export PATH."
     },
 
     -- 语言选择对话框
     language = {
         dialog_title = "Language",
         label = "Language",
-        option_cn = "中文 (简体中文)",
+        option_cn = "Chinese (Simplified)",
         option_en = "English",
         dialog_size = "250x150",
         list_size = "200x",
