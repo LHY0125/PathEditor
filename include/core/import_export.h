@@ -6,6 +6,9 @@
 
 #define EXPORT_VERSION "1.0"
 
+// 导出数据结构
+// 注意：此结构体用于导出时是只读的，items 指针指向外部 StringList 的数据
+// 不要对 ExportData 调用 clear_string_list，会破坏原始数据
 typedef struct {
     StringList system;
     StringList user;

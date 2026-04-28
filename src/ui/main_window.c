@@ -180,9 +180,13 @@ void refresh_main_window_ui(Ihandle *main_dlg)
     // 设置窗口标题
     IupSetAttribute(main_dlg, "TITLE", _(lua_config_get_string("app", "name")));
 
-    // 设置选项卡标题
-    IupSetAttribute(main_dlg, "TABTITLE0", _(lua_config_get_string("label", "tab_sys")));
-    IupSetAttribute(main_dlg, "TABTITLE1", _(lua_config_get_string("label", "tab_user")));
+    // 设置选项卡标题（需要设置在 Tabs 控件上，而非 Dialog）
+    Ihandle *tabs = IupGetDialogChild(main_dlg, CTRL_TABS_MAIN);
+    if (tabs)
+    {
+        IupSetAttribute(tabs, "TABTITLE0", _(lua_config_get_string("label", "tab_sys")));
+        IupSetAttribute(tabs, "TABTITLE1", _(lua_config_get_string("label", "tab_user")));
+    }
 
     // 辅助函数：设置子控件标题
     #define SET_CHILD_TITLE(btn_name, text_key) \

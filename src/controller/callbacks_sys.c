@@ -28,7 +28,15 @@ int btn_ok_cb(Ihandle *self)
         return IUP_DEFAULT;
     }
 
-    backup_registry();
+    ErrorCode backup_result = backup_registry();
+    if (backup_result != ERR_OK)
+    {
+        log_error("Backup failed: error code %d", backup_result);
+        int choice = IupAlarm("警告", "备份失败！是否继续保存？\n（继续保存可能导致无法恢复）",
+                              "继续保存", "取消", NULL);
+        if (choice != 1)
+            return IUP_DEFAULT;
+    }
 
     ErrorCode sys_ok = save_system_paths(&ctx->sys_paths);
     ErrorCode user_ok = save_user_paths(&ctx->user_paths);

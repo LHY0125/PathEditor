@@ -26,38 +26,40 @@ static ErrorCode load_single_path(HKEY hKeyRoot, const wchar_t *regPath, StringL
     if (res == ERROR_SUCCESS)
     {
         wchar_t *buffer = (wchar_t *)malloc(size + 2);
-        if (buffer)
+        if (!buffer)
         {
-            memset(buffer, 0, size + 2);
-            if (RegQueryValueExW(hKey, REG_VALUE, NULL, &type, (LPBYTE)buffer, &size) == ERROR_SUCCESS)
-            {
-                wchar_t *current = buffer;
-                wchar_t *next_semicolon = NULL;
-
-                while (*current)
-                {
-                    next_semicolon = wcschr(current, L';');
-                    if (next_semicolon)
-                        *next_semicolon = L'\0';
-
-                    if (wcslen(current) > 0)
-                    {
-                        char *utf8_str = wide_to_utf8(current);
-                        if (utf8_str)
-                        {
-                            add_string_list(list, utf8_str);
-                            free(utf8_str);
-                        }
-                    }
-
-                    if (next_semicolon)
-                        current = next_semicolon + 1;
-                    else
-                        break;
-                }
-            }
-            free(buffer);
+            RegCloseKey(hKey);
+            return ERR_OUT_OF_MEMORY;
         }
+        memset(buffer, 0, size + 2);
+        if (RegQueryValueExW(hKey, REG_VALUE, NULL, &type, (LPBYTE)buffer, &size) == ERROR_SUCCESS)
+        {
+            wchar_t *current = buffer;
+            wchar_t *next_semicolon = NULL;
+
+            while (*current)
+            {
+                next_semicolon = wcschr(current, L';');
+                if (next_semicolon)
+                    *next_semicolon = L'\0';
+
+                if (wcslen(current) > 0)
+                {
+                    char *utf8_str = wide_to_utf8(current);
+                    if (utf8_str)
+                    {
+                        add_string_list(list, utf8_str);
+                        free(utf8_str);
+                    }
+                }
+
+                if (next_semicolon)
+                    current = next_semicolon + 1;
+                else
+                    break;
+            }
+        }
+        free(buffer);
     }
     RegCloseKey(hKey);
     return ERR_OK;

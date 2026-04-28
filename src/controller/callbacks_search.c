@@ -3,6 +3,7 @@
 #include "core/app_context.h"
 #include "core/lua_config.h"
 #include "utils/string_ext.h"
+#include "utils/safe_string.h"
 #include "utils/ui_constants.h"
 #include "ui/ui_utils.h"
 #include <string.h>
@@ -55,7 +56,9 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
     else
         return IUP_DEFAULT;
 
-    DWORD attr = GetFileAttributesA(filename);
+    wchar_t *wfilename = utf8_to_wide(filename);
+    DWORD attr = wfilename ? GetFileAttributesW(wfilename) : INVALID_FILE_ATTRIBUTES;
+    free(wfilename);
     if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
     {
         Ihandle *txt_search = IupGetDialogChild(dlg, CTRL_TXT_SEARCH);

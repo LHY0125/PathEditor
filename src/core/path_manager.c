@@ -52,44 +52,68 @@ ErrorCode path_manager_move_down(StringList *list, int index)
 }
 
 // 清理无效路径项
+// 算法：先标记需要删除的项，然后从后向前批量删除，减少内存移动
 ErrorCode path_manager_clean(StringList *list)
 {
     if (!list) return ERR_NULL_PTR;
-    
+    if (list->count == 0) return ERR_OK;
+
+    // 分配标记数组
+    char *marks = (char *)calloc(list->count, sizeof(char));
+    if (!marks) return ERR_OUT_OF_MEMORY;
+
     int removed_count = 0;
 
+    // 第一遍：标记无效路径和重复路径
     for (int i = list->count - 1; i >= 0; i--)
     {
         char *item = list->items[i];
-        if (!item) continue;
+        if (!item)
+        {
+            marks[i] = 1;
+            removed_count++;
+            continue;
+        }
 
-        int should_remove = 0;
-
+        // 检查路径有效性
         if (!is_path_valid(item))
         {
-            should_remove = 1;
-        }
-        else
-        {
-            for (int j = 0; j < i; j++)
-            {
-                char *prev_item = list->items[j];
-                if (prev_item && _stricmp(item, prev_item) == 0)
-                {
-                    should_remove = 1;
-                    break;
-                }
-            }
+            marks[i] = 1;
+            removed_count++;
+            continue;
         }
 
-        if (should_remove)
+        // 检查是否与前面的项重复（只检查未被标记的项）
+        for (int j = 0; j < i; j++)
         {
-            path_manager_remove_at(list, i);
-            removed_count++;
+            if (!marks[j] && list->items[j] && _stricmp(item, list->items[j]) == 0)
+            {
+                marks[i] = 1;
+                removed_count++;
+                break;
+            }
         }
     }
-    
-    log_info("Cleaned paths: removed %d invalid/duplicate paths, remaining %d", 
+
+    // 第二遍：从后向前删除标记的项，避免多次内存移动
+    for (int i = list->count - 1; i >= 0; i--)
+    {
+        if (marks[i])
+        {
+            free(list->items[i]);
+            // 移动后续元素
+            for (int j = i; j < list->count - 1; j++)
+            {
+                list->items[j] = list->items[j + 1];
+            }
+            list->items[list->count - 1] = NULL;
+            list->count--;
+        }
+    }
+
+    free(marks);
+
+    log_info("Cleaned paths: removed %d invalid/duplicate paths, remaining %d",
             removed_count, list->count);
     return ERR_OK;
 }

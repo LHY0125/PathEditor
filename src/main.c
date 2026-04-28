@@ -50,7 +50,7 @@ int main(int argc, char **argv)
     log_info("PathEditor starting...");
 
     // 强制设置 UTF8MODE 环境变量，必须在 IupOpen 之前
-    putenv("IUP_UTF8MODE=YES");
+    _wputenv_s(L"IUP_UTF8MODE", L"YES");
 
     IupOpen(&argc, &argv);
     IupSetGlobal("UTF8MODE", "YES");
@@ -105,12 +105,16 @@ int main(int argc, char **argv)
     // 检查管理员权限
     if (!check_admin())
     {
-        IupMessage(_("Warning"), _(lua_config_get_string("status", "admin_warning")));
+        const char *admin_msg = lua_config_get_string("status", "admin_warning");
+        IupMessage(_("Warning"), admin_msg ? _(admin_msg) : "需要管理员权限才能编辑环境变量");
 
         // 设置只读状态提示
         Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
         if (lbl_status)
-            IupSetAttribute(lbl_status, "TITLE", _(lua_config_get_string("status", "readonly")));
+        {
+            const char *readonly_msg = lua_config_get_string("status", "readonly");
+            IupSetAttribute(lbl_status, "TITLE", readonly_msg ? _(readonly_msg) : "只读模式");
+        }
 
         // 禁用所有需要管理员权限的按钮
         for (int i = 0; i < ADMIN_DISABLE_COUNT; i++)

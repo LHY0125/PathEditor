@@ -11,25 +11,28 @@
 static void get_current_datetime(char *buffer, int size)
 {
     time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
-    strftime(buffer, size, "%Y-%m-%d %H:%M:%S", tm_info);
+    struct tm tm_info;
+    localtime_s(&tm_info, &now);
+    strftime(buffer, size, "%Y-%m-%d %H:%M:%S", &tm_info);
 }
 
-// 转义 JSON 字符串中的特殊字符
+// 转义 JSON 字符串中的特殊字符（符合 RFC 8259 规范）
 static char *escape_json_string(const char *str)
 {
     if (!str)
         return NULL;
 
     int len = strlen(str);
-    char *result = (char *)malloc(len * 2 + 1);
+    // 最坏情况：每个字符都需要 \uXXXX 转义（6字节）
+    char *result = (char *)malloc(len * 6 + 1);
     if (!result)
         return NULL;
 
     char *p = result;
     for (int i = 0; i < len; i++)
     {
-        switch (str[i])
+        unsigned char c = (unsigned char)str[i];
+        switch (c)
         {
         case '\\':
             *p++ = '\\';
@@ -51,8 +54,24 @@ static char *escape_json_string(const char *str)
             *p++ = '\\';
             *p++ = 't';
             break;
+        case '\b':
+            *p++ = '\\';
+            *p++ = 'b';
+            break;
+        case '\f':
+            *p++ = '\\';
+            *p++ = 'f';
+            break;
         default:
-            *p++ = str[i];
+            if (c < 0x20) // 其他控制字符 (0x00-0x1F)
+            {
+                sprintf(p, "\\u%04x", c);
+                p += 6;
+            }
+            else
+            {
+                *p++ = str[i];
+            }
             break;
         }
     }
@@ -124,6 +143,9 @@ ErrorCode export_paths_to_file(const ExportData *data, const char *filepath)
 // 移除字符串首尾的空格、制表符、换行符和回车符
 static void trim_whitespace(char *str)
 {
+    if (!str || *str == '\0')
+        return;
+
     char *start = str;
     while (*start == ' ' || *start == '\t')
         start++;
@@ -152,7 +174,20 @@ static int is_comment_or_empty(const char *line)
 static int is_json_file(const char *filepath)
 {
     const char *ext = strrchr(filepath, '.');
-    return ext && strcasecmp(ext, ".json") == 0;
+    return ext && _stricmp(ext, ".json") == 0;
+}
+
+// 检查引号前是否有奇数个连续反斜杠（奇数个表示引号被转义）
+static int is_quote_escaped(const char *quote_pos, const char *line_start)
+{
+    int backslash_count = 0;
+    const char *p = quote_pos - 1;
+    while (p >= line_start && *p == '\\')
+    {
+        backslash_count++;
+        p--;
+    }
+    return (backslash_count % 2) == 1; // 奇数个反斜杠表示转义
 }
 
 // 从文件导入 PATH
@@ -204,102 +239,97 @@ ErrorCode import_paths_from_file(const char *filepath, ExportData *data)
     int in_user = 0;
     int depth = 0;
     int in_string = 0;
-    char path_buffer[4096];
-    int path_len = 0;
+    char key_buffer[256] = {0};
+    int key_len = 0;
 
     while (fgets(buffer, sizeof(buffer), fp))
     {
         char *p = buffer;
         while (*p)
         {
-            if (*p == '"' && (p == buffer || *(p - 1) != '\\'))
+            // 处理字符串开始/结束
+            if (*p == '"')
             {
-                in_string = !in_string;
-            }
-            else if (in_string && *p == '\\')
-            {
-                p++;
-                if (*p)
+                if (!in_string)
                 {
-                    if (*p == 'n')
-                        *p = '\n';
-                    else if (*p == 'r')
-                        *p = '\r';
-                    else if (*p == 't')
-                        *p = '\t';
+                    // 字符串开始
+                    in_string = 1;
+                    key_len = 0; // 开始收集键名或字符串内容
+                }
+                else if (!is_quote_escaped(p, buffer))
+                {
+                    // 字符串结束（未转义的引号）
+                    in_string = 0;
+
+                    // 在 depth 1 时，检查刚结束的字符串是否是键名
+                    if (depth == 1)
+                    {
+                        key_buffer[key_len] = '\0';
+                        if (strcmp(key_buffer, "system") == 0)
+                        {
+                            in_system = 1;
+                            in_user = 0;
+                        }
+                        else if (strcmp(key_buffer, "user") == 0)
+                        {
+                            in_user = 1;
+                            in_system = 0;
+                        }
+                    }
+                    // 在 depth 2 时，如果在 system/user 数组内，提取路径
+                    else if (depth == 2 && (in_system || in_user))
+                    {
+                        key_buffer[key_len] = '\0';
+                        if (key_len > 0)
+                        {
+                            StringList *target = in_system ? &data->system : &data->user;
+                            add_string_list(target, key_buffer);
+                        }
+                    }
+                }
+                else
+                {
+                    // 转义的引号，作为内容的一部分
+                    if (key_len < (int)sizeof(key_buffer) - 1)
+                        key_buffer[key_len++] = *p;
                 }
             }
-            else if (!in_string)
+            else if (in_string)
             {
+                // 在字符串内，收集内容
+                if (*p == '\\' && *(p + 1))
+                {
+                    // 处理转义序列
+                    p++;
+                    char ch;
+                    switch (*p)
+                    {
+                    case 'n':  ch = '\n'; break;
+                    case 'r':  ch = '\r'; break;
+                    case 't':  ch = '\t'; break;
+                    case 'b':  ch = '\b'; break;
+                    case 'f':  ch = '\f'; break;
+                    case '\\': ch = '\\'; break;
+                    case '"':  ch = '"';  break;
+                    case '/':  ch = '/';  break;
+                    default:   ch = *p;   break;
+                    }
+                    if (key_len < (int)sizeof(key_buffer) - 1)
+                        key_buffer[key_len++] = ch;
+                }
+                else
+                {
+                    if (key_len < (int)sizeof(key_buffer) - 1)
+                        key_buffer[key_len++] = *p;
+                }
+            }
+            else
+            {
+                // 不在字符串内
                 if (*p == '{' || *p == '[')
                     depth++;
                 else if (*p == '}' || *p == ']')
                     depth--;
-                else if (depth == 1 && *p == '"')
-                {
-                    if (strncmp(p, "\"system\"", 8) == 0)
-                    {
-                        in_system = 1;
-                        in_user = 0;
-                    }
-                    else if (strncmp(p, "\"user\"", 6) == 0)
-                    {
-                        in_user = 1;
-                        in_system = 0;
-                    }
-                }
-                else if (in_system && depth == 2 && *p == '"')
-                {
-                    path_len = 0;
-                    p++;
-                    while (*p && path_len < (int)sizeof(path_buffer) - 1)
-                    {
-                        if (*p == '"' && *(p - 1) != '\\')
-                            break;
-                        if (*p == '\\' && *(p + 1))
-                        {
-                            p++;
-                            if (*p == 'n')
-                                *p = '\n';
-                            else if (*p == 'r')
-                                *p = '\r';
-                            else if (*p == 't')
-                                *p = '\t';
-                        }
-                        path_buffer[path_len++] = *p++;
-                    }
-                    if (path_len > 0)
-                    {
-                        path_buffer[path_len] = '\0';
-                        add_string_list(&data->system, path_buffer);
-                    }
-                }
-                else if (in_user && depth == 2 && *p == '"')
-                {
-                    path_len = 0;
-                    p++;
-                    while (*p && path_len < (int)sizeof(path_buffer) - 1)
-                    {
-                        if (*p == '"' && *(p - 1) != '\\')
-                            break;
-                        if (*p == '\\' && *(p + 1))
-                        {
-                            p++;
-                            if (*p == 'n')
-                                *p = '\n';
-                            else if (*p == 'r')
-                                *p = '\r';
-                            else if (*p == 't')
-                                *p = '\t';
-                        }
-                        path_buffer[path_len++] = *p++;
-                    }
-                    if (path_len > 0)
-                    {
-                        path_buffer[path_len] = '\0';
-                        add_string_list(&data->user, path_buffer);
-                    }
-                }
             }
             p++;
         }

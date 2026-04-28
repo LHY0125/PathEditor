@@ -56,16 +56,17 @@ ErrorCode backup_registry(void)
         return ERR_FAILED;
     }
 
-    // 创建备份目录
+    // 创建备份目录（递归创建中间目录）
     wchar_t backup_dir[MAX_PATH];
     swprintf(backup_dir, MAX_PATH, L"%s\\PathEditor\\backups", appdata_path);
-    CreateDirectoryW(backup_dir, NULL);
+    SHCreateDirectoryExW(NULL, backup_dir, NULL);
 
     // 生成时间戳
     time_t t = time(NULL);
-    struct tm *tm_info = localtime(&t);
+    struct tm tm_info;
+    localtime_s(&tm_info, &t);
     wchar_t timestamp[64];
-    wcsftime(timestamp, sizeof(timestamp), L"%Y%m%d_%H%M%S", tm_info);
+    wcsftime(timestamp, sizeof(timestamp) / sizeof(timestamp[0]), L"%Y%m%d_%H%M%S", &tm_info);
 
     // 构造备份文件名
     wchar_t backup_file[MAX_PATH];

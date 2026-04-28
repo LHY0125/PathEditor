@@ -78,10 +78,17 @@ void add_string_list(StringList *list, const char *str)
         return;
     if (list->count >= list->capacity)
     {
-        list->capacity = (list->capacity == 0) ? 16 : list->capacity * 2;
-        list->items = (char **)realloc(list->items, list->capacity * sizeof(char *));
+        int new_capacity = (list->capacity == 0) ? 16 : list->capacity * 2;
+        char **new_items = (char **)realloc(list->items, new_capacity * sizeof(char *));
+        if (!new_items)
+            return; // realloc 失败，保留原数据
+        list->items = new_items;
+        list->capacity = new_capacity;
     }
-    list->items[list->count] = _strdup(str); // 复制字符串
+    char *dup = _strdup(str);
+    if (!dup)
+        return; // _strdup 失败，不递增 count
+    list->items[list->count] = dup;
     list->count++;
 }
 
@@ -98,8 +105,11 @@ int string_list_set(StringList *list, int index, const char *str)
 {
     if (!list || index < 0 || index >= list->count || !str)
         return -1;
+    char *dup = _strdup(str);
+    if (!dup)
+        return -1; // _strdup 失败，保留旧数据
     free(list->items[index]);
-    list->items[index] = _strdup(str);
+    list->items[index] = dup;
     return 0;
 }
 

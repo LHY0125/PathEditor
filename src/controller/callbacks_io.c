@@ -42,6 +42,8 @@ int btn_import_cb(Ihandle *self)
         if (filepath)
         {
             ExportData imported;
+            init_string_list(&imported.system);
+            init_string_list(&imported.user);
             ErrorCode import_result = import_paths_from_file(filepath, &imported);
             if (import_result == ERR_OK)
             {
@@ -51,6 +53,8 @@ int btn_import_cb(Ihandle *self)
                 if (!has_system && !has_user)
                 {
                     IupMessage("错误", "文件中没有找到有效的路径！");
+                    clear_string_list(&imported.system);
+                    clear_string_list(&imported.user);
                     IupDestroy(filedlg);
                     return IUP_DEFAULT;
                 }
@@ -63,7 +67,10 @@ int btn_import_cb(Ihandle *self)
                 }
                 else if (has_system)
                 {
-                    choice = 3;
+                    // TXT 文件导入时，让用户选择目标（系统变量或用户变量）
+                    choice = IupAlarm("导入选项", "请选择导入目标：",
+                                      "导入到系统变量", "导入到用户变量", NULL);
+                    // IupAlarm 返回 1 或 2，转换为 1(系统) 或 2(用户)
                 }
                 else
                 {
@@ -95,6 +102,10 @@ int btn_import_cb(Ihandle *self)
                     sync_string_list_to_ui(list_user, &ctx->user_paths);
                     total_imported += imported.user.count;
                 }
+
+                // 释放导入数据
+                clear_string_list(&imported.system);
+                clear_string_list(&imported.user);
 
                 char msg[256];
                 snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", total_imported);
