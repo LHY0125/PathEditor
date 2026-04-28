@@ -23,14 +23,3 @@ void destroy_app_context(AppContext *ctx)
         free(ctx);
     }
 }
-
-// 获取应用上下文
-AppContext *get_app_context(Ihandle *ih)
-{
-    if (!ih)
-        return NULL;
-    Ihandle *dlg = IupGetDialog(ih);
-    if (!dlg)
-        return NULL;
-    return (AppContext *)IupGetAttribute(dlg, "APP_CONTEXT");
-}

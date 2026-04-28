@@ -2,6 +2,7 @@
 #include "controller/callbacks.h"
 #include "core/lua_config.h"
 #include "utils/i18n.h"
+#include "utils/ui_constants.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -26,13 +27,13 @@ static Ihandle *create_path_list(const char *name)
 Ihandle *create_main_window(void)
 {
     // 创建系统路径列表
-    Ihandle *list_sys = create_path_list("LIST_SYS");
+    Ihandle *list_sys = create_path_list(CTRL_LIST_SYS);
     // 创建用户路径列表
-    Ihandle *list_user = create_path_list("LIST_USER");
+    Ihandle *list_user = create_path_list(CTRL_LIST_USER);
 
     // 创建搜索框
     Ihandle *txt_search = IupText(NULL);
-    IupSetAttribute(txt_search, "NAME", "TXT_SEARCH");
+    IupSetAttribute(txt_search, "NAME", CTRL_TXT_SEARCH);
     IupSetAttribute(txt_search, "EXPAND", "HORIZONTAL");
     IupSetAttribute(txt_search, "CUEBANNER", lua_config_get_string("label", "search_placeholder"));
     IupSetCallback(txt_search, "VALUECHANGED_CB", (Icallback)txt_search_cb);
@@ -42,42 +43,42 @@ Ihandle *create_main_window(void)
         IupVbox(list_sys, NULL),
         IupVbox(list_user, NULL),
         NULL);
-    IupSetAttribute(tabs_main, "NAME", "TABS_MAIN");
+    IupSetAttribute(tabs_main, "NAME", CTRL_TABS_MAIN);
     IupSetAttribute(tabs_main, "TABTITLE0", _(lua_config_get_string("label", "tab_sys")));
     IupSetAttribute(tabs_main, "TABTITLE1", _(lua_config_get_string("label", "tab_user")));
     IupSetAttribute(tabs_main, "TABTYPE", "TOP");
 
     // 创建操作按钮
     Ihandle *btn_new = IupButton(_(lua_config_get_string("button", "new")), NULL);
-    IupSetAttribute(btn_new, "NAME", "BTN_NEW");
+    IupSetAttribute(btn_new, "NAME", CTRL_BTN_NEW);
 
     Ihandle *btn_edit = IupButton(_(lua_config_get_string("button", "edit")), NULL);
-    IupSetAttribute(btn_edit, "NAME", "BTN_EDIT");
+    IupSetAttribute(btn_edit, "NAME", CTRL_BTN_EDIT);
 
     Ihandle *btn_browse = IupButton(_(lua_config_get_string("button", "browse")), NULL);
-    IupSetAttribute(btn_browse, "NAME", "BTN_BROWSE");
+    IupSetAttribute(btn_browse, "NAME", CTRL_BTN_BROWSE);
 
     Ihandle *btn_del = IupButton(_(lua_config_get_string("button", "del")), NULL);
-    IupSetAttribute(btn_del, "NAME", "BTN_DEL");
+    IupSetAttribute(btn_del, "NAME", CTRL_BTN_DEL);
 
     Ihandle *btn_up = IupButton(_(lua_config_get_string("button", "up")), NULL);
-    IupSetAttribute(btn_up, "NAME", "BTN_UP");
+    IupSetAttribute(btn_up, "NAME", CTRL_BTN_UP);
 
     Ihandle *btn_down = IupButton(_(lua_config_get_string("button", "down")), NULL);
-    IupSetAttribute(btn_down, "NAME", "BTN_DOWN");
+    IupSetAttribute(btn_down, "NAME", CTRL_BTN_DOWN);
 
     Ihandle *btn_clean = IupButton(_(lua_config_get_string("button", "clean")), NULL);
-    IupSetAttribute(btn_clean, "NAME", "BTN_CLEAN");
+    IupSetAttribute(btn_clean, "NAME", CTRL_BTN_CLEAN);
 
     Ihandle *btn_import = IupButton(_(lua_config_get_string("button", "import")), NULL);
-    IupSetAttribute(btn_import, "NAME", "BTN_IMPORT");
+    IupSetAttribute(btn_import, "NAME", CTRL_BTN_IMPORT);
 
     Ihandle *btn_export = IupButton(_(lua_config_get_string("button", "export")), NULL);
-    IupSetAttribute(btn_export, "NAME", "BTN_EXPORT");
+    IupSetAttribute(btn_export, "NAME", CTRL_BTN_EXPORT);
 
     // 创建语言切换按钮
     Ihandle *btn_lang = IupButton(_("Language"), NULL);
-    IupSetAttribute(btn_lang, "NAME", "BTN_LANG");
+    IupSetAttribute(btn_lang, "NAME", CTRL_BTN_LANG);
     IupSetCallback(btn_lang, "ACTION", (Icallback)btn_lang_cb);
 
     // 设置按钮回调
@@ -123,16 +124,16 @@ Ihandle *create_main_window(void)
 
     // 创建状态标签
     Ihandle *lbl_status = IupLabel(lua_config_get_string("status", "normal"));
-    IupSetAttribute(lbl_status, "NAME", "LBL_STATUS");
+    IupSetAttribute(lbl_status, "NAME", CTRL_LBL_STATUS);
     IupSetAttribute(lbl_status, "EXPAND", "HORIZONTAL");
 
     // 创建底部按钮
     Ihandle *btn_ok = IupButton(_(lua_config_get_string("button", "ok")), NULL);
-    IupSetAttribute(btn_ok, "NAME", "BTN_OK");
+    IupSetAttribute(btn_ok, "NAME", CTRL_BTN_OK);
     Ihandle *btn_cancel = IupButton(_(lua_config_get_string("button", "cancel")), NULL);
-    IupSetAttribute(btn_cancel, "NAME", "BTN_CANCEL");
+    IupSetAttribute(btn_cancel, "NAME", CTRL_BTN_CANCEL);
     Ihandle *btn_help = IupButton(_(lua_config_get_string("button", "help")), NULL);
-    IupSetAttribute(btn_help, "NAME", "BTN_HELP");
+    IupSetAttribute(btn_help, "NAME", CTRL_BTN_HELP);
 
     // 设置底部按钮回调
     IupSetCallback(btn_ok, "ACTION", (Icallback)btn_ok_cb);
@@ -176,60 +177,37 @@ void refresh_main_window_ui(Ihandle *main_dlg)
     if (!main_dlg)
         return;
 
+    // 设置窗口标题
     IupSetAttribute(main_dlg, "TITLE", _(lua_config_get_string("app", "name")));
 
+    // 设置选项卡标题
     IupSetAttribute(main_dlg, "TABTITLE0", _(lua_config_get_string("label", "tab_sys")));
     IupSetAttribute(main_dlg, "TABTITLE1", _(lua_config_get_string("label", "tab_user")));
 
-    Ihandle *btn = IupGetDialogChild(main_dlg, "BTN_NEW");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "new")));
+    // 辅助函数：设置子控件标题
+    #define SET_CHILD_TITLE(btn_name, text_key) \
+        do { \
+            Ihandle *btn = IupGetDialogChild(main_dlg, btn_name); \
+            if (btn) IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", text_key))); \
+        } while(0)
 
-    btn = IupGetDialogChild(main_dlg, "BTN_EDIT");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "edit")));
+    SET_CHILD_TITLE(CTRL_BTN_NEW, "new");
+    SET_CHILD_TITLE(CTRL_BTN_EDIT, "edit");
+    SET_CHILD_TITLE(CTRL_BTN_BROWSE, "browse");
+    SET_CHILD_TITLE(CTRL_BTN_DEL, "del");
+    SET_CHILD_TITLE(CTRL_BTN_UP, "up");
+    SET_CHILD_TITLE(CTRL_BTN_DOWN, "down");
+    SET_CHILD_TITLE(CTRL_BTN_CLEAN, "clean");
+    SET_CHILD_TITLE(CTRL_BTN_IMPORT, "import");
+    SET_CHILD_TITLE(CTRL_BTN_EXPORT, "export");
+    SET_CHILD_TITLE(CTRL_BTN_OK, "ok");
+    SET_CHILD_TITLE(CTRL_BTN_CANCEL, "cancel");
+    SET_CHILD_TITLE(CTRL_BTN_HELP, "help");
 
-    btn = IupGetDialogChild(main_dlg, "BTN_BROWSE");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "browse")));
+    #undef SET_CHILD_TITLE
 
-    btn = IupGetDialogChild(main_dlg, "BTN_DEL");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "del")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_UP");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "up")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_DOWN");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "down")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_CLEAN");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "clean")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_IMPORT");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "import")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_EXPORT");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "export")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_LANG");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _("Language"));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_OK");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "ok")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_CANCEL");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "cancel")));
-
-    btn = IupGetDialogChild(main_dlg, "BTN_HELP");
-    if (btn)
-        IupSetAttribute(btn, "TITLE", _(lua_config_get_string("button", "help")));
+    // 语言切换按钮标题单独处理（不是从配置读取）
+    Ihandle *btn_lang = IupGetDialogChild(main_dlg, CTRL_BTN_LANG);
+    if (btn_lang)
+        IupSetAttribute(btn_lang, "TITLE", _("Language"));
 }

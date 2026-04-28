@@ -11,7 +11,8 @@ typedef enum {
     ERR_INVALID_FORMAT = -6,    // 无效格式
     ERR_REGISTRY_FAILED = -7,   // 注册表操作失败
     ERR_NOT_FOUND = -8,         // 未找到
-    ERR_EXISTS = -9             // 已存在
+    ERR_EXISTS = -9,            // 已存在
+    ERR_INVALID_INDEX = -10     // 无效索引
 } ErrorCode;
 
 const char* error_code_to_string(ErrorCode code);

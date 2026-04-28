@@ -5,7 +5,16 @@
 #include <wchar.h>
 #include <libintl.h>
 #include "core/app_context.h"
+#include "utils/ui_constants.h"
 #include "core/lua_config.h"
+
+// 需要在非管理员模式禁用的按钮列表
+#define ADMIN_DISABLE_COUNT 10
+static const char* ADMIN_DISABLE_BUTTONS[] = {
+    CTRL_BTN_NEW, CTRL_BTN_EDIT, CTRL_BTN_BROWSE, CTRL_BTN_DEL,
+    CTRL_BTN_UP, CTRL_BTN_DOWN, CTRL_BTN_CLEAN, CTRL_BTN_OK,
+    CTRL_BTN_IMPORT, CTRL_BTN_EXPORT
+};
 #include "utils/string_ext.h"
 #include "utils/os_env.h"
 #include "utils/logger.h"
@@ -98,42 +107,18 @@ int main(int argc, char **argv)
     {
         IupMessage(_("Warning"), _(lua_config_get_string("status", "admin_warning")));
 
-        Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+        // 设置只读状态提示
+        Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", _(lua_config_get_string("status", "readonly")));
 
-        Ihandle *btn_new = IupGetDialogChild(dlg, "BTN_NEW");
-        Ihandle *btn_edit = IupGetDialogChild(dlg, "BTN_EDIT");
-        Ihandle *btn_browse = IupGetDialogChild(dlg, "BTN_BROWSE");
-        Ihandle *btn_del = IupGetDialogChild(dlg, "BTN_DEL");
-        Ihandle *btn_up = IupGetDialogChild(dlg, "BTN_UP");
-        Ihandle *btn_down = IupGetDialogChild(dlg, "BTN_DOWN");
-        Ihandle *btn_clean = IupGetDialogChild(dlg, "BTN_CLEAN");
-        Ihandle *btn_ok = IupGetDialogChild(dlg, "BTN_OK");
-
-        if (btn_new)
-            IupSetAttribute(btn_new, "ACTIVE", "NO");
-        if (btn_edit)
-            IupSetAttribute(btn_edit, "ACTIVE", "NO");
-        if (btn_browse)
-            IupSetAttribute(btn_browse, "ACTIVE", "NO");
-        if (btn_del)
-            IupSetAttribute(btn_del, "ACTIVE", "NO");
-        if (btn_up)
-            IupSetAttribute(btn_up, "ACTIVE", "NO");
-        if (btn_down)
-            IupSetAttribute(btn_down, "ACTIVE", "NO");
-        if (btn_clean)
-            IupSetAttribute(btn_clean, "ACTIVE", "NO");
-        if (btn_ok)
-            IupSetAttribute(btn_ok, "ACTIVE", "NO");
-
-        Ihandle *btn_import = IupGetDialogChild(dlg, "BTN_IMPORT");
-        Ihandle *btn_export = IupGetDialogChild(dlg, "BTN_EXPORT");
-        if (btn_import)
-            IupSetAttribute(btn_import, "ACTIVE", "NO");
-        if (btn_export)
-            IupSetAttribute(btn_export, "ACTIVE", "NO");
+        // 禁用所有需要管理员权限的按钮
+        for (int i = 0; i < ADMIN_DISABLE_COUNT; i++)
+        {
+            Ihandle *btn = IupGetDialogChild(dlg, ADMIN_DISABLE_BUTTONS[i]);
+            if (btn)
+                IupSetAttribute(btn, "ACTIVE", "NO");
+        }
     }
 
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);

@@ -8,9 +8,11 @@
 // 删除指定索引的路径项
 ErrorCode path_manager_remove_at(StringList *list, int index)
 {
-    if (!list || index < 0 || index >= list->count)
+    if (!list)
         return ERR_NULL_PTR;
-    
+    if (index < 0 || index >= list->count)
+        return ERR_INVALID_INDEX;
+
     free(list->items[index]);
     for (int i = index; i < list->count - 1; i++)
     {
@@ -24,9 +26,11 @@ ErrorCode path_manager_remove_at(StringList *list, int index)
 // 向上移动路径项
 ErrorCode path_manager_move_up(StringList *list, int index)
 {
-    if (!list || index <= 0 || index >= list->count)
+    if (!list)
         return ERR_NULL_PTR;
-    
+    if (index <= 0 || index >= list->count)
+        return ERR_INVALID_INDEX;
+
     char *temp = list->items[index];
     list->items[index] = list->items[index - 1];
     list->items[index - 1] = temp;
@@ -36,9 +40,11 @@ ErrorCode path_manager_move_up(StringList *list, int index)
 // 向下移动路径项
 ErrorCode path_manager_move_down(StringList *list, int index)
 {
-    if (!list || index < 0 || index >= list->count - 1)
+    if (!list)
         return ERR_NULL_PTR;
-    
+    if (index < 0 || index >= list->count - 1)
+        return ERR_INVALID_INDEX;
+
     char *temp = list->items[index];
     list->items[index] = list->items[index + 1];
     list->items[index + 1] = temp;

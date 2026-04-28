@@ -10,6 +10,7 @@
 #include "utils/safe_string.h"
 #include "utils/logger.h"
 #include "utils/i18n.h"
+#include "utils/ui_constants.h"
 #include "ui/ui_utils.h"
 #include "ui/dialogs.h"
 #include "ui/main_window.h"
@@ -21,19 +22,25 @@
 // 辅助函数：获取主对话框
 static Ihandle *get_main_dlg()
 {
-    // 在实际情况中，可以通过 IupGetHandle 注册名字，或者通过某个全局/静态缓存
-    // 但如果想彻底不用全局，我们可以在 IupSetHandle 里面把主窗口存下来
     return IupGetHandle("MAIN_DIALOG");
+}
+
+// 辅助函数：从对话框获取应用上下文（core层不依赖IUP，因此在此实现）
+static AppContext *get_app_context_from_dlg(Ihandle *dlg)
+{
+    if (!dlg)
+        return NULL;
+    return (AppContext *)IupGetAttribute(dlg, "APP_CONTEXT");
 }
 
 // 获取当前的缓存数据列表
 static StringList *get_current_raw_data(Ihandle *dlg)
 {
-    AppContext *ctx = get_app_context(dlg);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
     if (!ctx)
         return NULL;
 
-    Ihandle *tabs_main = IupGetDialogChild(dlg, "TABS_MAIN");
+    Ihandle *tabs_main = IupGetDialogChild(dlg, CTRL_TABS_MAIN);
     int pos = IupGetInt(tabs_main, "VALUEPOS");
     if (pos == 0)
         return &ctx->sys_paths;
@@ -45,20 +52,20 @@ static StringList *get_current_raw_data(Ihandle *dlg)
 // 辅助函数：获取当前选中的列表UI控件
 static Ihandle *get_current_list(Ihandle *dlg)
 {
-    Ihandle *tabs_main = IupGetDialogChild(dlg, "TABS_MAIN");
+    Ihandle *tabs_main = IupGetDialogChild(dlg, CTRL_TABS_MAIN);
     int pos = IupGetInt(tabs_main, "VALUEPOS");
     if (pos == 0)
-        return IupGetDialogChild(dlg, "LIST_SYS");
+        return IupGetDialogChild(dlg, CTRL_LIST_SYS);
     if (pos == 1)
-        return IupGetDialogChild(dlg, "LIST_USER");
-    return IupGetDialogChild(dlg, "LIST_SYS");
+        return IupGetDialogChild(dlg, CTRL_LIST_USER);
+    return IupGetDialogChild(dlg, CTRL_LIST_SYS);
 }
 
 // 按钮回调：新建
 int btn_new_cb(Ihandle *self)
 {
     Ihandle *dlg = IupGetDialog(self);
-    char buffer[1024] = "";
+    char buffer[PATH_BUFFER_SIZE] = "";
     if (custom_input_dialog("新建环境变量", "请输入路径:", buffer, sizeof(buffer)))
     {
         if (strlen(buffer) > 0)
@@ -89,7 +96,7 @@ int btn_edit_cb(Ihandle *self)
     if (selected - 1 >= raw_data->count)
         return IUP_DEFAULT;
 
-    char buffer[4096];
+    char buffer[PATH_BUFFER_SIZE];
     safe_strcpy(buffer, sizeof(buffer), raw_data->items[selected - 1]);
 
     if (custom_input_dialog("编辑环境变量", "编辑路径:", buffer, sizeof(buffer)))
@@ -168,7 +175,7 @@ int btn_del_cb(Ihandle *self)
 
     sync_string_list_to_ui(current_list, raw_data);
 
-    Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+    Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
     if (lbl_status)
         IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "deleted"));
 
@@ -280,14 +287,14 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
 {
     Ihandle *dlg = IupGetDialog(self);
     Ihandle *current_list = self;
-    AppContext *ctx = get_app_context(dlg);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
     if (!ctx)
         return IUP_DEFAULT;
 
     StringList *raw_data = NULL;
-    if (self == IupGetDialogChild(dlg, "LIST_SYS"))
+    if (self == IupGetDialogChild(dlg, CTRL_LIST_SYS))
         raw_data = &ctx->sys_paths;
-    else if (self == IupGetDialogChild(dlg, "LIST_USER"))
+    else if (self == IupGetDialogChild(dlg, CTRL_LIST_USER))
         raw_data = &ctx->user_paths;
     else
         return IUP_DEFAULT;
@@ -295,7 +302,7 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
     DWORD attr = GetFileAttributesA(filename);
     if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
     {
-        Ihandle *txt_search = IupGetDialogChild(dlg, "TXT_SEARCH");
+        Ihandle *txt_search = IupGetDialogChild(dlg, CTRL_TXT_SEARCH);
         if (txt_search)
             IupSetAttribute(txt_search, "VALUE", "");
 
@@ -306,7 +313,7 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
     }
     else
     {
-        Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+        Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "drag_folder_only"));
     }
@@ -329,7 +336,7 @@ int list_k_any_cb(Ihandle *self, int c)
 int btn_ok_cb(Ihandle *self)
 {
     Ihandle *dlg = IupGetDialog(self);
-    AppContext *ctx = get_app_context(dlg);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
     if (!ctx)
         return IUP_DEFAULT;
 
@@ -344,7 +351,7 @@ int btn_ok_cb(Ihandle *self)
     ErrorCode sys_ok = save_system_paths(&ctx->sys_paths);
     ErrorCode user_ok = save_user_paths(&ctx->user_paths);
 
-    Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+    Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
 
     if (sys_ok == ERR_OK && user_ok == ERR_OK)
     {
@@ -383,7 +390,7 @@ int btn_cancel_cb(Ihandle *self)
 int btn_import_cb(Ihandle *self)
 {
     Ihandle *dlg = IupGetDialog(self);
-    AppContext *ctx = get_app_context(dlg);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
     if (!ctx)
         return IUP_DEFAULT;
 
@@ -443,7 +450,7 @@ int btn_import_cb(Ihandle *self)
                     {
                         add_string_list(&ctx->sys_paths, imported.system.items[i]);
                     }
-                    Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
+                    Ihandle *list_sys = IupGetDialogChild(dlg, CTRL_LIST_SYS);
                     sync_string_list_to_ui(list_sys, &ctx->sys_paths);
                     total_imported += imported.system.count;
                 }
@@ -455,7 +462,7 @@ int btn_import_cb(Ihandle *self)
                     {
                         add_string_list(&ctx->user_paths, imported.user.items[i]);
                     }
-                    Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");
+                    Ihandle *list_user = IupGetDialogChild(dlg, CTRL_LIST_USER);
                     sync_string_list_to_ui(list_user, &ctx->user_paths);
                     total_imported += imported.user.count;
                 }
@@ -464,7 +471,7 @@ int btn_import_cb(Ihandle *self)
                 snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", total_imported);
                 IupMessage("导入成功", msg);
 
-                Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+                Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
                 if (lbl_status)
                     IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
             }
@@ -483,7 +490,7 @@ int btn_import_cb(Ihandle *self)
 int btn_export_cb(Ihandle *self)
 {
     Ihandle *dlg = IupGetDialog(self);
-    AppContext *ctx = get_app_context(dlg);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
     if (!ctx)
         return IUP_DEFAULT;
 
@@ -545,7 +552,7 @@ void load_all_paths(void)
     Ihandle *dlg = get_main_dlg();
     if (!dlg)
         return;
-    AppContext *ctx = get_app_context(dlg);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
     if (!ctx)
         return;
 
@@ -565,13 +572,13 @@ void load_all_paths(void)
         log_info("Loaded user paths: %d", ctx->user_paths.count);
     }
 
-    Ihandle *list_sys = IupGetDialogChild(dlg, "LIST_SYS");
-    Ihandle *list_user = IupGetDialogChild(dlg, "LIST_USER");
+    Ihandle *list_sys = IupGetDialogChild(dlg, CTRL_LIST_SYS);
+    Ihandle *list_user = IupGetDialogChild(dlg, CTRL_LIST_USER);
 
     sync_string_list_to_ui(list_sys, &ctx->sys_paths);
     sync_string_list_to_ui(list_user, &ctx->user_paths);
 
-    Ihandle *lbl_status = IupGetDialogChild(dlg, "LBL_STATUS");
+    Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
     if (lbl_status)
         IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "loaded"));
 }
