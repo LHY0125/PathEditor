@@ -1,5 +1,6 @@
 #include "utils/os_env.h"
 #include "utils/string_ext.h"
+#include "utils/logger.h"
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,19 +48,29 @@ int is_path_valid(const char *path)
 
 // 备份注册表
 // 备份到 %APPDATA%/PathEditor/backups/ 目录下
+// 返回值：
+//   ERR_OK - 备份成功（系统和用户 PATH 都已备份）
+//   ERR_FAILED - AppData 路径获取失败
+//   ERR_FILE_NOT_FOUND - 备份文件创建失败
+//   ERR_REGISTRY_FAILED - 系统和用户 PATH 都读取失败
 ErrorCode backup_registry(void)
 {
     // 获取 AppData 路径
     wchar_t appdata_path[MAX_PATH];
     if (SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_path) != S_OK)
     {
+        log_error("Failed to get AppData path");
         return ERR_FAILED;
     }
 
     // 创建备份目录（递归创建中间目录）
     wchar_t backup_dir[MAX_PATH];
     swprintf(backup_dir, MAX_PATH, L"%s\\PathEditor\\backups", appdata_path);
-    SHCreateDirectoryExW(NULL, backup_dir, NULL);
+    if (SHCreateDirectoryExW(NULL, backup_dir, NULL) != ERROR_SUCCESS)
+    {
+        log_error("Failed to create backup directory: %ls", backup_dir);
+        return ERR_FILE_NOT_FOUND;
+    }
 
     // 生成时间戳
     time_t t = time(NULL);
@@ -75,11 +86,15 @@ ErrorCode backup_registry(void)
     // 打开文件
     FILE *fp = _wfopen(backup_file, L"w, ccs=UTF-8");
     if (!fp)
-        return ERR_FAILED;
+    {
+        log_error("Failed to create backup file: %ls", backup_file);
+        return ERR_FILE_NOT_FOUND;
+    }
 
     // 备份系统 PATH
     HKEY hKey;
-    int success = 0;
+    int sys_ok = 0;
+    int user_ok = 0;
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                       L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
@@ -96,12 +111,16 @@ ErrorCode backup_registry(void)
                 {
                     fwprintf(fp, L"# System PATH Backup\n");
                     fwprintf(fp, L"%s\n\n", buffer);
-                    success = 1;
+                    sys_ok = 1;
                 }
                 free(buffer);
             }
         }
         RegCloseKey(hKey);
+    }
+    else
+    {
+        log_warn("Failed to open system PATH registry key");
     }
 
     // 备份用户 PATH
@@ -120,14 +139,32 @@ ErrorCode backup_registry(void)
                 {
                     fwprintf(fp, L"# User PATH Backup\n");
                     fwprintf(fp, L"%s\n", buffer);
-                    success = 1;
+                    user_ok = 1;
                 }
                 free(buffer);
             }
         }
         RegCloseKey(hKey);
     }
+    else
+    {
+        log_warn("Failed to open user PATH registry key");
+    }
 
     fclose(fp);
-    return success ? ERR_OK : ERR_FAILED;
+
+    // 判断备份结果
+    if (!sys_ok && !user_ok)
+    {
+        log_error("Backup failed: both system and user PATH read failed");
+        return ERR_REGISTRY_FAILED;
+    }
+
+    if (!sys_ok)
+        log_warn("Backup partial: system PATH read failed, only user PATH backed up");
+    if (!user_ok)
+        log_warn("Backup partial: user PATH read failed, only system PATH backed up");
+
+    log_info("Backup completed: sys=%d, user=%d, file=%ls", sys_ok, user_ok, backup_file);
+    return ERR_OK;
 }

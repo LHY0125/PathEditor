@@ -32,8 +32,17 @@ int btn_ok_cb(Ihandle *self)
     if (backup_result != ERR_OK)
     {
         log_error("Backup failed: error code %d", backup_result);
-        int choice = IupAlarm("警告", "备份失败！是否继续保存？\n（继续保存可能导致无法恢复）",
-                              "继续保存", "取消", NULL);
+        const char *reason = "未知错误";
+        if (backup_result == ERR_FAILED)
+            reason = "无法获取 AppData 路径";
+        else if (backup_result == ERR_FILE_NOT_FOUND)
+            reason = "无法创建备份目录或文件";
+        else if (backup_result == ERR_REGISTRY_FAILED)
+            reason = "无法读取注册表中的 PATH 值";
+
+        char msg[512];
+        snprintf(msg, sizeof(msg), "备份失败！原因：%s\n\n是否继续保存？\n（继续保存可能导致无法恢复）", reason);
+        int choice = IupAlarm("警告", msg, "继续保存", "取消", NULL);
         if (choice != 1)
             return IUP_DEFAULT;
     }
