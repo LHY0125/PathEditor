@@ -85,6 +85,24 @@ void add_string_list(StringList *list, const char *str)
     list->count++;
 }
 
+// 获取指定索引的字符串（只读）
+const char *string_list_get(const StringList *list, int index)
+{
+    if (!list || index < 0 || index >= list->count)
+        return NULL;
+    return list->items[index];
+}
+
+// 设置指定索引的字符串（复制新字符串并释放旧字符串）
+int string_list_set(StringList *list, int index, const char *str)
+{
+    if (!list || index < 0 || index >= list->count || !str)
+        return -1;
+    free(list->items[index]);
+    list->items[index] = _strdup(str);
+    return 0;
+}
+
 // 清空字符串列表
 void clear_string_list(StringList *list)
 {

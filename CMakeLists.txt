@@ -27,6 +27,11 @@ set(SOURCES
     src/core/lua_config.c
     src/core/import_export.c
     src/controller/callbacks.c
+    src/controller/callbacks_basic.c
+    src/controller/callbacks_nav.c
+    src/controller/callbacks_search.c
+    src/controller/callbacks_io.c
+    src/controller/callbacks_sys.c
     ico/resources.rc
 )
 

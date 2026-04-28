@@ -61,7 +61,7 @@ void sync_string_list_to_ui(Ihandle *list_ui, const StringList *str_list)
     
     for (int i = 0; i < str_list->count; i++)
     {
-        IupSetAttributeId(list_ui, "", i + 1, str_list->items[i]);
+        IupSetAttributeId(list_ui, "", i + 1, string_list_get(str_list, i));
     }
     IupSetInt(list_ui, "COUNT", str_list->count);
     
