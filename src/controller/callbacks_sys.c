@@ -28,23 +28,71 @@ int btn_ok_cb(Ihandle *self)
         return IUP_DEFAULT;
     }
 
-    ErrorCode backup_result = backup_registry();
-    if (backup_result != ERR_OK)
-    {
-        log_error("Backup failed: error code %d", backup_result);
-        const char *reason = "未知错误";
-        if (backup_result == ERR_FAILED)
-            reason = "无法获取 AppData 路径";
-        else if (backup_result == ERR_FILE_NOT_FOUND)
-            reason = "无法创建备份目录或文件";
-        else if (backup_result == ERR_REGISTRY_FAILED)
-            reason = "无法读取注册表中的 PATH 值";
+    // 询问用户是否自定义备份目录
+    char custom_backup_dir[MAX_PATH] = "";
+    int do_backup = 1;  // 是否执行备份
 
-        char msg[512];
-        snprintf(msg, sizeof(msg), "备份失败！原因：%s\n\n是否继续保存？\n（继续保存可能导致无法恢复）", reason);
-        int choice = IupAlarm("警告", msg, "继续保存", "取消", NULL);
-        if (choice != 1)
-            return IUP_DEFAULT;
+    int backup_choice = IupAlarm("备份设置",
+                                  "是否自定义备份目录？\n\n"
+                                  "选择「使用默认」将备份到 %APPDATA%/PathEditor/backups/\n"
+                                  "选择「自定义目录」可选择其他位置",
+                                  "使用默认", "自定义目录", "跳过备份");
+
+    if (backup_choice == 2)  // 自定义目录
+    {
+        Ihandle *filedlg = IupFileDlg();
+        IupSetAttribute(filedlg, "DIALOGTYPE", "DIR");
+        IupSetAttribute(filedlg, "TITLE", "选择备份目录");
+
+        IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
+
+        if (IupGetInt(filedlg, "STATUS") != -1)
+        {
+            char *value = IupGetAttribute(filedlg, "VALUE");
+            if (value)
+                strncpy(custom_backup_dir, value, MAX_PATH - 1);
+        }
+        IupDestroy(filedlg);
+
+        if (strlen(custom_backup_dir) == 0)
+        {
+            IupMessage("提示", "未选择目录，将使用默认备份路径。");
+        }
+    }
+    else if (backup_choice == 3)  // 跳过备份
+    {
+        int skip_confirm = IupAlarm("确认", "确定跳过备份吗？\n跳过备份可能导致无法恢复！",
+                                    "确定跳过", "返回备份", NULL);
+        if (skip_confirm != 1)
+        {
+            // 用户反悔，重新询问
+            return btn_ok_cb(self);
+        }
+        do_backup = 0;
+    }
+
+    // 执行备份（如果用户没有跳过）
+    if (do_backup)
+    {
+        const char *backup_path = strlen(custom_backup_dir) > 0 ? custom_backup_dir : NULL;
+        ErrorCode backup_result = backup_registry(backup_path);
+        if (backup_result != ERR_OK)
+        {
+            log_error("Backup failed: error code %d", backup_result);
+            const char *reason = "未知错误";
+            if (backup_result == ERR_FAILED)
+                reason = "无法获取 AppData 路径";
+            else if (backup_result == ERR_FILE_NOT_FOUND)
+                reason = "无法创建备份目录或文件";
+            else if (backup_result == ERR_REGISTRY_FAILED)
+                reason = "无法读取注册表中的 PATH 值";
+
+            char msg[512];
+            snprintf(msg, sizeof(msg), "备份失败！原因：%s\n\n是否继续保存？\n（继续保存可能导致无法恢复）", reason);
+            int choice = IupAlarm("警告", msg, "继续保存", "取消", NULL);
+            if (choice != 1)
+                return IUP_DEFAULT;
+        }
     }
 
     ErrorCode sys_ok = save_system_paths(&ctx->sys_paths);

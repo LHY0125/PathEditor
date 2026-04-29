@@ -1,6 +1,7 @@
 #include "utils/os_env.h"
 #include "utils/string_ext.h"
 #include "utils/logger.h"
+#include "core/lua_config.h"
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,25 +48,65 @@ int is_path_valid(const char *path)
 }
 
 // 备份注册表
-// 备份到 %APPDATA%/PathEditor/backups/ 目录下
+// 参数 backup_path: 自定义备份目录路径，传 NULL 使用 Lua 配置中的默认路径
 // 返回值：
 //   ERR_OK - 备份成功（系统和用户 PATH 都已备份）
 //   ERR_FAILED - AppData 路径获取失败
 //   ERR_FILE_NOT_FOUND - 备份文件创建失败
 //   ERR_REGISTRY_FAILED - 系统和用户 PATH 都读取失败
-ErrorCode backup_registry(void)
+ErrorCode backup_registry(const char *backup_path)
 {
-    // 获取 AppData 路径
-    wchar_t appdata_path[MAX_PATH];
-    if (SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_path) != S_OK)
+    wchar_t backup_dir[MAX_PATH];
+
+    if (backup_path && strlen(backup_path) > 0)
     {
-        log_error("Failed to get AppData path");
-        return ERR_FAILED;
+        // 使用用户指定的路径
+        wchar_t *wpath = utf8_to_wide(backup_path);
+        if (wpath)
+        {
+            wcsncpy(backup_dir, wpath, MAX_PATH - 1);
+            backup_dir[MAX_PATH - 1] = L'\0';
+            free(wpath);
+        }
+        else
+        {
+            log_error("Failed to convert backup path to wide string");
+            return ERR_FAILED;
+        }
+    }
+    else
+    {
+        // 使用默认路径：Lua 配置 > %APPDATA%/PathEditor/backups/
+        const char *lua_dir = lua_config_get_string("backup", "dir");
+        if (lua_dir && strlen(lua_dir) > 0)
+        {
+            wchar_t *wpath = utf8_to_wide(lua_dir);
+            if (wpath)
+            {
+                wcsncpy(backup_dir, wpath, MAX_PATH - 1);
+                backup_dir[MAX_PATH - 1] = L'\0';
+                free(wpath);
+            }
+            else
+            {
+                log_error("Failed to convert Lua backup dir to wide string");
+                return ERR_FAILED;
+            }
+        }
+        else
+        {
+            // 获取 AppData 路径作为默认值
+            wchar_t appdata_path[MAX_PATH];
+            if (SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_path) != S_OK)
+            {
+                log_error("Failed to get AppData path");
+                return ERR_FAILED;
+            }
+            swprintf(backup_dir, MAX_PATH, L"%s\\PathEditor\\backups", appdata_path);
+        }
     }
 
     // 创建备份目录（递归创建中间目录）
-    wchar_t backup_dir[MAX_PATH];
-    swprintf(backup_dir, MAX_PATH, L"%s\\PathEditor\\backups", appdata_path);
     if (SHCreateDirectoryExW(NULL, backup_dir, NULL) != ERROR_SUCCESS)
     {
         log_error("Failed to create backup directory: %ls", backup_dir);

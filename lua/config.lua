@@ -15,6 +15,11 @@ local config = {
         select_dir = "Select Directory"
     },
 
+    -- 备份设置
+    backup = {
+        dir = "",  -- 默认备份目录，留空使用 %APPDATA%/PathEditor/backups/
+    },
+
     -- 列表控件设置
     list = {
         item_padding = "5x5",
