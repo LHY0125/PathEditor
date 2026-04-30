@@ -3,6 +3,7 @@
 
 #include <iup.h>
 #include "core/app_context.h"
+#include "utils/i18n.h"
 
 // 内部辅助函数声明（供各 callbacks_*.c 文件共享）
 // 这些函数不对外暴露，仅在 controller 层内部使用

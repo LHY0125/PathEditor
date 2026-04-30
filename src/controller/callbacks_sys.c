@@ -24,7 +24,7 @@ int btn_ok_cb(Ihandle *self)
 
     if (!check_admin())
     {
-        IupMessage("错误", "需要管理员权限才能保存更改！");
+        IupMessage(_("Error"), _("Administrator privileges are required to save changes!"));
         return IUP_DEFAULT;
     }
 
@@ -32,11 +32,11 @@ int btn_ok_cb(Ihandle *self)
     char custom_backup_dir[MAX_PATH] = "";
     int do_backup = 1;  // 是否执行备份
 
-    int backup_choice = IupAlarm("备份设置",
-                                  "是否自定义备份目录？\n\n"
-                                  "选择「使用默认」将备份到 %APPDATA%/PathEditor/backups/\n"
-                                  "选择「自定义目录」可选择其他位置",
-                                  "使用默认", "自定义目录", "跳过备份");
+    int backup_choice = IupAlarm(_("Backup Settings"),
+                                  _("Would you like to customize the backup directory?\n\n"
+                                    "Select 'Use Default' to backup to %%APPDATA%%/PathEditor/backups/\n"
+                                    "Select 'Custom Directory' to choose another location"),
+                                  _("Use Default"), _("Custom Directory"), _("Skip Backup"));
 
     if (backup_choice == 2)  // 自定义目录
     {
@@ -56,13 +56,13 @@ int btn_ok_cb(Ihandle *self)
 
         if (strlen(custom_backup_dir) == 0)
         {
-            IupMessage("提示", "未选择目录，将使用默认备份路径。");
+            IupMessage(_("Hint"), _("No directory selected, will use default backup path."));
         }
     }
     else if (backup_choice == 3)  // 跳过备份
     {
-        int skip_confirm = IupAlarm("确认", "确定跳过备份吗？\n跳过备份可能导致无法恢复！",
-                                    "确定跳过", "返回备份", NULL);
+        int skip_confirm = IupAlarm(_("Confirm"), _("Are you sure you want to skip backup?\nSkipping backup may cause inability to recover!"),
+                                    _("Skip Anyway"), _("Go Back"), NULL);
         if (skip_confirm != 1)
         {
             // 用户反悔，重新询问
@@ -89,7 +89,7 @@ int btn_ok_cb(Ihandle *self)
 
             char msg[512];
             snprintf(msg, sizeof(msg), "备份失败！原因：%s\n\n是否继续保存？\n（继续保存可能导致无法恢复）", reason);
-            int choice = IupAlarm("警告", msg, "继续保存", "取消", NULL);
+            int choice = IupAlarm(_("Warning"), msg, _("Continue Saving"), _("Cancel"), NULL);
             if (choice != 1)
                 return IUP_DEFAULT;
         }
@@ -104,22 +104,22 @@ int btn_ok_cb(Ihandle *self)
     {
         log_info("Saved system paths: %d, user paths: %d", ctx->sys_paths.count, ctx->user_paths.count);
         SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
-        IupMessage("成功", "系统和用户 PATH 环境变量均已更新！");
+        IupMessage(_("Success"), _("Both system and user PATH environment variables have been updated!"));
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "saved"));
     }
     else if (sys_ok == ERR_OK)
     {
-        IupMessage("提示", "系统变量保存成功，但用户变量保存失败。");
+        IupMessage(_("Info"), _("System variables saved successfully, but user variables failed to save."));
     }
     else if (user_ok == ERR_OK)
     {
-        IupMessage("提示", "用户变量保存成功，但系统变量保存失败。");
+        IupMessage(_("Info"), _("User variables saved successfully, but system variables failed to save."));
     }
     else
     {
         log_error("Failed to save paths: sys=%d, user=%d", sys_ok, user_ok);
-        IupMessage("错误", "保存失败！");
+        IupMessage(_("Error"), _("Failed to save!"));
         if (lbl_status)
             IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "error"));
     }
@@ -146,7 +146,7 @@ void load_all_paths(void)
     if (load_system_paths(&ctx->sys_paths) != ERR_OK)
     {
         log_error("Failed to load system paths");
-        IupMessage("错误", "无法打开系统环境变量注册表键，请尝试以管理员身份运行。");
+        IupMessage(_("Error"), _("Unable to open system environment variable registry key, please try running as administrator."));
     }
     else
     {
@@ -182,23 +182,23 @@ int btn_lang_cb(Ihandle *self)
 // 按钮回调：帮助
 int btn_help_cb(Ihandle *self)
 {
-    IupMessage("使用说明",
-               "1. 本程序用于编辑系统环境变量 PATH。\n"
-               "2. 必须以【管理员身份】运行才能保存更改。\n"
-               "3. 操作说明：\n"
-               "   - 新建：添加新路径到列表末尾。\n"
-               "   - 编辑：修改选中的路径。\n"
-               "   - 浏览：从文件系统选择目录添加。\n"
-               "   - 删除：移除选中的路径。\n"
-               "   - 上移/下移：调整路径优先级。\n"
-               "   - 导入/导出：备份和恢复 PATH 配置。\n"
-               "4. 点击【确定】保存更改并生效。\n"
-               "5. 注意：某些正在运行的程序可能需要重启才能识别新的环境变量。\n\n"
-               "--------------------------------------------------\n"
-               "作者：LHY\n"
-               "邮箱：3364451258@qq.com\n"
-               "GitHub：https://github.com/LHY0125/PathEditor\n"
-               "记得给我的项目点个star！");
+    IupMessage(_("Usage Instructions"),
+               _("1. This program is used to edit system environment variable PATH.\n"
+                 "2. Must run as 【Administrator】 to save changes.\n"
+                 "3. Operations:\n"
+                 "   - New: Add new path to end of list.\n"
+                 "   - Edit: Modify selected path.\n"
+                 "   - Browse: Select directory from file system to add.\n"
+                 "   - Delete: Remove selected path.\n"
+                 "   - Up/Down: Adjust path priority.\n"
+                 "   - Import/Export: Backup and restore PATH configuration.\n"
+                 "4. Click 【OK】 to save changes and apply.\n"
+                 "5. Note: Some running programs may need to restart to recognize new environment variables.\n\n"
+                 "--------------------------------------------------\n"
+                 "Author: LHY\n"
+                 "Email: 3364451258@qq.com\n"
+                 "GitHub: https://github.com/LHY0125/PathEditor\n"
+                 "Don't forget to star my project!"));
 
     return IUP_DEFAULT;
 }

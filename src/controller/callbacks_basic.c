@@ -18,11 +18,19 @@ int btn_new_cb(Ihandle *self)
 {
     Ihandle *dlg = IupGetDialog(self);
     char buffer[PATH_BUFFER_SIZE] = "";
-    if (custom_input_dialog("新建环境变量", "请输入路径:", buffer, sizeof(buffer)))
+    if (custom_input_dialog(_("New Environment Variable"), _("Please enter a path:"), buffer, sizeof(buffer)))
     {
         if (strlen(buffer) > 0)
         {
             StringList *raw_data = get_current_raw_data(dlg);
+
+            // 检查是否已存在重复路径
+            if (string_list_contains(raw_data, buffer))
+            {
+                IupMessage(_("Warning"), _("This path already exists and will not be added again."));
+                return IUP_DEFAULT;
+            }
+
             add_string_list(raw_data, buffer);
 
             Ihandle *current_list = get_current_list(dlg);
@@ -51,7 +59,7 @@ int btn_edit_cb(Ihandle *self)
     char buffer[PATH_BUFFER_SIZE];
     safe_strcpy(buffer, sizeof(buffer), string_list_get(raw_data, selected - 1));
 
-    if (custom_input_dialog("编辑环境变量", "编辑路径:", buffer, sizeof(buffer)))
+    if (custom_input_dialog(_("Edit Environment Variable"), _("Edit path:"), buffer, sizeof(buffer)))
     {
         if (strlen(buffer) > 0)
         {
@@ -91,6 +99,15 @@ int btn_browse_cb(Ihandle *self)
         if (value)
         {
             StringList *raw_data = get_current_raw_data(dlg);
+
+            // 检查是否已存在重复路径
+            if (string_list_contains(raw_data, value))
+            {
+                IupMessage(_("Warning"), _("This path already exists and will not be added again."));
+                IupDestroy(filedlg);
+                return IUP_DEFAULT;
+            }
+
             add_string_list(raw_data, value);
 
             Ihandle *current_list = get_current_list(dlg);
@@ -113,7 +130,7 @@ int btn_del_cb(Ihandle *self)
 
     if (selected == 0)
     {
-        IupMessage("提示", "请先选择要删除的项");
+        IupMessage(_("Info"), _("Please select an item to delete first"));
         return IUP_DEFAULT;
     }
 

@@ -61,7 +61,7 @@ int btn_clean_cb(Ihandle *self)
     if (!raw_data || raw_data->count == 0)
         return IUP_DEFAULT;
 
-    if (IupAlarm("确认清理", "此操作将移除当前列表中所有【无效路径】和【重复路径】。\n确定要继续吗？", "确定", "取消", NULL) != 1)
+    if (IupAlarm(_("Confirm Cleanup"), _("This operation will remove all 【invalid paths】 and 【duplicate paths】 from the current list.\nAre you sure you want to continue?"), _("Confirm"), _("Cancel"), NULL) != 1)
     {
         return IUP_DEFAULT;
     }
@@ -74,8 +74,8 @@ int btn_clean_cb(Ihandle *self)
     sync_string_list_to_ui(current_list, raw_data);
 
     char msg[128];
-    snprintf(msg, sizeof(msg), "清理完成！共移除了 %d 个无效或重复路径。", removed);
-    IupMessage("提示", msg);
+    snprintf(msg, sizeof(msg), _("Cleanup completed! Removed %d invalid or duplicate paths."), removed);
+    IupMessage(_("Info"), msg);
     return IUP_DEFAULT;
 }
 

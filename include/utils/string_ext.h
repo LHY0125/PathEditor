@@ -27,4 +27,7 @@ char *wide_to_utf8(const wchar_t *wstr);
 wchar_t *utf8_to_wide(const char *str);
 char *stristr(const char *haystack, const char *needle);
 
+// 检查字符串列表中是否存在指定路径（不区分大小写）
+int string_list_contains(const StringList *list, const char *str);
+
 #endif // STRING_EXT_H

@@ -2,6 +2,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(PathEditor VERSION 3.0 LANGUAGES C)
 
+# 选项：是否构建测试
+option(BUILD_TESTS "Build unit tests" OFF)
+
 # 启用资源编译器以处理 .rc 文件
 enable_language(RC)
 
@@ -18,6 +21,7 @@ set(SOURCES
     src/utils/safe_string.c
     src/utils/logger.c
     src/utils/i18n.c
+    src/utils/error_code.c
     src/ui/ui_utils.c
     src/ui/dialogs.c
     src/ui/main_window.c
@@ -123,3 +127,9 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     "$<TARGET_FILE_DIR:${PROJECT_NAME}>/locale"
     COMMENT "Copying locale directory to build directory..."
 )
+
+# 测试支持
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

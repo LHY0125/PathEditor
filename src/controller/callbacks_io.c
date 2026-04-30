@@ -24,7 +24,7 @@ int btn_import_cb(Ihandle *self)
 
     if (!check_admin())
     {
-        IupMessage("错误", "需要管理员权限才能导入 PATH！");
+        IupMessage(_("Error"), _("Administrator privileges are required to import PATH!"));
         return IUP_DEFAULT;
     }
 
@@ -52,7 +52,7 @@ int btn_import_cb(Ihandle *self)
 
                 if (!has_system && !has_user)
                 {
-                    IupMessage("错误", "文件中没有找到有效的路径！");
+                    IupMessage(_("Error"), _("No valid paths found in file!"));
                     clear_string_list(&imported.system);
                     clear_string_list(&imported.user);
                     IupDestroy(filedlg);
@@ -62,14 +62,14 @@ int btn_import_cb(Ihandle *self)
                 int choice = 0;
                 if (has_system && has_user)
                 {
-                    choice = IupAlarm("导入选项", "请选择导入目标：",
-                                      "仅系统变量", "仅用户变量", "全部导入");
+                    choice = IupAlarm(_("Import Options"), _("Please select import target:"),
+                                      _("System Variables Only"), _("User Variables Only"), _("Import All"));
                 }
                 else if (has_system)
                 {
-                    // TXT 文件导入时，让用户选择目标（系统变量或用户变量）
-                    choice = IupAlarm("导入选项", "请选择导入目标：",
-                                      "导入到系统变量", "导入到用户变量", NULL);
+                    // TXT file import: let user choose target (system or user)
+                    choice = IupAlarm(_("Import Options"), _("Please select import target:"),
+                                      _("Import to System"), _("Import to User"), NULL);
                     // IupAlarm 返回 1 或 2，转换为 1(系统) 或 2(用户)
                 }
                 else
@@ -108,8 +108,8 @@ int btn_import_cb(Ihandle *self)
                 clear_string_list(&imported.user);
 
                 char msg[256];
-                snprintf(msg, sizeof(msg), "成功导入 %d 个路径！", total_imported);
-                IupMessage("导入成功", msg);
+                snprintf(msg, sizeof(msg), _("Successfully imported %d paths!"), total_imported);
+                IupMessage(_("Import Success"), msg);
 
                 Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
                 if (lbl_status)
@@ -118,7 +118,7 @@ int btn_import_cb(Ihandle *self)
             else
             {
                 log_error("Import failed: error code %d", import_result);
-                IupMessage("错误", "导入失败，请检查文件格式是否正确！");
+                IupMessage(_("Error"), _("Import failed, please check if the file format is correct!"));
             }
         }
     }
@@ -171,14 +171,14 @@ int btn_export_cb(Ihandle *self)
             if (export_result == ERR_OK)
             {
                 char msg[512];
-                snprintf(msg, sizeof(msg), "成功导出！\n系统变量: %d 个\n用户变量: %d 个\n\n保存位置: %s",
+                snprintf(msg, sizeof(msg), _("Export successful!\nSystem variables: %d\nUser variables: %d\n\nSave location: %s"),
                          data.system.count, data.user.count, filepath);
-                IupMessage("导出成功", msg);
+                IupMessage(_("Export Success"), msg);
             }
             else
             {
                 log_error("Export failed: error code %d", export_result);
-                IupMessage("错误", "导出失败！");
+                IupMessage(_("Error"), _("Export failed!"));
             }
         }
     }

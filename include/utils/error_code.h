@@ -15,6 +15,7 @@ typedef enum {
     ERR_INVALID_INDEX = -10     // 无效索引
 } ErrorCode;
 
+// 获取错误码的字符串表示（英文，用于日志）
 const char* error_code_to_string(ErrorCode code);
 
 #endif // ERROR_CODE_H

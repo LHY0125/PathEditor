@@ -127,3 +127,16 @@ void clear_string_list(StringList *list)
     list->count = 0;
     list->capacity = 0;
 }
+
+// 检查字符串列表中是否存在指定路径（不区分大小写）
+int string_list_contains(const StringList *list, const char *str)
+{
+    if (!list || !str)
+        return 0;
+    for (int i = 0; i < list->count; i++)
+    {
+        if (list->items[i] && _stricmp(list->items[i], str) == 0)
+            return 1;
+    }
+    return 0;
+}
