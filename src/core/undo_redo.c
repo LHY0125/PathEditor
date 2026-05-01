@@ -128,14 +128,6 @@ int push_undo_record(UndoRedoManager *mgr, const OpRecord *record)
     return 0;
 }
 
-static void apply_record(UndoRedoManager *mgr, int record_index, int is_undo)
-{
-    (void)mgr;
-    (void)record_index;
-    (void)is_undo;
-    // 此函数已废弃，撤销/重做逻辑在 undo() 和 redo() 中直接实现
-}
-
 int undo(UndoRedoManager *mgr, StringList *sys_paths, StringList *user_paths)
 {
     if (!mgr || !can_undo(mgr))
@@ -268,10 +260,13 @@ int redo(UndoRedoManager *mgr, StringList *sys_paths, StringList *user_paths)
     case OP_IMPORT:
         // 重做清理/导入：应用新列表
         clear_string_list(target);
-        for (int i = 0; i < rec->count; i++)
+        if (rec->new_paths)
         {
-            if (rec->new_paths[i])
-                add_string_list(target, rec->new_paths[i]);
+            for (int i = 0; i < rec->count; i++)
+            {
+                if (rec->new_paths[i])
+                    add_string_list(target, rec->new_paths[i]);
+            }
         }
         break;
 

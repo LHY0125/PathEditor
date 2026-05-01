@@ -1,6 +1,7 @@
 #include "controller/callbacks.h"
 #include "controller/callbacks_internal.h"
 #include "core/app_context.h"
+#include "core/undo_redo.h"
 #include "utils/ui_constants.h"
 #include <iup.h>
 
@@ -44,4 +45,20 @@ Ihandle *get_current_list(Ihandle *dlg)
     if (pos == 1)
         return IupGetDialogChild(dlg, CTRL_LIST_USER);
     return IupGetDialogChild(dlg, CTRL_LIST_SYS);
+}
+
+// 刷新撤销/重做按钮的启用状态
+void refresh_undo_redo_buttons(Ihandle *dlg)
+{
+    AppContext *ctx = get_app_context_from_dlg(dlg);
+    if (!ctx || !ctx->undo_redo_mgr)
+        return;
+
+    Ihandle *btn_undo = IupGetDialogChild(dlg, CTRL_BTN_UNDO);
+    Ihandle *btn_redo = IupGetDialogChild(dlg, CTRL_BTN_REDO);
+
+    if (btn_undo)
+        IupSetAttribute(btn_undo, "ACTIVE", can_undo(ctx->undo_redo_mgr) ? "YES" : "NO");
+    if (btn_redo)
+        IupSetAttribute(btn_redo, "ACTIVE", can_redo(ctx->undo_redo_mgr) ? "YES" : "NO");
 }

@@ -71,6 +71,7 @@ int btn_up_cb(Ihandle *self)
     sync_string_list_to_ui(current_list, raw_data);
     IupSetInt(current_list, "VALUE", selected - 1);
 
+    refresh_undo_redo_buttons(dlg);
     return IUP_DEFAULT;
 }
 
@@ -104,6 +105,7 @@ int btn_down_cb(Ihandle *self)
     sync_string_list_to_ui(current_list, raw_data);
     IupSetInt(current_list, "VALUE", selected + 1);
 
+    refresh_undo_redo_buttons(dlg);
     return IUP_DEFAULT;
 }
 
@@ -142,23 +144,9 @@ int btn_clean_cb(Ihandle *self)
     char msg[128];
     snprintf(msg, sizeof(msg), _("Cleanup completed! Removed %d invalid or duplicate paths."), removed);
     IupMessage(_("Info"), msg);
+
+    refresh_undo_redo_buttons(dlg);
     return IUP_DEFAULT;
-}
-
-// 刷新撤销/重做按钮的启用状态
-static void refresh_undo_redo_buttons(Ihandle *dlg)
-{
-    AppContext *ctx = get_app_context_from_dlg(dlg);
-    if (!ctx || !ctx->undo_redo_mgr)
-        return;
-
-    Ihandle *btn_undo = IupGetDialogChild(dlg, CTRL_BTN_UNDO);
-    Ihandle *btn_redo = IupGetDialogChild(dlg, CTRL_BTN_REDO);
-
-    if (btn_undo)
-        IupSetAttribute(btn_undo, "ACTIVE", can_undo(ctx->undo_redo_mgr) ? "YES" : "NO");
-    if (btn_redo)
-        IupSetAttribute(btn_redo, "ACTIVE", can_redo(ctx->undo_redo_mgr) ? "YES" : "NO");
 }
 
 int btn_undo_cb(Ihandle *self)

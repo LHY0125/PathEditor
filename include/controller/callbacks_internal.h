@@ -20,4 +20,7 @@ StringList *get_current_raw_data(Ihandle *dlg);
 // 获取当前活动的列表 UI 控件
 Ihandle *get_current_list(Ihandle *dlg);
 
+// 刷新撤销/重做按钮的启用状态
+void refresh_undo_redo_buttons(Ihandle *dlg);
+
 #endif // CALLBACKS_INTERNAL_H

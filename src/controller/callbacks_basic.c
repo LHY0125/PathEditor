@@ -76,6 +76,8 @@ int btn_new_cb(Ihandle *self)
 
             int count = IupGetInt(current_list, "COUNT");
             IupSetInt(current_list, "VALUE", count);
+
+            refresh_undo_redo_buttons(dlg);
         }
     }
     return IUP_DEFAULT;
@@ -114,6 +116,8 @@ int btn_edit_cb(Ihandle *self)
 
             sync_string_list_to_ui(current_list, raw_data);
             IupSetInt(current_list, "VALUE", selected);
+
+            refresh_undo_redo_buttons(dlg);
         }
     }
     return IUP_DEFAULT;
@@ -168,6 +172,8 @@ int btn_browse_cb(Ihandle *self)
 
             int count = IupGetInt(current_list, "COUNT");
             IupSetInt(current_list, "VALUE", count);
+
+            refresh_undo_redo_buttons(dlg);
         }
     }
     IupDestroy(filedlg);
@@ -208,5 +214,6 @@ int btn_del_cb(Ihandle *self)
     if (lbl_status)
         IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "deleted"));
 
+    refresh_undo_redo_buttons(dlg);
     return IUP_DEFAULT;
 }
