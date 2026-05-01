@@ -23,4 +23,7 @@ Ihandle *get_current_list(Ihandle *dlg);
 // 刷新撤销/重做按钮的启用状态
 void refresh_undo_redo_buttons(Ihandle *dlg);
 
+// 同步合并预览列表
+void sync_merged_list(Ihandle *dlg);
+
 #endif // CALLBACKS_INTERNAL_H

@@ -1,5 +1,6 @@
 #include "ui/main_window.h"
 #include "controller/callbacks.h"
+#include "controller/callbacks_internal.h"
 #include "core/lua_config.h"
 #include "utils/i18n.h"
 #include "utils/ui_constants.h"
@@ -24,6 +25,16 @@ static Ihandle *create_path_list(const char *name)
     return list;
 }
 
+// 选项卡切换回调：切换到合并预览时刷新列表
+static int tab_change_cb(Ihandle *self, Ihandle *new_tab, Ihandle *old_tab)
+{
+    (void)old_tab;
+    (void)new_tab;
+    Ihandle *dlg = IupGetDialog(self);
+    sync_merged_list(dlg);
+    return IUP_DEFAULT;
+}
+
 // 创建主窗口
 Ihandle *create_main_window(void)
 {
@@ -31,6 +42,15 @@ Ihandle *create_main_window(void)
     Ihandle *list_sys = create_path_list(CTRL_LIST_SYS);
     // 创建用户路径列表
     Ihandle *list_user = create_path_list(CTRL_LIST_USER);
+    // 创建合并预览列表（只读）
+    Ihandle *list_merged = IupFlatList();
+    IupSetAttribute(list_merged, "NAME", CTRL_LIST_MERGED);
+    IupSetAttribute(list_merged, "EXPAND", "YES");
+    IupSetAttribute(list_merged, "ITEMPADDING", lua_config_get_string("list", "item_padding"));
+    IupSetAttribute(list_merged, "BACKCOLOR", lua_config_get_string("list", "backcolor"));
+    IupSetAttribute(list_merged, "BORDER", "YES");
+    IupSetAttribute(list_merged, "HLINE", "NO");
+    IupSetAttribute(list_merged, "ACTIVE", "NO");  // 只读
 
     // 创建搜索框
     Ihandle *txt_search = IupText(NULL);
@@ -43,11 +63,14 @@ Ihandle *create_main_window(void)
     Ihandle *tabs_main = IupTabs(
         IupVbox(list_sys, NULL),
         IupVbox(list_user, NULL),
+        IupVbox(list_merged, NULL),
         NULL);
     IupSetAttribute(tabs_main, "NAME", CTRL_TABS_MAIN);
     IupSetAttribute(tabs_main, "TABTITLE0", _(lua_config_get_string("label", "tab_sys")));
     IupSetAttribute(tabs_main, "TABTITLE1", _(lua_config_get_string("label", "tab_user")));
+    IupSetAttribute(tabs_main, "TABTITLE2", _(lua_config_get_string("label", "tab_merged")));
     IupSetAttribute(tabs_main, "TABTYPE", "TOP");
+    IupSetCallback(tabs_main, "TABCHANGE_CB", (Icallback)tab_change_cb);
 
     // 创建操作按钮
     Ihandle *btn_new = IupButton(_(lua_config_get_string("button", "new")), NULL);
@@ -201,6 +224,7 @@ void refresh_main_window_ui(Ihandle *main_dlg)
     {
         IupSetAttribute(tabs, "TABTITLE0", _(lua_config_get_string("label", "tab_sys")));
         IupSetAttribute(tabs, "TABTITLE1", _(lua_config_get_string("label", "tab_user")));
+        IupSetAttribute(tabs, "TABTITLE2", _(lua_config_get_string("label", "tab_merged")));
     }
 
     // 辅助函数：设置子控件标题

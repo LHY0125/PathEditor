@@ -51,6 +51,7 @@ local config = {
         search_placeholder = "Search...",
         tab_sys = "System Variables",
         tab_user = "User Variables",
+        tab_merged = "Merged Preview",
         export_title = "Export PATH",
         import_title = "Import PATH"
     },

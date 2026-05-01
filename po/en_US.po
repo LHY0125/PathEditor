@@ -29,6 +29,10 @@ msgid "User Variables"
 msgstr "User Variables"
 
 #: src/ui/main_window.c
+msgid "Merged Preview"
+msgstr "Merged Preview"
+
+#: src/ui/main_window.c
 msgid "New"
 msgstr "New"
 

@@ -164,6 +164,7 @@ void load_all_paths(void)
 
     sync_string_list_to_ui(list_sys, &ctx->sys_paths);
     sync_string_list_to_ui(list_user, &ctx->user_paths);
+    sync_merged_list(dlg);
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
     if (lbl_status)

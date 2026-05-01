@@ -29,6 +29,10 @@ msgid "User Variables"
 msgstr "用户变量"
 
 #: src/ui/main_window.c
+msgid "Merged Preview"
+msgstr "合并预览"
+
+#: src/ui/main_window.c
 msgid "New"
 msgstr "新建"
 

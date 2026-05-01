@@ -3,6 +3,7 @@
 #include "core/app_context.h"
 #include "core/undo_redo.h"
 #include "utils/ui_constants.h"
+#include "ui/ui_utils.h"
 #include <iup.h>
 
 // 辅助函数：获取主对话框
@@ -61,4 +62,25 @@ void refresh_undo_redo_buttons(Ihandle *dlg)
         IupSetAttribute(btn_undo, "ACTIVE", can_undo(ctx->undo_redo_mgr) ? "YES" : "NO");
     if (btn_redo)
         IupSetAttribute(btn_redo, "ACTIVE", can_redo(ctx->undo_redo_mgr) ? "YES" : "NO");
+}
+
+// 同步合并预览列表（sys + user）
+void sync_merged_list(Ihandle *dlg)
+{
+    AppContext *ctx = get_app_context_from_dlg(dlg);
+    Ihandle *list_merged = IupGetDialogChild(dlg, CTRL_LIST_MERGED);
+    if (!ctx || !list_merged)
+        return;
+
+    IupSetAttribute(list_merged, "REMOVEITEM", "ALL");
+
+    int pos = 1;
+    for (int i = 0; i < ctx->sys_paths.count; i++)
+        IupSetAttributeId(list_merged, "", pos++, string_list_get(&ctx->sys_paths, i));
+    for (int i = 0; i < ctx->user_paths.count; i++)
+        IupSetAttributeId(list_merged, "", pos++, string_list_get(&ctx->user_paths, i));
+
+    int total = ctx->sys_paths.count + ctx->user_paths.count;
+    IupSetInt(list_merged, "COUNT", total);
+    refresh_single_list_style(list_merged);
 }

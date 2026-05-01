@@ -10,6 +10,7 @@
 // 列表控件
 #define CTRL_LIST_SYS "LIST_SYS"
 #define CTRL_LIST_USER "LIST_USER"
+#define CTRL_LIST_MERGED "LIST_MERGED"
 
 // 选项卡
 #define CTRL_TABS_MAIN "TABS_MAIN"
