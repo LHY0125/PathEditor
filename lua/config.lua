@@ -40,7 +40,9 @@ local config = {
         export = "Export",
         ok = "OK",
         cancel = "Cancel",
-        help = "Help"
+        help = "Help",
+        undo = "Undo",
+        redo = "Redo",
     },
 
     -- 标签文本（使用英文原文，供 gettext 翻译）
