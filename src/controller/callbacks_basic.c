@@ -180,39 +180,77 @@ int btn_browse_cb(Ihandle *self)
     return IUP_DEFAULT;
 }
 
-// 按钮回调：删除
+// 按钮回调：删除（支持多选批量删除）
 int btn_del_cb(Ihandle *self)
 {
     Ihandle *dlg = IupGetDialog(self);
     Ihandle *current_list = get_current_list(dlg);
-    int selected = IupGetInt(current_list, "VALUE");
 
-    if (selected == 0)
+    // 解析多选索引（VALUE 为 "1;3;5" 格式）
+    char *value_str = IupGetAttribute(current_list, "VALUE");
+    if (!value_str || value_str[0] == '\0')
     {
         IupMessage(_("Info"), _("Please select an item to delete first"));
         return IUP_DEFAULT;
     }
 
     StringList *raw_data = get_current_raw_data(dlg);
-    int del_index = selected - 1;
+    if (!raw_data || raw_data->count == 0)
+        return IUP_DEFAULT;
 
-    // 记录撤销信息（被删除的路径）
-    char *del_path = _strdup(string_list_get(raw_data, del_index));
-    char *paths[1] = {del_path};
-    push_record(dlg, OP_DELETE, del_index, 1, paths, NULL);
-    free(del_path);
-
-    ErrorCode result = path_manager_remove_at(raw_data, del_index);
-    if (result != ERR_OK)
+    // 解析选中索引并排序（从大到小，方便从尾部删除避免索引偏移）
+    int indices[256];
+    int sel_count = 0;
+    char *token = strtok(value_str, ";");
+    while (token && sel_count < 256)
     {
-        log_error("Failed to remove path at index %d", del_index);
+        int idx = atoi(token) - 1;  // 转为 0-based
+        if (idx >= 0 && idx < raw_data->count)
+            indices[sel_count++] = idx;
+        token = strtok(NULL, ";");
     }
+
+    if (sel_count == 0)
+        return IUP_DEFAULT;
+
+    // 从大到小排序
+    for (int i = 0; i < sel_count - 1; i++)
+    {
+        for (int j = i + 1; j < sel_count; j++)
+        {
+            if (indices[i] < indices[j])
+            {
+                int tmp = indices[i];
+                indices[i] = indices[j];
+                indices[j] = tmp;
+            }
+        }
+    }
+
+    // 记录撤销信息（所有被删除的路径）
+    char **old_paths = (char **)malloc(sel_count * sizeof(char *));
+    for (int i = 0; i < sel_count; i++)
+        old_paths[i] = _strdup(string_list_get(raw_data, indices[i]));
+
+    push_record(dlg, OP_DELETE, indices[sel_count - 1], sel_count, old_paths, NULL);
+
+    for (int i = 0; i < sel_count; i++)
+        free(old_paths[i]);
+    free(old_paths);
+
+    // 从大到小删除（避免索引偏移）
+    for (int i = 0; i < sel_count; i++)
+        path_manager_remove_at(raw_data, indices[i]);
 
     sync_string_list_to_ui(current_list, raw_data);
 
     Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
     if (lbl_status)
-        IupSetAttribute(lbl_status, "TITLE", lua_config_get_string("status", "deleted"));
+    {
+        char msg[64];
+        snprintf(msg, sizeof(msg), _("Deleted %d items"), sel_count);
+        IupSetAttribute(lbl_status, "TITLE", msg);
+    }
 
     refresh_undo_redo_buttons(dlg);
     return IUP_DEFAULT;

@@ -17,6 +17,7 @@ static Ihandle *create_path_list(const char *name)
     IupSetAttribute(list, "BORDER", "YES");
     IupSetAttribute(list, "CANFOCUS", "YES");
     IupSetAttribute(list, "HLINE", "NO");
+    IupSetAttribute(list, "MULTIPLE", "YES");
     IupSetCallback(list, "DBLCLICK_CB", (Icallback)list_dblclick_cb);
     IupSetCallback(list, "DROPFILES_CB", (Icallback)list_dropfiles_cb);
     IupSetCallback(list, "K_ANY", (Icallback)list_k_any_cb);
