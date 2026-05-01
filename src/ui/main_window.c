@@ -67,6 +67,14 @@ Ihandle *create_main_window(void)
     Ihandle *btn_down = IupButton(_(lua_config_get_string("button", "down")), NULL);
     IupSetAttribute(btn_down, "NAME", CTRL_BTN_DOWN);
 
+    Ihandle *btn_undo = IupButton(_(lua_config_get_string("button", "undo")), NULL);
+    IupSetAttribute(btn_undo, "NAME", CTRL_BTN_UNDO);
+    IupSetAttribute(btn_undo, "ACTIVE", "NO");  // 初始无操作可撤销
+
+    Ihandle *btn_redo = IupButton(_(lua_config_get_string("button", "redo")), NULL);
+    IupSetAttribute(btn_redo, "NAME", CTRL_BTN_REDO);
+    IupSetAttribute(btn_redo, "ACTIVE", "NO");  // 初始无操作可重做
+
     Ihandle *btn_clean = IupButton(_(lua_config_get_string("button", "clean")), NULL);
     IupSetAttribute(btn_clean, "NAME", CTRL_BTN_CLEAN);
 
@@ -88,6 +96,8 @@ Ihandle *create_main_window(void)
     IupSetCallback(btn_del, "ACTION", (Icallback)btn_del_cb);
     IupSetCallback(btn_up, "ACTION", (Icallback)btn_up_cb);
     IupSetCallback(btn_down, "ACTION", (Icallback)btn_down_cb);
+    IupSetCallback(btn_undo, "ACTION", (Icallback)btn_undo_cb);
+    IupSetCallback(btn_redo, "ACTION", (Icallback)btn_redo_cb);
     IupSetCallback(btn_clean, "ACTION", (Icallback)btn_clean_cb);
     IupSetCallback(btn_import, "ACTION", (Icallback)btn_import_cb);
     IupSetCallback(btn_export, "ACTION", (Icallback)btn_export_cb);
@@ -103,6 +113,8 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_clean, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_import, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_export, "RASTERSIZE", btn_size);
+    IupSetAttribute(btn_undo, "RASTERSIZE", btn_size);
+    IupSetAttribute(btn_redo, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_lang, "RASTERSIZE", btn_size);
 
     // 创建操作按钮垂直布局
@@ -113,6 +125,7 @@ Ihandle *create_main_window(void)
         IupFill(),
         btn_import, btn_export,
         btn_up, btn_down,
+        btn_undo, btn_redo,
         NULL);
     IupSetAttribute(vbox_btns, "GAP", lua_config_get_string("layout", "vbox_gap"));
     IupSetAttribute(vbox_btns, "MARGIN", lua_config_get_string("layout", "vbox_margin"));
@@ -204,6 +217,8 @@ void refresh_main_window_ui(Ihandle *main_dlg)
     SET_CHILD_TITLE(CTRL_BTN_CLEAN, "clean");
     SET_CHILD_TITLE(CTRL_BTN_IMPORT, "import");
     SET_CHILD_TITLE(CTRL_BTN_EXPORT, "export");
+    SET_CHILD_TITLE(CTRL_BTN_UNDO, "undo");
+    SET_CHILD_TITLE(CTRL_BTN_REDO, "redo");
     SET_CHILD_TITLE(CTRL_BTN_OK, "ok");
     SET_CHILD_TITLE(CTRL_BTN_CANCEL, "cancel");
     SET_CHILD_TITLE(CTRL_BTN_HELP, "help");
