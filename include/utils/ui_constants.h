@@ -35,4 +35,8 @@
 #define CTRL_BTN_HELP "BTN_HELP"
 #define CTRL_BTN_LANG "BTN_LANG"
 
+// 撤销/重做按钮
+#define CTRL_BTN_UNDO "BTN_UNDO"
+#define CTRL_BTN_REDO "BTN_REDO"
+
 #endif // UI_CONSTANTS_H
