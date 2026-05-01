@@ -1,4 +1,5 @@
 #include "ui/main_window.h"
+#include "ui/ui_utils.h"
 #include "controller/callbacks.h"
 #include "controller/callbacks_internal.h"
 #include "core/lua_config.h"
@@ -14,7 +15,7 @@ static Ihandle *create_path_list(const char *name)
     IupSetAttribute(list, "NAME", name);
     IupSetAttribute(list, "EXPAND", "YES");
     IupSetAttribute(list, "ITEMPADDING", lua_config_get_string("list", "item_padding"));
-    IupSetAttribute(list, "BACKCOLOR", lua_config_get_string("list", "backcolor"));
+    IupSetAttribute(list, "BGCOLOR", lua_config_get_string("list", "backcolor"));
     IupSetAttribute(list, "BORDER", "YES");
     IupSetAttribute(list, "CANFOCUS", "YES");
     IupSetAttribute(list, "HLINE", "NO");
@@ -47,10 +48,10 @@ Ihandle *create_main_window(void)
     IupSetAttribute(list_merged, "NAME", CTRL_LIST_MERGED);
     IupSetAttribute(list_merged, "EXPAND", "YES");
     IupSetAttribute(list_merged, "ITEMPADDING", lua_config_get_string("list", "item_padding"));
-    IupSetAttribute(list_merged, "BACKCOLOR", lua_config_get_string("list", "backcolor"));
+    IupSetAttribute(list_merged, "BGCOLOR", lua_config_get_string("list", "backcolor"));
     IupSetAttribute(list_merged, "BORDER", "YES");
     IupSetAttribute(list_merged, "HLINE", "NO");
-    IupSetAttribute(list_merged, "ACTIVE", "NO");  // 只读
+    // 不设置 ACTIVE=NO，否则会禁用滚动；合并列表无编辑回调，已是只读
 
     // 创建搜索框
     Ihandle *txt_search = IupText(NULL);
@@ -113,6 +114,11 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_lang, "NAME", CTRL_BTN_LANG);
     IupSetCallback(btn_lang, "ACTION", (Icallback)btn_lang_cb);
 
+    // 创建深色模式切换按钮
+    Ihandle *btn_darkmode = IupButton(_(lua_config_get_string("button", "darkmode")), NULL);
+    IupSetAttribute(btn_darkmode, "NAME", CTRL_BTN_DARKMODE);
+    IupSetCallback(btn_darkmode, "ACTION", (Icallback)darkmode_cb);
+
     // 设置按钮回调
     IupSetCallback(btn_new, "ACTION", (Icallback)btn_new_cb);
     IupSetCallback(btn_edit, "ACTION", (Icallback)btn_edit_cb);
@@ -140,6 +146,7 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_undo, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_redo, "RASTERSIZE", btn_size);
     IupSetAttribute(btn_lang, "RASTERSIZE", btn_size);
+    IupSetAttribute(btn_darkmode, "RASTERSIZE", btn_size);
 
     // 创建操作按钮垂直布局
     Ihandle *vbox_btns = IupVbox(
@@ -183,7 +190,7 @@ Ihandle *create_main_window(void)
     IupSetAttribute(btn_help, "RASTERSIZE", btn_size);
 
     // 创建底部按钮水平布局
-    Ihandle *hbox_bottom = IupHbox(lbl_status, IupFill(), btn_help, btn_lang, btn_ok, btn_cancel, NULL);
+    Ihandle *hbox_bottom = IupHbox(lbl_status, IupFill(), btn_help, btn_darkmode, btn_lang, btn_ok, btn_cancel, NULL);
     IupSetAttribute(hbox_bottom, "GAP", lua_config_get_string("layout", "hbox_gap"));
     IupSetAttribute(hbox_bottom, "MARGIN", lua_config_get_string("layout", "hbox_margin"));
     IupSetAttribute(hbox_bottom, "ALIGNMENT", lua_config_get_string("layout", "hbox_alignment"));
@@ -255,4 +262,11 @@ void refresh_main_window_ui(Ihandle *main_dlg)
     Ihandle *btn_lang = IupGetDialogChild(main_dlg, CTRL_BTN_LANG);
     if (btn_lang)
         IupSetAttribute(btn_lang, "TITLE", _("Language"));
+
+    // 深色模式按钮文字根据当前模式更新
+    Ihandle *btn_darkmode = IupGetDialogChild(main_dlg, CTRL_BTN_DARKMODE);
+    if (btn_darkmode)
+        IupSetAttribute(btn_darkmode, "TITLE", get_dark_mode()
+            ? _(lua_config_get_string("button", "lightmode"))
+            : _(lua_config_get_string("button", "darkmode")));
 }

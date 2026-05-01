@@ -17,6 +17,7 @@ int btn_ok_cb(Ihandle *self);
 int btn_cancel_cb(Ihandle *self);
 int btn_help_cb(Ihandle *self);
 int btn_lang_cb(Ihandle *self);
+int darkmode_cb(Ihandle *self);
 
 // 撤销/重做回调
 int btn_undo_cb(Ihandle *self);

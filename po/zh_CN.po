@@ -407,3 +407,11 @@ msgstr "请先选择要删除的项"
 #: src/controller/callbacks_basic.c
 msgid "This path already exists and will not be added again."
 msgstr "该路径已存在，不会重复添加。"
+
+#: src/ui/main_window.c
+msgid "Dark Mode"
+msgstr "深色模式"
+
+#: src/ui/main_window.c
+msgid "Light Mode"
+msgstr "浅色模式"

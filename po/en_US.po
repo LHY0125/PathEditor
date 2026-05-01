@@ -407,3 +407,11 @@ msgstr "Please select an item to delete first"
 #: src/controller/callbacks_basic.c
 msgid "This path already exists and will not be added again."
 msgstr "This path already exists and will not be added again."
+
+#: src/ui/main_window.c
+msgid "Dark Mode"
+msgstr "Dark Mode"
+
+#: src/ui/main_window.c
+msgid "Light Mode"
+msgstr "Light Mode"

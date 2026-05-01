@@ -17,4 +17,8 @@ void refresh_single_list_style(Ihandle *list);
 // 会先清空列表然后重新添加所有项，最后刷新样式
 void sync_string_list_to_ui(Ihandle *list_ui, const StringList *str_list);
 
+// 深色模式状态管理
+void set_dark_mode(int enabled);
+int get_dark_mode(void);
+
 #endif // UI_UTILS_H

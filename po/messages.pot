@@ -124,3 +124,11 @@ msgstr ""
 #: src/controller/callbacks_nav.c
 msgid "Redo completed"
 msgstr ""
+
+#: src/ui/main_window.c
+msgid "Dark Mode"
+msgstr ""
+
+#: src/ui/main_window.c
+msgid "Light Mode"
+msgstr ""

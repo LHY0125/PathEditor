@@ -1,9 +1,22 @@
 #include "ui/ui_utils.h"
 #include "utils/os_env.h"
 #include "utils/string_ext.h"
+#include "core/lua_config.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+static int g_dark_mode = 0;
+
+void set_dark_mode(int enabled)
+{
+    g_dark_mode = enabled;
+}
+
+int get_dark_mode(void)
+{
+    return g_dark_mode;
+}
 
 // 刷新列表样式（斑马纹 + 有效性检查）
 void refresh_single_list_style(Ihandle *list)
@@ -12,30 +25,42 @@ void refresh_single_list_style(Ihandle *list)
         return;
     int count = IupGetInt(list, "COUNT");
 
+    // 读取主题颜色，带默认值保护
+    const char *alt_color = g_dark_mode
+        ? lua_config_get_string("theme", "dark_list_alt")
+        : lua_config_get_string("theme", "light_list_alt");
+    const char *bg_color = g_dark_mode
+        ? lua_config_get_string("theme", "dark_list_bg")
+        : lua_config_get_string("theme", "light_list_bg");
+    const char *fg_default = g_dark_mode
+        ? lua_config_get_string("theme", "dark_fg")
+        : lua_config_get_string("theme", "light_fg");
+
+    // 防止 NULL 或空字符串，使用硬编码默认值
+    if (!alt_color || !*alt_color) alt_color = g_dark_mode ? "50 50 50" : "245 245 245";
+    if (!bg_color || !*bg_color)  bg_color  = g_dark_mode ? "40 40 40" : "255 255 255";
+    if (!fg_default || !*fg_default) fg_default = g_dark_mode ? "220 220 220" : "0 0 0";
+
     for (int i = 1; i <= count; i++)
     {
         char *item = IupGetAttributeId(list, "", i);
         if (!item)
             continue;
 
-        // 默认颜色：黑字
-        char fg_color[32] = "0 0 0";
+        char fg_color[32];
+        sprintf(fg_color, "%s", fg_default);
 
         // 1. 检查有效性
         if (!is_path_valid(item))
-        {
-            // 无效路径：红色
-            sprintf(fg_color, "255 0 0");
-        }
+            sprintf(fg_color, "255 0 0");   // 无效路径：红色
 
-        // 2. 检查重复 (只检查当前项之前的项，如果之前出现过，当前项标橙)
+        // 2. 检查重复
         for (int j = 1; j < i; j++)
         {
             char *prev_item = IupGetAttributeId(list, "", j);
-            if (prev_item && _stricmp(item, prev_item) == 0) // Windows 路径不区分大小写
+            if (prev_item && _stricmp(item, prev_item) == 0)
             {
-                // 重复路径：橙色
-                sprintf(fg_color, "255 128 0");
+                sprintf(fg_color, "255 128 0"); // 重复路径：橙色
                 break;
             }
         }
@@ -43,14 +68,8 @@ void refresh_single_list_style(Ihandle *list)
         IupSetAttributeId(list, "ITEMFGCOLOR", i, fg_color);
 
         // 斑马纹背景
-        if (i % 2 == 0)
-        {
-            IupSetAttributeId(list, "ITEMBGCOLOR", i, "245 245 245");
-        }
-        else
-        {
-            IupSetAttributeId(list, "ITEMBGCOLOR", i, "255 255 255");
-        }
+        IupSetAttributeId(list, "ITEMBGCOLOR", i,
+            (i % 2 == 0) ? alt_color : bg_color);
     }
 }
 
@@ -60,7 +79,7 @@ void sync_string_list_to_ui(Ihandle *list_ui, const StringList *str_list)
     if (!list_ui || !str_list) return;
 
     IupSetAttribute(list_ui, "REMOVEITEM", "ALL");
-    
+
     for (int i = 0; i < str_list->count; i++)
     {
         const char *item = string_list_get(str_list, i);
@@ -78,6 +97,6 @@ void sync_string_list_to_ui(Ihandle *list_ui, const StringList *str_list)
         }
     }
     IupSetInt(list_ui, "COUNT", str_list->count);
-    
+
     refresh_single_list_style(list_ui);
 }

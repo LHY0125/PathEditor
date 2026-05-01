@@ -26,6 +26,18 @@ local config = {
         backcolor = "255 255 255"
     },
 
+    -- 主题颜色
+    theme = {
+        light_bg = "240 240 240",
+        light_list_bg = "255 255 255",
+        light_list_alt = "245 245 245",
+        light_fg = "0 0 0",
+        dark_bg = "30 30 30",
+        dark_list_bg = "40 40 40",
+        dark_list_alt = "50 50 50",
+        dark_fg = "220 220 220",
+    },
+
     -- 按钮设置（使用英文原文，供 gettext 翻译）
     button = {
         rastersize = "100x32",
@@ -43,6 +55,8 @@ local config = {
         help = "Help",
         undo = "Undo",
         redo = "Redo",
+        darkmode = "Dark Mode",
+        lightmode = "Light Mode",
     },
 
     -- 标签文本（使用英文原文，供 gettext 翻译）

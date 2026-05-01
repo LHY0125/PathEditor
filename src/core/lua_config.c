@@ -63,6 +63,14 @@ static const char *get_string_default(const char *section, const char *key)
             return "取消";
         if (strcmp(key, "help") == 0)
             return "帮助(?)";
+        if (strcmp(key, "undo") == 0)
+            return "撤销";
+        if (strcmp(key, "redo") == 0)
+            return "重做";
+        if (strcmp(key, "darkmode") == 0)
+            return "深色模式";
+        if (strcmp(key, "lightmode") == 0)
+            return "浅色模式";
     }
     else if (strcmp(section, "label") == 0)
     {
@@ -74,10 +82,31 @@ static const char *get_string_default(const char *section, const char *key)
             return "系统变量 (System)";
         if (strcmp(key, "tab_user") == 0)
             return "用户变量 (User)";
+        if (strcmp(key, "tab_merged") == 0)
+            return "合并预览";
         if (strcmp(key, "export_title") == 0)
             return "导出 PATH";
         if (strcmp(key, "import_title") == 0)
             return "导入 PATH";
+    }
+    else if (strcmp(section, "theme") == 0)
+    {
+        if (strcmp(key, "light_bg") == 0)
+            return "240 240 240";
+        if (strcmp(key, "light_list_bg") == 0)
+            return "255 255 255";
+        if (strcmp(key, "light_list_alt") == 0)
+            return "245 245 245";
+        if (strcmp(key, "light_fg") == 0)
+            return "0 0 0";
+        if (strcmp(key, "dark_bg") == 0)
+            return "30 30 30";
+        if (strcmp(key, "dark_list_bg") == 0)
+            return "40 40 40";
+        if (strcmp(key, "dark_list_alt") == 0)
+            return "50 50 50";
+        if (strcmp(key, "dark_fg") == 0)
+            return "220 220 220";
     }
     else if (strcmp(section, "layout") == 0)
     {

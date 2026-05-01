@@ -226,3 +226,36 @@ int dlg_k_any_cb(Ihandle *self, int c)
     }
     return IUP_DEFAULT;
 }
+
+// 深色模式切换回调
+int darkmode_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    int dark = !get_dark_mode();
+    set_dark_mode(dark);
+
+    IupSetAttribute(dlg, "BGCOLOR", dark
+        ? lua_config_get_string("theme", "dark_bg")
+        : lua_config_get_string("theme", "light_bg"));
+
+    IupSetAttribute(self, "TITLE", _(dark
+        ? lua_config_get_string("button", "lightmode")
+        : lua_config_get_string("button", "darkmode")));
+
+    Ihandle *lists[] = {
+        IupGetDialogChild(dlg, CTRL_LIST_SYS),
+        IupGetDialogChild(dlg, CTRL_LIST_USER),
+        IupGetDialogChild(dlg, CTRL_LIST_MERGED),
+        NULL
+    };
+    for (int i = 0; lists[i]; i++)
+    {
+        const char *list_bg = dark
+            ? lua_config_get_string("theme", "dark_list_bg")
+            : lua_config_get_string("theme", "light_list_bg");
+        IupSetAttribute(lists[i], "BGCOLOR", list_bg);
+        refresh_single_list_style(lists[i]);
+    }
+
+    return IUP_DEFAULT;
+}
