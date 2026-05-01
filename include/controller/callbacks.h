@@ -18,6 +18,10 @@ int btn_cancel_cb(Ihandle *self);
 int btn_help_cb(Ihandle *self);
 int btn_lang_cb(Ihandle *self);
 
+// 撤销/重做回调
+int btn_undo_cb(Ihandle *self);
+int btn_redo_cb(Ihandle *self);
+
 // 搜索回调
 int txt_search_cb(Ihandle *self);
 
