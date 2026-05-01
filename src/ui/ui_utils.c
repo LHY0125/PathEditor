@@ -1,7 +1,9 @@
 #include "ui/ui_utils.h"
 #include "utils/os_env.h"
+#include "utils/string_ext.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 // 刷新列表样式（斑马纹 + 有效性检查）
 void refresh_single_list_style(Ihandle *list)
@@ -61,7 +63,19 @@ void sync_string_list_to_ui(Ihandle *list_ui, const StringList *str_list)
     
     for (int i = 0; i < str_list->count; i++)
     {
-        IupSetAttributeId(list_ui, "", i + 1, string_list_get(str_list, i));
+        const char *item = string_list_get(str_list, i);
+        IupSetAttributeId(list_ui, "", i + 1, item);
+
+        // 对含环境变量的路径设置悬停提示
+        if (item && strchr(item, '%'))
+        {
+            char *expanded = expand_env_vars(item);
+            if (expanded)
+            {
+                IupSetAttributeId(list_ui, "ITEMTIP", i + 1, expanded);
+                free(expanded);
+            }
+        }
     }
     IupSetInt(list_ui, "COUNT", str_list->count);
     

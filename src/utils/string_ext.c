@@ -140,3 +140,26 @@ int string_list_contains(const StringList *list, const char *str)
     }
     return 0;
 }
+
+// 展开环境变量（如 %JAVA_HOME%\bin → C:\Java\bin）
+char *expand_env_vars(const char *path)
+{
+    if (!path || !strchr(path, '%'))
+        return NULL;
+
+    DWORD size = ExpandEnvironmentStringsA(path, NULL, 0);
+    if (size == 0)
+        return NULL;
+
+    char *expanded = (char *)malloc(size);
+    if (!expanded)
+        return NULL;
+
+    if (ExpandEnvironmentStringsA(path, expanded, size) == 0)
+    {
+        free(expanded);
+        return NULL;
+    }
+
+    return expanded;
+}

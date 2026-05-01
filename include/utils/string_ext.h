@@ -30,4 +30,8 @@ char *stristr(const char *haystack, const char *needle);
 // 检查字符串列表中是否存在指定路径（不区分大小写）
 int string_list_contains(const StringList *list, const char *str);
 
+// 展开环境变量（如 %JAVA_HOME%\bin → C:\Java\bin）
+// 返回 malloc 分配的字符串，调用者负责释放；无变量返回 NULL
+char *expand_env_vars(const char *path);
+
 #endif // STRING_EXT_H
