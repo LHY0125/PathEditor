@@ -142,7 +142,7 @@ int btn_export_cb(Ihandle *self)
     IupSetAttribute(filedlg, "DIALOGTYPE", "SAVE");
     IupSetAttribute(filedlg, "TITLE", lua_config_get_string("label", "export_title"));
     IupSetAttribute(filedlg, "FILTER", "json");
-    IupSetAttribute(filedlg, "EXTFILTER", "JSON 文件 (*.json)|*.json");
+    IupSetAttribute(filedlg, "EXTFILTER", "JSON 文件 (*.json)|*.json|CSV 文件 (*.csv)|*.csv");
     IupSetAttribute(filedlg, "DEFAULTEXT", "json");
 
     char default_name[64];

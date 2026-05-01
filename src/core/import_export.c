@@ -79,21 +79,52 @@ static char *escape_json_string(const char *str)
     return result;
 }
 
-// 导出路径数据到 JSON 文件
-ErrorCode export_paths_to_file(const ExportData *data, const char *filepath)
+// 转义 CSV 字段中的特殊字符
+static char *escape_csv_field(const char *str)
 {
-    if (!data || !filepath)
-        return ERR_NULL_PTR;
+    if (!str)
+        return NULL;
 
-    FILE *fp = fopen(filepath, "w");
-    if (!fp)
+    int len = strlen(str);
+    // 需要转义双引号和包含逗号、引号、换行的字段
+    char *result = (char *)malloc(len * 2 + 3);
+    if (!result)
+        return NULL;
+
+    char *p = result;
+    *p++ = '"';
+
+    for (int i = 0; i < len; i++)
     {
-        log_error("Failed to open file for export: %s", filepath);
-        return ERR_FILE_NOT_FOUND;
+        unsigned char c = (unsigned char)str[i];
+        switch (c)
+        {
+        case '"':
+            *p++ = '"';
+            *p++ = '"';
+            break;
+        case '\n':
+            *p++ = '\\';
+            *p++ = 'n';
+            break;
+        case '\r':
+            *p++ = '\\';
+            *p++ = 'r';
+            break;
+        default:
+            *p++ = str[i];
+            break;
+        }
     }
 
-    fprintf(fp, "\xEF\xBB\xBF");
+    *p++ = '"';
+    *p = '\0';
+    return result;
+}
 
+// 导出 PATH 到 JSON 文件
+static ErrorCode export_paths_to_json(const ExportData *data, FILE *fp)
+{
     char datetime[64];
     get_current_datetime(datetime, sizeof(datetime));
 
@@ -133,11 +164,92 @@ ErrorCode export_paths_to_file(const ExportData *data, const char *filepath)
     fprintf(fp, "  ]\n");
 
     fprintf(fp, "}\n");
+    return ERR_OK;
+}
+
+// 导出 PATH 到 CSV 文件
+// 格式：type,path
+// type: "system" 或 "user"
+static ErrorCode export_paths_to_csv(const ExportData *data, FILE *fp)
+{
+    // 写入 UTF-8 BOM
+    fprintf(fp, "\xEF\xBB\xBF");
+
+    // 写入 CSV 标题行
+    fprintf(fp, "type,path\n");
+
+    // 写入系统路径
+    for (int i = 0; i < data->system.count; i++)
+    {
+        if (data->system.items[i])
+        {
+            char *escaped = escape_csv_field(data->system.items[i]);
+            if (escaped)
+            {
+                fprintf(fp, "\"system\",\"%s\"\n", escaped);
+                free(escaped);
+            }
+        }
+    }
+
+    // 写入用户路径
+    for (int i = 0; i < data->user.count; i++)
+    {
+        if (data->user.items[i])
+        {
+            char *escaped = escape_csv_field(data->user.items[i]);
+            if (escaped)
+            {
+                fprintf(fp, "\"user\",\"%s\"\n", escaped);
+                free(escaped);
+            }
+        }
+    }
+
+    return ERR_OK;
+}
+
+// 导出 PATH 到文件
+ErrorCode export_paths_to_file(const ExportData *data, const char *filepath)
+{
+    if (!data || !filepath)
+        return ERR_NULL_PTR;
+
+    const char *ext = strrchr(filepath, '.');
+    if (ext && _stricmp(ext, ".csv") == 0)
+    {
+        return export_paths_to_format(data, filepath, EXPORT_CSV);
+    }
+    return export_paths_to_format(data, filepath, EXPORT_JSON);
+}
+
+// 导出 PATH 到指定格式的文件
+ErrorCode export_paths_to_format(const ExportData *data, const char *filepath, ExportFormat format)
+{
+    if (!data || !filepath)
+        return ERR_NULL_PTR;
+
+    FILE *fp = fopen(filepath, "w");
+    if (!fp)
+    {
+        log_error("Failed to open file for export: %s", filepath);
+        return ERR_FILE_NOT_FOUND;
+    }
+
+    ErrorCode result;
+    if (format == EXPORT_CSV)
+        result = export_paths_to_csv(data, fp);
+    else
+        result = export_paths_to_json(data, fp);
 
     fclose(fp);
-    log_info("Exported paths to file: sys=%d, user=%d, file=%s",
-             data->system.count, data->user.count, filepath);
-    return ERR_OK;
+
+    if (result == ERR_OK)
+    {
+        log_info("Exported paths to file: sys=%d, user=%d, format=%d, file=%s",
+                 data->system.count, data->user.count, format, filepath);
+    }
+    return result;
 }
 
 // 移除字符串首尾的空格、制表符、换行符和回车符
@@ -339,4 +451,46 @@ ErrorCode import_paths_from_file(const char *filepath, ExportData *data)
     log_info("Imported paths from JSON file: sys=%d, user=%d, file=%s",
              data->system.count, data->user.count, filepath);
     return ERR_OK;
+}
+
+// 验证路径格式是否有效
+// 有效的 Windows 路径格式：
+//   - 绝对路径：C:\path\to\something
+//   - UNC 路径：\\server\share
+//   - 环境变量：%PATH%
+//   - 相对路径（带冒号后面跟着反斜杠或正斜杠的）
+int is_valid_path_format(const char *path)
+{
+    if (!path || *path == '\0')
+        return 0;
+
+    // 检查是否包含冒号（驱动器路径）
+    const char *colon = strchr(path, ':');
+
+    // 检查是否以 \\ 开头（UNC 路径）
+    if (path[0] == '\\' && path[1] == '\\')
+        return 1;
+
+    // 检查是否为驱动器路径（如 C:\）
+    if (colon && colon - path == 1)
+    {
+        char drive = path[0];
+        if ((drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z'))
+        {
+            // 检查冒号后面是否是路径分隔符
+            const char *after_colon = colon + 1;
+            if (*after_colon == '\\' || *after_colon == '/' || *after_colon == '\0')
+                return 1;
+        }
+    }
+
+    // 检查是否包含环境变量（%...%）
+    if (strchr(path, '%'))
+        return 1;
+
+    // 检查路径是否包含反斜杠或正斜杠（相对路径）
+    if (strchr(path, '\\') || strchr(path, '/'))
+        return 1;
+
+    return 0;
 }

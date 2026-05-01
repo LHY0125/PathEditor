@@ -30,6 +30,7 @@ set(SOURCES
     src/core/app_context.c
     src/core/lua_config.c
     src/core/import_export.c
+    src/core/undo_redo.c
     src/controller/callbacks.c
     src/controller/callbacks_basic.c
     src/controller/callbacks_nav.c
