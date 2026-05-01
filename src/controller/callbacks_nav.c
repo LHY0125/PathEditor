@@ -145,17 +145,91 @@ int btn_clean_cb(Ihandle *self)
     return IUP_DEFAULT;
 }
 
+// 刷新撤销/重做按钮的启用状态
+static void refresh_undo_redo_buttons(Ihandle *dlg)
+{
+    AppContext *ctx = get_app_context_from_dlg(dlg);
+    if (!ctx || !ctx->undo_redo_mgr)
+        return;
+
+    Ihandle *btn_undo = IupGetDialogChild(dlg, CTRL_BTN_UNDO);
+    Ihandle *btn_redo = IupGetDialogChild(dlg, CTRL_BTN_REDO);
+
+    if (btn_undo)
+        IupSetAttribute(btn_undo, "ACTIVE", can_undo(ctx->undo_redo_mgr) ? "YES" : "NO");
+    if (btn_redo)
+        IupSetAttribute(btn_redo, "ACTIVE", can_redo(ctx->undo_redo_mgr) ? "YES" : "NO");
+}
+
+int btn_undo_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
+    if (!ctx || !ctx->undo_redo_mgr)
+        return IUP_DEFAULT;
+
+    if (!can_undo(ctx->undo_redo_mgr))
+        return IUP_DEFAULT;
+
+    undo(ctx->undo_redo_mgr, &ctx->sys_paths, &ctx->user_paths);
+
+    Ihandle *list_sys = IupGetDialogChild(dlg, CTRL_LIST_SYS);
+    Ihandle *list_user = IupGetDialogChild(dlg, CTRL_LIST_USER);
+    sync_string_list_to_ui(list_sys, &ctx->sys_paths);
+    sync_string_list_to_ui(list_user, &ctx->user_paths);
+
+    Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
+    if (lbl_status)
+        IupSetAttribute(lbl_status, "TITLE", _("Undo completed"));
+
+    refresh_undo_redo_buttons(dlg);
+    return IUP_DEFAULT;
+}
+
+int btn_redo_cb(Ihandle *self)
+{
+    Ihandle *dlg = IupGetDialog(self);
+    AppContext *ctx = get_app_context_from_dlg(dlg);
+    if (!ctx || !ctx->undo_redo_mgr)
+        return IUP_DEFAULT;
+
+    if (!can_redo(ctx->undo_redo_mgr))
+        return IUP_DEFAULT;
+
+    redo(ctx->undo_redo_mgr, &ctx->sys_paths, &ctx->user_paths);
+
+    Ihandle *list_sys = IupGetDialogChild(dlg, CTRL_LIST_SYS);
+    Ihandle *list_user = IupGetDialogChild(dlg, CTRL_LIST_USER);
+    sync_string_list_to_ui(list_sys, &ctx->sys_paths);
+    sync_string_list_to_ui(list_user, &ctx->user_paths);
+
+    Ihandle *lbl_status = IupGetDialogChild(dlg, CTRL_LBL_STATUS);
+    if (lbl_status)
+        IupSetAttribute(lbl_status, "TITLE", _("Redo completed"));
+
+    refresh_undo_redo_buttons(dlg);
+    return IUP_DEFAULT;
+}
+
 // 键盘按键回调
 int list_k_any_cb(Ihandle *self, int c)
 {
-    (void)c; // 暂时禁用键盘快捷键，避免兼容性问题
-    // TODO: 实现 Ctrl+Z 撤销 / Ctrl+Y 重做的键盘快捷键
-    // 需要根据具体 IUP 版本选择合适的方式检测 Ctrl 组合键
-
     if (IupGetInt(self, "ACTIVE") == 0)
         return IUP_DEFAULT;
 
-    if (IupGetInt(self, "K_DEL") == 1)  // DEL 键
+    if (c == K_cZ)  // Ctrl+Z 撤销
+    {
+        btn_undo_cb(self);
+        return IUP_IGNORE;
+    }
+
+    if (c == K_cY)  // Ctrl+Y 重做
+    {
+        btn_redo_cb(self);
+        return IUP_IGNORE;
+    }
+
+    if (c == K_DEL)  // DEL 键
     {
         btn_del_cb(self);
         return IUP_IGNORE;
