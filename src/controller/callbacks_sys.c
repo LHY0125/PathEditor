@@ -202,3 +202,26 @@ int btn_help_cb(Ihandle *self)
 
     return IUP_DEFAULT;
 }
+
+// 对话框全局快捷键回调
+int dlg_k_any_cb(Ihandle *self, int c)
+{
+    if (c == K_cN)  // Ctrl+N 新建
+    {
+        btn_new_cb(self);
+        return IUP_IGNORE;
+    }
+    if (c == K_cS)  // Ctrl+S 保存
+    {
+        btn_ok_cb(self);
+        return IUP_IGNORE;
+    }
+    if (c == K_cF)  // Ctrl+F 聚焦搜索框
+    {
+        Ihandle *txt_search = IupGetDialogChild(self, CTRL_TXT_SEARCH);
+        if (txt_search)
+            IupSetFocus(txt_search);
+        return IUP_IGNORE;
+    }
+    return IUP_DEFAULT;
+}

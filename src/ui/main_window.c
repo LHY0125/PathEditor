@@ -181,6 +181,7 @@ Ihandle *create_main_window(void)
     IupSetAttribute(dlg, "MINSIZE", lua_config_get_string("dialog", "minsize"));
     IupSetAttribute(dlg, "MINBOX", "NO");
     IupSetAttribute(dlg, "MAXBOX", "NO");
+    IupSetCallback(dlg, "K_ANY", (Icallback)dlg_k_any_cb);
 
     return dlg;
 }

@@ -33,6 +33,7 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
 
 // 键盘按键回调
 int list_k_any_cb(Ihandle *self, int c);
+int dlg_k_any_cb(Ihandle *self, int c);
 
 // 载入数据与更新UI
 void load_all_paths(void);
