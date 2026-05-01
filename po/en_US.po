@@ -57,6 +57,14 @@ msgid "Clean Invalid"
 msgstr "Clean Invalid"
 
 #: src/ui/main_window.c
+msgid "Undo"
+msgstr "Undo"
+
+#: src/ui/main_window.c
+msgid "Redo"
+msgstr "Redo"
+
+#: src/ui/main_window.c
 msgid "OK"
 msgstr "OK"
 
@@ -363,6 +371,14 @@ msgstr "Are you sure you want to continue?"
 #: src/controller/callbacks_nav.c
 msgid "Cleanup completed! Removed %d invalid or duplicate paths."
 msgstr "Cleanup completed! Removed %d invalid or duplicate paths."
+
+#: src/controller/callbacks_nav.c
+msgid "Undo completed"
+msgstr "Undo completed"
+
+#: src/controller/callbacks_nav.c
+msgid "Redo completed"
+msgstr "Redo completed"
 
 #: src/controller/callbacks_basic.c
 msgid "New Environment Variable"

@@ -58,6 +58,14 @@ msgid "Clean Invalid"
 msgstr ""
 
 #: src/ui/main_window.c
+msgid "Undo"
+msgstr ""
+
+#: src/ui/main_window.c
+msgid "Redo"
+msgstr ""
+
+#: src/ui/main_window.c
 msgid "OK"
 msgstr ""
 
@@ -103,4 +111,12 @@ msgstr ""
 
 #: src/ui/dialogs.c
 msgid "English"
+msgstr ""
+
+#: src/controller/callbacks_nav.c
+msgid "Undo completed"
+msgstr ""
+
+#: src/controller/callbacks_nav.c
+msgid "Redo completed"
 msgstr ""

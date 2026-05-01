@@ -57,6 +57,14 @@ msgid "Clean Invalid"
 msgstr "一键清理"
 
 #: src/ui/main_window.c
+msgid "Undo"
+msgstr "撤销"
+
+#: src/ui/main_window.c
+msgid "Redo"
+msgstr "重做"
+
+#: src/ui/main_window.c
 msgid "OK"
 msgstr "确定"
 
@@ -363,6 +371,14 @@ msgstr "确定要继续吗？"
 #: src/controller/callbacks_nav.c
 msgid "Cleanup completed! Removed %d invalid or duplicate paths."
 msgstr "清理完成！共移除了 %d 个无效或重复路径。"
+
+#: src/controller/callbacks_nav.c
+msgid "Undo completed"
+msgstr "已撤销"
+
+#: src/controller/callbacks_nav.c
+msgid "Redo completed"
+msgstr "已重做"
 
 #: src/controller/callbacks_basic.c
 msgid "New Environment Variable"
