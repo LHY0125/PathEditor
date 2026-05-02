@@ -3,6 +3,7 @@
 
 #include <iup.h>
 #include "core/app_context.h"
+#include "core/undo_redo.h"
 #include "utils/i18n.h"
 
 // 内部辅助函数声明（供各 callbacks_*.c 文件共享）
@@ -25,5 +26,12 @@ void refresh_undo_redo_buttons(Ihandle *dlg);
 
 // 同步合并预览列表
 void sync_merged_list(Ihandle *dlg);
+
+// 获取当前 Tab 对应的 TargetType
+TargetType get_current_target(Ihandle *dlg);
+
+// 创建并推送撤销记录
+void push_record(Ihandle *dlg, OperationType op_type, int index, int count,
+                 char **old_paths, char **new_paths);
 
 #endif // CALLBACKS_INTERNAL_H

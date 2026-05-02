@@ -415,3 +415,31 @@ msgstr "深色模式"
 #: src/ui/main_window.c
 msgid "Light Mode"
 msgstr "浅色模式"
+
+#: src/controller/callbacks_sys.c
+msgid "Select backup directory"
+msgstr "选择备份目录"
+
+#: src/controller/callbacks_sys.c
+msgid "Unknown error"
+msgstr "未知错误"
+
+#: src/controller/callbacks_sys.c
+msgid "Failed to get AppData path"
+msgstr "无法获取 AppData 路径"
+
+#: src/controller/callbacks_sys.c
+msgid "Failed to create backup directory or file"
+msgstr "无法创建备份目录或文件"
+
+#: src/controller/callbacks_sys.c
+msgid "Failed to read PATH from registry"
+msgstr "无法读取注册表中的 PATH 值"
+
+#: src/controller/callbacks_sys.c
+msgid "Backup failed! Reason: %s\n\nContinue saving?\n(Continuing may prevent recovery)"
+msgstr "备份失败！原因：%s\n\n是否继续保存？\n（继续保存可能导致无法恢复）"
+
+#: src/controller/callbacks_sys.c
+msgid "Total PATH length: %d characters (command line safe limit: 8191)\n"
+msgstr "总 PATH 长度：%d 字符（命令行安全限制：8191）\n"

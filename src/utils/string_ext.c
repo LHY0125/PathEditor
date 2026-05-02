@@ -92,6 +92,36 @@ void add_string_list(StringList *list, const char *str)
     list->count++;
 }
 
+// 在指定索引位置插入字符串（后续元素后移）
+int string_list_insert_at(StringList *list, int index, const char *str)
+{
+    if (!list || !str || index < 0 || index > list->count)
+        return -1;
+
+    // 扩容检查
+    if (list->count >= list->capacity)
+    {
+        int new_capacity = (list->capacity == 0) ? 16 : list->capacity * 2;
+        char **new_items = (char **)realloc(list->items, new_capacity * sizeof(char *));
+        if (!new_items)
+            return -1;
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+
+    char *dup = _strdup(str);
+    if (!dup)
+        return -1;
+
+    // 后移元素
+    for (int i = list->count; i > index; i--)
+        list->items[i] = list->items[i - 1];
+
+    list->items[index] = dup;
+    list->count++;
+    return 0;
+}
+
 // 获取指定索引的字符串（只读）
 const char *string_list_get(const StringList *list, int index)
 {

@@ -42,7 +42,7 @@ int btn_ok_cb(Ihandle *self)
     {
         Ihandle *filedlg = IupFileDlg();
         IupSetAttribute(filedlg, "DIALOGTYPE", "DIR");
-        IupSetAttribute(filedlg, "TITLE", "选择备份目录");
+        IupSetAttribute(filedlg, "TITLE", _("Select backup directory"));
 
         IupPopup(filedlg, IUP_CENTER, IUP_CENTER);
 
@@ -79,17 +79,67 @@ int btn_ok_cb(Ihandle *self)
         if (backup_result != ERR_OK)
         {
             log_error("Backup failed: error code %d", backup_result);
-            const char *reason = "未知错误";
+            const char *reason = _("Unknown error");
             if (backup_result == ERR_FAILED)
-                reason = "无法获取 AppData 路径";
+                reason = _("Failed to get AppData path");
             else if (backup_result == ERR_FILE_NOT_FOUND)
-                reason = "无法创建备份目录或文件";
+                reason = _("Failed to create backup directory or file");
             else if (backup_result == ERR_REGISTRY_FAILED)
-                reason = "无法读取注册表中的 PATH 值";
+                reason = _("Failed to read PATH from registry");
 
             char msg[512];
-            snprintf(msg, sizeof(msg), "备份失败！原因：%s\n\n是否继续保存？\n（继续保存可能导致无法恢复）", reason);
+            snprintf(msg, sizeof(msg), _("Backup failed! Reason: %s\n\nContinue saving?\n(Continuing may prevent recovery)"), reason);
             int choice = IupAlarm(_("Warning"), msg, _("Continue Saving"), _("Cancel"), NULL);
+            if (choice != 1)
+                return IUP_DEFAULT;
+        }
+    }
+
+    // PATH 长度检查
+    {
+        int sys_len = 0, user_len = 0;
+        for (int i = 0; i < ctx->sys_paths.count; i++)
+        {
+            const char *p = string_list_get(&ctx->sys_paths, i);
+            if (p) sys_len += (int)strlen(p) + 1;  // +1 for semicolon
+        }
+        for (int i = 0; i < ctx->user_paths.count; i++)
+        {
+            const char *p = string_list_get(&ctx->user_paths, i);
+            if (p) user_len += (int)strlen(p) + 1;
+        }
+
+        int warnings = 0;
+        char warn_msg[1024] = "";
+
+        if (sys_len > 2048)
+        {
+            snprintf(warn_msg, sizeof(warn_msg),
+                     _("System PATH length: %d characters (recommended max: 2048)\n"), sys_len);
+            warnings++;
+        }
+        if (user_len > 2048)
+        {
+            char tmp[256];
+            snprintf(tmp, sizeof(tmp),
+                     _("User PATH length: %d characters (recommended max: 2048)\n"), user_len);
+            strncat(warn_msg, tmp, sizeof(warn_msg) - strlen(warn_msg) - 1);
+            warnings++;
+        }
+        if (sys_len + user_len > 8191)
+        {
+            char tmp[256];
+            snprintf(tmp, sizeof(tmp),
+                     _("Total PATH length: %d characters (command line safe limit: 8191)\n"), sys_len + user_len);
+            strncat(warn_msg, tmp, sizeof(warn_msg) - strlen(warn_msg) - 1);
+            warnings++;
+        }
+
+        if (warnings > 0)
+        {
+            strncat(warn_msg, _("\nSaving may cause system instability. Continue?"),
+                    sizeof(warn_msg) - strlen(warn_msg) - 1);
+            int choice = IupAlarm(_("PATH Length Warning"), warn_msg, _("Continue Saving"), _("Cancel"), NULL);
             if (choice != 1)
                 return IUP_DEFAULT;
         }

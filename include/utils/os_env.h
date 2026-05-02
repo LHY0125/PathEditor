@@ -2,6 +2,11 @@
 #define OS_ENV_H
 
 #include "utils/error_code.h"
+#include <stddef.h>
+
+// 获取可执行文件所在目录（带缓存）
+// buf: 输出缓冲区，size: 缓冲区大小
+void get_exe_dir(char *buf, size_t size);
 
 // 检查是否以管理员权限运行
 int check_admin(void);

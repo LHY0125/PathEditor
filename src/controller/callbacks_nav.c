@@ -11,37 +11,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// 辅助函数：检查当前目标是系统还是用户
-static TargetType get_current_target(Ihandle *dlg)
-{
-    Ihandle *tabs = IupGetDialogChild(dlg, CTRL_TABS_MAIN);
-    if (tabs)
-    {
-        int tab = IupGetInt(tabs, "VALUE");
-        return (tab == 1) ? TARGET_SYSTEM : TARGET_USER;
-    }
-    return TARGET_USER;
-}
-
-// 辅助函数：创建并推送撤销记录
-static void push_record(Ihandle *dlg, OperationType op_type, int index, int count,
-                        char **old_paths, char **new_paths)
-{
-    AppContext *ctx = get_app_context_from_dlg(dlg);
-    if (!ctx || !ctx->undo_redo_mgr)
-        return;
-
-    OpRecord record;
-    record.type = op_type;
-    record.target = get_current_target(dlg);
-    record.index = index;
-    record.count = count;
-    record.old_paths = old_paths;
-    record.new_paths = new_paths;
-
-    push_undo_record(ctx->undo_redo_mgr, &record);
-}
-
 // 按钮回调：上移
 int btn_up_cb(Ihandle *self)
 {

@@ -14,6 +14,7 @@ typedef struct
 // 字符串列表
 void init_string_list(StringList *list);
 void add_string_list(StringList *list, const char *str);
+int string_list_insert_at(StringList *list, int index, const char *str);
 void clear_string_list(StringList *list);
 
 // 访问器函数 - 安全访问内部数据

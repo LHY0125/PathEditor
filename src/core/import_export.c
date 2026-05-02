@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <time.h>
 
 // 获取当前日期时间
@@ -103,14 +104,6 @@ static char *escape_csv_field(const char *str)
             *p++ = '"';
             *p++ = '"';
             break;
-        case '\n':
-            *p++ = '\\';
-            *p++ = 'n';
-            break;
-        case '\r':
-            *p++ = '\\';
-            *p++ = 'r';
-            break;
         default:
             *p++ = str[i];
             break;
@@ -169,7 +162,7 @@ static ErrorCode export_paths_to_json(const ExportData *data, FILE *fp)
 
 // 导出 PATH 到 CSV 文件
 // 格式：type,path
-// type: "system" 或 "user"
+// type: system 或 user
 static ErrorCode export_paths_to_csv(const ExportData *data, FILE *fp)
 {
     // 写入 UTF-8 BOM
@@ -186,7 +179,7 @@ static ErrorCode export_paths_to_csv(const ExportData *data, FILE *fp)
             char *escaped = escape_csv_field(data->system.items[i]);
             if (escaped)
             {
-                fprintf(fp, "\"system\",\"%s\"\n", escaped);
+                fprintf(fp, "system,%s\n", escaped);
                 free(escaped);
             }
         }
@@ -200,7 +193,7 @@ static ErrorCode export_paths_to_csv(const ExportData *data, FILE *fp)
             char *escaped = escape_csv_field(data->user.items[i]);
             if (escaped)
             {
-                fprintf(fp, "\"user\",\"%s\"\n", escaped);
+                fprintf(fp, "user,%s\n", escaped);
                 free(escaped);
             }
         }
@@ -263,7 +256,7 @@ static void trim_whitespace(char *str)
         start++;
 
     char *end = str + strlen(str) - 1;
-    while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
+    while (end >= start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
         *end-- = '\0';
 
     if (start != str)
@@ -289,6 +282,133 @@ static int is_json_file(const char *filepath)
     return ext && _stricmp(ext, ".json") == 0;
 }
 
+// 检查文件是否为 CSV 格式（通过扩展名）
+static int is_csv_file(const char *filepath)
+{
+    const char *ext = strrchr(filepath, '.');
+    return ext && _stricmp(ext, ".csv") == 0;
+}
+
+// 解析 CSV 字段（处理引号包围的字段）
+// 返回值：指向下一个字段的指针，或 NULL
+static const char *parse_csv_field(const char *line, char *field, int field_size)
+{
+    if (!line || !field || field_size <= 0)
+        return NULL;
+
+    const char *p = line;
+    char *out = field;
+    char *end = field + field_size - 1;
+
+    if (*p == '"')
+    {
+        // 引号包围的字段
+        p++; // 跳过开始引号
+        while (*p && out < end)
+        {
+            if (*p == '"')
+            {
+                if (*(p + 1) == '"')
+                {
+                    // 转义的引号 ""
+                    *out++ = '"';
+                    p += 2;
+                }
+                else
+                {
+                    // 结束引号
+                    p++; // 跳过结束引号
+                    break;
+                }
+            }
+            else
+            {
+                *out++ = *p++;
+            }
+        }
+        // 跳过逗号分隔符
+        if (*p == ',') p++;
+    }
+    else
+    {
+        // 非引号字段（按逗号分隔）
+        while (*p && *p != ',' && out < end)
+        {
+            *out++ = *p++;
+        }
+        if (*p == ',') p++;
+    }
+
+    *out = '\0';
+    return p;
+}
+
+// 导入 CSV 格式的 PATH 文件
+static ErrorCode import_paths_from_csv(const char *filepath, ExportData *data)
+{
+    FILE *fp = fopen(filepath, "rb");
+    if (!fp)
+    {
+        log_error("Failed to open file for import: %s", filepath);
+        return ERR_FILE_NOT_FOUND;
+    }
+
+    char line[4096];
+    int line_num = 0;
+    int header_skipped = 0;
+
+    while (fgets(line, sizeof(line), fp))
+    {
+        line_num++;
+        trim_whitespace(line);
+
+        if (line[0] == '\0')
+            continue;
+
+        // 跳过 UTF-8 BOM
+        const char *start = line;
+        if ((unsigned char)start[0] == 0xEF &&
+            (unsigned char)start[1] == 0xBB &&
+            (unsigned char)start[2] == 0xBF)
+        {
+            start += 3;
+        }
+
+        // 智能检测标题行：第一行包含 "type" 和 "path" 则视为标题
+        if (!header_skipped)
+        {
+            header_skipped = 1;
+            char lower[256];
+            strncpy(lower, start, sizeof(lower) - 1);
+            lower[sizeof(lower) - 1] = '\0';
+            for (char *p = lower; *p; p++) *p = (char)tolower((unsigned char)*p);
+            if (strstr(lower, "type") && strstr(lower, "path"))
+                continue;
+        }
+
+        char type[32] = {0};
+        char path[4096] = {0};
+
+        start = parse_csv_field(start, type, sizeof(type));
+        if (!start)
+            continue;
+        parse_csv_field(start, path, sizeof(path));
+
+        if (path[0] == '\0')
+            continue;
+
+        if (_stricmp(type, "system") == 0)
+            add_string_list(&data->system, path);
+        else if (_stricmp(type, "user") == 0)
+            add_string_list(&data->user, path);
+    }
+
+    fclose(fp);
+    log_info("Imported paths from CSV file: sys=%d, user=%d, file=%s",
+             data->system.count, data->user.count, filepath);
+    return ERR_OK;
+}
+
 // 检查引号前是否有奇数个连续反斜杠（奇数个表示引号被转义）
 static int is_quote_escaped(const char *quote_pos, const char *line_start)
 {
@@ -310,6 +430,11 @@ ErrorCode import_paths_from_file(const char *filepath, ExportData *data)
 
     init_string_list(&data->system);
     init_string_list(&data->user);
+
+    if (is_csv_file(filepath))
+    {
+        return import_paths_from_csv(filepath, data);
+    }
 
     if (!is_json_file(filepath))
     {

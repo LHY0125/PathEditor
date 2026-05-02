@@ -2,11 +2,13 @@
 #include "controller/callbacks_internal.h"
 #include "core/app_context.h"
 #include "core/lua_config.h"
+#include "core/undo_redo.h"
 #include "utils/string_ext.h"
 #include "utils/safe_string.h"
 #include "utils/ui_constants.h"
 #include "ui/ui_utils.h"
 #include <string.h>
+#include <stdlib.h>
 #include <windows.h>
 
 // 搜索回调
@@ -65,10 +67,17 @@ int list_dropfiles_cb(Ihandle *self, const char *filename, int num, int x, int y
         if (txt_search)
             IupSetAttribute(txt_search, "VALUE", "");
 
+        // 记录撤销信息
+        char *path_copy = _strdup(filename);
+        char *paths[1] = {path_copy};
+        push_record(dlg, OP_ADD, raw_data->count, 1, NULL, paths);
+        free(path_copy);
+
         add_string_list(raw_data, filename);
         sync_string_list_to_ui(current_list, raw_data);
 
         IupSetInt(current_list, "VALUE", raw_data->count);
+        refresh_undo_redo_buttons(dlg);
     }
     else
     {

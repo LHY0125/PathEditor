@@ -5,6 +5,7 @@
 #include "utils/ui_constants.h"
 #include "ui/ui_utils.h"
 #include <iup.h>
+#include <string.h>
 
 // 辅助函数：获取主对话框
 Ihandle *get_main_dlg(void)
@@ -83,4 +84,35 @@ void sync_merged_list(Ihandle *dlg)
     int total = ctx->sys_paths.count + ctx->user_paths.count;
     IupSetInt(list_merged, "COUNT", total);
     refresh_single_list_style(list_merged);
+}
+
+// 获取当前 Tab 对应的 TargetType
+TargetType get_current_target(Ihandle *dlg)
+{
+    Ihandle *tabs = IupGetDialogChild(dlg, CTRL_TABS_MAIN);
+    if (tabs)
+    {
+        int pos = IupGetInt(tabs, "VALUEPOS");
+        return (pos == 0) ? TARGET_SYSTEM : TARGET_USER;
+    }
+    return TARGET_USER;
+}
+
+// 辅助函数：创建并推送撤销记录
+void push_record(Ihandle *dlg, OperationType op_type, int index, int count,
+                 char **old_paths, char **new_paths)
+{
+    AppContext *ctx = get_app_context_from_dlg(dlg);
+    if (!ctx || !ctx->undo_redo_mgr)
+        return;
+
+    OpRecord record;
+    record.type = op_type;
+    record.target = get_current_target(dlg);
+    record.index = index;
+    record.count = count;
+    record.old_paths = old_paths;
+    record.new_paths = new_paths;
+
+    push_undo_record(ctx->undo_redo_mgr, &record);
 }

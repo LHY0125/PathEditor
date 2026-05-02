@@ -149,11 +149,11 @@ int undo(UndoRedoManager *mgr, StringList *sys_paths, StringList *user_paths)
         break;
 
     case OP_DELETE:
-        // 撤销删除：恢复被删除的路径
+        // 撤销删除：恢复被删除的路径到原始位置
         for (int i = 0; i < rec->count; i++)
         {
             if (rec->old_paths[i])
-                add_string_list(target, rec->old_paths[i]);
+                string_list_insert_at(target, rec->index + i, rec->old_paths[i]);
         }
         break;
 
@@ -221,23 +221,10 @@ int redo(UndoRedoManager *mgr, StringList *sys_paths, StringList *user_paths)
         break;
 
     case OP_DELETE:
-        // 重做删除：重新删除路径
-        for (int i = 0; i < rec->count; i++)
+        // 重做删除：从高索引到低索引删除，避免索引偏移
+        for (int i = rec->count - 1; i >= 0; i--)
         {
-            // 找到并删除对应路径
-            for (int j = 0; j < target->count; j++)
-            {
-                if (target->items[j] && rec->old_paths[i] &&
-                    strcmp(target->items[j], rec->old_paths[i]) == 0)
-                {
-                    free(target->items[j]);
-                    // 移动后面的元素
-                    for (int k = j; k < target->count - 1; k++)
-                        target->items[k] = target->items[k + 1];
-                    target->count--;
-                    break;
-                }
-            }
+            path_manager_remove_at(target, rec->index + i);
         }
         break;
 

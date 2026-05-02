@@ -1,5 +1,6 @@
 #include "utils/i18n.h"
 #include "utils/logger.h"
+#include "utils/os_env.h"
 #include "core/lua_config.h"
 #include <windows.h>
 #include <stdio.h>
@@ -10,7 +11,11 @@ static char locale_path[256] = {0};
 
 static void load_saved_language(void)
 {
-    FILE *fp = fopen("language.txt", "r");
+    char path[512];
+    get_exe_dir(path, sizeof(path));
+    strncat(path, "\\language.txt", sizeof(path) - strlen(path) - 1);
+
+    FILE *fp = fopen(path, "r");
     if (fp != NULL)
     {
         char lang[16] = {0};
@@ -39,7 +44,9 @@ void i18n_init(const char *default_lang)
 {
     setlocale(LC_ALL, "");
 
-    snprintf(locale_path, sizeof(locale_path), "./locale");
+    char dir[256];
+    get_exe_dir(dir, sizeof(dir));
+    snprintf(locale_path, sizeof(locale_path), "%s/locale", dir);
     bindtextdomain("messages", locale_path);
     textdomain("messages");
 
@@ -96,7 +103,11 @@ void i18n_change_language(const char *lang)
     snprintf(new_lang_path, sizeof(new_lang_path), "%s/%s/LC_MESSAGES/%s.mo", locale_path, lang, lang);
     bindtextdomain("messages", new_lang_path);
 
-    FILE *fp = fopen("language.txt", "w");
+    char path[512];
+    get_exe_dir(path, sizeof(path));
+    strncat(path, "\\language.txt", sizeof(path) - strlen(path) - 1);
+
+    FILE *fp = fopen(path, "w");
     if (fp != NULL)
     {
         fprintf(fp, "%s\n", lang);

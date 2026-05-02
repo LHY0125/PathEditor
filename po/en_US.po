@@ -415,3 +415,31 @@ msgstr "Dark Mode"
 #: src/ui/main_window.c
 msgid "Light Mode"
 msgstr "Light Mode"
+
+#: src/controller/callbacks_sys.c
+msgid "Select backup directory"
+msgstr "Select backup directory"
+
+#: src/controller/callbacks_sys.c
+msgid "Unknown error"
+msgstr "Unknown error"
+
+#: src/controller/callbacks_sys.c
+msgid "Failed to get AppData path"
+msgstr "Failed to get AppData path"
+
+#: src/controller/callbacks_sys.c
+msgid "Failed to create backup directory or file"
+msgstr "Failed to create backup directory or file"
+
+#: src/controller/callbacks_sys.c
+msgid "Failed to read PATH from registry"
+msgstr "Failed to read PATH from registry"
+
+#: src/controller/callbacks_sys.c
+msgid "Backup failed! Reason: %s\n\nContinue saving?\n(Continuing may prevent recovery)"
+msgstr "Backup failed! Reason: %s\n\nContinue saving?\n(Continuing may prevent recovery)"
+
+#: src/controller/callbacks_sys.c
+msgid "Total PATH length: %d characters (command line safe limit: 8191)\n"
+msgstr "Total PATH length: %d characters (command line safe limit: 8191)\n"

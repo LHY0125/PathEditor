@@ -1,6 +1,7 @@
 #include "ui/ui_utils.h"
 #include "utils/os_env.h"
 #include "utils/string_ext.h"
+#include "utils/logger.h"
 #include "core/lua_config.h"
 #include <stdio.h>
 #include <string.h>
@@ -8,14 +9,52 @@
 
 static int g_dark_mode = 0;
 
+static void load_dark_mode(void)
+{
+    char path[512];
+    get_exe_dir(path, sizeof(path));
+    strncat(path, "\\darkmode.txt", sizeof(path) - strlen(path) - 1);
+
+    FILE *fp = fopen(path, "r");
+    if (fp)
+    {
+        char val[8] = {0};
+        if (fgets(val, sizeof(val), fp))
+            g_dark_mode = (atoi(val) == 1) ? 1 : 0;
+        fclose(fp);
+        log_info("Loaded dark mode: %d", g_dark_mode);
+    }
+}
+
+static void save_dark_mode(void)
+{
+    char path[512];
+    get_exe_dir(path, sizeof(path));
+    strncat(path, "\\darkmode.txt", sizeof(path) - strlen(path) - 1);
+
+    FILE *fp = fopen(path, "w");
+    if (fp)
+    {
+        fprintf(fp, "%d\n", g_dark_mode);
+        fclose(fp);
+    }
+}
+
 void set_dark_mode(int enabled)
 {
     g_dark_mode = enabled;
+    save_dark_mode();
 }
 
 int get_dark_mode(void)
 {
     return g_dark_mode;
+}
+
+// 初始化深色模式（启动时调用）
+void init_dark_mode(void)
+{
+    load_dark_mode();
 }
 
 // 刷新列表样式（斑马纹 + 有效性检查）

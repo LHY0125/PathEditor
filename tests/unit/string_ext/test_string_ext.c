@@ -214,6 +214,150 @@ static void test_clear_string_list(void **state)
     assert_null(list.items);
 }
 
+/* ==================== string_list_insert_at 测试 ==================== */
+
+static void test_insert_at_beginning(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    add_string_list(&list, "B");
+    add_string_list(&list, "C");
+
+    int result = string_list_insert_at(&list, 0, "A");
+
+    assert_int_equal(result, 0);
+    assert_int_equal(list.count, 3);
+    assert_string_equal(string_list_get(&list, 0), "A");
+    assert_string_equal(string_list_get(&list, 1), "B");
+    assert_string_equal(string_list_get(&list, 2), "C");
+
+    clear_string_list(&list);
+}
+
+static void test_insert_at_middle(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    add_string_list(&list, "A");
+    add_string_list(&list, "C");
+
+    int result = string_list_insert_at(&list, 1, "B");
+
+    assert_int_equal(result, 0);
+    assert_int_equal(list.count, 3);
+    assert_string_equal(string_list_get(&list, 0), "A");
+    assert_string_equal(string_list_get(&list, 1), "B");
+    assert_string_equal(string_list_get(&list, 2), "C");
+
+    clear_string_list(&list);
+}
+
+static void test_insert_at_end(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    add_string_list(&list, "A");
+
+    int result = string_list_insert_at(&list, 1, "B");
+
+    assert_int_equal(result, 0);
+    assert_int_equal(list.count, 2);
+    assert_string_equal(string_list_get(&list, 0), "A");
+    assert_string_equal(string_list_get(&list, 1), "B");
+
+    clear_string_list(&list);
+}
+
+static void test_insert_at_empty_list(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    int result = string_list_insert_at(&list, 0, "A");
+
+    assert_int_equal(result, 0);
+    assert_int_equal(list.count, 1);
+    assert_string_equal(string_list_get(&list, 0), "A");
+
+    clear_string_list(&list);
+}
+
+static void test_insert_at_invalid_index(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    add_string_list(&list, "A");
+
+    assert_int_equal(string_list_insert_at(&list, -1, "B"), -1);
+    assert_int_equal(string_list_insert_at(&list, 5, "B"), -1);
+    assert_int_equal(list.count, 1);
+
+    clear_string_list(&list);
+}
+
+static void test_insert_at_null(void **state)
+{
+    (void)state;
+    assert_int_equal(string_list_insert_at(NULL, 0, "A"), -1);
+
+    StringList list;
+    init_string_list(&list);
+    assert_int_equal(string_list_insert_at(&list, 0, NULL), -1);
+
+    clear_string_list(&list);
+}
+
+/* ==================== string_list_contains 测试 ==================== */
+
+static void test_contains_found(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    add_string_list(&list, "C:\\Windows");
+    add_string_list(&list, "C:\\Program Files");
+
+    assert_int_equal(string_list_contains(&list, "C:\\Windows"), 1);
+    assert_int_equal(string_list_contains(&list, "c:\\windows"), 1);  /* 不区分大小写 */
+
+    clear_string_list(&list);
+}
+
+static void test_contains_not_found(void **state)
+{
+    (void)state;
+    StringList list;
+    init_string_list(&list);
+
+    add_string_list(&list, "C:\\Windows");
+
+    assert_int_equal(string_list_contains(&list, "D:\\Tools"), 0);
+
+    clear_string_list(&list);
+}
+
+static void test_contains_null(void **state)
+{
+    (void)state;
+    assert_int_equal(string_list_contains(NULL, "test"), 0);
+
+    StringList list;
+    init_string_list(&list);
+    assert_int_equal(string_list_contains(&list, NULL), 0);
+
+    clear_string_list(&list);
+}
+
 /* ==================== 编码转换测试 ==================== */
 
 static void test_utf8_to_wide_normal(void **state)
@@ -334,6 +478,19 @@ int main(void)
         cmocka_unit_test(test_string_list_set_out_of_bounds),
         cmocka_unit_test(test_string_list_set_null_list),
         cmocka_unit_test(test_clear_string_list),
+
+        /* insert_at 测试 */
+        cmocka_unit_test(test_insert_at_beginning),
+        cmocka_unit_test(test_insert_at_middle),
+        cmocka_unit_test(test_insert_at_end),
+        cmocka_unit_test(test_insert_at_empty_list),
+        cmocka_unit_test(test_insert_at_invalid_index),
+        cmocka_unit_test(test_insert_at_null),
+
+        /* contains 测试 */
+        cmocka_unit_test(test_contains_found),
+        cmocka_unit_test(test_contains_not_found),
+        cmocka_unit_test(test_contains_null),
 
         /* 编码转换测试 */
         cmocka_unit_test(test_utf8_to_wide_normal),

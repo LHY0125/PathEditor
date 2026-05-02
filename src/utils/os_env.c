@@ -5,9 +5,32 @@
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <direct.h>
 #include <shlobj.h>
+
+// 获取可执行文件所在目录（带缓存）
+static char s_exe_dir[256] = {0};
+
+void get_exe_dir(char *buf, size_t size)
+{
+    if (s_exe_dir[0] != '\0')
+    {
+        strncpy(buf, s_exe_dir, size - 1);
+        buf[size - 1] = '\0';
+        return;
+    }
+    DWORD len = GetModuleFileNameA(NULL, buf, (DWORD)size);
+    if (len > 0 && len < size)
+    {
+        char *last_sep = strrchr(buf, '\\');
+        if (!last_sep) last_sep = strrchr(buf, '/');
+        if (last_sep) *last_sep = '\0';
+    }
+    strncpy(s_exe_dir, buf, sizeof(s_exe_dir) - 1);
+    s_exe_dir[sizeof(s_exe_dir) - 1] = '\0';
+}
 
 // 检查管理员权限
 int check_admin(void)

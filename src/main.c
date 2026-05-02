@@ -7,6 +7,13 @@
 #include "core/app_context.h"
 #include "utils/ui_constants.h"
 #include "core/lua_config.h"
+#include "utils/string_ext.h"
+#include "utils/os_env.h"
+#include "utils/logger.h"
+#include "utils/i18n.h"
+#include "controller/callbacks.h"
+#include "ui/main_window.h"
+#include "ui/ui_utils.h"
 
 // 需要在非管理员模式禁用的按钮列表
 #define ADMIN_DISABLE_COUNT 10
@@ -15,12 +22,6 @@ static const char* ADMIN_DISABLE_BUTTONS[] = {
     CTRL_BTN_UP, CTRL_BTN_DOWN, CTRL_BTN_CLEAN, CTRL_BTN_OK,
     CTRL_BTN_IMPORT, CTRL_BTN_EXPORT
 };
-#include "utils/string_ext.h"
-#include "utils/os_env.h"
-#include "utils/logger.h"
-#include "utils/i18n.h"
-#include "controller/callbacks.h"
-#include "ui/main_window.h"
 
 /*
 !编译命令：
@@ -65,6 +66,9 @@ int main(int argc, char **argv)
     // 初始化国际化系统
     i18n_init(NULL);
 
+    // 初始化深色模式（从配置文件加载）
+    init_dark_mode();
+
     // 在管理员模式下，解决无法拖拽文件到列表框的问题 (UIPI)
     // 需要加载 User32.dll 获取 ChangeWindowMessageFilter 函数
     HMODULE hUser32 = LoadLibraryW(L"user32.dll");
@@ -96,6 +100,20 @@ int main(int argc, char **argv)
     }
 
     Ihandle *dlg = create_main_window();
+
+    // 如果深色模式已启用，应用深色主题
+    if (get_dark_mode())
+    {
+        const char *dark_bg = lua_config_get_string("theme", "dark_bg");
+        if (dark_bg && *dark_bg)
+            IupSetAttribute(dlg, "BGCOLOR", dark_bg);
+
+        // 更新深色模式按钮标题
+        Ihandle *btn_darkmode = IupGetDialogChild(dlg, CTRL_BTN_DARKMODE);
+        if (btn_darkmode)
+            IupSetAttribute(btn_darkmode, "TITLE",
+                _(lua_config_get_string("button", "lightmode")));
+    }
 
     // 绑定上下文到对话框
     IupSetAttribute(dlg, "APP_CONTEXT", (char *)ctx);

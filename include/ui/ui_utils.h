@@ -20,5 +20,6 @@ void sync_string_list_to_ui(Ihandle *list_ui, const StringList *str_list);
 // 深色模式状态管理
 void set_dark_mode(int enabled);
 int get_dark_mode(void);
+void init_dark_mode(void);
 
 #endif // UI_UTILS_H
