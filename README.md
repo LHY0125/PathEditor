@@ -22,7 +22,6 @@ PathEditor/
 │   └── installer.iss    # Inno Setup 安装包脚本
 ├── ManagePath.bat       # 备用的命令行 PATH 管理脚本
 ├── CMakeLists.txt       # CMake 构建配置
-├── Makefile             # GNU Make 构建配置（备用）
 └── CLAUDE.md            # Claude Code 项目指南
 ```
 
@@ -62,7 +61,7 @@ PATH 值使用 `REG_EXPAND_SZ` 类型，支持 `%SystemRoot%` 等环境变量展
 | 工具 | 说明 |
 |------|------|
 | Windows 操作系统 | 需 Windows API 支持 |
-| MinGW-w64 (GCC) | 编译器，路径 `D:\settings\Language\C\mingw64` |
+| MinGW-w64 (GCC) | 编译器，确保 `gcc` 在 PATH 中 |
 | CMake 3.15+ | 构建工具 |
 | IUP 3.31 | GUI 库（已包含在 `libs/` 中） |
 

@@ -9,17 +9,17 @@ Path Editor 是一个 Windows 系统环境变量 PATH 编辑器，使用 C 语�
 ## 构建与运行
 
 ```bash
-# 编译（需要 MinGW-w64 在 PATH 中）
-mingw32-make
+# 配置（需要 MinGW-w64 和 CMake 3.15+ 在 PATH 中）
+cmake -B build -G "MinGW Makefiles"
 
-# 清理构建产物
-mingw32-make clean
+# 编译
+cmake --build build
 
 # 运行（必须以管理员身份）
 bin/PathEditor.exe
 ```
 
-编译器为 MinGW-w64 GCC，使用 `windres` 编译资源文件（图标）。IUP 3.31 库已包含在 `libs/` 目录下，无需额外安装。
+编译器为 MinGW-w64 GCC。CMake 自动处理 `windres` 资源文件编译和 IUP DLL 复制。IUP 3.31 库已包含在 `libs/` 目录下，无需额外安装。
 
 ## 打包
 
