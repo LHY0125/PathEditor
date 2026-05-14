@@ -1,6 +1,7 @@
 /.trae/
 /.vscode/
 /build/
+/build*/
 
 *.o
 *.obj
