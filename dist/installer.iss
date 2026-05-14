@@ -37,8 +37,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "d:\Code\doing_exercises\programs\PathEditor\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "d:\Code\doing_exercises\programs\PathEditor\bin\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "d:\Code\doing_exercises\programs\PathEditor\build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "d:\Code\doing_exercises\programs\PathEditor\build\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

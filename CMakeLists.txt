@@ -1,54 +1,94 @@
-cmake_minimum_required(VERSION 3.15)
-project(PathEditor LANGUAGES C RC)
+cmake_minimum_required(VERSION 3.10)
+project(PathEditor VERSION 3.0 LANGUAGES C)
 
-set(IUP_DIR "${CMAKE_SOURCE_DIR}/libs/iup-3.31_Win64_dllw6_lib")
+# 启用资源编译器以处理 .rc 文件
+enable_language(RC)
 
-add_executable(PathEditor
+# 设置 C 标准
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF) # 禁用特定编译器的扩展（如 gnu17），强制使用标准 C17
+
+# 定义源文件
+set(SOURCES
     src/main.c
-    src/utils.c
-    src/registry.c
-    src/callbacks.c
+    src/utils/string_ext.c
+    src/utils/os_env.c
+    src/utils/safe_string.c
+    src/utils/logger.c
+    src/ui/ui_utils.c
+    src/ui/dialogs.c
+    src/ui/main_window.c
+    src/core/registry_service.c
+    src/core/path_manager.c
+    src/core/app_context.c
+    src/core/lua_config.c
+    src/core/import_export.c
+    src/controller/callbacks.c
     ico/resources.rc
 )
 
-target_include_directories(PathEditor PRIVATE
-    ${IUP_DIR}/include
-    include
+# 创建 GUI 可执行文件（WIN32 属性会自动添加 -mwindows 参数）
+add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
+
+# 添加宏定义
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    _WIN32
+    UNICODE
+    _UNICODE
 )
 
-target_link_directories(PathEditor PRIVATE ${IUP_DIR})
+# 添加编译选项
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall
+        -O2
+        -fexec-charset=UTF-8
+    )
+endif()
 
-target_link_libraries(PathEditor
-    iup iupcd gdi32 comdlg32 comctl32 uuid ole32 advapi32
+# 设置头文件搜索路径
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/core
+    ${CMAKE_SOURCE_DIR}/include/ui
+    ${CMAKE_SOURCE_DIR}/include/controller
+    ${CMAKE_SOURCE_DIR}/include/utils
+    ${CMAKE_SOURCE_DIR}/libs/IUP/include
+    ${CMAKE_SOURCE_DIR}/libs/lua/include
 )
 
-target_compile_definitions(PathEditor PRIVATE UNICODE _UNICODE)
-
-target_compile_options(PathEditor PRIVATE -Wall -O2 -fexec-charset=UTF-8)
-
-target_link_options(PathEditor PRIVATE -mwindows)
-
-set_target_properties(PathEditor PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+# 设置库文件搜索路径
+target_link_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/libs/IUP
+    ${CMAKE_SOURCE_DIR}/libs/lua
 )
 
-add_custom_command(TARGET PathEditor POST_BUILD
+# 链接所需库
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    lua55
+    iup
+    iupcd
+    gdi32
+    comdlg32
+    comctl32
+    uuid
+    ole32
+    advapi32
+)
+
+# 编译完成后，复制程序实际需要的核心 DLL 文件到构建输出目录
+set(IUP_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/IUP/iup.dll")
+set(LUA_REQUIRED_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libs/lua/lua55.dll")
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${IUP_DIR}/iup.dll"
-        "${IUP_DIR}/iupcd.dll"
-        "${IUP_DIR}/freetype6.dll"
-        "${IUP_DIR}/ftgl.dll"
-        "${IUP_DIR}/zlib1.dll"
-        "${IUP_DIR}/iupcontrols.dll"
-        "${IUP_DIR}/iupim.dll"
-        "${IUP_DIR}/iupimglib.dll"
-        "${IUP_DIR}/iup_mglplot.dll"
-        "${IUP_DIR}/iup_plot.dll"
-        "${IUP_DIR}/iup_scintilla.dll"
-        "${IUP_DIR}/iupgl.dll"
-        "${IUP_DIR}/iupglcontrols.dll"
-        "${IUP_DIR}/iupole.dll"
-        "${IUP_DIR}/iuptuio.dll"
-        "${CMAKE_SOURCE_DIR}/bin/"
-    COMMENT "Copying IUP runtime DLLs to bin/"
+    ${IUP_REQUIRED_DLLS}
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMENT "Copying required DLLs to build directory..."
+)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${LUA_REQUIRED_DLLS}
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMENT "Copying Lua DLL to build directory..."
 )

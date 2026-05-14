@@ -1,122 +1,135 @@
-# Path Editor — Windows 系统环境变量编辑器
+# Path Editor (系统环境变量编辑器)
 
-一个轻量级的 Windows 系统环境变量（PATH）编辑器，使用 C 语言和 [IUP](https://www.tecgraf.puc-rio.br/iup/) 图形库开发。
+* Path Editor 是一个专为 Windows 用户设计的系统环境变量（PATH）管理工具。它基于原生 C 语言和 IUP 图形库开发，旨在替代 Windows 自带的简陋编辑界面。
+* 相比系统自带的编辑器，Path Editor 提供了更加直观的双视图（系统/用户变量）界面、智能的路径有效性检测、自动备份机制以及便捷的拖拽操作，让环境变量的管理变得安全、高效且轻松。无论您是开发者还是系统管理员，它都是您配置开发环境的得力助手。
 
-## 项目结构
+## ✨ 功能特点
 
-```
-PathEditor/
-├── src/
-│   ├── main.c          # 程序入口，构建 UI 布局
-│   ├── callbacks.c      # 按钮回调 + 自定义输入对话框
-│   ├── registry.c       # 注册表读写操作
-│   └── utils.c          # 编码转换 + 权限检测 + 斑马纹样式
-├── include/
-│   ├── globals.h        # 全局控件句柄与常量
-│   ├── callbacks.h
-│   ├── registry.h
-│   └── utils.h
-├── libs/                # IUP 3.31 库文件（预编译）
-├── ico/                 # 应用图标与资源文件
-├── dist/
-│   └── installer.iss    # Inno Setup 安装包脚本
-├── ManagePath.bat       # 备用的命令行 PATH 管理脚本
-├── CMakeLists.txt       # CMake 构建配置
-└── CLAUDE.md            # Claude Code 项目指南
-```
+* **🛡️ 安全第一**：
+  * **自动备份**：每次保存前自动备份注册表，防止意外。
+  * **只读模式**：非管理员运行时自动切换到只读模式，防止误操作。
+  * **权限检测**：智能检测当前运行权限。
 
-## 功能特点
+* **📑 双视图管理**：
+  * 完美支持 **System (系统变量)** 和 **User (用户变量)** 的分离查看与编辑。
+  * 清晰的 Tab 标签页切换。
 
-- **可视化编辑** — 以列表形式直观查看和管理系统 PATH 变量
-- **增删改查** — 新建、编辑、删除条目，支持从文件管理器直接选择目录
-- **拖拽排序** — 上移/下移按钮调整路径优先级
-- **权限检测** — 非管理员模式自动切换为只读，防止误操作
-- **自定义输入框** — 支持超长路径的编辑（80 字符可见宽度）
-- **斑马纹列表** — 交替行背景色，方便阅读
-- **双击编辑** — 双击列表项直接编辑对应路径
-- **即时广播** — 保存后通过 `WM_SETTINGCHANGE` 通知系统
+* **🔴 智能诊断与维护**：
+  * **无效路径高亮**：自动检测路径是否存在，不存在的显示为红色。
+  * **重复路径高亮**：自动检测重复项，重复的显示为橙色。
+  * **一键清理**：智能移除所有无效和重复的路径，保持环境整洁。
 
-## 工作原理
+* **📂 高效交互**：
+  * **拖拽支持**：直接将文件夹拖入窗口即可添加（支持管理员模式下的 UIPI 穿透）。
+  * **实时搜索**：顶部搜索框支持不区分大小写的实时过滤查找。
+  * **快捷键**：支持 Delete 键快速删除选中项。
 
-程序直接读写 Windows 注册表键：
+* **🔄 导入导出**：
+  * **导出备份**：将 PATH 导出为 JSON 文件，方便备份和迁移。
+  * **导入恢复**：从 JSON 文件导入路径配置。
+  * **格式兼容**：支持旧版 TXT 格式导入。
 
-```
-HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\Path
-```
+* **便捷管理**：
+  * ➕ **新建**：添加新路径到列表。
+  * 📂 **浏览**：直接从文件资源管理器选择目录添加。
+  * ✏️ **编辑**：双击或点击按钮修改现有路径。
+  * 🗑️ **删除**：移除不需要的路径。
+  * ⬆️⬇️ **排序**：上移/下移调整路径优先级。
 
-PATH 值使用 `REG_EXPAND_SZ` 类型，支持 `%SystemRoot%` 等环境变量展开。
+* **轻量级**：原生 C 语言编写，无臃肿依赖，运行速度极快。
 
-**编码转换**：IUP 控件使用 UTF-8，Windows 注册表 API 使用 UTF-16，`utils.c` 提供 `wide_to_utf8()` 和 `utf8_to_wide()` 完成双向转换。
+## 🛠️ 架构与二次开发
 
-## 下载与安装
+本项目注重代码的模块化和可维护性，采用了经典的 **MVC 分层架构**，非常适合作为 C 语言桌面程序开发的参考：
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 页面下载 `PathEditorSetup.exe` 安装包。
+* **分层设计**：
+  * `src/core/` (Model): 核心数据与业务逻辑，完全脱离 UI 框架（无任何 `<iup.h>` 依赖）。
+  * `src/ui/` (View): 负责界面布局与组件的纯视觉展示。
+  * `src/controller/` (Controller): 负责连接用户交互与底层数据。
+  * `src/utils/` (Utils): 纯粹的底层工具类封装（系统级调用、字符串处理）。
+* **热配置系统**：所有 UI 参数（窗口大小、按钮文本、布局间距等）均通过 `lua/config.lua` 配置，修改无需重新编译即可生效。
+* **清晰的应用状态**：摒弃了脆弱的全局变量模式，采用 `AppContext` 统一管理应用运行时的上下文状态，通过指针传递，安全可靠。
+* **开发工具库**：
+  * 统一错误码系统 (`utils/error_code.h`)
+  * 安全字符串函数 (`utils/safe_string.h`)
+  * 日志系统 (`utils/logger.h`)
 
-> **注意：** 安装后必须以管理员身份运行，否则只能查看，无法保存更改。
+## 📦 下载与安装
 
-## 从源码构建
+您可以从 [Releases](https://github.com/LHY0125/PathEditor/releases) 页面下载最新的安装包 (`PathEditorSetup.exe`)。
+
+安装完成后，请**以管理员身份运行**程序以确保能够保存对系统环境变量的修改。
+
+## 🛠️ 构建指南
+
+如果您想从源码构建本项目，请按照以下步骤操作：
 
 ### 环境要求
 
-| 工具 | 说明 |
-|------|------|
-| Windows 操作系统 | 需 Windows API 支持 |
-| MinGW-w64 (GCC) | 编译器，确保 `gcc` 在 PATH 中 |
-| CMake 3.15+ | 构建工具 |
-| IUP 3.31 | GUI 库（已包含在 `libs/` 中） |
+* Windows 操作系统
+* GCC 编译器 (推荐 MinGW-w64)
+* CMake 工具 (推荐使用 CMake 构建)
+* IUP 库 (已包含在 `libs` 目录下)
+* Inno Setup 6 (仅打包需要)
 
-### 编译
+### 编译步骤 (推荐使用 CMake)
 
-```bash
-git clone https://github.com/LHY0125/PathEditor.git
-cd PathEditor
+本项目已迁移至 CMake 构建系统，支持生成更标准的构建文件并集成到各大 IDE。
 
-# 配置（MinGW Makefiles 生成器）
-cmake -B build -G "MinGW Makefiles"
+1. 克隆仓库：
 
-# 编译
-cmake --build build
-```
+   ```bash
+   git clone https://github.com/LHY0125/PathEditor.git
+   cd PathEditor
+   ```
 
-编译产出在 `bin/PathEditor.exe`。
+2. 使用 CMake 配置和编译：
 
-**其他 CMake 选项：**
+   ```bash
+   # 生成构建系统 (以 MinGW 为例)
+   cmake -B build -G "MinGW Makefiles"
+   
+   # 编译项目
+   cmake --build build
+   ```
 
-```bash
-# Debug 模式（带调试符号）
-cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+3. 运行：
+   编译成功后，可执行文件位于 `build/PathEditor.exe`。
 
-# Release 优化
-cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-```
+### 打包 (可选)
 
-### 打包安装程序
+本项目使用 Inno Setup 生成安装包。
 
-使用 [Inno Setup 6](https://jrsoftware.org/isdl.php) 生成 `.exe` 安装包：
+1. 确保已安装 [Inno Setup 6](https://jrsoftware.org/isdl.php)。
+2. 运行根目录下的 `build_installer.bat` 脚本。
+3. 生成的安装包将位于 `dist/dist/PathEditorSetup.exe`。
 
-1. 确保已安装 Inno Setup 6
-2. 先编译项目生成 `bin/PathEditor.exe` 及所需 DLL
-3. 用 Inno Setup 编译 `dist/installer.iss`
-4. 安装包输出至 `dist/dist/PathEditorSetup.exe`
+## 📝 使用说明
 
-## 使用说明
+1. **启动**：右键点击程序图标，选择“以管理员身份运行”。
+2. **查看**：程序启动后会自动加载当前的系统 PATH 变量。
+   * **红色**条目表示路径不存在。
+   * **橙色**条目表示路径重复。
+3. **搜索**：在顶部输入关键词可快速筛选。
+4. **修改**：
+   * 拖拽文件夹到列表可直接添加。
+   * 使用右侧按钮栏进行常规操作。
+   * 点击“一键清理”可自动删除无效和重复项。
+5. **保存**：操作完成后，务必点击底部的【确定】按钮保存更改。
+6. **生效**：保存后，某些正在运行的程序可能需要重启才能识别新的环境变量。CMD 或 PowerShell 窗口需要重新打开。
 
-1. **启动** — 右键程序图标，选择「以管理员身份运行」
-2. **查看** — 程序启动后自动加载当前系统 PATH 到列表
-3. **新建** — 点击「新建」按钮，输入路径后确认，新条目追加到列表末尾
-4. **编辑** — 选中条目后点击「编辑」，或直接双击条目
-5. **浏览** — 点击「浏览」打开文件夹选择器，选中目录后自动添加
-6. **删除** — 选中条目后点击「删除」
-7. **排序** — 选中条目后点击「上移」或「下移」调整顺序
-8. **保存** — 操作完成后点击「确定」写入注册表并广播变更
-9. **生效** — CMD / PowerShell 窗口需要重新打开才能识别新变量；部分程序可能需要重启
+## 👤 作者信息
 
-**命令行备选方案：** 项目附带 `ManagePath.bat` 脚本，提供导出、导入和备份 PATH 的功能，无需 GUI 也可操作。
+* **作者**：LHY
+* **邮箱**：<3364451258@qq.com>
+* **GitHub**：[https://github.com/LHY0125/PathEditor](https://github.com/LHY0125/PathEditor)
 
-## 许可证
+如果您觉得这个工具对您有帮助，请给我的 GitHub 仓库点个 Star ⭐️！
 
-本项目基于 [MIT License](LICENSE) 开源。
+## 📄 许可证
 
-Copyright (c) 2026 LHY
+本项目基于 MIT 许可证开源，您可以在遵守许可证条款的前提下自由使用、修改和分发本项目的代码。
+
+详细信息请参阅 [LICENSE](LICENSE) 文件。
+
+Copyright © 2026 LHY. All Rights Reserved.
