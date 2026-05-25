@@ -55,6 +55,11 @@ export function useKeyboard(actions: KeyboardActions) {
         if (!isAdmin) return;
         e.preventDefault();
         a.onDelete();
+      } else if (ctrl && e.key === 'f') {
+        e.preventDefault();
+        const searchInput = document.querySelector<HTMLInputElement>('input[placeholder]');
+        searchInput?.focus();
+        searchInput?.select();
       } else if (e.key === 'F1') {
         e.preventDefault();
         a.onHelp();

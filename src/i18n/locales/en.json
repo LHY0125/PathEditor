@@ -39,6 +39,7 @@
     "saving": "Saving...",
     "saved": "Saved successfully",
     "error": "Operation failed",
+    "warning_backup": "Backup creation failed, save will proceed without backup",
     "deleted": "Deleted {{count}} path(s)",
     "loaded": "Loaded {{sysCount}} system and {{userCount}} user paths",
     "dragFolderOnly": "Only folders can be dropped",

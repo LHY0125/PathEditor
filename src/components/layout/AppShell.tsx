@@ -89,9 +89,12 @@ export function AppShell() {
         onDrop={(e) => {
           e.preventDefault();
           if (activeTab === 'merged') return;
-          for (let i = 0; i < e.dataTransfer.files.length; i++) {
-            const path = (e.dataTransfer.files[i] as any).path;
-            if (path) useAppStore.getState().addPath(path, activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM);
+          for (let i = 0; i < e.dataTransfer.items.length; i++) {
+            const entry = e.dataTransfer.items[i].webkitGetAsEntry();
+            if (entry?.isDirectory) {
+              const path = (e.dataTransfer.files[i] as any).path;
+              if (path) useAppStore.getState().addPath(path, activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM);
+            }
           }
         }}
       >

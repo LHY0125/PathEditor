@@ -2,16 +2,18 @@ use chrono::Local;
 use std::fs;
 use std::path::PathBuf;
 
-/// 获取 APPDATA 路径下的备份目录
-#[tauri::command]
-pub fn get_appdata_dir() -> String {
+fn backup_base_dir() -> PathBuf {
     dirs::data_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("."))
         .join("PathEditor")
         .join("backups")
-        .to_string_lossy()
-        .to_string()
+}
+
+/// 获取 APPDATA 路径下的备份目录
+#[tauri::command]
+pub fn get_appdata_dir() -> String {
+    backup_base_dir().to_string_lossy().to_string()
 }
 
 /// 备份当前注册表中的系统 PATH 和用户 PATH
@@ -21,12 +23,7 @@ pub fn backup_registry(custom_dir: Option<String>, sys_paths: Vec<String>, user_
     // 确定备份目录
     let backup_dir = match custom_dir {
         Some(ref dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => {
-            dirs::data_dir()
-                .unwrap_or_else(|| PathBuf::from("C:\\"))
-                .join("PathEditor")
-                .join("backups")
-        }
+        _ => backup_base_dir(),
     };
 
     // 创建目录

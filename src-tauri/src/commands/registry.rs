@@ -19,12 +19,22 @@ fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<Str
 }
 
 fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String]) -> Result<(), String> {
+    let value = join_path(paths);
+
+    // Windows 注册表 REG_EXPAND_SZ 上限 32767 字符
+    const MAX_PATH_LEN: usize = 32767;
+    if value.len() > MAX_PATH_LEN {
+        return Err(format!(
+            "{} PATH 总长度 {} 超出 Windows 限制 {} 字符，请移除部分路径后再保存",
+            label, value.len(), MAX_PATH_LEN
+        ));
+    }
+
     let key = RegKey::predef(root);
     let env_key = key
         .open_subkey_with_flags(sub_path, KEY_WRITE)
         .map_err(|e| format!("无法写入{}注册表（需要管理员权限）: {}", label, e))?;
 
-    let value = join_path(paths);
     env_key
         .set_value(PATH_VALUE, &value)
         .map_err(|e| format!("无法写入{} PATH: {}", label, e))?;

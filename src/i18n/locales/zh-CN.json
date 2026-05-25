@@ -39,6 +39,7 @@
     "saving": "正在保存...",
     "saved": "保存成功",
     "error": "操作失败",
+    "warning_backup": "备份创建失败，保存将继续但不生成备份",
     "deleted": "已删除 {{count}} 个路径",
     "loaded": "已加载 {{sysCount}} 个系统路径和 {{userCount}} 个用户路径",
     "dragFolderOnly": "只能拖拽文件夹",

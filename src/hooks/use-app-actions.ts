@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/app-store';
 import { TargetType } from '@/core/undo-redo';
 import { open } from '@tauri-apps/plugin-dialog';
 import { importFromContent, exportToJson, flattenImportResult } from '@/core/import-export';
+import { is_valid_path_format } from '@/core/validation';
 import { useKeyboard } from './use-keyboard';
 import i18n from '@/i18n';
 import type { TabId } from '@/store/app-store';
@@ -68,7 +69,7 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
   const handleClean = useCallback(() => {
     const removed = useAppStore.getState().cleanPaths(
       getCurrentTarget(),
-      (p) => p.includes('%') || p.includes('\\') || p.includes('/') || /^[a-zA-Z]:[/\\]/.test(p),
+      is_valid_path_format,
     );
     if (removed.length > 0) {
       useAppStore.getState().setStatusMessage(
