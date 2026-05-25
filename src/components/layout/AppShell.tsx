@@ -136,7 +136,28 @@ export function AppShell() {
   }, []);
 
   const handleSave = useCallback(() => {
-    useAppStore.getState().savePaths();
+    const state = useAppStore.getState();
+    const sysJoined = state.sysPaths.toArray().join(';');
+    const userJoined = state.userPaths.toArray().join(';');
+    const combined = sysJoined + ';' + userJoined;
+
+    const warnings: string[] = [];
+    if (sysJoined.length > 2048) {
+      warnings.push(`系统 PATH 长度 ${sysJoined.length} 超过建议值 2048`);
+    }
+    if (userJoined.length > 2048) {
+      warnings.push(`用户 PATH 长度 ${userJoined.length} 超过建议值 2048`);
+    }
+    if (combined.length > 8191) {
+      warnings.push(`合并 PATH 长度 ${combined.length} 超过命令行安全限制 8191`);
+    }
+
+    if (warnings.length > 0) {
+      const msg = warnings.join('\n') + '\n\n是否继续保存？';
+      if (!window.confirm(msg)) return;
+    }
+
+    state.savePaths();
   }, []);
 
   // ── 键盘快捷键 ──
@@ -248,12 +269,31 @@ export function AppShell() {
         />
       </div>
 
-      {/* 路径列表 */}
-      {activeTab === 'merged' ? (
-        <MergePreview />
-      ) : (
-        <PathTable tabId={activeTab as 'system' | 'user'} />
-      )}
+      {/* 路径列表（支持拖拽文件夹） */}
+      <div
+        className="flex-1 overflow-hidden"
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'link';
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (activeTab === 'merged') return;
+          const files = e.dataTransfer.files;
+          for (let i = 0; i < files.length; i++) {
+            const path = (files[i] as any).path;
+            if (path) {
+              useAppStore.getState().addPath(path, getCurrentTarget());
+            }
+          }
+        }}
+      >
+        {activeTab === 'merged' ? (
+          <MergePreview />
+        ) : (
+          <PathTable tabId={activeTab as 'system' | 'user'} />
+        )}
+      </div>
 
       <StatusBar />
 

@@ -1,9 +1,14 @@
-import { useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppStore } from '@/store/app-store';
-import { validatePath } from '@/hooks/use-path-validation';
+import { invoke } from '@tauri-apps/api/core';
 
 interface PathTableProps {
   tabId: 'system' | 'user';
+}
+
+interface PathRow {
+  path: string;
+  index: number;
 }
 
 export function PathTable({ tabId }: PathTableProps) {
@@ -17,20 +22,94 @@ export function PathTable({ tabId }: PathTableProps) {
   const paths = tabId === 'system' ? sysPaths : userPaths;
   const isActive = activeTab === tabId;
 
+  // 本次会话中已验证过的路径缓存（key=path, value=isValid）
+  const [validationCache, setValidationCache] = useState<Map<string, boolean>>(new Map());
+  // 环境变量展开结果缓存（key=path, value=expanded）
+  const [expandedCache, setExpandedCache] = useState<Map<string, string>>(new Map());
+
   // 过滤搜索
-  const filtered = useMemo(() => {
+  const filtered = useMemo<PathRow[]>(() => {
     if (!searchQuery) return paths.all.map((p, i) => ({ path: p, index: i }));
     const q = searchQuery.toLowerCase();
-    const result: { path: string; index: number }[] = [];
+    const result: PathRow[] = [];
     for (let i = 0; i < paths.length; i++) {
-      if (paths.get(i)!.toLowerCase().includes(q)) {
-        result.push({ path: paths.get(i)!, index: i });
-      }
+      const p = paths.get(i)!;
+      if (p.toLowerCase().includes(q)) result.push({ path: p, index: i });
     }
     return result;
   }, [paths, searchQuery]);
 
-  // 路径验证状态
+  // 异步验证未缓存的路径
+  useEffect(() => {
+    let cancelled = false;
+    const allPaths = paths.all;
+
+    // 找出未缓存的路径
+    const toValidate = allPaths.filter((p) => !validationCache.has(p));
+    if (toValidate.length === 0) return;
+
+    // 批量验证（限制并发 20）
+    const batch = toValidate.slice(0, 20);
+    Promise.all(
+      batch.map(async (p): Promise<[string, boolean]> => {
+        try {
+          if (p.includes('%')) return [p, true];
+          const valid: boolean = await invoke('validate_path', { path: p });
+          return [p, valid];
+        } catch {
+          return [p, true];
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setValidationCache((prev) => {
+        const next = new Map(prev);
+        for (const [p, v] of results) {
+          next.set(p, v);
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paths, validationCache]);
+
+  // 异步展开环境变量（用于 tooltip）
+  useEffect(() => {
+    let cancelled = false;
+    const toExpand = paths.all.filter(
+      (p) => p.includes('%') && !expandedCache.has(p),
+    );
+    if (toExpand.length === 0) return;
+
+    Promise.all(
+      toExpand.map(async (p): Promise<[string, string]> => {
+        try {
+          const expanded: string = await invoke('expand_env_vars', { path: p });
+          return [p, expanded !== p ? expanded : ''];
+        } catch {
+          return [p, ''];
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setExpandedCache((prev) => {
+        const next = new Map(prev);
+        for (const [p, v] of results) {
+          next.set(p, v);
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paths, expandedCache]);
+
+  // 所有路径都默认有效（异步验证结果回来后再精确染色）
   const validations = useMemo(() => {
     const seen = new Set<string>();
     return filtered.map(({ path }) => {
@@ -38,11 +117,12 @@ export function PathTable({ tabId }: PathTableProps) {
       const isDuplicate = seen.has(lower);
       seen.add(lower);
       return {
-        isValid: validatePath(path),
+        isValid: validationCache.get(path) ?? true,
         isDuplicate,
+        isEnvVar: path.includes('%'),
       };
     });
-  }, [filtered]);
+  }, [filtered, validationCache]);
 
   const handleClick = useCallback(
     (realIndex: number, e: React.MouseEvent) => {
@@ -62,7 +142,6 @@ export function PathTable({ tabId }: PathTableProps) {
   const handleDoubleClick = useCallback(
     (realIndex: number) => {
       if (!isActive) return;
-      // 双击编辑 — 由 AppShell 处理（通过事件）
       window.dispatchEvent(
         new CustomEvent('path-dblclick', {
           detail: { index: realIndex, path: paths.get(realIndex) },
@@ -78,10 +157,7 @@ export function PathTable({ tabId }: PathTableProps) {
         <thead>
           <tr
             className="sticky top-0 z-10 text-left text-xs uppercase"
-            style={{
-              backgroundColor: 'var(--app-list-alt)',
-              color: 'var(--app-fg)',
-            }}
+            style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
           >
             <th className="w-8 px-2 py-1">#</th>
             <th className="px-2 py-1">路径</th>
@@ -109,13 +185,14 @@ export function PathTable({ tabId }: PathTableProps) {
                       : 'var(--app-list-alt)',
                 }}
               >
-                <td
-                  className="px-2 py-0.5 text-xs opacity-50"
-                  style={{ color: 'var(--app-fg)' }}
-                >
+                <td className="w-8 px-2 py-0.5 text-xs opacity-50" style={{ color: 'var(--app-fg)' }}>
                   {index + 1}
                 </td>
-                <td className="px-2 py-0.5 text-sm" style={{ color: textColor }}>
+                <td
+                  className="px-2 py-0.5 text-sm truncate max-w-2xl"
+                  style={{ color: textColor }}
+                  title={expandedCache.get(path) || undefined}
+                >
                   {path}
                 </td>
               </tr>
