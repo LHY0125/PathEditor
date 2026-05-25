@@ -1,0 +1,63 @@
+{
+  "app": {
+    "name": "PathEditor",
+    "nameReadonly": "PathEditor (Read-only)"
+  },
+  "tab": {
+    "system": "System Variables",
+    "user": "User Variables",
+    "merged": "Merge Preview"
+  },
+  "button": {
+    "new": "New",
+    "edit": "Edit",
+    "browse": "Browse...",
+    "delete": "Delete",
+    "moveUp": "Move Up",
+    "moveDown": "Move Down",
+    "clean": "Clean",
+    "import": "Import",
+    "export": "Export",
+    "save": "OK",
+    "cancel": "Cancel",
+    "help": "Help",
+    "undo": "Undo",
+    "redo": "Redo",
+    "darkMode": "Dark Mode",
+    "lightMode": "Light Mode",
+    "language": "Language"
+  },
+  "status": {
+    "normal": "Ready",
+    "readonly": "Read-only mode — Administrator privileges required for editing",
+    "saving": "Saving...",
+    "saved": "Saved successfully",
+    "error": "Operation failed",
+    "deleted": "Deleted {{count}} path(s)",
+    "loaded": "Loaded {{sysCount}} system and {{userCount}} user paths",
+    "dragFolderOnly": "Only folders can be dropped",
+    "adminWarning": "Running without administrator privileges, some features are disabled"
+  },
+  "dialog": {
+    "newPath": "New Path",
+    "editPath": "Edit Path",
+    "pathLabel": "Enter path:",
+    "selectDir": "Select Directory",
+    "importTitle": "Import Paths",
+    "exportTitle": "Export Paths",
+    "importTarget": "Import Target",
+    "importSystem": "System Only",
+    "importUser": "User Only",
+    "importBoth": "Both",
+    "helpTitle": "Help",
+    "languageTitle": "Select Language",
+    "backupTitle": "Backup Confirmation",
+    "backupMessage": "Back up registry before saving?",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "search": "Search paths..."
+  },
+  "help": {
+    "content": "PathEditor v4.0 — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
+  }
+}

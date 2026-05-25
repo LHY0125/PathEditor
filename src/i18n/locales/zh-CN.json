@@ -1,0 +1,63 @@
+{
+  "app": {
+    "name": "PathEditor",
+    "nameReadonly": "PathEditor (只读)"
+  },
+  "tab": {
+    "system": "系统变量",
+    "user": "用户变量",
+    "merged": "合并预览"
+  },
+  "button": {
+    "new": "新建",
+    "edit": "编辑",
+    "browse": "浏览...",
+    "delete": "删除",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "clean": "一键清理",
+    "import": "导入",
+    "export": "导出",
+    "save": "确定",
+    "cancel": "取消",
+    "help": "帮助",
+    "undo": "撤销",
+    "redo": "重做",
+    "darkMode": "深色模式",
+    "lightMode": "浅色模式",
+    "language": "语言"
+  },
+  "status": {
+    "normal": "就绪",
+    "readonly": "只读模式 — 需要管理员权限才能编辑",
+    "saving": "正在保存...",
+    "saved": "保存成功",
+    "error": "操作失败",
+    "deleted": "已删除 {{count}} 个路径",
+    "loaded": "已加载 {{sysCount}} 个系统路径和 {{userCount}} 个用户路径",
+    "dragFolderOnly": "只能拖拽文件夹",
+    "adminWarning": "当前以非管理员身份运行，部分功能不可用"
+  },
+  "dialog": {
+    "newPath": "新建路径",
+    "editPath": "编辑路径",
+    "pathLabel": "请输入路径:",
+    "selectDir": "选择目录",
+    "importTitle": "导入路径",
+    "exportTitle": "导出路径",
+    "importTarget": "导入目标",
+    "importSystem": "仅系统变量",
+    "importUser": "仅用户变量",
+    "importBoth": "两者都导入",
+    "helpTitle": "帮助",
+    "languageTitle": "选择语言",
+    "backupTitle": "备份确认",
+    "backupMessage": "保存前需要备份注册表吗？",
+    "confirm": "确认",
+    "cancel": "取消",
+    "search": "搜索路径..."
+  },
+  "help": {
+    "content": "PathEditor v4.0 — Windows 系统环境变量 (PATH) 编辑器\n\n功能:\n• 新建/编辑/删除路径条目\n• 上移/下移调整优先级\n• 一键清理无效和重复路径\n• 导入/导出 JSON、CSV、TXT 格式\n• 完整撤销/重做支持\n\n快捷键:\n• Ctrl+N 新建\n• Ctrl+S 保存\n• Ctrl+Z 撤销\n• Ctrl+Y 重做\n• Ctrl+F 搜索\n• Delete 删除选中\n• F1 帮助\n\n作者: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
+  }
+}

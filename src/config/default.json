@@ -1,0 +1,19 @@
+{
+  "window": {
+    "width": 900,
+    "height": 700,
+    "minWidth": 800,
+    "minHeight": 600
+  },
+  "undo": {
+    "maxHistory": 50
+  },
+  "backup": {
+    "dir": ""
+  },
+  "path": {
+    "maxSystemLength": 2048,
+    "maxUserLength": 2048,
+    "maxCombinedLength": 8191
+  }
+}

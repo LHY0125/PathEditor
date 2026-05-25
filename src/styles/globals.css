@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@theme {
+  /* 浅色主题 */
+  --color-light-bg: #ffffff;
+  --color-light-list-bg: #f8f9fa;
+  --color-light-list-alt: #e9ecef;
+  --color-light-fg: #212529;
+  --color-light-border: #dee2e6;
+  --color-light-hover: #e9ecef;
+
+  /* 深色主题 */
+  --color-dark-bg: #1a1a2e;
+  --color-dark-list-bg: #16213e;
+  --color-dark-list-alt: #0f3460;
+  --color-dark-fg: #e0e0e0;
+  --color-dark-border: #2a2a4a;
+  --color-dark-hover: #1a1a3e;
+
+  /* 路径有效性颜色 */
+  --color-path-invalid: #dc3545;
+  --color-path-duplicate: #fd7e14;
+  --color-path-valid: #198754;
+}
+
+/* 全局基础样式 */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 浅色模式（默认） */
+:root {
+  --app-bg: var(--color-light-bg);
+  --app-list-bg: var(--color-light-list-bg);
+  --app-list-alt: var(--color-light-list-alt);
+  --app-fg: var(--color-light-fg);
+  --app-border: var(--color-light-border);
+  --app-hover: var(--color-light-hover);
+}
+
+/* 深色模式 */
+:root.dark {
+  --app-bg: var(--color-dark-bg);
+  --app-list-bg: var(--color-dark-list-bg);
+  --app-list-alt: var(--color-dark-list-alt);
+  --app-fg: var(--color-dark-fg);
+  --app-border: var(--color-dark-border);
+  --app-hover: var(--color-dark-hover);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--app-list-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Tab 选中状态 */
+.tab-active {
+  border-bottom: 2px solid #3b82f6;
+  color: #3b82f6;
+}
+
+/* 斑马纹行 */
+.row-even {
+  background-color: var(--app-list-bg);
+}
+
+.row-odd {
+  background-color: var(--app-list-alt);
+}
+
+/* 路径无效 - 红色文字 */
+.text-invalid {
+  color: var(--color-path-invalid);
+}
+
+/* 路径重复 - 橙色文字 */
+.text-duplicate {
+  color: var(--color-path-duplicate);
+}
+
+/* 禁用按钮 */
+.btn-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}

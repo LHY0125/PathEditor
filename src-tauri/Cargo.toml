@@ -1,0 +1,29 @@
+[package]
+name = "patheditor"
+version = "4.0.0"
+description = "Windows PATH Environment Variable Editor"
+authors = ["刘航宇"]
+license = "MIT"
+repository = "https://github.com/LHY0125/PathEditor"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.2", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+
+# Windows API
+winreg = "0.52"
+dirs = "5"
+chrono = "0.4"
