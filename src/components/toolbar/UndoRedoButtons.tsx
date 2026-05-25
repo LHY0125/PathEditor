@@ -16,9 +16,6 @@ export function UndoRedoButtons() {
     borderColor: 'var(--app-border)',
   };
 
-  // 订阅状态更新（canUndo/canRedo 不会触发 re-render，用 setTimeout 简单轮询不优雅，但 Zustand 的 subscribe 可以）
-  // 这里简化为每次渲染时检查（因为 undo/redo 会修改列表触发重渲染）
-
   return (
     <div className="flex gap-1">
       <button

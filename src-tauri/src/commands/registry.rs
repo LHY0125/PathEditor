@@ -5,71 +5,54 @@ const SYS_REG_PATH: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\
 const USER_REG_PATH: &str = "Environment";
 const PATH_VALUE: &str = "Path";
 
-/// 从注册表加载系统 PATH
+fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<String>, String> {
+    let key = RegKey::predef(root);
+    let env_key = key
+        .open_subkey_with_flags(sub_path, KEY_READ)
+        .map_err(|e| format!("无法打开{}注册表项: {}", label, e))?;
+
+    let value: String = env_key
+        .get_value(PATH_VALUE)
+        .map_err(|e| format!("无法读取{} PATH: {}", label, e))?;
+
+    Ok(split_path(&value))
+}
+
+fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String]) -> Result<(), String> {
+    let key = RegKey::predef(root);
+    let env_key = key
+        .open_subkey_with_flags(sub_path, KEY_WRITE)
+        .map_err(|e| format!("无法写入{}注册表（需要管理员权限）: {}", label, e))?;
+
+    let value = join_path(paths);
+    env_key
+        .set_value(PATH_VALUE, &value)
+        .map_err(|e| format!("无法写入{} PATH: {}", label, e))?;
+
+    log::info!("已保存{} PATH，{} 个条目", label, paths.len());
+    Ok(())
+}
+
 #[tauri::command]
 pub fn load_system_paths() -> Result<Vec<String>, String> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let env_key = hklm
-        .open_subkey_with_flags(SYS_REG_PATH, KEY_READ)
-        .map_err(|e| format!("无法打开系统注册表项: {}", e))?;
-
-    let value: String = env_key
-        .get_value(PATH_VALUE)
-        .map_err(|e| format!("无法读取系统 PATH: {}", e))?;
-
-    Ok(split_path(&value))
+    load_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统")
 }
 
-/// 从注册表加载用户 PATH
 #[tauri::command]
 pub fn load_user_paths() -> Result<Vec<String>, String> {
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let env_key = hkcu
-        .open_subkey_with_flags(USER_REG_PATH, KEY_READ)
-        .map_err(|e| format!("无法打开用户注册表项: {}", e))?;
-
-    let value: String = env_key
-        .get_value(PATH_VALUE)
-        .map_err(|e| format!("无法读取用户 PATH: {}", e))?;
-
-    Ok(split_path(&value))
+    load_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户")
 }
 
-/// 保存系统 PATH 到注册表
 #[tauri::command]
 pub fn save_system_paths(paths: Vec<String>) -> Result<(), String> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let env_key = hklm
-        .open_subkey_with_flags(SYS_REG_PATH, KEY_WRITE)
-        .map_err(|e| format!("无法写入系统注册表（需要管理员权限）: {}", e))?;
-
-    let value = join_path(&paths);
-    env_key
-        .set_value(PATH_VALUE, &value)
-        .map_err(|e| format!("无法写入系统 PATH: {}", e))?;
-
-    log::info!("已保存系统 PATH，{} 个条目", paths.len());
-    Ok(())
+    save_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统", &paths)
 }
 
-/// 保存用户 PATH 到注册表
 #[tauri::command]
 pub fn save_user_paths(paths: Vec<String>) -> Result<(), String> {
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let env_key = hkcu
-        .open_subkey_with_flags(USER_REG_PATH, KEY_WRITE)
-        .map_err(|e| format!("无法写入用户注册表: {}", e))?;
-
-    let value = join_path(&paths);
-    env_key
-        .set_value(PATH_VALUE, &value)
-        .map_err(|e| format!("无法写入用户 PATH: {}", e))?;
-
-    log::info!("已保存用户 PATH，{} 个条目", paths.len());
-    Ok(())
+    save_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户", &paths)
 }
 
-/// 用分号分割 PATH 字符串
 fn split_path(raw: &str) -> Vec<String> {
     raw.split(';')
         .map(|s| s.trim().to_string())
@@ -77,7 +60,6 @@ fn split_path(raw: &str) -> Vec<String> {
         .collect()
 }
 
-/// 用分号连接路径列表（去除首尾空格避免污染注册表）
 fn join_path(paths: &[String]) -> String {
     paths
         .iter()
@@ -85,4 +67,49 @@ fn join_path(paths: &[String]) -> String {
         .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()
         .join(";")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_empty() {
+        assert_eq!(split_path(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn split_single() {
+        assert_eq!(split_path("C:\\Windows"), vec!["C:\\Windows"]);
+    }
+
+    #[test]
+    fn split_multiple() {
+        assert_eq!(
+            split_path("C:\\Windows;D:\\Projects"),
+            vec!["C:\\Windows", "D:\\Projects"]
+        );
+    }
+
+    #[test]
+    fn split_trims_and_filters_empty() {
+        assert_eq!(
+            split_path(" C:\\ ; ; D:\\ "),
+            vec!["C:\\", "D:\\"]
+        );
+    }
+
+    #[test]
+    fn join_and_split_roundtrip() {
+        let paths = vec!["C:\\Windows".to_string(), "D:\\Projects".to_string()];
+        let joined = join_path(&paths);
+        let split = split_path(&joined);
+        assert_eq!(split, paths);
+    }
+
+    #[test]
+    fn join_trims_entries() {
+        let paths = vec![" C:\\Windows ".to_string(), " D:\\ ".to_string()];
+        assert_eq!(join_path(&paths), "C:\\Windows;D:\\");
+    }
 }

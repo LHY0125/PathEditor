@@ -12,8 +12,6 @@ interface PathRow {
 }
 
 export function PathTable({ tabId }: PathTableProps) {
-  const dataVersion = useAppStore((s) => s.dataVersion);
-  void dataVersion; // 订阅版本号强制重渲染
   const sysPaths = useAppStore((s) => s.sysPaths);
   const userPaths = useAppStore((s) => s.userPaths);
   const searchQuery = useAppStore((s) => s.searchQuery);
@@ -31,11 +29,11 @@ export function PathTable({ tabId }: PathTableProps) {
 
   // 过滤搜索
   const filtered = useMemo<PathRow[]>(() => {
-    if (!searchQuery) return paths.all.map((p, i) => ({ path: p, index: i }));
+    if (!searchQuery) return paths.map((p, i) => ({ path: p, index: i }));
     const q = searchQuery.toLowerCase();
     const result: PathRow[] = [];
     for (let i = 0; i < paths.length; i++) {
-      const p = paths.get(i)!;
+      const p = paths[i];
       if (p.toLowerCase().includes(q)) result.push({ path: p, index: i });
     }
     return result;
@@ -44,7 +42,7 @@ export function PathTable({ tabId }: PathTableProps) {
   // 异步验证未缓存的路径
   useEffect(() => {
     let cancelled = false;
-    const allPaths = paths.all;
+    const allPaths = paths;
 
     // 找出未缓存的路径
     const toValidate = allPaths.filter((p) => !validationCache.has(p));
@@ -81,7 +79,7 @@ export function PathTable({ tabId }: PathTableProps) {
   // 异步展开环境变量（用于 tooltip）
   useEffect(() => {
     let cancelled = false;
-    const toExpand = paths.all.filter(
+    const toExpand = paths.filter(
       (p) => p.includes('%') && !expandedCache.has(p),
     );
     if (toExpand.length === 0) return;
@@ -146,7 +144,7 @@ export function PathTable({ tabId }: PathTableProps) {
       if (!isActive) return;
       window.dispatchEvent(
         new CustomEvent('path-dblclick', {
-          detail: { index: realIndex, path: paths.get(realIndex) },
+          detail: { index: realIndex, path: paths[realIndex] },
         }),
       );
     },

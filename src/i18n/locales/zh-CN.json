@@ -27,6 +27,11 @@
     "lightMode": "浅色模式",
     "language": "语言"
   },
+  "merge": {
+    "system": "系统",
+    "user": "用户",
+    "source": "来源"
+  },
   "status": {
     "normal": "就绪",
     "readonly": "只读模式 — 需要管理员权限才能编辑",
@@ -36,7 +41,12 @@
     "deleted": "已删除 {{count}} 个路径",
     "loaded": "已加载 {{sysCount}} 个系统路径和 {{userCount}} 个用户路径",
     "dragFolderOnly": "只能拖拽文件夹",
-    "adminWarning": "当前以非管理员身份运行，部分功能不可用"
+    "adminWarning": "当前以非管理员身份运行，部分功能不可用",
+    "loading": "加载中...",
+    "modified": "已修改",
+    "readonly_label": "只读",
+    "light": "浅色",
+    "dark": "深色"
   },
   "dialog": {
     "newPath": "新建路径",

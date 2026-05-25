@@ -145,7 +145,14 @@ function parseCsvLine(line: string): string[] {
 export function importFromJson(content: string): ImportResult {
   const result: ImportResult = { system: [], user: [] };
 
-  const obj = JSON.parse(content);
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(content);
+  } catch {
+    return result; // 无效 JSON 返回空结果，由调用方显示错误
+  }
+
+  if (typeof obj !== 'object' || obj === null) return result;
 
   if (Array.isArray(obj.system)) {
     result.system = obj.system.filter(

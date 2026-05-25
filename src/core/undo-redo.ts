@@ -1,25 +1,13 @@
 /**
- * 撤销/重做管理器 — 对应 C 版 undo_redo.c
- * 支持 8 种操作类型的完整撤销/重做
+ * 撤销/重做管理器 — 纯逻辑，操作不可变 string[]
  */
-import { StringList } from './string-list';
 
 export const OperationType = {
-  ADD: 0,        // 新增路径
-  DELETE: 1,     // 删除路径
-  EDIT: 2,       // 编辑路径
-  MOVE_UP: 3,    // 上移
-  MOVE_DOWN: 4,  // 下移
-  CLEAN: 5,      // 一键清理
-  CLEAR: 6,      // 清空
-  IMPORT: 7,     // 导入
+  ADD: 0, DELETE: 1, EDIT: 2, MOVE_UP: 3, MOVE_DOWN: 4, CLEAN: 5, CLEAR: 6, IMPORT: 7,
 } as const;
 export type OperationType = (typeof OperationType)[keyof typeof OperationType];
 
-export const TargetType = {
-  SYSTEM: 0,
-  USER: 1,
-} as const;
+export const TargetType = { SYSTEM: 0, USER: 1 } as const;
 export type TargetType = (typeof TargetType)[keyof typeof TargetType];
 
 export interface OpRecord {
@@ -42,139 +30,99 @@ export class UndoRedoManager {
     this.maxSize = maxSize;
   }
 
-  /** 推送新操作记录，推送后截断重做分支 */
   push(record: OpRecord): void {
-    // 截断重做分支
     this.records = this.records.slice(0, this.current + 1);
-
-    // 如果已满，移除最旧的记录
     if (this.records.length >= this.maxSize) {
       this.records.shift();
     }
-
     this.records.push(record);
     this.current = this.records.length - 1;
   }
 
-  /** 撤销当前操作 */
-  undo(sysPaths: StringList, userPaths: StringList): boolean {
-    if (this.current < 0) return false;
+  undo(sysPaths: readonly string[], userPaths: readonly string[]): [string[], string[]] | null {
+    if (this.current < 0) return null;
 
     const rec = this.records[this.current];
     this.current--;
 
-    const target = rec.target === TargetType.SYSTEM ? sysPaths : userPaths;
+    const sys = [...sysPaths];
+    const user = [...userPaths];
+    const target = rec.target === TargetType.SYSTEM ? sys : user;
 
     switch (rec.type) {
       case OperationType.ADD:
-        // 撤销添加 — 删除最后 count 个元素
-        for (let i = 0; i < rec.count; i++) {
-          target.removeAt(target.length - 1);
-        }
+        target.splice(target.length - rec.count, rec.count);
         break;
-
       case OperationType.DELETE:
-        // 撤销删除 — 逐个恢复
         for (let i = 0; i < rec.count; i++) {
-          target.insertAt(rec.index + i, rec.oldPaths[i]);
+          target.splice(rec.index + i, 0, rec.oldPaths[i]);
         }
         break;
-
       case OperationType.EDIT:
-        target.set(rec.index, rec.oldPaths[0]);
+        target[rec.index] = rec.oldPaths[0];
         break;
-
       case OperationType.MOVE_UP:
-        target.swap(rec.index - 1, rec.index);
+        [target[rec.index - 1], target[rec.index]] = [target[rec.index], target[rec.index - 1]];
         break;
-
       case OperationType.MOVE_DOWN:
-        target.swap(rec.index, rec.index + 1);
+        [target[rec.index], target[rec.index + 1]] = [target[rec.index + 1], target[rec.index]];
         break;
-
       case OperationType.CLEAN:
       case OperationType.IMPORT:
-        // 恢复到操作前的完整列表
-        target.clear();
-        for (const path of rec.oldPaths) {
-          target.add(path);
-        }
+        target.length = 0;
+        target.push(...rec.oldPaths);
         break;
-
       case OperationType.CLEAR:
-        for (const path of rec.oldPaths) {
-          target.add(path);
-        }
+        target.push(...rec.oldPaths);
         break;
     }
 
-    return true;
+    return [sys, user];
   }
 
-  /** 重做下一个操作 */
-  redo(sysPaths: StringList, userPaths: StringList): boolean {
-    if (this.current >= this.records.length - 1) return false;
+  redo(sysPaths: readonly string[], userPaths: readonly string[]): [string[], string[]] | null {
+    if (this.current >= this.records.length - 1) return null;
 
     this.current++;
     const rec = this.records[this.current];
-    const target = rec.target === TargetType.SYSTEM ? sysPaths : userPaths;
+
+    const sys = [...sysPaths];
+    const user = [...userPaths];
+    const target = rec.target === TargetType.SYSTEM ? sys : user;
 
     switch (rec.type) {
       case OperationType.ADD:
-        for (let i = 0; i < rec.count; i++) {
-          target.add(rec.newPaths[i]);
-        }
+        target.push(...rec.newPaths);
         break;
-
       case OperationType.DELETE:
-        // 从后往前删，避免索引偏移
         for (let i = rec.count - 1; i >= 0; i--) {
-          target.removeAt(rec.index + i);
+          target.splice(rec.index + i, 1);
         }
         break;
-
       case OperationType.EDIT:
-        target.set(rec.index, rec.newPaths[0]);
+        target[rec.index] = rec.newPaths[0];
         break;
-
       case OperationType.MOVE_UP:
-        target.swap(rec.index - 1, rec.index);
+        [target[rec.index - 1], target[rec.index]] = [target[rec.index], target[rec.index - 1]];
         break;
-
       case OperationType.MOVE_DOWN:
-        target.swap(rec.index, rec.index + 1);
+        [target[rec.index], target[rec.index + 1]] = [target[rec.index + 1], target[rec.index]];
         break;
-
       case OperationType.CLEAN:
       case OperationType.IMPORT:
-        target.clear();
-        for (const path of rec.newPaths) {
-          target.add(path);
-        }
+        target.length = 0;
+        target.push(...rec.newPaths);
         break;
-
       case OperationType.CLEAR:
-        target.clear();
+        target.length = 0;
         break;
     }
 
-    return true;
+    return [sys, user];
   }
 
-  canUndo(): boolean {
-    return this.current >= 0;
-  }
-
-  canRedo(): boolean {
-    return this.current < this.records.length - 1;
-  }
-
-  clear(): void {
-    this.records = [];
-    this.current = -1;
-  }
-
-  get historyLength(): number {
-    return this.records.length;
-  }
+  canUndo(): boolean { return this.current >= 0; }
+  canRedo(): boolean { return this.current < this.records.length - 1; }
+  clear(): void { this.records = []; this.current = -1; }
+  get historyLength(): number { return this.records.length; }
 }

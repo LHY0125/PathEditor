@@ -6,7 +6,8 @@ use std::path::PathBuf;
 #[tauri::command]
 pub fn get_appdata_dir() -> String {
     dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("C:\\"))
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("PathEditor")
         .join("backups")
         .to_string_lossy()
@@ -33,7 +34,7 @@ pub fn backup_registry(custom_dir: Option<String>, sys_paths: Vec<String>, user_
         .map_err(|e| format!("无法创建备份目录: {}", e))?;
 
     // 生成带时间戳的文件名
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f");
     let filename = format!("path_backup_{}.txt", timestamp);
     let filepath = backup_dir.join(&filename);
 

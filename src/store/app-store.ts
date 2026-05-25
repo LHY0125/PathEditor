@@ -1,21 +1,15 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import i18n from '@/i18n';
-import { StringList } from '@/core/string-list';
-import {
-  UndoRedoManager,
-  OperationType,
-  TargetType,
-} from '@/core/undo-redo';
+import { UndoRedoManager, OperationType, TargetType } from '@/core/undo-redo';
 import { pathClean } from '@/core/path-manager';
 
 export type TabId = 'system' | 'user' | 'merged';
 
 interface AppState {
-  sysPaths: StringList;
-  userPaths: StringList;
+  sysPaths: string[];
+  userPaths: string[];
   undoRedo: UndoRedoManager;
-  dataVersion: number;
 
   activeTab: TabId;
   searchQuery: string;
@@ -46,19 +40,14 @@ interface AppState {
 
   loadPaths: () => Promise<void>;
   savePaths: () => Promise<void>;
-  loadFromStringLists: (sys: string[], user: string[]) => void;
 
   initialize: () => Promise<void>;
-
-  _getTargetList: (target: TargetType) => StringList;
-  _bumpVersion: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  sysPaths: new StringList(),
-  userPaths: new StringList(),
+  sysPaths: [],
+  userPaths: [],
   undoRedo: new UndoRedoManager(50),
-  dataVersion: 0,
 
   activeTab: 'system',
   searchQuery: '',
@@ -73,119 +62,92 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedIndices: (indices) => set({ selectedIndices: indices }),
   setStatusMessage: (msg) => set({ statusMessage: msg }),
 
-  _getTargetList: (target) => {
-    const { sysPaths, userPaths } = get();
-    return target === TargetType.SYSTEM ? sysPaths : userPaths;
-  },
-
-  _bumpVersion: () => set((s) => ({ isModified: true, dataVersion: s.dataVersion + 1 })),
-
-  // ── CRUD ──
-
   addPath: (path, target) => {
-    const list = get()._getTargetList(target);
-    list.add(path);
-    get().undoRedo.push({
-      type: OperationType.ADD,
-      target,
-      index: list.length - 1,
-      count: 1,
-      oldPaths: [],
-      newPaths: [path],
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    const newList = [...list, path];
+    state.undoRedo.push({
+      type: OperationType.ADD, target, index: newList.length - 1, count: 1,
+      oldPaths: [], newPaths: [path],
     });
-    get()._bumpVersion();
+    if (target === TargetType.SYSTEM) set({ sysPaths: newList, isModified: true });
+    else set({ userPaths: newList, isModified: true });
   },
 
   editPath: (index, newPath, target) => {
-    const list = get()._getTargetList(target);
-    const oldPath = list.get(index);
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    const oldPath = list[index];
     if (oldPath === undefined) return;
-
-    get().undoRedo.push({
-      type: OperationType.EDIT,
-      target,
-      index,
-      count: 1,
-      oldPaths: [oldPath],
-      newPaths: [newPath],
+    state.undoRedo.push({
+      type: OperationType.EDIT, target, index, count: 1,
+      oldPaths: [oldPath], newPaths: [newPath],
     });
-    list.set(index, newPath);
-    get()._bumpVersion();
+    const newList = [...list];
+    newList[index] = newPath;
+    if (target === TargetType.SYSTEM) set({ sysPaths: newList, isModified: true });
+    else set({ userPaths: newList, isModified: true });
   },
 
   deletePaths: (indices, target) => {
-    const list = get()._getTargetList(target);
     if (indices.length === 0) return;
-
-    // 从大到小排序
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
     const sorted = [...indices].sort((a, b) => b - a);
 
-    // 每个删除独立记录，保证撤销时顺序正确
     for (const idx of sorted) {
-      const oldPath = list.get(idx)!;
-      get().undoRedo.push({
-        type: OperationType.DELETE,
-        target,
-        index: idx,
-        count: 1,
-        oldPaths: [oldPath],
-        newPaths: [],
+      state.undoRedo.push({
+        type: OperationType.DELETE, target, index: idx, count: 1,
+        oldPaths: [list[idx]], newPaths: [],
       });
-      list.removeAt(idx);
     }
 
-    set({ selectedIndices: [] });
-    get()._bumpVersion();
+    const toRemove = new Set(sorted);
+    const newList = list.filter((_, i) => !toRemove.has(i));
+    if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [], isModified: true });
+    else set({ userPaths: newList, selectedIndices: [], isModified: true });
   },
 
   moveUp: (index, target) => {
     if (index <= 0) return;
-    const list = get()._getTargetList(target);
-    get().undoRedo.push({
-      type: OperationType.MOVE_UP,
-      target,
-      index,
-      count: 1,
-      oldPaths: [],
-      newPaths: [],
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    state.undoRedo.push({
+      type: OperationType.MOVE_UP, target, index, count: 1,
+      oldPaths: [], newPaths: [],
     });
-    list.swap(index, index - 1);
-    set({ selectedIndices: [index - 1] });
-    get()._bumpVersion();
+    const newList = [...list];
+    [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
+    if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [index - 1], isModified: true });
+    else set({ userPaths: newList, selectedIndices: [index - 1], isModified: true });
   },
 
   moveDown: (index, target) => {
-    const list = get()._getTargetList(target);
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
     if (index >= list.length - 1) return;
-    get().undoRedo.push({
-      type: OperationType.MOVE_DOWN,
-      target,
-      index,
-      count: 1,
-      oldPaths: [],
-      newPaths: [],
+    state.undoRedo.push({
+      type: OperationType.MOVE_DOWN, target, index, count: 1,
+      oldPaths: [], newPaths: [],
     });
-    list.swap(index, index + 1);
-    set({ selectedIndices: [index + 1] });
-    get()._bumpVersion();
+    const newList = [...list];
+    [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+    if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [index + 1], isModified: true });
+    else set({ userPaths: newList, selectedIndices: [index + 1], isModified: true });
   },
 
   cleanPaths: (target, validateFn) => {
-    const list = get()._getTargetList(target);
-    const oldPaths = list.toArray();
-    const removed = pathClean(list, validateFn);
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    const [kept, removed] = pathClean(list, validateFn);
 
     if (removed.length > 0) {
-      get().undoRedo.push({
-        type: OperationType.CLEAN,
-        target,
-        index: 0,
-        count: removed.length,
-        oldPaths,
-        newPaths: list.toArray(),
+      state.undoRedo.push({
+        type: OperationType.CLEAN, target, index: 0, count: removed.length,
+        oldPaths: [...list], newPaths: kept,
       });
-      set({ selectedIndices: [] });
-      get()._bumpVersion();
+      if (target === TargetType.SYSTEM) set({ sysPaths: kept, selectedIndices: [], isModified: true });
+      else set({ userPaths: kept, selectedIndices: [], isModified: true });
     }
 
     return removed;
@@ -193,77 +155,47 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   importPaths: (target, importPaths) => {
     if (importPaths.length === 0) return;
-    const list = get()._getTargetList(target);
-    const oldPaths = list.toArray();
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
     const copied = [...importPaths];
 
-    get().undoRedo.push({
-      type: OperationType.IMPORT,
-      target,
-      index: 0,
-      count: copied.length,
-      oldPaths,
-      newPaths: copied,
+    state.undoRedo.push({
+      type: OperationType.IMPORT, target, index: 0, count: copied.length,
+      oldPaths: [...list], newPaths: copied,
     });
 
-    list.clear();
-    for (const p of copied) {
-      list.add(p);
-    }
-    set({ selectedIndices: [] });
-    get()._bumpVersion();
+    if (target === TargetType.SYSTEM) set({ sysPaths: copied, selectedIndices: [], isModified: true });
+    else set({ userPaths: copied, selectedIndices: [], isModified: true });
   },
 
   clearPaths: (target) => {
-    const list = get()._getTargetList(target);
-    const oldPaths = list.toArray();
-    if (oldPaths.length === 0) return;
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    if (list.length === 0) return;
 
-    get().undoRedo.push({
-      type: OperationType.CLEAR,
-      target,
-      index: 0,
-      count: oldPaths.length,
-      oldPaths,
-      newPaths: [],
+    state.undoRedo.push({
+      type: OperationType.CLEAR, target, index: 0, count: list.length,
+      oldPaths: [...list], newPaths: [],
     });
-    list.clear();
-    get()._bumpVersion();
-  },
 
-  // ── 撤销/重做 ──
+    if (target === TargetType.SYSTEM) set({ sysPaths: [], isModified: true });
+    else set({ userPaths: [], isModified: true });
+  },
 
   undo: () => {
     const { undoRedo, sysPaths, userPaths } = get();
-    if (undoRedo.undo(sysPaths, userPaths)) {
-      set({ isModified: true, selectedIndices: [] });
-      get()._bumpVersion();
-    }
+    const result = undoRedo.undo(sysPaths, userPaths);
+    if (result) set({ sysPaths: result[0], userPaths: result[1], isModified: true, selectedIndices: [] });
   },
 
   redo: () => {
     const { undoRedo, sysPaths, userPaths } = get();
-    if (undoRedo.redo(sysPaths, userPaths)) {
-      set({ isModified: true, selectedIndices: [] });
-      get()._bumpVersion();
-    }
+    const result = undoRedo.redo(sysPaths, userPaths);
+    if (result) set({ sysPaths: result[0], userPaths: result[1], isModified: true, selectedIndices: [] });
   },
 
   canUndo: () => get().undoRedo.canUndo(),
   canRedo: () => get().undoRedo.canRedo(),
-
-  // ── 数据加载/保存 ──
-
-  loadFromStringLists: (sys: string[], user: string[]) => {
-    set({
-      sysPaths: StringList.fromArray(sys),
-      userPaths: StringList.fromArray(user),
-      undoRedo: new UndoRedoManager(50),
-      isModified: false,
-      isLoading: false,
-      dataVersion: get().dataVersion + 1,
-    });
-  },
 
   loadPaths: async () => {
     try {
@@ -272,34 +204,46 @@ export const useAppStore = create<AppState>((set, get) => ({
         invoke<string[]>('load_system_paths'),
         invoke<string[]>('load_user_paths'),
       ]);
-
       set({
-        sysPaths: StringList.fromArray(sysArr),
-        userPaths: StringList.fromArray(userArr),
+        sysPaths: sysArr,
+        userPaths: userArr,
         undoRedo: new UndoRedoManager(50),
         isLoading: false,
         isModified: false,
-        dataVersion: get().dataVersion + 1,
-        statusMessage: i18n.t('status.loaded', {
-          sysCount: sysArr.length,
-          userCount: userArr.length,
-        }),
+        statusMessage: i18n.t('status.loaded', { sysCount: sysArr.length, userCount: userArr.length }),
       });
     } catch (e) {
-      set({ isLoading: false, statusMessage: `${i18n.t('status.error')}: ${e}` });
+      set({ isLoading: false, statusMessage: `${i18n.t('status.error')}: ${String(e)}` });
     }
   },
 
   savePaths: async () => {
     const { sysPaths, userPaths } = get();
+    const sysJoined = sysPaths.join(';');
+    const userJoined = userPaths.join(';');
+
+    if (sysJoined.length > 2048 || userJoined.length > 2048 || (sysJoined + userJoined).length > 8191) {
+      if (!window.confirm(`${i18n.t('status.error')}: PATH 长度超过建议值，是否继续？`)) return;
+    }
+
     set({ statusMessage: i18n.t('status.saving') });
-    try {
-      await invoke('save_system_paths', { paths: sysPaths.toArray() });
-      await invoke('save_user_paths', { paths: userPaths.toArray() });
-      await invoke('broadcast_env_change');
+
+    // 保存前备份
+    try { await invoke('backup_registry', { customDir: null, sysPaths, userPaths }); } catch { /* 备份失败不阻止保存 */ }
+
+    let sysOk = true, userOk = true;
+    try { await invoke('save_system_paths', { paths: sysPaths }); } catch { sysOk = false; }
+    try { await invoke('save_user_paths', { paths: userPaths }); } catch { userOk = false; }
+
+    if (sysOk && userOk) {
+      try { await invoke('broadcast_env_change'); } catch { /* 广播失败不阻止 */ }
       set({ isModified: false, statusMessage: i18n.t('status.saved') });
-    } catch (e) {
-      set({ statusMessage: `${i18n.t('status.error')}: ${e}` });
+    } else if (sysOk) {
+      set({ statusMessage: '用户 PATH 保存失败，系统 PATH 已保存' });
+    } else if (userOk) {
+      set({ statusMessage: '系统 PATH 保存失败，用户 PATH 已保存' });
+    } else {
+      set({ statusMessage: `${i18n.t('status.error')}: 保存失败` });
     }
   },
 
@@ -307,9 +251,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const isAdmin: boolean = await invoke('check_admin');
       set({ isAdmin });
-      if (!isAdmin) {
-        set({ statusMessage: i18n.t('status.readonly') });
-      }
+      if (!isAdmin) set({ statusMessage: i18n.t('status.readonly') });
     } catch {
       set({ isAdmin: false, statusMessage: i18n.t('status.readonly') });
     }

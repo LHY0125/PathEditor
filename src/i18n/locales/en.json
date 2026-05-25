@@ -27,6 +27,11 @@
     "lightMode": "Light Mode",
     "language": "Language"
   },
+  "merge": {
+    "system": "System",
+    "user": "User",
+    "source": "Source"
+  },
   "status": {
     "normal": "Ready",
     "readonly": "Read-only mode — Administrator privileges required for editing",
@@ -36,6 +41,11 @@
     "deleted": "Deleted {{count}} path(s)",
     "loaded": "Loaded {{sysCount}} system and {{userCount}} user paths",
     "dragFolderOnly": "Only folders can be dropped",
+    "loading": "Loading...",
+    "modified": "Modified",
+    "readonly_label": "Read-only",
+    "light": "Light",
+    "dark": "Dark",
     "adminWarning": "Running without administrator privileges, some features are disabled"
   },
   "dialog": {

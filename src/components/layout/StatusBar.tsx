@@ -1,7 +1,9 @@
 import { useAppStore } from '@/store/app-store';
 import { useThemeStore } from '@/store/theme-store';
+import { useTranslation } from 'react-i18next';
 
 export function StatusBar() {
+  const { t } = useTranslation();
   const statusMessage = useAppStore((s) => s.statusMessage);
   const isLoading = useAppStore((s) => s.isLoading);
   const isAdmin = useAppStore((s) => s.isAdmin);
@@ -17,11 +19,11 @@ export function StatusBar() {
         color: 'var(--app-fg)',
       }}
     >
-      <span>{isLoading ? '加载中...' : statusMessage}</span>
+      <span>{isLoading ? t('status.loading') : statusMessage}</span>
       <div className="flex gap-3">
-        {isModified && <span className="text-yellow-500">● 已修改</span>}
-        {!isAdmin && <span className="text-yellow-500">只读</span>}
-        <span style={{ opacity: 0.5 }}>{isDark ? '深色' : '浅色'}</span>
+        {isModified && <span className="text-yellow-500">● {t('status.modified')}</span>}
+        {!isAdmin && <span className="text-yellow-500">{t('status.readonly_label')}</span>}
+        <span style={{ opacity: 0.5 }}>{isDark ? t('status.dark') : t('status.light')}</span>
       </div>
     </footer>
   );

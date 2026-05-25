@@ -22,6 +22,9 @@
     },
     "ignoreDeprecations": "6.0",
 
+    /* Strict */
+    "strict": true,
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,

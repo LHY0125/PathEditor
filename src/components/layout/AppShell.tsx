@@ -49,7 +49,7 @@ export function AppShell() {
     const list = target === TargetType.SYSTEM
       ? useAppStore.getState().sysPaths
       : useAppStore.getState().userPaths;
-    const value = list.get(idx);
+    const value = list[idx];
     if (value) {
       setEditDialog({ open: true, index: idx, value, target });
     }
@@ -88,7 +88,7 @@ export function AppShell() {
   const handleClean = useCallback(() => {
     const removed = useAppStore.getState().cleanPaths(
       getCurrentTarget(),
-      () => true, // 简化版，全有效
+      (p) => p.includes('%') || p.includes('\\') || p.includes('/') || /^[a-zA-Z]:[/\\]/.test(p),
     );
     if (removed.length > 0) {
       useAppStore.getState().setStatusMessage(
@@ -120,7 +120,7 @@ export function AppShell() {
 
   const handleExport = useCallback(() => {
     const state = useAppStore.getState();
-    const data = { system: state.sysPaths.toArray(), user: state.userPaths.toArray() };
+    const data = { system: state.sysPaths, user: state.userPaths };
 
     const content = exportToJson(data);
     const mime = 'application/json';
@@ -137,8 +137,8 @@ export function AppShell() {
 
   const handleSave = useCallback(() => {
     const state = useAppStore.getState();
-    const sysJoined = state.sysPaths.toArray().join(';');
-    const userJoined = state.userPaths.toArray().join(';');
+    const sysJoined = state.sysPaths.join(';');
+    const userJoined = state.userPaths.join(';');
     const combined = sysJoined + ';' + userJoined;
 
     const warnings: string[] = [];
