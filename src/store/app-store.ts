@@ -230,15 +230,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ statusMessage: i18n.t('status.saving') });
 
-    // 保存前备份
-    try { await invoke('backup_registry', { customDir: null, sysPaths, userPaths }); } catch { /* 备份失败不阻止保存 */ }
+    // 备份（不阻塞保存）
+    invoke('backup_registry', { customDir: null, sysPaths, userPaths }).catch(() => {});
 
-    let sysOk = true, userOk = true;
-    try { await invoke('save_system_paths', { paths: sysPaths }); } catch { sysOk = false; }
-    try { await invoke('save_user_paths', { paths: userPaths }); } catch { userOk = false; }
+    // 并行保存
+    const [sysResult, userResult] = await Promise.allSettled([
+      invoke('save_system_paths', { paths: sysPaths }),
+      invoke('save_user_paths', { paths: userPaths }),
+    ]);
+
+    const sysOk = sysResult.status === 'fulfilled';
+    const userOk = userResult.status === 'fulfilled';
 
     if (sysOk && userOk) {
-      try { await invoke('broadcast_env_change'); } catch { /* 广播失败不阻止 */ }
+      invoke('broadcast_env_change').catch(() => {});
       set({ isModified: false, statusMessage: i18n.t('status.saved') });
     } else if (sysOk) {
       set({ statusMessage: '用户 PATH 保存失败，系统 PATH 已保存' });
