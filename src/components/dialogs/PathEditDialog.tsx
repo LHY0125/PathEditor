@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface PathEditDialogProps {
@@ -12,6 +12,13 @@ interface PathEditDialogProps {
 export function PathEditDialog({ open, title, initialValue, onConfirm, onCancel }: PathEditDialogProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState(initialValue);
+
+  // 每次打开时同步 initialValue（解决 React 复用实例导致空白的问题）
+  useEffect(() => {
+    if (open) {
+      setValue(initialValue);
+    }
+  }, [open, initialValue]);
 
   if (!open) return null;
 

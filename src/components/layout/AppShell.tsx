@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAppStore, type TabId } from '@/store/app-store';
 import { useThemeStore } from '@/store/theme-store';
 import { useTranslation } from 'react-i18next';
@@ -150,6 +150,18 @@ export function AppShell() {
   });
 
   // ── 双击编辑监听 ──
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail.index === 'number') {
+        const target = getCurrentTarget();
+        setEditDialog({ open: true, index: detail.index, value: detail.path, target });
+      }
+    };
+    window.addEventListener('path-dblclick', handler);
+    return () => window.removeEventListener('path-dblclick', handler);
+  }, [getCurrentTarget]);
 
   const handleNewConfirm = useCallback((value: string) => {
     setNewDialog(false);
