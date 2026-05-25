@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { TargetType } from '@/core/undo-redo';
 import { open } from '@tauri-apps/plugin-dialog';
-import { importFromContent, exportToJson, flattenImportResult } from '@/core/import-export';
+import { importFromContent, exportToJson, exportToCsv, flattenImportResult } from '@/core/import-export';
 import { is_valid_path_format } from '@/core/validation';
 import { useKeyboard } from './use-keyboard';
 import i18n from '@/i18n';
@@ -101,14 +101,18 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     input.click();
   }, [setImportDialog]);
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback((format: 'json' | 'csv' = 'json') => {
     const state = useAppStore.getState();
-    const content = exportToJson({ system: state.sysPaths, user: state.userPaths });
-    const blob = new Blob([content], { type: 'application/json' });
+    const data = { system: state.sysPaths, user: state.userPaths };
+    const isCsv = format === 'csv';
+    const content = isCsv ? exportToCsv(data) : exportToJson(data);
+    const mime = isCsv ? 'text/csv' : 'application/json';
+    const ext = isCsv ? '.csv' : '.json';
+    const blob = new Blob([isCsv ? '﻿' : '', content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'patheditor_export.json';
+    a.download = `patheditor_export${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   }, []);
