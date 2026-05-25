@@ -79,6 +79,6 @@ export class StringList {
 
   /** 只读数组 */
   get all(): readonly string[] {
-    return this.items;
+    return [...this.items];
   }
 }

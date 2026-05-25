@@ -12,12 +12,11 @@ import { pathClean } from '@/core/path-manager';
 export type TabId = 'system' | 'user' | 'merged';
 
 interface AppState {
-  // 数据（用 StringList 而非 string[] 以支持 undo/redo）
   sysPaths: StringList;
   userPaths: StringList;
   undoRedo: UndoRedoManager;
+  dataVersion: number;
 
-  // UI 状态
   activeTab: TabId;
   searchQuery: string;
   selectedIndices: number[];
@@ -26,13 +25,11 @@ interface AppState {
   isModified: boolean;
   isLoading: boolean;
 
-  // 基本操作
   setActiveTab: (tab: TabId) => void;
   setSearchQuery: (query: string) => void;
   setSelectedIndices: (indices: number[]) => void;
   setStatusMessage: (msg: string) => void;
 
-  // CRUD（带撤销/重做）
   addPath: (path: string, target: TargetType) => void;
   editPath: (index: number, newPath: string, target: TargetType) => void;
   deletePaths: (indices: number[], target: TargetType) => void;
@@ -42,29 +39,26 @@ interface AppState {
   importPaths: (target: TargetType, importPaths: string[]) => void;
   clearPaths: (target: TargetType) => void;
 
-  // 撤销/重做
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
 
-  // 数据加载/保存
   loadPaths: () => Promise<void>;
   savePaths: () => Promise<void>;
   loadFromStringLists: (sys: string[], user: string[]) => void;
 
-  // 初始化
   initialize: () => Promise<void>;
 
-  // 内部辅助
   _getTargetList: (target: TargetType) => StringList;
-  _markModified: () => void;
+  _bumpVersion: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   sysPaths: new StringList(),
   userPaths: new StringList(),
   undoRedo: new UndoRedoManager(50),
+  dataVersion: 0,
 
   activeTab: 'system',
   searchQuery: '',
@@ -84,7 +78,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return target === TargetType.SYSTEM ? sysPaths : userPaths;
   },
 
-  _markModified: () => set({ isModified: true }),
+  _bumpVersion: () => set((s) => ({ isModified: true, dataVersion: s.dataVersion + 1 })),
 
   // ── CRUD ──
 
@@ -99,13 +93,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       oldPaths: [],
       newPaths: [path],
     });
-    get()._markModified();
+    get()._bumpVersion();
   },
 
   editPath: (index, newPath, target) => {
     const list = get()._getTargetList(target);
     const oldPath = list.get(index);
-    if (!oldPath) return;
+    if (oldPath === undefined) return;
 
     get().undoRedo.push({
       type: OperationType.EDIT,
@@ -116,41 +110,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       newPaths: [newPath],
     });
     list.set(index, newPath);
-    get()._markModified();
+    get()._bumpVersion();
   },
 
   deletePaths: (indices, target) => {
     const list = get()._getTargetList(target);
-    // 从大到小排
+    if (indices.length === 0) return;
+
+    // 从大到小排序
     const sorted = [...indices].sort((a, b) => b - a);
-    const oldPaths = sorted.map((i) => list.get(i)!);
 
-    // 记录单个 DELETE（合并多个删除为一条记录）
-    if (sorted.length === 1) {
+    // 每个删除独立记录，保证撤销时顺序正确
+    for (const idx of sorted) {
+      const oldPath = list.get(idx)!;
       get().undoRedo.push({
         type: OperationType.DELETE,
         target,
-        index: sorted[0],
+        index: idx,
         count: 1,
-        oldPaths,
+        oldPaths: [oldPath],
         newPaths: [],
       });
-    } else {
-      get().undoRedo.push({
-        type: OperationType.DELETE,
-        target,
-        index: sorted[sorted.length - 1],
-        count: sorted.length,
-        oldPaths,
-        newPaths: [],
-      });
+      list.removeAt(idx);
     }
 
-    for (const i of sorted) {
-      list.removeAt(i);
-    }
     set({ selectedIndices: [] });
-    get()._markModified();
+    get()._bumpVersion();
   },
 
   moveUp: (index, target) => {
@@ -165,7 +150,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       newPaths: [],
     });
     list.swap(index, index - 1);
-    get()._markModified();
+    set({ selectedIndices: [index - 1] });
+    get()._bumpVersion();
   },
 
   moveDown: (index, target) => {
@@ -180,7 +166,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       newPaths: [],
     });
     list.swap(index, index + 1);
-    get()._markModified();
+    set({ selectedIndices: [index + 1] });
+    get()._bumpVersion();
   },
 
   cleanPaths: (target, validateFn) => {
@@ -197,7 +184,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         oldPaths,
         newPaths: list.toArray(),
       });
-      get()._markModified();
+      set({ selectedIndices: [] });
+      get()._bumpVersion();
     }
 
     return removed;
@@ -207,22 +195,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (importPaths.length === 0) return;
     const list = get()._getTargetList(target);
     const oldPaths = list.toArray();
+    const copied = [...importPaths];
 
     get().undoRedo.push({
       type: OperationType.IMPORT,
       target,
       index: 0,
-      count: importPaths.length,
+      count: copied.length,
       oldPaths,
-      newPaths: importPaths,
+      newPaths: copied,
     });
 
-    // 覆盖为导入的路径
     list.clear();
-    for (const p of importPaths) {
+    for (const p of copied) {
       list.add(p);
     }
-    get()._markModified();
+    set({ selectedIndices: [] });
+    get()._bumpVersion();
   },
 
   clearPaths: (target) => {
@@ -239,7 +228,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       newPaths: [],
     });
     list.clear();
-    get()._markModified();
+    get()._bumpVersion();
   },
 
   // ── 撤销/重做 ──
@@ -248,6 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { undoRedo, sysPaths, userPaths } = get();
     if (undoRedo.undo(sysPaths, userPaths)) {
       set({ isModified: true, selectedIndices: [] });
+      get()._bumpVersion();
     }
   },
 
@@ -255,6 +245,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { undoRedo, sysPaths, userPaths } = get();
     if (undoRedo.redo(sysPaths, userPaths)) {
       set({ isModified: true, selectedIndices: [] });
+      get()._bumpVersion();
     }
   },
 
@@ -264,9 +255,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ── 数据加载/保存 ──
 
   loadFromStringLists: (sys: string[], user: string[]) => {
-    const sysPaths = StringList.fromArray(sys);
-    const userPaths = StringList.fromArray(user);
-    set({ sysPaths, userPaths, isModified: false, isLoading: false });
+    set({
+      sysPaths: StringList.fromArray(sys),
+      userPaths: StringList.fromArray(user),
+      undoRedo: new UndoRedoManager(50),
+      isModified: false,
+      isLoading: false,
+      dataVersion: get().dataVersion + 1,
+    });
   },
 
   loadPaths: async () => {
@@ -277,44 +273,45 @@ export const useAppStore = create<AppState>((set, get) => ({
         invoke<string[]>('load_user_paths'),
       ]);
 
-      const sysPaths = StringList.fromArray(sysArr);
-      const userPaths = StringList.fromArray(userArr);
-      const undoRedo = new UndoRedoManager(50);
-
       set({
-        sysPaths,
-        userPaths,
-        undoRedo,
+        sysPaths: StringList.fromArray(sysArr),
+        userPaths: StringList.fromArray(userArr),
+        undoRedo: new UndoRedoManager(50),
         isLoading: false,
         isModified: false,
+        dataVersion: get().dataVersion + 1,
         statusMessage: i18n.t('status.loaded', {
           sysCount: sysArr.length,
           userCount: userArr.length,
         }),
       });
     } catch (e) {
-      set({ isLoading: false, statusMessage: `加载失败: ${e}` });
+      set({ isLoading: false, statusMessage: `${i18n.t('status.error')}: ${e}` });
     }
   },
 
   savePaths: async () => {
     const { sysPaths, userPaths } = get();
-    set({ statusMessage: '正在保存...' });
+    set({ statusMessage: i18n.t('status.saving') });
     try {
       await invoke('save_system_paths', { paths: sysPaths.toArray() });
       await invoke('save_user_paths', { paths: userPaths.toArray() });
       await invoke('broadcast_env_change');
-      set({ isModified: false, statusMessage: '保存成功' });
+      set({ isModified: false, statusMessage: i18n.t('status.saved') });
     } catch (e) {
-      set({ statusMessage: `保存失败: ${e}` });
+      set({ statusMessage: `${i18n.t('status.error')}: ${e}` });
     }
   },
 
   initialize: async () => {
-    const isAdmin: boolean = await invoke('check_admin');
-    set({ isAdmin });
-    if (!isAdmin) {
-      set({ statusMessage: '只读模式 — 需要管理员权限才能编辑' });
+    try {
+      const isAdmin: boolean = await invoke('check_admin');
+      set({ isAdmin });
+      if (!isAdmin) {
+        set({ statusMessage: i18n.t('status.readonly') });
+      }
+    } catch {
+      set({ isAdmin: false, statusMessage: i18n.t('status.readonly') });
     }
     await get().loadPaths();
   },

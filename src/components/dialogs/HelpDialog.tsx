@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface HelpDialogProps {
@@ -7,6 +8,15 @@ interface HelpDialogProps {
 
 export function HelpDialog({ open, onClose }: HelpDialogProps) {
   const { t } = useTranslation();
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
 
   if (!open) return null;
 

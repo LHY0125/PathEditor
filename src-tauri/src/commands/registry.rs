@@ -77,7 +77,12 @@ fn split_path(raw: &str) -> Vec<String> {
         .collect()
 }
 
-/// 用分号连接路径列表
+/// 用分号连接路径列表（去除首尾空格避免污染注册表）
 fn join_path(paths: &[String]) -> String {
-    paths.join(";")
+    paths
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(";")
 }

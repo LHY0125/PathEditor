@@ -168,6 +168,7 @@ export function AppShell() {
     onDelete: handleDelete,
     onUndo: () => useAppStore.getState().undo(),
     onRedo: () => useAppStore.getState().redo(),
+    onHelp: () => setHelpOpen(true),
   });
 
   // ── 双击编辑监听 ──
@@ -318,8 +319,8 @@ export function AppShell() {
 
       <ImportDialog
         open={importDialog.open}
-        hasSystem={importDialog.system.length > 0}
-        hasUser={importDialog.user.length > 0}
+        systemCount={importDialog.system.length}
+        userCount={importDialog.user.length}
         onSelect={handleImportSelect}
         onCancel={() => setImportDialog({ open: false, system: [], user: [] })}
       />

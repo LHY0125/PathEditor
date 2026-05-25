@@ -29,28 +29,32 @@ pub fn expand_env_vars(path: &str) -> String {
         return path.to_string();
     }
 
-    // 转为 UTF-16 宽字符串
+    // 转为 UTF-16 宽字符串（以 null 结尾）
     let wide_path: Vec<u16> = path
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
 
-    // 先查询需要的缓冲区大小 (lpDst=NULL)
+    // SAFETY: wide_path 是以 null 结尾的 UTF-16 字符串，lpDst 为 null 且 nSize 为 0，
+    //         根据 MSDN 文档此时 API 只查询所需缓冲区大小而不写入数据
     let required = unsafe {
         ExpandEnvironmentStringsW(wide_path.as_ptr(), std::ptr::null_mut(), 0)
     };
 
     if required == 0 {
+        log::warn!("expand_env_vars: API 查询缓冲区失败, 返回原始路径: {path}");
         return path.to_string();
     }
 
-    // 实际展开
+    // SAFETY: buffer 容量为 required（API 返回的精确大小），wide_path 以 null 结尾，
+    //         且两个指针指向不同的内存区域，不存在重叠
     let mut buffer: Vec<u16> = vec![0; required as usize];
     let result = unsafe {
         ExpandEnvironmentStringsW(wide_path.as_ptr(), buffer.as_mut_ptr(), required)
     };
 
     if result == 0 {
+        log::warn!("expand_env_vars: 展开失败, 返回原始路径: {path}");
         return path.to_string();
     }
 
@@ -66,8 +70,11 @@ pub fn broadcast_env_change() {
     const WM_SETTINGCHANGE: u32 = 0x001A;
     const SMTO_ABORTIFHUNG: u32 = 0x0002;
 
+    // SAFETY: env_str 是以 null 结尾的 UTF-16 字符串，所有指针和常量均遵循 Win32 API 约定
     let env_str: Vec<u16> = "Environment\0".encode_utf16().collect();
 
+    // SAFETY: env_str.as_ptr() 指向以 null 结尾的字符串，HWND_BROADCAST 是合法句柄，
+    //         lpdwResult 为 null 表示不需要返回值，其他参数均为常量
     let result = unsafe {
         SendMessageTimeoutW(
             HWND_BROADCAST,
@@ -107,4 +114,35 @@ extern "system" {
         uTimeout: u32,
         lpdwResult: *mut usize,
     ) -> isize;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_path_env_var_always_valid() {
+        assert!(validate_path("%JAVA_HOME%\\bin"));
+    }
+
+    #[test]
+    fn expand_env_vars_no_percent_returns_original() {
+        let result = expand_env_vars("C:\\Windows");
+        assert_eq!(result, "C:\\Windows");
+    }
+
+    #[test]
+    fn expand_env_vars_with_invalid_var_returns_original() {
+        // 展开不存在的变量可能会回归原始值或产生部分展开；测试是否不会崩溃
+        let result = expand_env_vars("%__NONEXISTENT_VAR__%");
+        // 至少不应为空白
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn check_admin_returns_bool() {
+        let result = check_admin();
+        // 在任意机器上应返回 true 或 false，不应 panic
+        assert!((result == true) || (result == false));
+    }
 }

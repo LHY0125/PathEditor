@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/app-store';
 
 interface KeyboardActions {
@@ -7,18 +7,21 @@ interface KeyboardActions {
   onDelete: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onHelp: () => void;
 }
 
 /**
  * 全局键盘快捷键
- * Ctrl+N 新建, Ctrl+S 保存, Ctrl+Z 撤销, Ctrl+Y 重做, Delete 删除
+ * Ctrl+N 新建, Ctrl+S 保存, Ctrl+Z 撤销, Ctrl+Y 重做, Delete 删除, F1 帮助
+ * 使用 ref 避免因 actions 对象每次渲染都是新引用而重复注册事件
  */
 export function useKeyboard(actions: KeyboardActions) {
   const isAdmin = useAppStore((s) => s.isAdmin);
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // 如果焦点在输入框中，只响应 Escape
       const tag = (e.target as HTMLElement)?.tagName;
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
@@ -29,32 +32,36 @@ export function useKeyboard(actions: KeyboardActions) {
         return;
       }
 
-      if (!isAdmin) return;
-
+      const a = actionsRef.current;
       const ctrl = e.ctrlKey || e.metaKey;
 
       if (ctrl && e.key === 'z') {
+        if (!isAdmin) return;
         e.preventDefault();
-        actions.onUndo();
+        a.onUndo();
       } else if (ctrl && e.key === 'y') {
+        if (!isAdmin) return;
         e.preventDefault();
-        actions.onRedo();
+        a.onRedo();
       } else if (ctrl && e.key === 'n') {
+        if (!isAdmin) return;
         e.preventDefault();
-        actions.onNew();
+        a.onNew();
       } else if (ctrl && e.key === 's') {
+        if (!isAdmin) return;
         e.preventDefault();
-        actions.onSave();
+        a.onSave();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!isAdmin) return;
         e.preventDefault();
-        actions.onDelete();
+        a.onDelete();
       } else if (e.key === 'F1') {
         e.preventDefault();
-        // 帮助由 AppShell 处理
+        a.onHelp();
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isAdmin, actions]);
+  }, [isAdmin]); // 只依赖 isAdmin，actions 通过 ref 读取
 }

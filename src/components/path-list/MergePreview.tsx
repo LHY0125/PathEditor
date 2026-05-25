@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/store/app-store';
 
 export function MergePreview() {
+  const dataVersion = useAppStore((s) => s.dataVersion);
+  void dataVersion; // 订阅版本号强制重渲染
   const sysPaths = useAppStore((s) => s.sysPaths);
   const userPaths = useAppStore((s) => s.userPaths);
   const searchQuery = useAppStore((s) => s.searchQuery);

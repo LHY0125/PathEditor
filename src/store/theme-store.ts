@@ -5,8 +5,16 @@ interface ThemeState {
   toggle: () => void;
 }
 
+function getSavedDarkMode(): boolean {
+  try {
+    return localStorage.getItem('darkMode') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export const useThemeStore = create<ThemeState>((set) => ({
-  isDark: false,
+  isDark: getSavedDarkMode(),
   toggle: () =>
     set((state) => {
       const next = !state.isDark;
@@ -21,10 +29,10 @@ export const useThemeStore = create<ThemeState>((set) => ({
     }),
 }));
 
-/** 初始化深色模式状态（从 localStorage 读取） */
+/** 初始化深色模式（DOM 类名 + store 状态） */
 export function initDarkMode(): void {
-  const saved = localStorage.getItem('darkMode');
-  if (saved === '1') {
+  if (getSavedDarkMode()) {
     document.documentElement.classList.add('dark');
+    useThemeStore.setState({ isDark: true });
   }
 }
