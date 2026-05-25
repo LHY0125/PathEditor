@@ -25,7 +25,8 @@
     "redo": "重做",
     "darkMode": "深色模式",
     "lightMode": "浅色模式",
-    "language": "语言"
+    "language": "语言",
+    "retry": "重试"
   },
   "merge": {
     "system": "系统",

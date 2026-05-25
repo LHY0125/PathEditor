@@ -92,3 +92,4 @@ tests/unit/               # Vitest 前端单元测试
 - `.cargo/config.toml` 添加了 `-lmcfgthread` 兼容 GCC 15.2.0 MinGW
 - 移除 `cdylib` crate-type 避免 DLL 导出序数溢出
 - 运行需要管理员权限才能编辑系统 PATH
+- `cargo test` 需要 MinGW bin 在 PATH 中（GCC 15.2.0 运行时依赖 `libmcfgthread-2.dll`），开发模式下可用 `npx tauri dev` 替代

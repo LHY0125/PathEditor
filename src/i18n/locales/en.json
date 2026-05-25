@@ -25,7 +25,8 @@
     "redo": "Redo",
     "darkMode": "Dark Mode",
     "lightMode": "Light Mode",
-    "language": "Language"
+    "language": "Language",
+    "retry": "Retry"
   },
   "merge": {
     "system": "System",

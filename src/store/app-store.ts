@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import i18n from '@/i18n';
 import { UndoRedoManager, OperationType, TargetType } from '@/core/undo-redo';
 import { pathClean } from '@/core/path-manager';
+import appConfig from '@/config/default.json';
 
 export type TabId = 'system' | 'user' | 'merged';
 
@@ -47,7 +48,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   sysPaths: [],
   userPaths: [],
-  undoRedo: new UndoRedoManager(50),
+  undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
 
   activeTab: 'system',
   searchQuery: '',
@@ -207,7 +208,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         sysPaths: sysArr,
         userPaths: userArr,
-        undoRedo: new UndoRedoManager(50),
+        undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
         isLoading: false,
         isModified: false,
         statusMessage: i18n.t('status.loaded', { sysCount: sysArr.length, userCount: userArr.length }),
@@ -222,7 +223,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sysJoined = sysPaths.join(';');
     const userJoined = userPaths.join(';');
 
-    if (sysJoined.length > 2048 || userJoined.length > 2048 || (sysJoined + userJoined).length > 8191) {
+    const { maxSystemLength, maxUserLength, maxCombinedLength } = appConfig.path;
+    if (sysJoined.length > maxSystemLength || userJoined.length > maxUserLength || (sysJoined + userJoined).length > maxCombinedLength) {
       if (!window.confirm(`${i18n.t('status.error')}: PATH 长度超过建议值，是否继续？`)) return;
     }
 

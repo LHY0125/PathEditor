@@ -4,6 +4,7 @@ import { useThemeStore } from '@/store/theme-store';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { TargetType } from '@/core/undo-redo';
+import { open } from '@tauri-apps/plugin-dialog';
 import { importFromContent, exportToJson, flattenImportResult } from '@/core/import-export';
 import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
@@ -55,19 +56,11 @@ export function AppShell() {
     }
   }, [selectedIndices, getCurrentTarget]);
 
-  const handleBrowse = useCallback(() => {
-    // Tauri native dialog (简化版 — 后续可增强)
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.webkitdirectory = true;
-    input.onchange = (e) => {
-      const files = (e.target as HTMLInputElement).files;
-      if (files && files.length > 0) {
-        const path = (files[0] as any).path || files[0].name;
-        useAppStore.getState().addPath(path, getCurrentTarget());
-      }
-    };
-    input.click();
+  const handleBrowse = useCallback(async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (selected && typeof selected === 'string') {
+      useAppStore.getState().addPath(selected, getCurrentTarget());
+    }
   }, [getCurrentTarget]);
 
   const handleDelete = useCallback(() => {
@@ -103,9 +96,10 @@ export function AppShell() {
     input.accept = '.json,.csv,.txt';
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
+      if (!file) { input.remove(); return; }
       const content = await file.text();
       const result = importFromContent(content, file.name);
+      input.remove();
 
       if (result.system.length > 0 && result.user.length > 0) {
         setImportDialog({ open: true, system: result.system, user: result.user });
@@ -136,28 +130,7 @@ export function AppShell() {
   }, []);
 
   const handleSave = useCallback(() => {
-    const state = useAppStore.getState();
-    const sysJoined = state.sysPaths.join(';');
-    const userJoined = state.userPaths.join(';');
-    const combined = sysJoined + ';' + userJoined;
-
-    const warnings: string[] = [];
-    if (sysJoined.length > 2048) {
-      warnings.push(`系统 PATH 长度 ${sysJoined.length} 超过建议值 2048`);
-    }
-    if (userJoined.length > 2048) {
-      warnings.push(`用户 PATH 长度 ${userJoined.length} 超过建议值 2048`);
-    }
-    if (combined.length > 8191) {
-      warnings.push(`合并 PATH 长度 ${combined.length} 超过命令行安全限制 8191`);
-    }
-
-    if (warnings.length > 0) {
-      const msg = warnings.join('\n') + '\n\n是否继续保存？';
-      if (!window.confirm(msg)) return;
-    }
-
-    state.savePaths();
+    useAppStore.getState().savePaths();
   }, []);
 
   // ── 键盘快捷键 ──
@@ -260,7 +233,11 @@ export function AppShell() {
           onImport={handleImport}
           onExport={handleExport}
           onSave={handleSave}
-          onCancel={() => window.close()}
+          onCancel={() => {
+            const state = useAppStore.getState();
+            if (state.isModified && !window.confirm('有未保存的修改，确定退出吗？')) return;
+            window.close();
+          }}
           onHelp={() => setHelpOpen(true)}
           onLanguage={() => {
             const current = localStorage.getItem('i18nextLng') || 'zh-CN';
