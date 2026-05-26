@@ -116,10 +116,11 @@ describe('detectExportFormat', () => {
   it('.csv 检测为 CSV', () => {
     expect(detectExportFormat('data.CSV')).toBe('csv');
   });
-
+  it('.txt 检测为 TXT', () => {
+    expect(detectExportFormat('data.txt')).toBe('txt');
+  });
   it('其他扩展名检测为 JSON', () => {
     expect(detectExportFormat('data.json')).toBe('json');
-    expect(detectExportFormat('data.txt')).toBe('json');
   });
 });
 

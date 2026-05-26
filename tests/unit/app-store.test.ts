@@ -140,11 +140,11 @@ describe('app-store CRUD', () => {
     expect(useAppStore.getState().sysPaths).toEqual(['C:\\valid']);
   });
 
-  it('importPaths 整体替换列表', () => {
+  it('replacePaths 整体替换列表', () => {
     const store = useAppStore.getState();
     store.addPath('old1', TargetType.USER);
     store.addPath('old2', TargetType.USER);
-    store.importPaths(TargetType.USER, ['new1', 'new2', 'new3']);
+    store.replacePaths(TargetType.USER, ['new1', 'new2', 'new3']);
     expect(useAppStore.getState().userPaths).toEqual(['new1', 'new2', 'new3']);
   });
 

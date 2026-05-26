@@ -63,6 +63,8 @@ pub fn save_user_paths(paths: Vec<String>) -> Result<(), String> {
     save_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户", &paths)
 }
 
+/// 将分号分隔的 PATH 字符串拆分为数组。
+/// 注意：TS 端 src/core/validation.ts 有相同逻辑的 split_path，修改时需同步两端。
 pub(crate) fn split_path(raw: &str) -> Vec<String> {
     raw.split(';')
         .map(|s| s.trim().to_string())

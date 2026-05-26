@@ -34,7 +34,7 @@ interface AppState {
   moveUp: (index: number, target: TargetType) => void;
   moveDown: (index: number, target: TargetType) => void;
   cleanPaths: (target: TargetType, validateFn: (p: string) => boolean) => string[];
-  importPaths: (target: TargetType, importPaths: string[]) => void;
+  replacePaths: (target: TargetType, newPaths: string[]) => void;
   clearPaths: (target: TargetType) => void;
 
   undo: () => void;
@@ -169,18 +169,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     return removed;
   },
 
-  importPaths: (target, importPaths) => {
-    if (importPaths.length === 0) return;
+  replacePaths: (target, newPaths) => {
+    if (newPaths.length === 0) return;
     const state = get();
     const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
 
     state.undoRedo.push({
-      type: OperationType.IMPORT, target, index: 0, count: importPaths.length,
-      oldPaths: [...list], newPaths: [...importPaths],
+      type: OperationType.IMPORT, target, index: 0, count: newPaths.length,
+      oldPaths: [...list], newPaths: [...newPaths],
     });
 
-    if (target === TargetType.SYSTEM) set({ sysPaths: [...importPaths], selectedIndices: [] });
-    else set({ userPaths: [...importPaths], selectedIndices: [] });
+    if (target === TargetType.SYSTEM) set({ sysPaths: [...newPaths], selectedIndices: [] });
+    else set({ userPaths: [...newPaths], selectedIndices: [] });
     get()._markDirty();
   },
 

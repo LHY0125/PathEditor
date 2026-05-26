@@ -92,9 +92,9 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     if (result.system.length > 0 && result.user.length > 0) {
       setImportDialog({ open: true, system: result.system, user: result.user });
     } else if (result.system.length > 0) {
-      useAppStore.getState().importPaths(TargetType.SYSTEM, result.system);
+      useAppStore.getState().replacePaths(TargetType.SYSTEM, result.system);
     } else if (result.user.length > 0) {
-      useAppStore.getState().importPaths(TargetType.USER, result.user);
+      useAppStore.getState().replacePaths(TargetType.USER, result.user);
     }
   }, [setImportDialog]);
 
@@ -159,8 +159,8 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
   const handleImportSelect = useCallback((target: 'system' | 'user' | 'both') => {
     const { system, user } = dialogs.importDialog;
     const flat = flattenImportResult({ system, user }, target);
-    if (flat.system.length > 0) useAppStore.getState().importPaths(TargetType.SYSTEM, flat.system);
-    if (flat.user.length > 0) useAppStore.getState().importPaths(TargetType.USER, flat.user);
+    if (flat.system.length > 0) useAppStore.getState().replacePaths(TargetType.SYSTEM, flat.system);
+    if (flat.user.length > 0) useAppStore.getState().replacePaths(TargetType.USER, flat.user);
     setImportDialog({ open: false, system: [], user: [] });
   }, [dialogs.importDialog, setImportDialog]);
 

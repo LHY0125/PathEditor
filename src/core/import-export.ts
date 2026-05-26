@@ -2,7 +2,7 @@
  * 导入导出模块 — 对应 C 版 import_export.c
  * 支持 JSON、CSV、TXT 三种格式
  */
-export type ExportFormat = 'json' | 'csv';
+export type ExportFormat = 'json' | 'csv' | 'txt';
 
 export interface ExportData {
   system: string[];
@@ -11,7 +11,9 @@ export interface ExportData {
 
 /** 根据文件扩展名检测格式 */
 export function detectExportFormat(filepath: string): ExportFormat {
-  if (filepath.toLowerCase().endsWith('.csv')) return 'csv';
+  const lower = filepath.toLowerCase();
+  if (lower.endsWith('.csv')) return 'csv';
+  if (lower.endsWith('.txt')) return 'txt';
   return 'json';
 }
 
@@ -65,10 +67,10 @@ export function importFromCsv(content: string): ImportResult {
 
   let hasHeader = false;
 
-  for (const rawLine of lines) {
-    // 跳过 BOM
-    let line = rawLine;
-    if (line.startsWith('﻿')) {
+  for (let i = 0; i < lines.length; i++) {
+    // 跳过 BOM（仅首行）
+    let line = lines[i];
+    if (i === 0 && line.startsWith('﻿')) {
       line = line.slice(1);
     }
 
@@ -174,9 +176,10 @@ export function importFromTxt(content: string): string[] {
   const paths: string[] = [];
   const lines = content.split(/\r?\n/);
 
-  for (let line of lines) {
-    // 跳过 BOM
-    if (line.startsWith('﻿')) line = line.slice(1);
+  for (let i = 0; i < lines.length; i++) {
+    // 跳过 BOM（仅首行）
+    let line = lines[i];
+    if (i === 0 && line.startsWith('﻿')) line = line.slice(1);
 
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
