@@ -18,6 +18,7 @@ interface KeyboardActions {
 export function useKeyboard(actions: KeyboardActions) {
   const isAdmin = useAppStore((s) => s.isAdmin);
   const actionsRef = useRef(actions);
+  // eslint-disable-next-line react-hooks/refs -- React 官方推荐的 ref 同步模式，避免每次渲染重复注册事件监听器
   actionsRef.current = actions;
 
   useEffect(() => {

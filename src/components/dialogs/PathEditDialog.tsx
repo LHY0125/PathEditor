@@ -14,6 +14,8 @@ export function PathEditDialog({ open, title, initialValue, onConfirm, onCancel 
   const { t } = useTranslation();
   const [value, setValue] = useState(initialValue);
 
+  // 对话框打开时重置输入值 — 此模式不会导致级联渲染
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (open) setValue(initialValue); }, [open, initialValue]);
 
   return (

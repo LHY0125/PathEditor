@@ -254,6 +254,7 @@ describe('savePaths', () => {
   it('isSaving 守卫：并发第二次调用直接返回', async () => {
     let resolveAll: (v: unknown) => void;
     const pending = new Promise((r) => { resolveAll = r; });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockedInvoke.mockReturnValue(pending as any);
 
     // 第一次调用（不等它完成，停在 Promise.allSettled）
