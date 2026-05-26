@@ -105,17 +105,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (indices.length === 0) return;
     const state = get();
     const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
-    const sorted = [...indices].sort((a, b) => b - a);
-    const oldPaths = sorted.map((i) => list[i]);
+    const sortedDesc = [...indices].sort((a, b) => b - a);
+    const sortedAsc = [...indices].sort((a, b) => a - b);
+    const oldPaths = sortedAsc.map((i) => list[i]);
 
-    // 单条撤销记录覆盖全部删除
     state.undoRedo.push({
       type: OperationType.DELETE, target,
-      index: sorted[sorted.length - 1], count: sorted.length,
+      index: sortedAsc[0], count: sortedAsc.length,
       oldPaths, newPaths: [],
+      indices: sortedAsc,
     });
 
-    const toRemove = new Set(sorted);
+    const toRemove = new Set(sortedDesc);
     const newList = list.filter((_, i) => !toRemove.has(i));
     if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [] });
     else set({ userPaths: newList, selectedIndices: [] });

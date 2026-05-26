@@ -95,6 +95,18 @@ describe('app-store CRUD', () => {
     expect(useAppStore.getState().userPaths).toEqual(['A', 'C']);
   });
 
+  it('deletePaths 非连续多选删除后可 undo 恢复到正确位置', () => {
+    const store = useAppStore.getState();
+    store.addPath('A', TargetType.SYSTEM);
+    store.addPath('B', TargetType.SYSTEM);
+    store.addPath('C', TargetType.SYSTEM);
+    store.addPath('D', TargetType.SYSTEM);
+    store.deletePaths([1, 3], TargetType.SYSTEM);
+    expect(useAppStore.getState().sysPaths).toEqual(['A', 'C']);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().sysPaths).toEqual(['A', 'B', 'C', 'D']);
+  });
+
   it('moveUp index=0 无操作', () => {
     const store = useAppStore.getState();
     store.addPath('A', TargetType.SYSTEM);

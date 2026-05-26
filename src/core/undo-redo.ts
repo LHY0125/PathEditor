@@ -17,6 +17,8 @@ export interface OpRecord {
   count: number;
   oldPaths: string[];
   newPaths: string[];
+  /** DELETE 操作专用：被删除的各路径的原始 index（升序） */
+  indices?: number[];
 }
 
 const DEFAULT_MAX_SIZE = 50;
@@ -54,8 +56,14 @@ export class UndoRedoManager {
         target.splice(target.length - rec.count, rec.count);
         break;
       case OperationType.DELETE:
-        for (let i = 0; i < rec.count; i++) {
-          target.splice(rec.index + i, 0, rec.oldPaths[i]);
+        if (rec.indices) {
+          for (let i = 0; i < rec.indices.length; i++) {
+            target.splice(rec.indices[i], 0, rec.oldPaths[i]);
+          }
+        } else {
+          for (let i = 0; i < rec.count; i++) {
+            target.splice(rec.index + i, 0, rec.oldPaths[i]);
+          }
         }
         break;
       case OperationType.EDIT:
@@ -95,8 +103,14 @@ export class UndoRedoManager {
         target.push(...rec.newPaths);
         break;
       case OperationType.DELETE:
-        for (let i = rec.count - 1; i >= 0; i--) {
-          target.splice(rec.index + i, 1);
+        if (rec.indices) {
+          for (let i = rec.indices.length - 1; i >= 0; i--) {
+            target.splice(rec.indices[i], 1);
+          }
+        } else {
+          for (let i = rec.count - 1; i >= 0; i--) {
+            target.splice(rec.index + i, 1);
+          }
         }
         break;
       case OperationType.EDIT:

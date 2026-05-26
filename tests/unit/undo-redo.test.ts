@@ -128,6 +128,28 @@ describe('UndoRedoManager', () => {
     expect(small.historyLength).toBe(3);
   });
 
+  it('非连续多选 DELETE 撤销恢复到原始位置', () => {
+    // 扩展初始数组
+    sys.push('C:\\Extra1', 'C:\\Extra2');
+    const old = [...sys];
+    // 删除 indices [1, 3]（C:\Program Files 和 C:\Extra2）
+    const removed = [sys[1], sys[3]];
+    mgr.push({
+      type: OperationType.DELETE, target: TargetType.SYSTEM,
+      index: 1, count: 2,
+      oldPaths: removed, newPaths: [],
+      indices: [1, 3],
+    });
+    sys.splice(3, 1);
+    sys.splice(1, 1);
+
+    const u = mgr.undo(sys, user)!;
+    expect(u[0]).toEqual(old);
+
+    const r = mgr.redo(...u)!;
+    expect(r[0]).toEqual(['C:\\Windows', 'C:\\Extra1']);
+  });
+
   it('操作 USER 路径', () => {
     user.push('C:\\NewUserPath');
     mgr.push(makeRecord(OperationType.ADD, TargetType.USER, 1, 1, [], ['C:\\NewUserPath']));
