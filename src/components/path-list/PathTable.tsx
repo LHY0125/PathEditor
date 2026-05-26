@@ -22,8 +22,9 @@ export function PathTable({ tabId }: PathTableProps) {
   const paths = tabId === 'system' ? sysPaths : userPaths;
   const isActive = activeTab === tabId;
 
-  // 本次会话中已验证过的路径缓存（key=path, value=isValid）
-  const [validationCache, setValidationCache] = useState<Map<string, boolean>>(new Map());
+  type ValidationState = 'valid' | 'invalid' | 'unknown';
+  // 本次会话中已验证过的路径缓存（key=path, value=ValidationState）
+  const [validationCache, setValidationCache] = useState<Map<string, ValidationState>>(new Map());
   // 环境变量展开结果缓存（key=path, value=expanded）
   const [expandedCache, setExpandedCache] = useState<Map<string, string>>(new Map());
 
@@ -51,13 +52,13 @@ export function PathTable({ tabId }: PathTableProps) {
     // 批量验证（限制并发 20）
     const batch = toValidate.slice(0, 20);
     Promise.all(
-      batch.map(async (p): Promise<[string, boolean]> => {
+      batch.map(async (p): Promise<[string, ValidationState]> => {
         try {
-          if (p.includes('%')) return [p, true];
+          if (p.includes('%')) return [p, 'valid'];
           const valid: boolean = await invoke('validate_path', { path: p });
-          return [p, valid];
+          return [p, valid ? 'valid' : 'invalid'];
         } catch {
-          return [p, true];
+          return [p, 'unknown'];
         }
       }),
     ).then((results) => {
@@ -109,7 +110,7 @@ export function PathTable({ tabId }: PathTableProps) {
     };
   }, [paths, expandedCache]);
 
-  // 所有路径都默认有效（异步验证结果回来后再精确染色）
+  // 所有路径默认有效（异步验证结果回来后再精确染色）
   const validations = useMemo(() => {
     const seen = new Set<string>();
     return filtered.map(({ path }) => {
@@ -117,7 +118,7 @@ export function PathTable({ tabId }: PathTableProps) {
       const isDuplicate = seen.has(lower);
       seen.add(lower);
       return {
-        isValid: validationCache.get(path) ?? true,
+        state: validationCache.get(path) ?? ('valid' as ValidationState),
         isDuplicate,
         isEnvVar: path.includes('%'),
       };
@@ -168,8 +169,9 @@ export function PathTable({ tabId }: PathTableProps) {
             const v = validations[rowIdx];
             const isSelected = selectedIndices.includes(index);
             let textColor = 'var(--app-fg)';
-            if (!v.isValid) textColor = '#dc3545';
+            if (v.state === 'invalid') textColor = '#dc3545';
             else if (v.isDuplicate) textColor = '#fd7e14';
+            else if (v.state === 'unknown') textColor = 'var(--app-fg)';
 
             return (
               <tr
