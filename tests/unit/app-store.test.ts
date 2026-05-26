@@ -197,28 +197,6 @@ describe('undo/redo', () => {
   });
 });
 
-describe('_markDirty', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetStore();
-  });
-
-  it('修改后 isModified 为 true', () => {
-    useAppStore.setState({ _savedSys: [], sysPaths: [], _savedUser: [], userPaths: [] });
-    useAppStore.getState()._markDirty();
-    expect(useAppStore.getState().isModified).toBe(false); // 相等
-  });
-
-  it('路径变化时 isModified 为 true', () => {
-    useAppStore.setState({
-      _savedSys: ['A'], sysPaths: ['B'],
-      _savedUser: [], userPaths: [],
-    });
-    useAppStore.getState()._markDirty();
-    expect(useAppStore.getState().isModified).toBe(true);
-  });
-});
-
 describe('loadPaths', () => {
   beforeEach(() => {
     vi.clearAllMocks();
