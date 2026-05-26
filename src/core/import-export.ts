@@ -193,10 +193,10 @@ export function importFromContent(
   content: string,
   filepath: string,
 ): ImportResult {
-  const ext = filepath.toLowerCase();
-  if (ext.endsWith('.csv')) {
+  const lower = filepath.toLowerCase();
+  if (lower.endsWith('.csv')) {
     return importFromCsv(content);
-  } else if (ext.endsWith('.json')) {
+  } else if (lower.endsWith('.json')) {
     return importFromJson(content);
   } else {
     // TXT 文件：所有路径放入 system（用户后续可选择目标）

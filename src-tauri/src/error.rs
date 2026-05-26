@@ -1,6 +1,7 @@
 use serde::Serialize;
 
-/// 传给前端的统一错误类型（保留供未来使用，当前命令返回 Result<T, String>）
+/// 传给前端的统一错误类型（保留供未来迁移使用，届时所有命令改为返回 Result<T, AppError>）
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct AppError {
     pub message: String,

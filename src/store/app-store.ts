@@ -39,8 +39,6 @@ interface AppState {
 
   undo: () => void;
   redo: () => void;
-  canUndo: () => boolean;
-  canRedo: () => boolean;
 
   loadPaths: () => Promise<void>;
   savePaths: () => Promise<void>;
@@ -226,9 +224,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { _savedSys, _savedUser, sysPaths, userPaths } = get();
     set({ isModified: !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)) });
   },
-
-  canUndo: () => get().undoRedo.canUndo(),
-  canRedo: () => get().undoRedo.canRedo(),
 
   loadPaths: async () => {
     try {

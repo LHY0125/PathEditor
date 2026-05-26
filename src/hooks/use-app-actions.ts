@@ -108,7 +108,7 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     const content = isCsv ? exportToCsv(data) : exportToJson(data);
     const mime = isCsv ? 'text/csv' : 'application/json';
     const ext = isCsv ? '.csv' : '.json';
-    const blob = new Blob([isCsv ? '﻿' : '', content], { type: mime });
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
