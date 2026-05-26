@@ -42,14 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 GNU 工具链
-        run: |
-          rustup toolchain install stable-x86_64-pc-windows-gnu
-          rustup override set stable-x86_64-pc-windows-gnu
-
-      - name: 添加 MinGW 到 PATH
-        run: echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
       - name: Cargo Check
         run: cargo check
 
