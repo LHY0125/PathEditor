@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -11,6 +11,9 @@ interface PathRow {
   index: number;
 }
 
+type ValidationState = 'valid' | 'invalid' | 'unknown';
+const DEFAULT_VALIDATION_STATE: ValidationState = 'valid';
+
 export function PathTable({ tabId }: PathTableProps) {
   const sysPaths = useAppStore((s) => s.sysPaths);
   const userPaths = useAppStore((s) => s.userPaths);
@@ -22,11 +25,13 @@ export function PathTable({ tabId }: PathTableProps) {
   const paths = tabId === 'system' ? sysPaths : userPaths;
   const isActive = activeTab === tabId;
 
-  type ValidationState = 'valid' | 'invalid' | 'unknown';
   // 本次会话中已验证过的路径缓存（key=path, value=ValidationState）
   const [validationCache, setValidationCache] = useState<Map<string, ValidationState>>(new Map());
   // 环境变量展开结果缓存（key=path, value=expanded）
   const [expandedCache, setExpandedCache] = useState<Map<string, string>>(new Map());
+
+  const validatedRef = useRef<Set<string>>(new Set());
+  const expandedRef = useRef<Set<string>>(new Set());
 
   // 过滤搜索
   const filtered = useMemo<PathRow[]>(() => {
@@ -43,13 +48,9 @@ export function PathTable({ tabId }: PathTableProps) {
   // 异步验证未缓存的路径
   useEffect(() => {
     let cancelled = false;
-    const allPaths = paths;
-
-    // 找出未缓存的路径
-    const toValidate = allPaths.filter((p) => !validationCache.has(p));
+    const toValidate = paths.filter((p) => !validatedRef.current.has(p));
     if (toValidate.length === 0) return;
 
-    // 批量验证（限制并发 20）
     const batch = toValidate.slice(0, 20);
     Promise.all(
       batch.map(async (p): Promise<[string, ValidationState]> => {
@@ -63,30 +64,28 @@ export function PathTable({ tabId }: PathTableProps) {
       }),
     ).then((results) => {
       if (cancelled) return;
+      for (const [p] of results) validatedRef.current.add(p);
       setValidationCache((prev) => {
         const next = new Map(prev);
-        for (const [p, v] of results) {
-          next.set(p, v);
-        }
+        for (const [p, v] of results) next.set(p, v);
         return next;
       });
     });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [paths, validationCache]);
+    return () => { cancelled = true; };
+  }, [paths]);
 
   // 异步展开环境变量（用于 tooltip）
   useEffect(() => {
     let cancelled = false;
     const toExpand = paths.filter(
-      (p) => p.includes('%') && !expandedCache.has(p),
+      (p) => p.includes('%') && !expandedRef.current.has(p),
     );
     if (toExpand.length === 0) return;
 
+    const batch = toExpand.slice(0, 20);
     Promise.all(
-      toExpand.map(async (p): Promise<[string, string]> => {
+      batch.map(async (p): Promise<[string, string]> => {
         try {
           const expanded: string = await invoke('expand_env_vars', { path: p });
           return [p, expanded !== p ? expanded : ''];
@@ -96,19 +95,16 @@ export function PathTable({ tabId }: PathTableProps) {
       }),
     ).then((results) => {
       if (cancelled) return;
+      for (const [p] of results) expandedRef.current.add(p);
       setExpandedCache((prev) => {
         const next = new Map(prev);
-        for (const [p, v] of results) {
-          next.set(p, v);
-        }
+        for (const [p, v] of results) next.set(p, v);
         return next;
       });
     });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [paths, expandedCache]);
+    return () => { cancelled = true; };
+  }, [paths]);
 
   // 所有路径默认有效（异步验证结果回来后再精确染色）
   const validations = useMemo(() => {
@@ -118,7 +114,7 @@ export function PathTable({ tabId }: PathTableProps) {
       const isDuplicate = seen.has(lower);
       seen.add(lower);
       return {
-        state: validationCache.get(path) ?? ('valid' as ValidationState),
+        state: validationCache.get(path) ?? DEFAULT_VALIDATION_STATE,
         isDuplicate,
         isEnvVar: path.includes('%'),
       };
