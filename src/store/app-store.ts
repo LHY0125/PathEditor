@@ -44,15 +44,20 @@ interface AppState {
   savePaths: () => Promise<void>;
   initialize: () => Promise<void>;
 
-  _markDirty: () => void;
 }
 
 function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  sysPaths: [],
+export const useAppStore = create<AppState>((set, get) => {
+  const markDirty = () => {
+    const { _savedSys, _savedUser, sysPaths, userPaths } = get();
+    set({ isModified: !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)) });
+  };
+
+  return {
+    sysPaths: [],
   userPaths: [],
   undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
   _savedSys: [],
@@ -82,7 +87,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     if (target === TargetType.SYSTEM) set({ sysPaths: newList });
     else set({ userPaths: newList });
-    get()._markDirty();
+    markDirty();
   },
 
   editPath: (index, newPath, target) => {
@@ -98,7 +103,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     newList[index] = newPath;
     if (target === TargetType.SYSTEM) set({ sysPaths: newList });
     else set({ userPaths: newList });
-    get()._markDirty();
+    markDirty();
   },
 
   deletePaths: (indices, target) => {
@@ -120,7 +125,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newList = list.filter((_, i) => !toRemove.has(i));
     if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [] });
     else set({ userPaths: newList, selectedIndices: [] });
-    get()._markDirty();
+    markDirty();
   },
 
   moveUp: (index, target) => {
@@ -134,7 +139,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
     if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [index - 1] });
     else set({ userPaths: newList, selectedIndices: [index - 1] });
-    get()._markDirty();
+    markDirty();
   },
 
   moveDown: (index, target) => {
@@ -148,7 +153,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
     if (target === TargetType.SYSTEM) set({ sysPaths: newList, selectedIndices: [index + 1] });
     else set({ userPaths: newList, selectedIndices: [index + 1] });
-    get()._markDirty();
+    markDirty();
   },
 
   cleanPaths: (target, validateFn) => {
@@ -163,7 +168,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       if (target === TargetType.SYSTEM) set({ sysPaths: kept, selectedIndices: [] });
       else set({ userPaths: kept, selectedIndices: [] });
-      get()._markDirty();
+      markDirty();
     }
 
     return removed;
@@ -181,7 +186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (target === TargetType.SYSTEM) set({ sysPaths: [...newPaths], selectedIndices: [] });
     else set({ userPaths: [...newPaths], selectedIndices: [] });
-    get()._markDirty();
+    markDirty();
   },
 
   clearPaths: (target) => {
@@ -196,7 +201,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (target === TargetType.SYSTEM) set({ sysPaths: [] });
     else set({ userPaths: [] });
-    get()._markDirty();
+    markDirty();
   },
 
   undo: () => {
@@ -205,6 +210,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (result) {
       set({
         sysPaths: result[0], userPaths: result[1], selectedIndices: [],
+        // 内联计算 isModified 而非调用 markDirty()，避免两次 set() 导致额外渲染
         isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
       });
     }
@@ -216,14 +222,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (result) {
       set({
         sysPaths: result[0], userPaths: result[1], selectedIndices: [],
+        // 内联计算 isModified 而非调用 markDirty()，避免两次 set() 导致额外渲染
         isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
       });
     }
-  },
-
-  _markDirty: () => {
-    const { _savedSys, _savedUser, sysPaths, userPaths } = get();
-    set({ isModified: !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)) });
   },
 
   loadPaths: async () => {
@@ -293,4 +295,4 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     await get().loadPaths();
   },
-}));
+};});
