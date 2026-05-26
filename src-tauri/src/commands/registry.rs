@@ -1,9 +1,9 @@
 use winreg::enums::*;
 use winreg::RegKey;
 
-const SYS_REG_PATH: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
-const USER_REG_PATH: &str = "Environment";
-const PATH_VALUE: &str = "Path";
+pub(crate) const SYS_REG_PATH: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
+pub(crate) const USER_REG_PATH: &str = "Environment";
+pub(crate) const PATH_VALUE: &str = "Path";
 
 pub(crate) fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<String>, String> {
     let key = RegKey::predef(root);

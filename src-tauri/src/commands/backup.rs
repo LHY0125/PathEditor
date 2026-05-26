@@ -1,5 +1,7 @@
 use chrono::Local;
 use std::path::PathBuf;
+use winreg::enums::*;
+use crate::commands::registry::{self, SYS_REG_PATH, USER_REG_PATH};
 
 fn backup_base_dir() -> PathBuf {
     dirs::data_dir()
@@ -19,9 +21,6 @@ pub fn get_appdata_dir() -> String {
 /// 在保存前调用，备份的是注册表中的当前值（保存前的状态）
 #[tauri::command]
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
-    use crate::commands::registry;
-    use winreg::enums::*;
-
     let backup_dir = match custom_dir {
         Some(ref dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
         _ => backup_base_dir(),
@@ -33,12 +32,12 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
     // 读取当前注册表中的值（保存前的旧值）
     let sys_paths = registry::load_paths(
         HKEY_LOCAL_MACHINE,
-        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+        SYS_REG_PATH,
         "系统",
     )?;
     let user_paths = registry::load_paths(
         HKEY_CURRENT_USER,
-        "Environment",
+        USER_REG_PATH,
         "用户",
     )?;
 
