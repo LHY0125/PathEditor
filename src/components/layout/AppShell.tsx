@@ -14,6 +14,11 @@ import { HelpDialog } from '@/components/dialogs/HelpDialog';
 import { ImportDialog } from '@/components/dialogs/ImportDialog';
 import { useAppActions, type DialogState } from '@/hooks/use-app-actions';
 
+/** Tauri's File object includes the native filesystem path */
+interface TauriFile extends File {
+  path: string;
+}
+
 export function AppShell() {
   const { t } = useTranslation();
   const activeTab = useAppStore((s) => s.activeTab);
@@ -92,8 +97,8 @@ export function AppShell() {
           for (let i = 0; i < e.dataTransfer.items.length; i++) {
             const entry = e.dataTransfer.items[i].webkitGetAsEntry();
             if (entry?.isDirectory) {
-              const path = (e.dataTransfer.files[i] as any).path;
-              if (path) useAppStore.getState().addPath(path, activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM);
+              const file = e.dataTransfer.files[i] as TauriFile;
+              if (file.path) useAppStore.getState().addPath(file.path, activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM);
             }
           }
         }}
