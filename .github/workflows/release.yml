@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: 构建 NSIS 安装包并发布
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: 安装 GNU 工具链
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu
+          rustup override set stable-x86_64-pc-windows-gnu
+
+      - name: 添加 MinGW 到 PATH
+        run: echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Tauri Build
+        run: npx tauri build
+
+      - name: 上传安装包到 Release
+        run: |
+          $installer = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          gh release upload $env:GITHUB_REF_NAME "$installer" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
