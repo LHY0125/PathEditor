@@ -5,7 +5,7 @@ const SYS_REG_PATH: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\
 const USER_REG_PATH: &str = "Environment";
 const PATH_VALUE: &str = "Path";
 
-fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<String>, String> {
+pub(crate) fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<String>, String> {
     let key = RegKey::predef(root);
     let env_key = key
         .open_subkey_with_flags(sub_path, KEY_READ)
@@ -18,7 +18,7 @@ fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<Str
     Ok(split_path(&value))
 }
 
-fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String]) -> Result<(), String> {
+pub(crate) fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String]) -> Result<(), String> {
     let value = join_path(paths);
 
     // Windows 注册表 REG_EXPAND_SZ 上限 32767 字符
@@ -63,14 +63,14 @@ pub fn save_user_paths(paths: Vec<String>) -> Result<(), String> {
     save_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户", &paths)
 }
 
-fn split_path(raw: &str) -> Vec<String> {
+pub(crate) fn split_path(raw: &str) -> Vec<String> {
     raw.split(';')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
 }
 
-fn join_path(paths: &[String]) -> String {
+pub(crate) fn join_path(paths: &[String]) -> String {
     paths
         .iter()
         .map(|p| p.trim())

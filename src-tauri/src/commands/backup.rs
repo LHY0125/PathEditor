@@ -1,5 +1,4 @@
 use chrono::Local;
-use std::fs;
 use std::path::PathBuf;
 
 fn backup_base_dir() -> PathBuf {
@@ -17,27 +16,41 @@ pub fn get_appdata_dir() -> String {
 }
 
 /// 备份当前注册表中的系统 PATH 和用户 PATH
-/// 返回备份文件的路径
+/// 在保存前调用，备份的是注册表中的当前值（保存前的状态）
 #[tauri::command]
-pub fn backup_registry(custom_dir: Option<String>, sys_paths: Vec<String>, user_paths: Vec<String>) -> Result<String, String> {
-    // 确定备份目录
+pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
+    use crate::commands::registry;
+    use winreg::enums::*;
+
     let backup_dir = match custom_dir {
-        Some(ref dir) if !dir.is_empty() => PathBuf::from(dir),
+        Some(ref dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
         _ => backup_base_dir(),
     };
 
-    // 创建目录
-    fs::create_dir_all(&backup_dir)
+    std::fs::create_dir_all(&backup_dir)
         .map_err(|e| format!("无法创建备份目录: {}", e))?;
 
-    // 生成带时间戳的文件名
+    // 读取当前注册表中的值（保存前的旧值）
+    let sys_paths = registry::load_paths(
+        HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+        "系统",
+    )?;
+    let user_paths = registry::load_paths(
+        HKEY_CURRENT_USER,
+        "Environment",
+        "用户",
+    )?;
+
     let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f");
     let filename = format!("path_backup_{}.txt", timestamp);
     let filepath = backup_dir.join(&filename);
 
-    // 写入备份内容
     let mut content = String::new();
-    content.push_str(&format!("PathEditor Backup - {}\n", Local::now().format("%Y-%m-%d %H:%M:%S")));
+    content.push_str(&format!(
+        "PathEditor Backup - {}\n",
+        Local::now().format("%Y-%m-%d %H:%M:%S")
+    ));
     content.push_str("\n[System PATH]\n");
     for path in &sys_paths {
         content.push_str(&format!("{}\n", path));
@@ -47,7 +60,7 @@ pub fn backup_registry(custom_dir: Option<String>, sys_paths: Vec<String>, user_
         content.push_str(&format!("{}\n", path));
     }
 
-    fs::write(&filepath, &content)
+    std::fs::write(&filepath, &content)
         .map_err(|e| format!("无法写入备份文件: {}", e))?;
 
     let result = filepath.to_string_lossy().to_string();

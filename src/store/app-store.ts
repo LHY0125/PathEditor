@@ -259,8 +259,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!window.confirm('PATH 长度超过建议值，是否继续保存？')) { set({ isSaving: false }); return; }
     }
 
-    // 备份（失败时通知用户）
-    invoke('backup_registry', { customDir: null, sysPaths, userPaths })
+    // 备份当前注册表（保存前备份旧值，失败仅警告不中断）
+    invoke('backup_registry', { customDir: null })
       .catch(() => set({ statusMessage: i18n.t('status.warning_backup') }));
 
     const [sysResult, userResult] = await Promise.allSettled([
