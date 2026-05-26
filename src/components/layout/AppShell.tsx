@@ -84,7 +84,7 @@ export function AppShell() {
       </div>
 
       <div
-        className="flex-1 overflow-hidden"
+        className="flex-1 overflow-auto"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'link'; }}
         onDrop={(e) => {
           e.preventDefault();

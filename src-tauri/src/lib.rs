@@ -26,6 +26,7 @@ pub fn run() {
             commands::system::broadcast_env_change,
             commands::backup::backup_registry,
             commands::backup::get_appdata_dir,
+            commands::fs::read_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

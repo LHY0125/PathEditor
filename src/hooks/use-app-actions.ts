@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { TargetType } from '@/core/undo-redo';
 import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { importFromContent, exportToJson, exportToCsv, flattenImportResult } from '@/core/import-export';
 import { is_valid_path_format } from '@/core/validation';
 import { useKeyboard } from './use-keyboard';
@@ -80,25 +81,21 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
 
   // ── 导入导出 ──
 
-  const handleImport = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,.csv,.txt';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) { input.remove(); return; }
-      const content = await file.text();
-      const result = importFromContent(content, file.name);
-      input.remove();
-      if (result.system.length > 0 && result.user.length > 0) {
-        setImportDialog({ open: true, system: result.system, user: result.user });
-      } else if (result.system.length > 0) {
-        useAppStore.getState().importPaths(TargetType.SYSTEM, result.system);
-      } else if (result.user.length > 0) {
-        useAppStore.getState().importPaths(TargetType.USER, result.user);
-      }
-    };
-    input.click();
+  const handleImport = useCallback(async () => {
+    const selected = await open({
+      filters: [{ name: '受支持格式', extensions: ['json', 'csv', 'txt'] }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== 'string') return;
+    const content = await invoke<string>('read_text_file', { path: selected });
+    const result = importFromContent(content, selected);
+    if (result.system.length > 0 && result.user.length > 0) {
+      setImportDialog({ open: true, system: result.system, user: result.user });
+    } else if (result.system.length > 0) {
+      useAppStore.getState().importPaths(TargetType.SYSTEM, result.system);
+    } else if (result.user.length > 0) {
+      useAppStore.getState().importPaths(TargetType.USER, result.user);
+    }
   }, [setImportDialog]);
 
   const handleExport = useCallback((format: 'json' | 'csv' = 'json') => {
