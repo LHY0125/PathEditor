@@ -5,7 +5,7 @@
 import type { PathEntry } from './path-entry';
 
 export const OperationType = {
-  ADD: 0, DELETE: 1, EDIT: 2, MOVE_UP: 3, MOVE_DOWN: 4, CLEAN: 5, CLEAR: 6, IMPORT: 7, TOGGLE: 8,
+  ADD: 0, DELETE: 1, EDIT: 2, MOVE_UP: 3, MOVE_DOWN: 4, CLEAN: 5, CLEAR: 6, IMPORT: 7, TOGGLE: 8, IMPORT_BOTH: 9,
 } as const;
 export type OperationType = (typeof OperationType)[keyof typeof OperationType];
 
@@ -21,6 +21,10 @@ export interface OpRecord {
   newPaths: PathEntry[];
   /** DELETE 操作专用：被删除的各路径的原始 index（升序） */
   indices?: number[];
+  /** IMPORT_BOTH 专用：用户 hive 的旧路径 */
+  oldPathsOther?: PathEntry[];
+  /** IMPORT_BOTH 专用：用户 hive 的新路径 */
+  newPathsOther?: PathEntry[];
 }
 
 const DEFAULT_MAX_SIZE = 50;
@@ -88,6 +92,12 @@ export class UndoRedoManager {
       case OperationType.TOGGLE:
         target[rec.index] = rec.oldPaths[0];
         break;
+      case OperationType.IMPORT_BOTH:
+        sys.length = 0;
+        sys.push(...rec.oldPaths);
+        user.length = 0;
+        user.push(...(rec.oldPathsOther || []));
+        return [sys, user];
     }
 
     return [sys, user];
@@ -138,6 +148,12 @@ export class UndoRedoManager {
       case OperationType.TOGGLE:
         target[rec.index] = rec.newPaths[0];
         break;
+      case OperationType.IMPORT_BOTH:
+        sys.length = 0;
+        sys.push(...rec.newPaths);
+        user.length = 0;
+        user.push(...(rec.newPathsOther || []));
+        return [sys, user];
     }
 
     return [sys, user];

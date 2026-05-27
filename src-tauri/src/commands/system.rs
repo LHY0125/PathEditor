@@ -53,8 +53,8 @@ pub fn expand_env_vars(path: &str) -> String {
         ExpandEnvironmentStringsW(wide_path.as_ptr(), buffer.as_mut_ptr(), required)
     };
 
-    if result == 0 {
-        log::warn!("expand_env_vars: 展开失败, 返回原始路径: {path}");
+    if result == 0 || result > required {
+        log::warn!("expand_env_vars: 展开失败或缓冲区不足, 返回原始路径: {path}");
         return path.to_string();
     }
 

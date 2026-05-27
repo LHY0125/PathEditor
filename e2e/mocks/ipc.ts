@@ -6,7 +6,7 @@ export function createIpcMock() {
           case 'check_admin': return true;
           case 'load_system_paths': return ['C:\\\\Windows', 'C:\\\\Program Files'];
           case 'load_user_paths': return ['C:\\\\Users\\\\me\\\\AppData'];
-          case 'load_disabled_state': return { system: [], user: [] };
+          case 'load_disabled_state': return [[], []];
           case 'save_system_paths': return undefined;
           case 'save_user_paths': return undefined;
           case 'save_disabled_state': return undefined;

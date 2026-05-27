@@ -36,6 +36,7 @@ interface AppState {
   moveDown: (index: number, target: TargetType) => void;
   cleanPaths: (target: TargetType, validateFn: (p: string) => boolean) => string[];
   replacePaths: (target: TargetType, newPaths: string[]) => void;
+  replaceBothPaths: (sysPaths: string[], userPaths: string[]) => void;
   clearPaths: (target: TargetType) => void;
 
   togglePath: (index: number, target: TargetType) => void;
@@ -195,6 +196,20 @@ export const useAppStore = create<AppState>((set, get) => {
     markDirty();
   },
 
+  replaceBothPaths: (sysPaths, userPaths) => {
+    const state = get();
+    const sysEntries: PathEntry[] = sysPaths.map(p => ({ path: p, enabled: true }));
+    const usrEntries: PathEntry[] = userPaths.map(p => ({ path: p, enabled: true }));
+    state.undoRedo.push({
+      type: OperationType.IMPORT_BOTH, target: TargetType.SYSTEM, index: 0,
+      count: sysEntries.length + usrEntries.length,
+      oldPaths: [...state.sysPaths], newPaths: [...sysEntries],
+      oldPathsOther: [...state.userPaths], newPathsOther: [...usrEntries],
+    });
+    set({ sysPaths: [...sysEntries], userPaths: [...usrEntries], selectedIndices: [] });
+    markDirty();
+  },
+
   clearPaths: (target) => {
     const state = get();
     const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
@@ -245,6 +260,11 @@ export const useAppStore = create<AppState>((set, get) => {
         // 内联计算 isModified 而非调用 markDirty()，避免两次 set() 导致额外渲染
         isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
       });
+      // 同步持久化 disabled 状态，与 togglePath 保持一致
+      invoke('save_disabled_state', {
+        system: result[0].filter(e => !e.enabled).map(e => e.path),
+        user: result[1].filter(e => !e.enabled).map(e => e.path),
+      }).catch(() => {});
     }
   },
 
@@ -257,6 +277,11 @@ export const useAppStore = create<AppState>((set, get) => {
         // 内联计算 isModified 而非调用 markDirty()，避免两次 set() 导致额外渲染
         isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
       });
+      // 同步持久化 disabled 状态，与 togglePath 保持一致
+      invoke('save_disabled_state', {
+        system: result[0].filter(e => !e.enabled).map(e => e.path),
+        user: result[1].filter(e => !e.enabled).map(e => e.path),
+      }).catch(() => {});
     }
   },
 
@@ -314,8 +339,9 @@ export const useAppStore = create<AppState>((set, get) => {
     }
 
     // 备份当前注册表（保存前备份旧值，失败仅警告不中断）
+    let backupFailed = false;
     await invoke('backup_registry', { customDir: null })
-      .catch(() => set({ statusMessage: i18n.t('status.warning_backup') }));
+      .catch(() => { backupFailed = true; });
 
     const [sysResult, userResult] = await Promise.allSettled([
       invoke('save_system_paths', { paths: sysPaths }),
@@ -328,11 +354,14 @@ export const useAppStore = create<AppState>((set, get) => {
     if (sysOk && userOk) {
       invoke('broadcast_env_change').catch(() => {});
       const savedSys = [...state.sysPaths], savedUser = [...state.userPaths];
-      set({ isModified: false, isSaving: false, statusMessage: i18n.t('status.saved'), _savedSys: savedSys, _savedUser: savedUser });
+      set({ isModified: false, isSaving: false,
+        statusMessage: backupFailed ? i18n.t('status.saved_without_backup') : i18n.t('status.saved'),
+        _savedSys: savedSys, _savedUser: savedUser });
     } else {
-      const reason = (!sysOk && sysResult.status === 'rejected') ? String(sysResult.reason) :
-                     (!userOk && userResult.status === 'rejected') ? String(userResult.reason) : '';
-      const msg = sysOk ? '用户 PATH 保存失败' : userOk ? '系统 PATH 保存失败' : `保存失败: ${reason}`;
+      const sysErr = (!sysOk && sysResult.status === 'rejected') ? String(sysResult.reason) : '';
+      const usrErr = (!userOk && userResult.status === 'rejected') ? String(userResult.reason) : '';
+      const parts = [sysErr, usrErr].filter(Boolean);
+      const msg = sysOk ? '用户 PATH 保存失败' : userOk ? '系统 PATH 保存失败' : `保存失败: ${parts.join('; ')}`;
       set({ isSaving: false, statusMessage: msg });
     }
   },

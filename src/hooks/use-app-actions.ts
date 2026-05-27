@@ -160,8 +160,12 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
   const handleImportSelect = useCallback((target: 'system' | 'user' | 'both') => {
     const { system, user } = dialogs.importDialog;
     const flat = flattenImportResult({ system, user }, target);
-    if (flat.system.length > 0) useAppStore.getState().replacePaths(TargetType.SYSTEM, flat.system.map(e => e.path));
-    if (flat.user.length > 0) useAppStore.getState().replacePaths(TargetType.USER, flat.user.map(e => e.path));
+    if (target === 'both' && flat.system.length > 0 && flat.user.length > 0) {
+      useAppStore.getState().replaceBothPaths(flat.system.map(e => e.path), flat.user.map(e => e.path));
+    } else {
+      if (flat.system.length > 0) useAppStore.getState().replacePaths(TargetType.SYSTEM, flat.system.map(e => e.path));
+      if (flat.user.length > 0) useAppStore.getState().replacePaths(TargetType.USER, flat.user.map(e => e.path));
+    }
     setImportDialog({ open: false, system: [], user: [] });
   }, [dialogs.importDialog, setImportDialog]);
 

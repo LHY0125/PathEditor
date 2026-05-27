@@ -38,6 +38,7 @@
     "readonly": "Read-only mode — Administrator privileges required for editing",
     "saving": "Saving...",
     "saved": "Saved successfully",
+    "saved_without_backup": "Saved (backup failed)",
     "error": "Operation failed",
     "warning_backup": "Backup creation failed, save will proceed without backup",
     "deleted": "Deleted {{count}} path(s)",

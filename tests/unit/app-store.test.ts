@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock @tauri-apps/api/core
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+  invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock i18n

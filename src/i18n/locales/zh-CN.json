@@ -38,6 +38,7 @@
     "readonly": "只读模式 — 需要管理员权限才能编辑",
     "saving": "正在保存...",
     "saved": "保存成功",
+    "saved_without_backup": "保存成功（备份失败）",
     "error": "操作失败",
     "warning_backup": "备份创建失败，保存将继续但不生成备份",
     "deleted": "已删除 {{count}} 个路径",
