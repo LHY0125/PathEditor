@@ -4,6 +4,7 @@ import { TargetType } from '@/core/undo-redo';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { importFromContent, exportToJson, exportToCsv, flattenImportResult } from '@/core/import-export';
+import type { PathEntry } from '@/core/path-entry';
 import { is_valid_path_format } from '@/core/validation';
 import { useKeyboard } from './use-keyboard';
 import i18n from '@/i18n';
@@ -13,7 +14,7 @@ export interface DialogState {
   editDialog: { open: boolean; index: number; value: string; target: TargetType };
   newDialog: boolean;
   helpOpen: boolean;
-  importDialog: { open: boolean; system: string[]; user: string[] };
+  importDialog: { open: boolean; system: PathEntry[]; user: PathEntry[] };
   setEditDialog: (v: DialogState['editDialog']) => void;
   setNewDialog: (v: boolean) => void;
   setHelpOpen: (v: boolean) => void;
@@ -38,8 +39,8 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     const list = target === TargetType.SYSTEM
       ? useAppStore.getState().sysPaths
       : useAppStore.getState().userPaths;
-    const value = list[idx];
-    if (value) setEditDialog({ open: true, index: idx, value, target });
+    const entry = list[idx];
+    if (entry) setEditDialog({ open: true, index: idx, value: entry.path, target });
   }, [activeTab, setEditDialog]);
 
   const handleBrowse = useCallback(async () => {
@@ -92,9 +93,9 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     if (result.system.length > 0 && result.user.length > 0) {
       setImportDialog({ open: true, system: result.system, user: result.user });
     } else if (result.system.length > 0) {
-      useAppStore.getState().replacePaths(TargetType.SYSTEM, result.system);
+      useAppStore.getState().replacePaths(TargetType.SYSTEM, result.system.map(e => e.path));
     } else if (result.user.length > 0) {
-      useAppStore.getState().replacePaths(TargetType.USER, result.user);
+      useAppStore.getState().replacePaths(TargetType.USER, result.user.map(e => e.path));
     }
   }, [setImportDialog]);
 
@@ -159,8 +160,8 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
   const handleImportSelect = useCallback((target: 'system' | 'user' | 'both') => {
     const { system, user } = dialogs.importDialog;
     const flat = flattenImportResult({ system, user }, target);
-    if (flat.system.length > 0) useAppStore.getState().replacePaths(TargetType.SYSTEM, flat.system);
-    if (flat.user.length > 0) useAppStore.getState().replacePaths(TargetType.USER, flat.user);
+    if (flat.system.length > 0) useAppStore.getState().replacePaths(TargetType.SYSTEM, flat.system.map(e => e.path));
+    if (flat.user.length > 0) useAppStore.getState().replacePaths(TargetType.USER, flat.user.map(e => e.path));
     setImportDialog({ open: false, system: [], user: [] });
   }, [dialogs.importDialog, setImportDialog]);
 

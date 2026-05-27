@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { invoke } from '@tauri-apps/api/core';
+import { TargetType } from '@/core/undo-redo';
 
 interface PathTableProps {
   tabId: 'system' | 'user';
@@ -9,6 +10,7 @@ interface PathTableProps {
 interface PathRow {
   path: string;
   index: number;
+  enabled: boolean;
 }
 
 type ValidationState = 'valid' | 'invalid' | 'unknown';
@@ -35,12 +37,12 @@ export function PathTable({ tabId }: PathTableProps) {
 
   // 过滤搜索
   const filtered = useMemo<PathRow[]>(() => {
-    if (!searchQuery) return paths.map((p, i) => ({ path: p, index: i }));
+    if (!searchQuery) return paths.map((p, i) => ({ path: p.path, index: i, enabled: p.enabled }));
     const q = searchQuery.toLowerCase();
     const result: PathRow[] = [];
     for (let i = 0; i < paths.length; i++) {
       const p = paths[i];
-      if (p.toLowerCase().includes(q)) result.push({ path: p, index: i });
+      if (p.path.toLowerCase().includes(q)) result.push({ path: p.path, index: i, enabled: p.enabled });
     }
     return result;
   }, [paths, searchQuery]);
@@ -48,18 +50,18 @@ export function PathTable({ tabId }: PathTableProps) {
   // 异步验证未缓存的路径
   useEffect(() => {
     let cancelled = false;
-    const toValidate = paths.filter((p) => !validatedRef.current.has(p));
+    const toValidate = paths.filter((p) => !validatedRef.current.has(p.path));
     if (toValidate.length === 0) return;
 
     const batch = toValidate.slice(0, 20);
     Promise.all(
       batch.map(async (p): Promise<[string, ValidationState]> => {
         try {
-          if (p.includes('%')) return [p, 'valid'];
-          const valid: boolean = await invoke('validate_path', { path: p });
-          return [p, valid ? 'valid' : 'invalid'];
+          if (p.path.includes('%')) return [p.path, 'valid'];
+          const valid: boolean = await invoke('validate_path', { path: p.path });
+          return [p.path, valid ? 'valid' : 'invalid'];
         } catch {
-          return [p, 'unknown'];
+          return [p.path, 'unknown'];
         }
       }),
     ).then((results) => {
@@ -79,7 +81,7 @@ export function PathTable({ tabId }: PathTableProps) {
   useEffect(() => {
     let cancelled = false;
     const toExpand = paths.filter(
-      (p) => p.includes('%') && !expandedRef.current.has(p),
+      (p) => p.path.includes('%') && !expandedRef.current.has(p.path),
     );
     if (toExpand.length === 0) return;
 
@@ -87,10 +89,10 @@ export function PathTable({ tabId }: PathTableProps) {
     Promise.all(
       batch.map(async (p): Promise<[string, string]> => {
         try {
-          const expanded: string = await invoke('expand_env_vars', { path: p });
-          return [p, expanded !== p ? expanded : ''];
+          const expanded: string = await invoke('expand_env_vars', { path: p.path });
+          return [p.path, expanded !== p.path ? expanded : ''];
         } catch {
-          return [p, ''];
+          return [p.path, ''];
         }
       }),
     ).then((results) => {
@@ -141,7 +143,7 @@ export function PathTable({ tabId }: PathTableProps) {
       if (!isActive) return;
       window.dispatchEvent(
         new CustomEvent('path-dblclick', {
-          detail: { index: realIndex, path: paths[realIndex] },
+          detail: { index: realIndex, path: paths[realIndex].path },
         }),
       );
     },
@@ -157,17 +159,26 @@ export function PathTable({ tabId }: PathTableProps) {
             style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
           >
             <th className="w-8 px-2 py-1">#</th>
+            <th className="w-6 px-1 py-1"></th>
             <th className="px-2 py-1">路径</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map(({ path, index }, rowIdx) => {
+          {filtered.map(({ path, index, enabled }, rowIdx) => {
             const v = validations[rowIdx];
             const isSelected = selectedIndices.includes(index);
             let textColor = 'var(--app-fg)';
             if (v.state === 'invalid') textColor = '#dc3545';
             else if (v.isDuplicate) textColor = '#fd7e14';
             else if (v.state === 'unknown') textColor = 'var(--app-fg)';
+
+            let textDecoration = 'none';
+            let opacity = 1;
+            if (!enabled) {
+              textColor = '#6b7280';
+              textDecoration = 'line-through';
+              opacity = 0.6;
+            }
 
             return (
               <tr
@@ -186,9 +197,20 @@ export function PathTable({ tabId }: PathTableProps) {
                 <td className="w-8 px-2 py-0.5 text-xs opacity-50" style={{ color: 'var(--app-fg)' }}>
                   {index + 1}
                 </td>
+                <td className="w-6 px-1 py-0.5">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => {
+                      const target = tabId === 'system' ? TargetType.SYSTEM : TargetType.USER;
+                      useAppStore.getState().togglePath(index, target);
+                    }}
+                    className="cursor-pointer"
+                  />
+                </td>
                 <td
                   className="px-2 py-0.5 text-sm truncate max-w-2xl"
-                  style={{ color: textColor }}
+                  style={{ color: textColor, textDecoration, opacity }}
                   title={expandedCache.get(path) || undefined}
                 >
                   {path}
