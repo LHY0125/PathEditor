@@ -1,6 +1,8 @@
 /**
- * 路径管理器 — 不可变的 string[] 操作
+ * 路径管理器 — 不可变的 PathEntry[] 操作
  */
+
+import type { PathEntry } from './path-entry';
 
 export interface PathValidation {
   isValid: boolean;
@@ -9,17 +11,17 @@ export interface PathValidation {
 }
 
 export function analyzePaths(
-  paths: readonly string[],
+  paths: readonly PathEntry[],
   validateFn: (path: string) => boolean,
 ): PathValidation[] {
   const result: PathValidation[] = [];
   const seen = new Set<string>();
 
-  for (const path of paths) {
-    const lower = path.toLowerCase();
+  for (const entry of paths) {
+    const lower = entry.path.toLowerCase();
     const isDuplicate = seen.has(lower);
     seen.add(lower);
-    result.push({ isValid: validateFn(path), isDuplicate, isEnvVar: path.includes('%') });
+    result.push({ isValid: validateFn(entry.path), isDuplicate, isEnvVar: entry.path.includes('%') });
   }
 
   return result;
@@ -27,12 +29,12 @@ export function analyzePaths(
 
 /** 从数组中移除无效和重复路径，返回 [新数组, 被移除的路径] */
 export function pathClean(
-  paths: readonly string[],
+  paths: readonly PathEntry[],
   validateFn: (path: string) => boolean,
-): [string[], string[]] {
+): [PathEntry[], PathEntry[]] {
   const analysis = analyzePaths(paths, validateFn);
-  const kept: string[] = [];
-  const removed: string[] = [];
+  const kept: PathEntry[] = [];
+  const removed: PathEntry[] = [];
 
   for (let i = 0; i < paths.length; i++) {
     const a = analysis[i];

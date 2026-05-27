@@ -2,11 +2,13 @@
  * 导入导出模块 — 对应 C 版 import_export.c
  * 支持 JSON、CSV、TXT 三种格式
  */
+import type { PathEntry } from './path-entry';
+
 export type ExportFormat = 'json' | 'csv' | 'txt';
 
 export interface ExportData {
-  system: string[];
-  user: string[];
+  system: PathEntry[];
+  user: PathEntry[];
 }
 
 /** 根据文件扩展名检测格式 */
@@ -24,8 +26,8 @@ export function exportToJson(data: ExportData): string {
     version: '1.0',
     type: 'PathEditor',
     exported: new Date().toISOString(),
-    system: data.system,
-    user: data.user,
+    system: data.system.map(e => e.path),
+    user: data.user.map(e => e.path),
   };
   return JSON.stringify(obj, null, 2);
 }
@@ -37,11 +39,11 @@ export function exportToCsv(data: ExportData): string {
   // UTF-8 BOM
   lines.push('﻿type,path');
 
-  for (const path of data.system) {
-    lines.push(`system,${escapeCsvField(path)}`);
+  for (const entry of data.system) {
+    lines.push(`system,${escapeCsvField(entry.path)}`);
   }
-  for (const path of data.user) {
-    lines.push(`user,${escapeCsvField(path)}`);
+  for (const entry of data.user) {
+    lines.push(`user,${escapeCsvField(entry.path)}`);
   }
 
   return lines.join('\n') + '\n';
@@ -57,8 +59,8 @@ function escapeCsvField(field: string): string {
 // ── CSV 导入 ──
 
 export interface ImportResult {
-  system: string[];
-  user: string[];
+  system: PathEntry[];
+  user: PathEntry[];
 }
 
 export function importFromCsv(content: string): ImportResult {
@@ -91,9 +93,9 @@ export function importFromCsv(content: string): ImportResult {
     if (path.length === 0) continue;
 
     if (type === 'system') {
-      result.system.push(path);
+      result.system.push({ path, enabled: true });
     } else if (type === 'user') {
-      result.user.push(path);
+      result.user.push({ path, enabled: true });
     }
     // 未知类型忽略
   }
@@ -157,14 +159,14 @@ export function importFromJson(content: string): ImportResult {
   if (typeof obj !== 'object' || obj === null) return result;
 
   if (Array.isArray(obj.system)) {
-    result.system = obj.system.filter(
-      (p: unknown) => typeof p === 'string' && p.trim().length > 0,
-    );
+    result.system = obj.system
+      .filter((p: unknown) => typeof p === 'string' && p.trim().length > 0)
+      .map((p: string) => ({ path: p.trim(), enabled: true }));
   }
   if (Array.isArray(obj.user)) {
-    result.user = obj.user.filter(
-      (p: unknown) => typeof p === 'string' && p.trim().length > 0,
-    );
+    result.user = obj.user
+      .filter((p: unknown) => typeof p === 'string' && p.trim().length > 0)
+      .map((p: string) => ({ path: p.trim(), enabled: true }));
   }
 
   return result;
@@ -172,8 +174,8 @@ export function importFromJson(content: string): ImportResult {
 
 // ── TXT 导入 ──
 
-export function importFromTxt(content: string): string[] {
-  const paths: string[] = [];
+export function importFromTxt(content: string): PathEntry[] {
+  const paths: PathEntry[] = [];
   const lines = content.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
@@ -184,7 +186,7 @@ export function importFromTxt(content: string): string[] {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
 
-    paths.push(trimmed);
+    paths.push({ path: trimmed, enabled: true });
   }
 
   return paths;
