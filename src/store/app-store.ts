@@ -3,16 +3,17 @@ import { invoke } from '@tauri-apps/api/core';
 import i18n from '@/i18n';
 import { UndoRedoManager, OperationType, TargetType } from '@/core/undo-redo';
 import { pathClean } from '@/core/path-manager';
+import type { PathEntry } from '@/core/path-entry';
 import appConfig from '@/config/default.json';
 
 export type TabId = 'system' | 'user' | 'merged';
 
 interface AppState {
-  sysPaths: string[];
-  userPaths: string[];
+  sysPaths: PathEntry[];
+  userPaths: PathEntry[];
   undoRedo: UndoRedoManager;
-  _savedSys: string[]; // 上次保存时的快照，用于 isModified 判断
-  _savedUser: string[];
+  _savedSys: PathEntry[]; // 上次保存时的快照，用于 isModified 判断
+  _savedUser: PathEntry[];
 
   activeTab: TabId;
   searchQuery: string;
@@ -37,6 +38,8 @@ interface AppState {
   replacePaths: (target: TargetType, newPaths: string[]) => void;
   clearPaths: (target: TargetType) => void;
 
+  togglePath: (index: number, target: TargetType) => void;
+
   undo: () => void;
   redo: () => void;
 
@@ -46,8 +49,8 @@ interface AppState {
 
 }
 
-function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((v, i) => v === b[i]);
+function arraysEqual(a: readonly PathEntry[], b: readonly PathEntry[]): boolean {
+  return a.length === b.length && a.every((v, i) => v.path === b[i].path && v.enabled === b[i].enabled);
 }
 
 export const useAppStore = create<AppState>((set, get) => {
@@ -80,10 +83,11 @@ export const useAppStore = create<AppState>((set, get) => {
   addPath: (path, target) => {
     const state = get();
     const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
-    const newList = [...list, path];
+    const entry: PathEntry = { path, enabled: true };
+    const newList = [...list, entry];
     state.undoRedo.push({
       type: OperationType.ADD, target, index: newList.length - 1, count: 1,
-      oldPaths: [], newPaths: [path],
+      oldPaths: [], newPaths: [entry],
     });
     if (target === TargetType.SYSTEM) set({ sysPaths: newList });
     else set({ userPaths: newList });
@@ -93,14 +97,15 @@ export const useAppStore = create<AppState>((set, get) => {
   editPath: (index, newPath, target) => {
     const state = get();
     const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
-    const oldPath = list[index];
-    if (oldPath === undefined) return;
+    const oldEntry = list[index];
+    if (!oldEntry) return;
+    const newEntry: PathEntry = { path: newPath, enabled: oldEntry.enabled };
     state.undoRedo.push({
       type: OperationType.EDIT, target, index, count: 1,
-      oldPaths: [oldPath], newPaths: [newPath],
+      oldPaths: [oldEntry], newPaths: [newEntry],
     });
     const newList = [...list];
-    newList[index] = newPath;
+    newList[index] = newEntry;
     if (target === TargetType.SYSTEM) set({ sysPaths: newList });
     else set({ userPaths: newList });
     markDirty();
@@ -171,21 +176,22 @@ export const useAppStore = create<AppState>((set, get) => {
       markDirty();
     }
 
-    return removed;
+    return removed.map(e => e.path);
   },
 
   replacePaths: (target, newPaths) => {
     if (newPaths.length === 0) return;
     const state = get();
     const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    const entries: PathEntry[] = newPaths.map(p => ({ path: p, enabled: true }));
 
     state.undoRedo.push({
-      type: OperationType.IMPORT, target, index: 0, count: newPaths.length,
-      oldPaths: [...list], newPaths: [...newPaths],
+      type: OperationType.IMPORT, target, index: 0, count: entries.length,
+      oldPaths: [...list], newPaths: [...entries],
     });
 
-    if (target === TargetType.SYSTEM) set({ sysPaths: [...newPaths], selectedIndices: [] });
-    else set({ userPaths: [...newPaths], selectedIndices: [] });
+    if (target === TargetType.SYSTEM) set({ sysPaths: [...entries], selectedIndices: [] });
+    else set({ userPaths: [...entries], selectedIndices: [] });
     markDirty();
   },
 
@@ -202,6 +208,32 @@ export const useAppStore = create<AppState>((set, get) => {
     if (target === TargetType.SYSTEM) set({ sysPaths: [] });
     else set({ userPaths: [] });
     markDirty();
+  },
+
+  togglePath: (index, target) => {
+    const state = get();
+    const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
+    const oldEntry = list[index];
+    if (!oldEntry) return;
+    const newEntry: PathEntry = { path: oldEntry.path, enabled: !oldEntry.enabled };
+
+    state.undoRedo.push({
+      type: OperationType.TOGGLE, target, index, count: 1,
+      oldPaths: [oldEntry], newPaths: [newEntry],
+    });
+
+    const newList = [...list];
+    newList[index] = newEntry;
+    if (target === TargetType.SYSTEM) set({ sysPaths: newList });
+    else set({ userPaths: newList });
+    markDirty();
+
+    // 即时保存禁用状态
+    const { sysPaths: sys, userPaths: usr } = get();
+    const sysDisabled = sys.filter(e => !e.enabled).map(e => e.path);
+    const usrDisabled = usr.filter(e => !e.enabled).map(e => e.path);
+    invoke('save_disabled_state', { system: sysDisabled, user: usrDisabled })
+      .catch(() => {});
   },
 
   undo: () => {
@@ -235,9 +267,27 @@ export const useAppStore = create<AppState>((set, get) => {
         invoke<string[]>('load_system_paths'),
         invoke<string[]>('load_user_paths'),
       ]);
+
+      // 加载禁用状态（文件不存在时返回空）
+      let sysDisabled: string[] = [];
+      let usrDisabled: string[] = [];
+      try {
+        const result = await invoke<[string[], string[]]>('load_disabled_state');
+        sysDisabled = result[0];
+        usrDisabled = result[1];
+      } catch {
+        // 文件不存在或损坏，忽略
+      }
+
+      const sysSet = new Set(sysDisabled);
+      const usrSet = new Set(usrDisabled);
+
+      const sysEntries: PathEntry[] = sysArr.map(p => ({ path: p, enabled: !sysSet.has(p) }));
+      const usrEntries: PathEntry[] = userArr.map(p => ({ path: p, enabled: !usrSet.has(p) }));
+
       set({
-        sysPaths: sysArr, userPaths: userArr,
-        _savedSys: [...sysArr], _savedUser: [...userArr],
+        sysPaths: sysEntries, userPaths: usrEntries,
+        _savedSys: [...sysEntries], _savedUser: [...usrEntries],
         undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
         isLoading: false, isModified: false,
         statusMessage: i18n.t('status.loaded', { sysCount: sysArr.length, userCount: userArr.length }),
@@ -252,7 +302,9 @@ export const useAppStore = create<AppState>((set, get) => {
     if (state.isSaving) return;
     set({ isSaving: true, statusMessage: i18n.t('status.saving') });
 
-    const { sysPaths, userPaths } = state;
+    // 只保存 enabled 的路径到注册表
+    const sysPaths = state.sysPaths.filter(e => e.enabled).map(e => e.path);
+    const userPaths = state.userPaths.filter(e => e.enabled).map(e => e.path);
     const sysJoined = sysPaths.join(';');
     const userJoined = userPaths.join(';');
 
@@ -275,7 +327,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
     if (sysOk && userOk) {
       invoke('broadcast_env_change').catch(() => {});
-      const savedSys = [...sysPaths], savedUser = [...userPaths];
+      const savedSys = [...state.sysPaths], savedUser = [...state.userPaths];
       set({ isModified: false, isSaving: false, statusMessage: i18n.t('status.saved'), _savedSys: savedSys, _savedUser: savedUser });
     } else {
       const reason = (!sysOk && sysResult.status === 'rejected') ? String(sysResult.reason) :
