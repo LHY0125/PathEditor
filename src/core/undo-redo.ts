@@ -1,9 +1,11 @@
 /**
- * 撤销/重做管理器 — 纯逻辑，操作不可变 string[]
+ * 撤销/重做管理器 — 纯逻辑，操作不可变 PathEntry[]
  */
 
+import type { PathEntry } from './path-entry';
+
 export const OperationType = {
-  ADD: 0, DELETE: 1, EDIT: 2, MOVE_UP: 3, MOVE_DOWN: 4, CLEAN: 5, CLEAR: 6, IMPORT: 7,
+  ADD: 0, DELETE: 1, EDIT: 2, MOVE_UP: 3, MOVE_DOWN: 4, CLEAN: 5, CLEAR: 6, IMPORT: 7, TOGGLE: 8,
 } as const;
 export type OperationType = (typeof OperationType)[keyof typeof OperationType];
 
@@ -15,8 +17,8 @@ export interface OpRecord {
   target: TargetType;
   index: number;
   count: number;
-  oldPaths: string[];
-  newPaths: string[];
+  oldPaths: PathEntry[];
+  newPaths: PathEntry[];
   /** DELETE 操作专用：被删除的各路径的原始 index（升序） */
   indices?: number[];
 }
@@ -41,7 +43,7 @@ export class UndoRedoManager {
     this.current = this.records.length - 1;
   }
 
-  undo(sysPaths: readonly string[], userPaths: readonly string[]): [string[], string[]] | null {
+  undo(sysPaths: readonly PathEntry[], userPaths: readonly PathEntry[]): [PathEntry[], PathEntry[]] | null {
     if (this.current < 0) return null;
 
     const rec = this.records[this.current];
@@ -83,12 +85,15 @@ export class UndoRedoManager {
       case OperationType.CLEAR:
         target.push(...rec.oldPaths);
         break;
+      case OperationType.TOGGLE:
+        target[rec.index] = rec.oldPaths[0];
+        break;
     }
 
     return [sys, user];
   }
 
-  redo(sysPaths: readonly string[], userPaths: readonly string[]): [string[], string[]] | null {
+  redo(sysPaths: readonly PathEntry[], userPaths: readonly PathEntry[]): [PathEntry[], PathEntry[]] | null {
     if (this.current >= this.records.length - 1) return null;
 
     this.current++;
@@ -129,6 +134,9 @@ export class UndoRedoManager {
         break;
       case OperationType.CLEAR:
         target.length = 0;
+        break;
+      case OperationType.TOGGLE:
+        target[rec.index] = rec.newPaths[0];
         break;
     }
 
