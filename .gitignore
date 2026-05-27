@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 .claude/
 CLAUDE.md
+e2e/debug-screenshot.png
+test-results/
