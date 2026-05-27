@@ -4,13 +4,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.0.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-4.2.0-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-55%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-72%20passed-brightgreen" alt="tests">
 </p>
 
 ---
@@ -19,7 +19,7 @@
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v4.0 使用 **Tauri 2.x + React 19 + TypeScript + Rust** 完全重写，替代了原有的 C + IUP GUI。
+v4.2 使用 **Tauri 2.x + React 19 + TypeScript + Rust** 完全重写，替代了原有的 C + IUP GUI。
 
 ## 截图
 
@@ -41,7 +41,7 @@ _[待补充]_
 - 环境变量路径（含 `%VAR%`）悬浮展开预览
 
 ### 撤销/重做
-- 支持 8 种操作类型，最多 50 步历史
+- 支持 9 种操作类型，最多 50 步历史
 - 新增、删除、编辑、移动、清理、清空、导入均可撤销
 
 ### 导入/导出
@@ -63,7 +63,7 @@ _[待补充]_
 
 ## 安装
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_4.0.0_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_4.2.0_x64-setup.exe` 安装。
 
 或从源码构建：
 
@@ -106,7 +106,7 @@ cd src-tauri && cargo test
 | 国际化 | i18next |
 | 桌面框架 | Tauri 2.x |
 | 后端 | Rust (winreg + windows-rs FFI) |
-| 前端测试 | Vitest (45 个测试) |
+| 前端测试 | Vitest (72 个测试) |
 | Rust 测试 | cargo test (10 个测试) |
 | 构建 | Vite |
 | 打包 | NSIS |

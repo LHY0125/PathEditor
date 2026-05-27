@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "PathEditor",
-  "version": "4.0.0",
+  "version": "4.2.0",
   "identifier": "com.liuhangyu.patheditor",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PathEditor v4.0",
+        "title": "PathEditor v4.2",
         "width": 900,
         "height": 700,
         "minWidth": 800,

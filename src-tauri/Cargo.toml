@@ -1,6 +1,6 @@
 [package]
 name = "patheditor"
-version = "4.0.0"
+version = "4.2.0"
 description = "Windows PATH Environment Variable Editor"
 authors = ["刘航宇"]
 license = "MIT"
