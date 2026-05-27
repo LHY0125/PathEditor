@@ -234,7 +234,7 @@ describe('savePaths', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
-    useAppStore.setState({ sysPaths: ['A'], userPaths: ['B'] });
+    useAppStore.setState({ sysPaths: [pe('A')], userPaths: [pe('B')] });
   });
 
   it('保存成功', async () => {
