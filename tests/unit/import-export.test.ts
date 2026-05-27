@@ -9,30 +9,41 @@ import {
   detectExportFormat,
   flattenImportResult,
 } from '../../src/core/import-export';
+import type { PathEntry } from '../../src/core/path-entry';
+
+function pe(s: string, enabled: boolean = true): PathEntry {
+  return { path: s, enabled };
+}
 
 const sampleData = {
-  system: ['C:\\Windows', 'C:\\Program Files'],
-  user: ['C:\\Users\\me\\AppData'],
+  system: [pe('C:\\Windows'), pe('C:\\Program Files')],
+  user: [pe('C:\\Users\\me\\AppData')],
 };
 
 describe('exportToJson', () => {
   it('导出结构化 JSON', () => {
-    const json = exportToJson(sampleData);
+    const json = exportToJson({
+      system: sampleData.system.map(e => e.path),
+      user: sampleData.user.map(e => e.path),
+    });
     const parsed = JSON.parse(json);
     expect(parsed.version).toBe('1.0');
     expect(parsed.type).toBe('PathEditor');
-    expect(parsed.system).toEqual(sampleData.system);
-    expect(parsed.user).toEqual(sampleData.user);
+    expect(parsed.system).toEqual(sampleData.system.map(e => e.path));
+    expect(parsed.user).toEqual(sampleData.user.map(e => e.path));
     expect(parsed.exported).toBeDefined();
   });
 });
 
 describe('importFromJson', () => {
   it('正确导入 JSON', () => {
-    const json = JSON.stringify(sampleData);
+    const json = JSON.stringify({
+      system: sampleData.system.map(e => e.path),
+      user: sampleData.user.map(e => e.path),
+    });
     const result = importFromJson(json);
-    expect(result.system).toEqual(sampleData.system);
-    expect(result.user).toEqual(sampleData.user);
+    expect(result.system).toEqual(sampleData.system.map(e => e.path));
+    expect(result.user).toEqual(sampleData.user.map(e => e.path));
   });
 
   it('过滤空字符串', () => {
@@ -44,7 +55,10 @@ describe('importFromJson', () => {
 
 describe('exportToCsv', () => {
   it('导出 CSV 含 BOM', () => {
-    const csv = exportToCsv(sampleData);
+    const csv = exportToCsv({
+      system: sampleData.system.map(e => e.path),
+      user: sampleData.user.map(e => e.path),
+    });
     expect(csv.startsWith('﻿')).toBe(true);
     expect(csv).toContain('type,path');
     expect(csv).toContain('system,C:\\Windows');

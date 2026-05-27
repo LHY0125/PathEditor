@@ -19,6 +19,12 @@ vi.mock('@/i18n', () => ({
   }) },
 }));
 
+import type { PathEntry } from '../../src/core/path-entry';
+
+function pe(s: string, enabled: boolean = true): PathEntry {
+  return { path: s, enabled };
+}
+
 import { useAppStore } from '@/store/app-store';
 import { UndoRedoManager, TargetType } from '@/core/undo-redo';
 import { invoke } from '@tauri-apps/api/core';
@@ -50,7 +56,7 @@ describe('app-store CRUD', () => {
   it('addPath 追加到 sysPaths', () => {
     useAppStore.getState().addPath('C:\\test', TargetType.SYSTEM);
     const s = useAppStore.getState();
-    expect(s.sysPaths).toEqual(['C:\\test']);
+    expect(s.sysPaths.map(e => e.path)).toEqual(['C:\\test']);
     expect(s.isModified).toBe(true);
     expect(s.undoRedo.historyLength).toBe(1);
   });
@@ -58,7 +64,7 @@ describe('app-store CRUD', () => {
   it('addPath 追加到 userPaths', () => {
     useAppStore.getState().addPath('D:\\user', TargetType.USER);
     const s = useAppStore.getState();
-    expect(s.userPaths).toEqual(['D:\\user']);
+    expect(s.userPaths.map(e => e.path)).toEqual(['D:\\user']);
     expect(s.sysPaths).toEqual([]);
   });
 
@@ -66,7 +72,7 @@ describe('app-store CRUD', () => {
     const store = useAppStore.getState();
     store.addPath('C:\\old', TargetType.SYSTEM);
     store.editPath(0, 'C:\\new', TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths).toEqual(['C:\\new']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\new']);
   });
 
   it('editPath 越界 index 无崩溃', () => {
@@ -81,7 +87,7 @@ describe('app-store CRUD', () => {
     store.addPath('B', TargetType.SYSTEM);
     store.addPath('C', TargetType.SYSTEM);
     store.deletePaths([1], TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths).toEqual(['A', 'C']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A', 'C']);
     expect(useAppStore.getState().selectedIndices).toEqual([]);
   });
 
@@ -92,7 +98,7 @@ describe('app-store CRUD', () => {
     store.addPath('C', TargetType.USER);
     store.addPath('D', TargetType.USER);
     store.deletePaths([1, 3], TargetType.USER);
-    expect(useAppStore.getState().userPaths).toEqual(['A', 'C']);
+    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['A', 'C']);
   });
 
   it('deletePaths 非连续多选删除后可 undo 恢复到正确位置', () => {
@@ -102,16 +108,16 @@ describe('app-store CRUD', () => {
     store.addPath('C', TargetType.SYSTEM);
     store.addPath('D', TargetType.SYSTEM);
     store.deletePaths([1, 3], TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths).toEqual(['A', 'C']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A', 'C']);
     useAppStore.getState().undo();
-    expect(useAppStore.getState().sysPaths).toEqual(['A', 'B', 'C', 'D']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A', 'B', 'C', 'D']);
   });
 
   it('moveUp index=0 无操作', () => {
     const store = useAppStore.getState();
     store.addPath('A', TargetType.SYSTEM);
     store.moveUp(0, TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths).toEqual(['A']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A']);
   });
 
   it('moveUp 正常交换位置', () => {
@@ -119,7 +125,7 @@ describe('app-store CRUD', () => {
     store.addPath('A', TargetType.SYSTEM);
     store.addPath('B', TargetType.SYSTEM);
     store.moveUp(1, TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths).toEqual(['B', 'A']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['B', 'A']);
     expect(useAppStore.getState().selectedIndices).toEqual([0]);
   });
 
@@ -127,7 +133,7 @@ describe('app-store CRUD', () => {
     const store = useAppStore.getState();
     store.addPath('A', TargetType.USER);
     store.moveDown(0, TargetType.USER);
-    expect(useAppStore.getState().userPaths).toEqual(['A']);
+    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['A']);
   });
 
   it('cleanPaths 移除无效路径并返回 removed', () => {
@@ -137,7 +143,7 @@ describe('app-store CRUD', () => {
     // is_valid_path_format 拒绝全标点路径
     const removed = store.cleanPaths(TargetType.SYSTEM, (p) => !p.includes(':::'));
     expect(removed).toEqual([':::invalid:::']);
-    expect(useAppStore.getState().sysPaths).toEqual(['C:\\valid']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\valid']);
   });
 
   it('replacePaths 整体替换列表', () => {
@@ -145,7 +151,7 @@ describe('app-store CRUD', () => {
     store.addPath('old1', TargetType.USER);
     store.addPath('old2', TargetType.USER);
     store.replacePaths(TargetType.USER, ['new1', 'new2', 'new3']);
-    expect(useAppStore.getState().userPaths).toEqual(['new1', 'new2', 'new3']);
+    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['new1', 'new2', 'new3']);
   });
 
   it('clearPaths 清空列表', () => {
@@ -181,7 +187,7 @@ describe('undo/redo', () => {
     store.addPath('test', TargetType.SYSTEM);
     store.undo();
     store.redo();
-    expect(useAppStore.getState().sysPaths).toEqual(['test']);
+    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['test']);
   });
 
   it('undo/redo 正确更新 isModified', () => {
@@ -208,8 +214,8 @@ describe('loadPaths', () => {
     mockedInvoke.mockResolvedValueOnce(['D:\\usr1']);
     await useAppStore.getState().loadPaths();
     const s = useAppStore.getState();
-    expect(s.sysPaths).toEqual(['C:\\sys1', 'C:\\sys2']);
-    expect(s.userPaths).toEqual(['D:\\usr1']);
+    expect(s.sysPaths.map(e => e.path)).toEqual(['C:\\sys1', 'C:\\sys2']);
+    expect(s.userPaths.map(e => e.path)).toEqual(['D:\\usr1']);
     expect(s.isLoading).toBe(false);
     expect(s.isModified).toBe(false);
   });
@@ -285,8 +291,8 @@ describe('initialize', () => {
     await useAppStore.getState().initialize();
     const s = useAppStore.getState();
     expect(s.isAdmin).toBe(true);
-    expect(s.sysPaths).toEqual(['S1']);
-    expect(s.userPaths).toEqual(['U1']);
+    expect(s.sysPaths.map(e => e.path)).toEqual(['S1']);
+    expect(s.userPaths.map(e => e.path)).toEqual(['U1']);
   });
 
   it('非管理员初始化进入只读模式', async () => {
