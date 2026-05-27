@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.__TAURI_INTERNALS__ = {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       invoke: async (cmd, args) => {
         switch (cmd) {
           case 'check_admin': return true;
