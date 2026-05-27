@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/tests-72%20passed-brightgreen" alt="tests">
+  <img src="https://github.com/LHY0125/PathEditor/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
 ---
