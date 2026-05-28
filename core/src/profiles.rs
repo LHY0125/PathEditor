@@ -37,7 +37,6 @@ pub struct ProfileData {
 }
 
 /// 列出所有配置文件的元数据
-
 pub fn list_profiles() -> Result<Vec<ProfileMeta>, String> {
     let dir = profiles_dir();
     if !dir.exists() {
@@ -68,9 +67,8 @@ pub fn list_profiles() -> Result<Vec<ProfileMeta>, String> {
 }
 
 /// 保存当前 PATH 为配置文件
-
 pub fn save_profile(
-    name: String,
+    name: &str,
     sys: Vec<ProfilePathEntry>,
     user: Vec<ProfilePathEntry>,
 ) -> Result<(), String> {
@@ -80,11 +78,22 @@ pub fn save_profile(
     let path = profile_path(&name);
     let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
+    // 覆盖已有配置时保留原始创建时间
+    let created = if path.exists() {
+        fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<ProfileData>(&c).ok())
+            .map(|d| d.created)
+            .unwrap_or_else(|| now.clone())
+    } else {
+        now.clone()
+    };
+
     let data = ProfileData {
-        name,
+        name: name.to_string(),
         sys,
         user,
-        created: now.clone(),
+        created,
         modified: now,
     };
 
@@ -97,8 +106,7 @@ pub fn save_profile(
 }
 
 /// 加载配置文件
-
-pub fn load_profile(name: String) -> Result<ProfileData, String> {
+pub fn load_profile(name: &str) -> Result<ProfileData, String> {
     let path = profile_path(&name);
     if !path.exists() {
         return Err(format!("配置文件不存在: {}", name));
@@ -110,8 +118,7 @@ pub fn load_profile(name: String) -> Result<ProfileData, String> {
 }
 
 /// 删除配置文件
-
-pub fn delete_profile(name: String) -> Result<(), String> {
+pub fn delete_profile(name: &str) -> Result<(), String> {
     let path = profile_path(&name);
     fs::remove_file(&path).map_err(|e| format!("无法删除配置文件: {}", e))?;
     log::info!("已删除配置: {}", path.display());
@@ -119,8 +126,7 @@ pub fn delete_profile(name: String) -> Result<(), String> {
 }
 
 /// 重命名配置文件
-
-pub fn rename_profile(old_name: String, new_name: String) -> Result<(), String> {
+pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
     let old_path = profile_path(&old_name);
     if !old_path.exists() {
         return Err(format!("配置文件不存在: {}", old_name));
@@ -129,7 +135,7 @@ pub fn rename_profile(old_name: String, new_name: String) -> Result<(), String> 
     let mut data: ProfileData =
         serde_json::from_str(&fs::read_to_string(&old_path).map_err(|e| format!("无法读取配置文件: {}", e))?).map_err(|e| format!("JSON 解析失败: {}", e))?;
 
-    data.name = new_name.clone();
+    data.name = new_name.to_string();
     data.modified = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
     let new_path = profile_path(&new_name);

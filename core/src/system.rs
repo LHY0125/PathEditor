@@ -2,7 +2,6 @@ use winreg::enums::*;
 use winreg::RegKey;
 
 /// 检测当前进程是否有管理员权限（尝试写入系统注册表键）
-
 pub fn check_admin() -> bool {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     hklm.open_subkey_with_flags(
@@ -23,7 +22,6 @@ pub fn validate_path(path: &str) -> bool {
 }
 
 /// 展开路径中的环境变量（如 %JAVA_HOME%\bin → C:\Program Files\Java\jdk-17\bin）
-
 pub fn expand_env_vars(path: &str) -> String {
     if !path.contains('%') {
         return path.to_string();
@@ -64,7 +62,6 @@ pub fn expand_env_vars(path: &str) -> String {
 }
 
 /// 广播环境变量更改通知（WM_SETTINGCHANGE）
-
 pub fn broadcast_env_change() {
     const HWND_BROADCAST: isize = 0xFFFF;
     const WM_SETTINGCHANGE: u32 = 0x001A;

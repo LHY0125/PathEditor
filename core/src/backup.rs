@@ -12,7 +12,6 @@ fn backup_base_dir() -> PathBuf {
 }
 
 /// 获取 APPDATA 路径下的备份目录
-
 pub fn get_appdata_dir() -> String {
     backup_base_dir().to_string_lossy().to_string()
 }

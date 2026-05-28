@@ -61,7 +61,7 @@ fn exit_err(msg: &str) -> ! {
     std::process::exit(1);
 }
 
-fn pick_target(system: bool, user: bool) -> &'static str {
+fn pick_target(system: bool, _user: bool) -> &'static str {
     if system { "system" } else { "user" }
 }
 
@@ -183,12 +183,12 @@ fn profile_save(name: String) {
     let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
     let sys_entries = sys.into_iter().map(|p| core::profiles::ProfilePathEntry { path: p, enabled: true }).collect();
     let usr_entries = usr.into_iter().map(|p| core::profiles::ProfilePathEntry { path: p, enabled: true }).collect();
-    core::profiles::save_profile(name.clone(), sys_entries, usr_entries).unwrap_or_else(|e| exit_err(&e));
+    core::profiles::save_profile(&name, sys_entries, usr_entries).unwrap_or_else(|e| exit_err(&e));
     println!("已保存配置: {name}");
 }
 
 fn profile_load(name: String) {
-    let data = core::profiles::load_profile(name.clone()).unwrap_or_else(|e| exit_err(&e));
+    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
     println!("═══ 系统 PATH ({} 条) ═══", data.sys.len());
     for e in &data.sys { println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path); }
     println!("═══ 用户 PATH ({} 条) ═══", data.user.len());
@@ -196,7 +196,7 @@ fn profile_load(name: String) {
 }
 
 fn profile_apply(name: String) {
-    let data = core::profiles::load_profile(name.clone()).unwrap_or_else(|e| exit_err(&e));
+    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
     let sys: Vec<String> = data.sys.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
     let usr: Vec<String> = data.user.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
     core::registry::save_system_paths(sys).unwrap_or_else(|e| exit_err(&e));
@@ -206,7 +206,7 @@ fn profile_apply(name: String) {
 }
 
 fn profile_delete(name: String) {
-    core::profiles::delete_profile(name.clone()).unwrap_or_else(|e| exit_err(&e));
+    core::profiles::delete_profile(&name).unwrap_or_else(|e| exit_err(&e));
     println!("已删除配置: {name}");
 }
 

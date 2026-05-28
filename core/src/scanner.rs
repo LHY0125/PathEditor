@@ -70,7 +70,6 @@ pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> 
 /// 扫描 PATH 中各目录提供的可执行文件
 ///
 /// query 非空时只返回文件名包含关键词的结果
-
 pub fn scan_tools(paths: Vec<String>, query: String) -> Result<Vec<ToolGroup>, String> {
     let query_lower = query.to_lowercase();
     let mut groups: Vec<ToolGroup> = Vec::new();

@@ -19,7 +19,6 @@ struct DisabledState {
 }
 
 /// 保存禁用路径列表（即时持久化，不依赖注册表保存按钮）
-
 pub fn save_disabled_state(system: Vec<String>, user: Vec<String>) -> Result<(), String> {
     let state = DisabledState { system, user };
     let path = disabled_file_path();
@@ -40,7 +39,6 @@ pub fn save_disabled_state(system: Vec<String>, user: Vec<String>) -> Result<(),
 }
 
 /// 加载禁用路径列表，返回 (system_disabled, user_disabled)
-
 pub fn load_disabled_state() -> Result<(Vec<String>, Vec<String>), String> {
     let path = disabled_file_path();
 
