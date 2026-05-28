@@ -3,8 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn profiles_dir() -> PathBuf {
-    dirs::data_dir()
-        .or_else(dirs::home_dir)
+    dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".patheditor")
         .join("profiles")
