@@ -36,13 +36,17 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
     let mut sys = Vec::new();
     let mut usr = Vec::new();
     for line in content.lines() {
-        let fields: Vec<&str> = line.split(',').collect();
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+        let fields: Vec<&str> = trimmed.split(',').collect();
         if fields.len() >= 2 {
-            match fields[0].trim() {
+            match fields[0].trim().to_lowercase().as_str() {
                 "system" | "sys" => sys.push(fields[1].trim().to_string()),
                 "user" | "usr" => usr.push(fields[1].trim().to_string()),
-                _ => {}
+                _ => { log::warn!("import_csv: 无法识别的类型字段，已跳过: {trimmed}"); }
             }
+        } else {
+            log::warn!("import_csv: 格式不正确（缺逗号），已跳过: {trimmed}");
         }
     }
     if sys.is_empty() && usr.is_empty() {

@@ -1,16 +1,12 @@
 [package]
 name = "patheditor-cli"
-version = "5.0.0"
 description = "PathEditor CLI — command-line interface for Windows PATH management"
-authors = ["刘航宇"]
-license = "MIT"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 path-editor-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
-
-[[bin]]
-name = "patheditor"
-path = "src/main.rs"

@@ -6,5 +6,5 @@ pub mod registry;
 pub mod scanner;
 pub mod system;
 
-pub use profiles::{ProfileData, ProfileMeta};
+pub use profiles::{ProfileData, ProfileMeta, ProfilePathEntry};
 pub use scanner::{ConflictEntry, ConflictLocation, ToolGroup};

@@ -110,14 +110,15 @@ fn exit_err(msg: &str) -> ! {
     std::process::exit(1);
 }
 
-fn pick_target(system: bool, _user: bool) -> &'static str {
+fn ensure_single_target(system: bool, user: bool) -> &'static str {
+    if system && user { exit_err("不能同时指定 --system 和 --user"); }
     if system { "system" } else { "user" }
 }
 
 type SaveFn = fn(Vec<String>) -> Result<(), String>;
 
 fn load_and_save(system: bool, f: impl FnOnce(Vec<String>) -> Vec<String>) {
-    let target = pick_target(system, false);
+    let target = ensure_single_target(system, false);
     let (list, save): (Vec<String>, SaveFn) = if target == "system" {
         (core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e)),
          core::registry::save_system_paths)
@@ -156,17 +157,18 @@ fn cmd_list(system: bool, user: bool, json_out: bool) {
 }
 
 fn cmd_add(path: String, system: bool, user: bool) {
-    let target = pick_target(system, user);
+    let target = ensure_single_target(system, user);
     load_and_save(system || false, |mut list| {
         list.push(path.clone());
         list
     });
     let label = if target == "system" { "系统" } else { "用户" };
     println!("已添加到{} PATH: {path}", label);
+    core::system::broadcast_env_change();
 }
 
 fn cmd_remove(index: usize, system: bool) {
-    let target = pick_target(system, false);
+    let target = ensure_single_target(system, false);
     let mut list = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
@@ -177,10 +179,11 @@ fn cmd_remove(index: usize, system: bool) {
     let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
     save(list).unwrap_or_else(|e| exit_err(&e));
     println!("已删除: {removed}");
+    core::system::broadcast_env_change();
 }
 
 fn cmd_edit(index: usize, new_path: String, system: bool) {
-    let target = pick_target(system, false);
+    let target = ensure_single_target(system, false);
     let mut list = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
@@ -191,6 +194,7 @@ fn cmd_edit(index: usize, new_path: String, system: bool) {
     let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
     save(list).unwrap_or_else(|e| exit_err(&e));
     println!("已编辑: {old} → {new_path}");
+    core::system::broadcast_env_change();
 }
 
 fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
@@ -208,10 +212,11 @@ fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
     });
     let dir = if up { "上移" } else { "下移" };
     println!("{dir} {steps} 格完成");
+    core::system::broadcast_env_change();
 }
 
 fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
-    let target = pick_target(system, user);
+    let target = ensure_single_target(system, user);
     let list = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
@@ -231,6 +236,7 @@ fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
         let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
         save(kept).unwrap_or_else(|e| exit_err(&e));
         println!("清理完成：移除 {} 条，保留 {} 条", removed.len(), kept_count);
+        core::system::broadcast_env_change();
         if !removed.is_empty() {
             for r in &removed { println!("  已移除: {}", r); }
         }
@@ -238,7 +244,7 @@ fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
 }
 
 fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
-    let target = pick_target(system, user);
+    let target = ensure_single_target(system, user);
     let list = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
@@ -357,8 +363,8 @@ fn profile_list(json_out: bool) {
 fn profile_save(name: String) {
     let sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
     let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    let sys_entries = sys.into_iter().map(|p| core::profiles::ProfilePathEntry { path: p, enabled: true }).collect();
-    let usr_entries = usr.into_iter().map(|p| core::profiles::ProfilePathEntry { path: p, enabled: true }).collect();
+    let sys_entries = sys.into_iter().map(|p| core::ProfilePathEntry { path: p, enabled: true }).collect();
+    let usr_entries = usr.into_iter().map(|p| core::ProfilePathEntry { path: p, enabled: true }).collect();
     core::profiles::save_profile(&name, sys_entries, usr_entries).unwrap_or_else(|e| exit_err(&e));
     println!("已保存配置: {name}");
 }

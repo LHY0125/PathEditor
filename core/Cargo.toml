@@ -1,10 +1,10 @@
 [package]
 name = "path-editor-core"
-version = "5.0.0"
 description = "PathEditor core library — shared between GUI and CLI"
-authors = ["刘航宇"]
-license = "MIT"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

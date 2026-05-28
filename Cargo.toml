@@ -5,3 +5,10 @@ members = [
     "gui",
     "cli",
 ]
+
+[workspace.package]
+version = "5.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["刘航宇"]
+repository = "https://github.com/LHY0125/PathEditor"
