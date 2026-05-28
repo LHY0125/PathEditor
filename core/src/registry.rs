@@ -81,6 +81,29 @@ fn join_path(paths: &[String]) -> String {
         .join(";")
 }
 
+/// 清理路径列表：移除不存在的目录 + 重复路径（保留首次出现）
+/// 返回 (保留的路径, 被移除的路径)
+pub fn clean_paths(paths: Vec<String>) -> (Vec<String>, Vec<String>) {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut kept = Vec::new();
+    let mut removed = Vec::new();
+    for p in paths {
+        let key = p.trim().to_lowercase();
+        if seen.contains(&key) {
+            removed.push(p);
+            continue;
+        }
+        seen.insert(key);
+        if !p.contains('%') && !std::path::Path::new(&p).is_dir() {
+            removed.push(p);
+            continue;
+        }
+        kept.push(p);
+    }
+    (kept, removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
