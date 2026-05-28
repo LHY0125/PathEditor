@@ -19,6 +19,7 @@ export interface DialogState {
   setNewDialog: (v: boolean) => void;
   setHelpOpen: (v: boolean) => void;
   setImportDialog: (v: DialogState['importDialog']) => void;
+  setAnalyzeOpen: (v: boolean) => void;
 }
 
 export function useAppActions(activeTab: TabId, dialogs: DialogState) {

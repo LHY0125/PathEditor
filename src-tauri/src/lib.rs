@@ -28,6 +28,8 @@ pub fn run() {
             commands::fs::read_text_file,
             commands::disabled::save_disabled_state,
             commands::disabled::load_disabled_state,
+            commands::scanner::scan_conflicts,
+            commands::scanner::scan_tools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

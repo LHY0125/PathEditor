@@ -21,6 +21,7 @@
     "save": "OK",
     "cancel": "Cancel",
     "help": "Help",
+    "analyze": "Analyze",
     "undo": "Undo",
     "redo": "Redo",
     "darkMode": "Dark Mode",
@@ -69,6 +70,18 @@
     "confirm": "Confirm",
     "cancel": "Cancel",
     "search": "Search paths..."
+  },
+  "analyze": {
+    "title": "PATH Analysis",
+    "conflicts": "Conflicts",
+    "tools": "Tools",
+    "scanning": "Scanning...",
+    "noConflicts": "No executable conflicts found",
+    "noTools": "No matching executables found",
+    "priority": "Prioritized",
+    "shadowed": "Shadowed",
+    "searchPlaceholder": "Search executable name...",
+    "conflictCount": "{{count}} file conflict(s) found"
   },
   "help": {
     "content": "PathEditor v4.0 — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"

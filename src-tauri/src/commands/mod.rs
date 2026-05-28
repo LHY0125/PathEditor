@@ -1,5 +1,6 @@
-pub mod registry;
-pub mod system;
 pub mod backup;
-pub mod fs;
 pub mod disabled;
+pub mod fs;
+pub mod registry;
+pub mod scanner;
+pub mod system;

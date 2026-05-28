@@ -12,6 +12,7 @@ import { MergePreview } from '@/components/path-list/MergePreview';
 import { PathEditDialog } from '@/components/dialogs/PathEditDialog';
 import { HelpDialog } from '@/components/dialogs/HelpDialog';
 import { ImportDialog } from '@/components/dialogs/ImportDialog';
+import { AnalyzeDialog } from '@/components/dialogs/AnalyzeDialog';
 import { useAppActions, type DialogState } from '@/hooks/use-app-actions';
 
 /** Tauri's File object includes the native filesystem path */
@@ -33,10 +34,11 @@ export function AppShell() {
   const [importDialog, setImportDialog] = useState<DialogState['importDialog']>({
     open: false, system: [], user: [],
   });
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
 
   const actions = useAppActions(activeTab, {
     editDialog, newDialog, helpOpen, importDialog,
-    setEditDialog, setNewDialog, setHelpOpen, setImportDialog,
+    setEditDialog, setNewDialog, setHelpOpen, setImportDialog, setAnalyzeOpen,
   });
 
   const tabConfig: { id: TabId; label: string }[] = [
@@ -84,6 +86,7 @@ export function AppShell() {
             const current = localStorage.getItem('i18nextLng') || 'zh-CN';
             i18n.changeLanguage(current === 'zh-CN' ? 'en' : 'zh-CN');
           }}
+          onAnalyze={() => setAnalyzeOpen(true)}
           onDarkMode={() => useThemeStore.getState().toggle()}
         />
       </div>
@@ -112,6 +115,7 @@ export function AppShell() {
       <PathEditDialog open={editDialog.open} title={t('dialog.editPath')} initialValue={editDialog.value} onConfirm={actions.handleEditConfirm} onCancel={() => setEditDialog({ open: false, index: -1, value: '', target: TargetType.SYSTEM })} />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ImportDialog open={importDialog.open} systemCount={importDialog.system.length} userCount={importDialog.user.length} onSelect={actions.handleImportSelect} onCancel={() => setImportDialog({ open: false, system: [], user: [] })} />
+      <AnalyzeDialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} />
     </div>
   );
 }
