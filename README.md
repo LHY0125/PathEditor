@@ -109,6 +109,25 @@ sequenceDiagram
     Z->>UI: isModified → false, statusMessage → '保存成功'
 ```
 
+## CLI 命令行
+
+```bash
+# 安装
+cargo install --path cli
+
+# 查看 PATH
+patheditor list --system --json
+
+# 冲突检测
+patheditor conflicts
+
+# 配置切换
+patheditor profile save "Python开发"
+patheditor profile apply "Python开发"
+```
+
+完整 17 条命令：`patheditor --help`
+
 ## 功能
 
 ### 路径管理
@@ -147,7 +166,7 @@ sequenceDiagram
 
 ## 安装
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_4.2.0_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.0.0_x64-setup.exe` 安装。
 
 或从源码构建：
 
@@ -164,7 +183,7 @@ npx tauri build
 ## 开发
 
 ```bash
-# 开发模式（热更新）
+# 开发模式 GUI（热更新）
 npx tauri dev
 
 # 仅前端
@@ -173,11 +192,14 @@ npm run dev
 # 前端测试
 npm test
 
-# Rust 后端检查
-cd gui && cargo check
+# Rust workspace 检查
+cargo check
 
-# Rust 后端测试
-cd gui && cargo test
+# CLI 构建
+cargo build --release -p patheditor-cli
+
+# 完整构建
+npx tauri build
 ```
 
 ### 技术栈
@@ -189,34 +211,33 @@ cd gui && cargo test
 | 状态管理 | Zustand |
 | 国际化 | i18next |
 | 桌面框架 | Tauri 2.x |
-| 后端 | Rust (winreg + windows-rs FFI) |
+| 核心库 | Rust workspace (core + gui + cli) |
 | 前端测试 | Vitest (72 个测试) |
 | Rust 测试 | cargo test (10 个测试) |
-| 构建 | Vite |
+| 构建 | Vite + Cargo |
 | 打包 | NSIS |
 
 ### 项目结构
 
 ```
+core/                         # Rust 核心库（零 Tauri 依赖）
+├── registry.rs               # 注册表读写 + 路径清理
+├── system.rs                 # 权限检测、路径验证、环境变量展开
+├── scanner.rs                # 冲突检测、工具清单
+├── profiles.rs               # 配置文件管理
+├── backup.rs / disabled.rs   # 备份、禁用状态
+└── fs.rs                     # 文件读写、导入导出解析
+gui/                          # Tauri 桌面应用
+└── src/commands/             # 薄包装 → 调用 core
+cli/                          # 命令行工具
+└── src/main.rs               # 17 条命令
 src/                          # React 前端
-├── core/                     # 纯逻辑 — 零框架依赖、零平台依赖
+├── core/                     # 纯逻辑 — 零框架依赖
 ├── store/                    # Zustand 状态管理
-├── components/
-│   ├── layout/               # AppShell、TitleBar、StatusBar、ErrorBoundary
-│   ├── path-list/            # PathTable、MergePreview
-│   ├── toolbar/              # ToolBar、ActionButtons、UndoRedoButtons、SearchInput
-│   ├── dialogs/              # PathEditDialog、HelpDialog、ImportDialog
-│   └── ui/                   # Modal、buttons（共享组件）
+├── components/               # UI 组件
 ├── hooks/                    # useAppActions、useKeyboard
 ├── i18n/                     # zh-CN / en
 └── config/                   # default.json
-
-gui/                    # Rust 后端
-└── src/commands/
-    ├── registry.rs           # 注册表读写
-    ├── system.rs             # 权限检测、路径验证、环境变量展开
-    └── backup.rs             # 注册表备份
-
 tests/unit/                   # 前端单元测试
 ```
 
