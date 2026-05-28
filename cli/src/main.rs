@@ -117,17 +117,28 @@ fn ensure_single_target(system: bool, user: bool) -> &'static str {
 
 type SaveFn = fn(Vec<String>) -> Result<(), String>;
 
+fn verify_and_save(target: &str, original: &[String], new_list: Vec<String>) {
+    let reload = if target == "system" {
+        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
+    } else {
+        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
+    };
+    if reload != original {
+        exit_err("注册表已被其他进程修改，请重新执行操作");
+    }
+    let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
+    save(new_list).unwrap_or_else(|e| exit_err(&e));
+}
+
 fn load_and_save(system: bool, f: impl FnOnce(Vec<String>) -> Vec<String>) {
     let target = ensure_single_target(system, false);
-    let (list, save): (Vec<String>, SaveFn) = if target == "system" {
-        (core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e)),
-         core::registry::save_system_paths)
+    let list = if target == "system" {
+        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
-        (core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e)),
-         core::registry::save_user_paths)
+        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
-    let new_list = f(list);
-    save(new_list).unwrap_or_else(|e| exit_err(&e));
+    let new_list = f(list.clone());
+    verify_and_save(target, &list, new_list);
 }
 
 // ── 命令实现 ──
@@ -174,10 +185,10 @@ fn cmd_remove(index: usize, system: bool) {
     } else {
         core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
+    let original = list.clone();
     if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
     let removed = list.remove(index);
-    let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
-    save(list).unwrap_or_else(|e| exit_err(&e));
+    verify_and_save(target, &original, list);
     println!("已删除: {removed}");
     core::system::broadcast_env_change();
 }
@@ -190,9 +201,9 @@ fn cmd_edit(index: usize, new_path: String, system: bool) {
         core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
     if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
+    let original = list.clone();
     let old = std::mem::replace(&mut list[index], new_path.clone());
-    let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
-    save(list).unwrap_or_else(|e| exit_err(&e));
+    verify_and_save(target, &original, list);
     println!("已编辑: {old} → {new_path}");
     core::system::broadcast_env_change();
 }
@@ -222,7 +233,7 @@ fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
     } else {
         core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
-    let (kept, removed) = core::registry::clean_paths(list);
+    let (kept, removed) = core::registry::clean_paths(list.clone());
 
     if json_out {
         println!("{}", json!({ "kept": kept, "removed": removed, "kept_count": kept.len(), "removed_count": removed.len() }).to_string());
@@ -233,8 +244,7 @@ fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
         for k in &kept { println!("  ✓ {}", k); }
     } else {
         let kept_count = kept.len();
-        let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
-        save(kept).unwrap_or_else(|e| exit_err(&e));
+        verify_and_save(target, &list, kept);
         println!("清理完成：移除 {} 条，保留 {} 条", removed.len(), kept_count);
         core::system::broadcast_env_change();
         if !removed.is_empty() {
@@ -271,19 +281,24 @@ fn cmd_import(file: String, target: String) {
     let (sys, usr) = core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_err(&e));
     match target.as_str() {
         "system" => {
-            core::registry::save_system_paths(sys).unwrap_or_else(|e| exit_err(&e));
+            let orig = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
+            verify_and_save("system", &orig, sys);
             println!("已导入到系统 PATH");
         }
         "user" => {
-            core::registry::save_user_paths(usr).unwrap_or_else(|e| exit_err(&e));
+            let orig = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
+            verify_and_save("user", &orig, usr);
             println!("已导入到用户 PATH");
         }
         _ => {
-            core::registry::save_system_paths(sys).unwrap_or_else(|e| exit_err(&e));
-            core::registry::save_user_paths(usr).unwrap_or_else(|e| exit_err(&e));
+            let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
+            let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
+            verify_and_save("system", &orig_sys, sys);
+            verify_and_save("user", &orig_usr, usr);
             println!("已导入到系统 + 用户 PATH");
         }
     }
+    core::system::broadcast_env_change();
 }
 
 fn cmd_export(format: String, output: Option<String>) {
