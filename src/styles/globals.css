@@ -41,6 +41,7 @@ body {
   --app-fg: var(--color-light-fg);
   --app-border: var(--color-light-border);
   --app-hover: var(--color-light-hover);
+  --app-select-row: rgba(59, 130, 246, 0.18);
 }
 
 /* 深色模式 */
@@ -51,6 +52,7 @@ body {
   --app-fg: var(--color-dark-fg);
   --app-border: var(--color-dark-border);
   --app-hover: var(--color-dark-hover);
+  --app-select-row: rgba(96, 165, 250, 0.35);
 }
 
 /* 滚动条样式 */

@@ -188,7 +188,7 @@ export function PathTable({ tabId }: PathTableProps) {
                 className="cursor-pointer select-none"
                 style={{
                   backgroundColor: isSelected
-                    ? 'rgba(59, 130, 246, 0.3)'
+                    ? 'var(--app-select-row)'
                     : rowIdx % 2 === 0
                       ? 'var(--app-list-bg)'
                       : 'var(--app-list-alt)',
