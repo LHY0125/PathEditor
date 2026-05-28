@@ -24,11 +24,12 @@ describe('exportToJson', () => {
   it('导出结构化 JSON', () => {
     const json = exportToJson(sampleData);
     const parsed = JSON.parse(json);
-    expect(parsed.version).toBe('1.0');
-    expect(parsed.type).toBe('PathEditor');
-    expect(parsed.system).toEqual(sampleData.system.map(e => e.path));
-    expect(parsed.user).toEqual(sampleData.user.map(e => e.path));
-    expect(parsed.exported).toBeDefined();
+    expect(parsed.version).toBe('5.0.0');
+    expect(parsed.timestamp).toBeDefined();
+    expect(parsed.system.map((e: { path: string }) => e.path)).toEqual(sampleData.system.map(e => e.path));
+    expect(parsed.user.map((e: { path: string }) => e.path)).toEqual(sampleData.user.map(e => e.path));
+    expect(parsed.system[0].enabled).toBe(true);
+    expect(parsed.user[0].enabled).toBe(true);
   });
 });
 
@@ -54,21 +55,21 @@ describe('exportToCsv', () => {
   it('导出 CSV 含 BOM', () => {
     const csv = exportToCsv(sampleData);
     expect(csv.startsWith('﻿')).toBe(true);
-    expect(csv).toContain('type,path');
-    expect(csv).toContain('system,C:\\Windows');
-    expect(csv).toContain('user,C:\\Users\\me\\AppData');
+    expect(csv).toContain('type,path,enabled');
+    expect(csv).toContain('system,C:\\Windows,true');
+    expect(csv).toContain('user,C:\\Users\\me\\AppData,true');
   });
 
   it('CSV 字段转义', () => {
     const data = { system: [pe('C:\\Path,with,commas')], user: [] };
     const csv = exportToCsv(data);
-    expect(csv).toContain('"C:\\Path,with,commas"');
+    expect(csv).toContain('"C:\\Path,with,commas",true');
   });
 
   it('CSV 双引号转义', () => {
     const data = { system: [pe('Path with "quotes"')], user: [] };
     const csv = exportToCsv(data);
-    expect(csv).toContain('"Path with ""quotes"""');
+    expect(csv).toContain('"Path with ""quotes""",true');
   });
 });
 

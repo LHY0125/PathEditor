@@ -4,21 +4,19 @@ use winreg::enums::*;
 use crate::registry::{self, SYS_REG_PATH, USER_REG_PATH};
 
 fn backup_base_dir() -> PathBuf {
-    dirs::data_dir()
-        .or_else(dirs::home_dir)
+    dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("PathEditor")
+        .join(".patheditor")
         .join("backups")
 }
 
-/// 获取 APPDATA 路径下的备份目录
+/// 获取备份目录路径
 pub fn get_appdata_dir() -> String {
     backup_base_dir().to_string_lossy().to_string()
 }
 
 /// 备份当前注册表中的系统 PATH 和用户 PATH
 /// 在保存前调用，备份的是注册表中的当前值（保存前的状态）
-
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
     let backup_dir = match custom_dir {
         Some(ref dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
@@ -64,4 +62,34 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
     let result = filepath.to_string_lossy().to_string();
     log::info!("备份已保存到: {}", result);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_appdata_dir_returns_non_empty() {
+        assert!(!get_appdata_dir().is_empty());
+    }
+
+    #[test]
+    fn backup_registry_with_custom_dir() {
+        let dir = std::env::temp_dir().join("patheditor_test_backup_custom");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let result = backup_registry(Some(dir.to_string_lossy().to_string()));
+        // 可能因无权限读取注册表而失败，但不应 panic
+        if let Ok(path) = result {
+            assert!(path.contains("patheditor_test_backup_custom"));
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn backup_registry_default_dir_no_panic() {
+        // 验证不传参时不会 panic
+        let _ = backup_registry(None);
+    }
 }

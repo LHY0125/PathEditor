@@ -1,7 +1,12 @@
 use winreg::enums::*;
 use winreg::RegKey;
 
-/// 检测当前进程是否有管理员权限（尝试写入系统注册表键）
+/// 检测当前进程是否有管理员权限
+///
+/// 通过尝试以写入权限打开系统 PATH 注册表键判断。
+///
+/// # Returns
+/// `true` 表示有管理员权限，`false` 为只读模式
 pub fn check_admin() -> bool {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     hklm.open_subkey_with_flags(
@@ -13,7 +18,6 @@ pub fn check_admin() -> bool {
 
 /// 验证路径是否存在于文件系统中（且是目录）
 /// 包含 % 的路径（环境变量路径）无法验证，返回 true
-
 pub fn validate_path(path: &str) -> bool {
     if path.contains('%') {
         return true;
@@ -56,12 +60,23 @@ pub fn expand_env_vars(path: &str) -> String {
         return path.to_string();
     }
 
-    // 转回 UTF-8 (去掉结尾 null)
+    // 转回 UTF-8 (去掉结尾 null)，保留非法码点避免丢失路径信息
     let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
-    String::from_utf16_lossy(&buffer[..len])
+    decode_utf16_preserving(&buffer[..len])
+}
+
+/// 解码 UTF-16 为 String，非法码点编码为 \u{XXXX} 而非静默丢弃
+fn decode_utf16_preserving(v: &[u16]) -> String {
+    char::decode_utf16(v.iter().copied())
+        .map(|r| match r {
+            Ok(c) => c.to_string(),
+            Err(e) => format!("\\u{{{:X}}}", e.unpaired_surrogate()),
+        })
+        .collect()
 }
 
 /// 广播环境变量更改通知（WM_SETTINGCHANGE）
+/// 广播 `WM_SETTINGCHANGE` 通知系统环境变量已变更
 pub fn broadcast_env_change() {
     const HWND_BROADCAST: isize = 0xFFFF;
     const WM_SETTINGCHANGE: u32 = 0x001A;

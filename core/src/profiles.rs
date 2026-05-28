@@ -9,6 +9,19 @@ fn profiles_dir() -> PathBuf {
         .join("profiles")
 }
 
+fn validate_profile_name(name: &str) -> Result<(), String> {
+    if name.is_empty() { return Err("配置名称不能为空".into()); }
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err("配置名称包含非法字符".into());
+    }
+    for ch in name.chars() {
+        if "<>:\"|?*".contains(ch) {
+            return Err("配置名称包含非法字符".into());
+        }
+    }
+    Ok(())
+}
+
 fn profile_path(name: &str) -> PathBuf {
     profiles_dir().join(format!("{}.json", name))
 }
@@ -48,11 +61,13 @@ pub fn list_profiles() -> Result<Vec<ProfileMeta>, String> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().map_or(true, |e| e != "json") {
+        if path.extension().is_none_or(|e| e != "json") {
             continue;
         }
-        let content = fs::read_to_string(&path)
-            .map_err(|e| format!("无法读取 {}: {}", path.display(), e))?;
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
         if let Ok(data) = serde_json::from_str::<ProfileData>(&content) {
             profiles.push(ProfileMeta {
                 name: data.name,
@@ -72,10 +87,11 @@ pub fn save_profile(
     sys: Vec<ProfilePathEntry>,
     user: Vec<ProfilePathEntry>,
 ) -> Result<(), String> {
+    validate_profile_name(name)?;
     let dir = profiles_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("无法创建配置目录: {}", e))?;
 
-    let path = profile_path(&name);
+    let path = profile_path(name);
     let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
     // 覆盖已有配置时保留原始创建时间
@@ -107,7 +123,8 @@ pub fn save_profile(
 
 /// 加载配置文件
 pub fn load_profile(name: &str) -> Result<ProfileData, String> {
-    let path = profile_path(&name);
+    validate_profile_name(name)?;
+    let path = profile_path(name);
     if !path.exists() {
         return Err(format!("配置文件不存在: {}", name));
     }
@@ -119,7 +136,8 @@ pub fn load_profile(name: &str) -> Result<ProfileData, String> {
 
 /// 删除配置文件
 pub fn delete_profile(name: &str) -> Result<(), String> {
-    let path = profile_path(&name);
+    validate_profile_name(name)?;
+    let path = profile_path(name);
     fs::remove_file(&path).map_err(|e| format!("无法删除配置文件: {}", e))?;
     log::info!("已删除配置: {}", path.display());
     Ok(())
@@ -127,7 +145,9 @@ pub fn delete_profile(name: &str) -> Result<(), String> {
 
 /// 重命名配置文件
 pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
-    let old_path = profile_path(&old_name);
+    validate_profile_name(old_name)?;
+    validate_profile_name(new_name)?;
+    let old_path = profile_path(old_name);
     if !old_path.exists() {
         return Err(format!("配置文件不存在: {}", old_name));
     }
@@ -138,7 +158,7 @@ pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
     data.name = new_name.to_string();
     data.modified = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
-    let new_path = profile_path(&new_name);
+    let new_path = profile_path(new_name);
     let json =
         serde_json::to_string_pretty(&data).map_err(|e| format!("JSON 序列化失败: {}", e))?;
     fs::write(&new_path, &json).map_err(|e| format!("无法写入配置文件: {}", e))?;
@@ -149,4 +169,65 @@ pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
 
     log::info!("已重命名配置: {} -> {}", old_name, new_name);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_entry(path: &str) -> ProfilePathEntry {
+        ProfilePathEntry { path: path.into(), enabled: true }
+    }
+
+    #[test]
+    fn validate_name_rejects_empty() {
+        assert!(validate_profile_name("").is_err());
+    }
+
+    #[test]
+    fn validate_name_rejects_path_traversal() {
+        assert!(validate_profile_name("../../evil").is_err());
+        assert!(validate_profile_name("foo\\bar").is_err());
+    }
+
+    #[test]
+    fn validate_name_rejects_reserved_chars() {
+        assert!(validate_profile_name("foo:bar").is_err());
+        assert!(validate_profile_name("foo<bar").is_err());
+    }
+
+    #[test]
+    fn profile_crud() {
+        // save -> load -> delete
+        let name = "__test_profile_crud";
+        let _ = delete_profile(name);
+        save_profile(name, vec![test_entry("C:\\sys")], vec![test_entry("D:\\usr")]).unwrap();
+        let loaded = load_profile(name).unwrap();
+        assert_eq!(loaded.sys[0].path, "C:\\sys");
+        delete_profile(name).unwrap();
+        assert!(load_profile(name).is_err());
+
+        // rename
+        let old_name = "__test_rename_old";
+        let new_name = "__test_rename_new";
+        let _ = delete_profile(old_name);
+        let _ = delete_profile(new_name);
+        save_profile(old_name, vec![test_entry("C:\\x")], vec![]).unwrap();
+        rename_profile(old_name, new_name).unwrap();
+        assert!(load_profile(old_name).is_err());
+        let renamed = load_profile(new_name).unwrap();
+        assert_eq!(renamed.name, new_name);
+        delete_profile(new_name).unwrap();
+
+        // list
+        let _ = delete_profile("__test_list_a");
+        let _ = delete_profile("__test_list_b");
+        save_profile("__test_list_a", vec![], vec![]).unwrap();
+        save_profile("__test_list_b", vec![], vec![]).unwrap();
+        let list = list_profiles().unwrap();
+        let names: Vec<&str> = list.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"__test_list_a"));
+        delete_profile("__test_list_a").unwrap();
+        delete_profile("__test_list_b").unwrap();
+    }
 }

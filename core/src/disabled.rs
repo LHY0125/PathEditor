@@ -3,10 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 
 fn disabled_file_path() -> PathBuf {
-    dirs::data_dir()
-        .or_else(dirs::home_dir)
+    dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("PathEditor")
+        .join(".patheditor")
         .join("disabled.json")
 }
 
@@ -57,4 +56,31 @@ pub fn load_disabled_state() -> Result<(Vec<String>, Vec<String>), String> {
         .map_err(|e| format!("JSON 解析失败: {}", e))?;
 
     Ok((state.system, state.user))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_state() {
+        // roundtrip
+        let sys = vec!["C:\\sys1".into(), "C:\\sys2".into()];
+        let usr = vec!["D:\\usr1".into()];
+        save_disabled_state(sys.clone(), usr.clone()).unwrap();
+        let (loaded_sys, loaded_usr) = load_disabled_state().unwrap();
+        assert_eq!(loaded_sys, sys);
+        assert_eq!(loaded_usr, usr);
+
+        // overwrite
+        let new_sys = vec!["C:\\new".into()];
+        save_disabled_state(new_sys.clone(), vec![]).unwrap();
+        let (loaded, _) = load_disabled_state().unwrap();
+        assert_eq!(loaded, new_sys);
+
+        // empty
+        save_disabled_state(vec![], vec![]).unwrap();
+        let result = load_disabled_state().unwrap();
+        assert!(result.0.is_empty() && result.1.is_empty());
+    }
 }

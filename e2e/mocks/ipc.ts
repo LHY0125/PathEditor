@@ -16,6 +16,13 @@ export function createIpcMock() {
           case 'expand_env_vars': return 'C:\\\\Expanded';
           case 'read_text_file': return '';
           case 'get_appdata_dir': return 'C:\\\\appdata';
+          case 'scan_conflicts': return [];
+          case 'scan_tools': return [];
+          case 'list_profiles': return [];
+          case 'save_profile': return undefined;
+          case 'load_profile': return null;
+          case 'delete_profile': return undefined;
+          case 'rename_profile': return undefined;
           default: throw new Error('Unexpected invoke: ' + cmd);
         }
       }

@@ -3,7 +3,7 @@ use path_editor_core as core;
 use serde_json::json;
 
 #[derive(Parser)]
-#[command(name = "patheditor", version = "5.0.0")]
+#[command(name = "patheditor", version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -103,6 +103,11 @@ enum ProfileCmd {
     Apply { name: String },
     /// 删除配置
     Delete { name: String },
+    /// 重命名配置
+    Rename {
+        #[arg(long)] old: String,
+        #[arg(long)] new: String,
+    },
 }
 
 fn exit_err(msg: &str) -> ! {
@@ -146,10 +151,10 @@ fn load_and_save(system: bool, f: impl FnOnce(Vec<String>) -> Vec<String>) {
 fn cmd_list(system: bool, user: bool, json_out: bool) {
     let mut sys: Vec<String> = vec![];
     let mut usr: Vec<String> = vec![];
-    if system || (!system && !user) {
+    if system || !user {
         sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
     }
-    if user || (!system && !user) {
+    if user || !system {
         usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
     }
     if json_out {
@@ -169,7 +174,7 @@ fn cmd_list(system: bool, user: bool, json_out: bool) {
 
 fn cmd_add(path: String, system: bool, user: bool) {
     let target = ensure_single_target(system, user);
-    load_and_save(system || false, |mut list| {
+    load_and_save(system, |mut list| {
         list.push(path.clone());
         list
     });
@@ -209,10 +214,10 @@ fn cmd_edit(index: usize, new_path: String, system: bool) {
 }
 
 fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
-    load_and_save(system || false, |mut list| {
+    load_and_save(system, |mut list| {
         if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
         let end = if up {
-            if steps > index { 0 } else { index - steps }
+            index.saturating_sub(steps)
         } else {
             let max = list.len() - 1;
             if index + steps > max { max } else { index + steps }
@@ -227,7 +232,19 @@ fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
 }
 
 fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
-    let target = ensure_single_target(system, user);
+    if system && user { exit_err("不能同时指定 --system 和 --user"); }
+
+    let clean_sys = system || !user;
+    let clean_usr = user || !system;
+
+    if clean_sys { clean_one("system", dry_run, json_out); }
+    if clean_usr { clean_one("user", dry_run, json_out); }
+
+    if !dry_run && !json_out { core::system::broadcast_env_change(); }
+}
+
+fn clean_one(target: &str, dry_run: bool, json_out: bool) {
+    let label = if target == "system" { "系统" } else { "用户" };
     let list = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
@@ -236,17 +253,16 @@ fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
     let (kept, removed) = core::registry::clean_paths(list.clone());
 
     if json_out {
-        println!("{}", json!({ "kept": kept, "removed": removed, "kept_count": kept.len(), "removed_count": removed.len() }).to_string());
+        println!("{}", json!({ "target": target, "kept": kept, "removed": removed, "kept_count": kept.len(), "removed_count": removed.len() }));
     } else if dry_run {
-        println!("═══ 将被移除（{} 条）═══", removed.len());
+        println!("═══ {label} PATH — 将被移除（{} 条）═══", removed.len());
         for r in &removed { println!("  ✗ {}", r); }
-        println!("═══ 将保留（{} 条）═══", kept.len());
+        println!("═══ {label} PATH — 将保留（{} 条）═══", kept.len());
         for k in &kept { println!("  ✓ {}", k); }
     } else {
         let kept_count = kept.len();
         verify_and_save(target, &list, kept);
-        println!("清理完成：移除 {} 条，保留 {} 条", removed.len(), kept_count);
-        core::system::broadcast_env_change();
+        println!("{label} PATH 清理完成：移除 {} 条，保留 {} 条", removed.len(), kept_count);
         if !removed.is_empty() {
             for r in &removed { println!("  已移除: {}", r); }
         }
@@ -304,7 +320,7 @@ fn cmd_import(file: String, target: String) {
 fn cmd_export(format: String, output: Option<String>) {
     let sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
     let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    let content = core::fs::export_paths(&sys, &usr, &format);
+    let content = core::fs::export_paths(&sys, &usr, &format).unwrap_or_else(|e| exit_err(&e));
     if let Some(path) = output {
         std::fs::write(&path, &content).unwrap_or_else(|e| exit_err(&format!("无法写入文件: {e}")));
         println!("已导出到: {path}");
@@ -394,10 +410,14 @@ fn profile_load(name: String) {
 
 fn profile_apply(name: String) {
     let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
-    let sys: Vec<String> = data.sys.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
-    let usr: Vec<String> = data.user.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
-    core::registry::save_system_paths(sys).unwrap_or_else(|e| exit_err(&e));
-    core::registry::save_user_paths(usr).unwrap_or_else(|e| exit_err(&e));
+    let new_sys: Vec<String> = data.sys.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
+    let new_usr: Vec<String> = data.user.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
+
+    let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
+    let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
+    verify_and_save("system", &orig_sys, new_sys);
+    verify_and_save("user", &orig_usr, new_usr);
+
     core::system::broadcast_env_change();
     println!("配置文件 \"{name}\" 已写入注册表。");
 }
@@ -405,6 +425,11 @@ fn profile_apply(name: String) {
 fn profile_delete(name: String) {
     core::profiles::delete_profile(&name).unwrap_or_else(|e| exit_err(&e));
     println!("已删除配置: {name}");
+}
+
+fn profile_rename(old_name: String, new_name: String) {
+    core::profiles::rename_profile(&old_name, &new_name).unwrap_or_else(|e| exit_err(&e));
+    println!("已重命名: {old_name} → {new_name}");
 }
 
 fn main() {
@@ -431,6 +456,7 @@ fn main() {
             ProfileCmd::Load { name } => profile_load(name),
             ProfileCmd::Apply { name } => profile_apply(name),
             ProfileCmd::Delete { name } => profile_delete(name),
+            ProfileCmd::Rename { old, new } => profile_rename(old, new),
         },
     }
 }

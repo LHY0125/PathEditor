@@ -1,7 +1,10 @@
 /**
- * 导入导出模块 — 对应 C 版 import_export.c
- * 支持 JSON、CSV、TXT 三种格式
+ * 导入导出模块 — 支持 JSON、CSV、TXT 三种格式
+ *
+ * 注意：Rust 端 core/src/fs.rs 有对应的导入导出实现，
+ * 前端使用此模块（需 ImportDialog 交互），CLI 使用 Rust 版，修改时需同步两端。
  */
+import { version } from '../../package.json';
 import type { PathEntry } from './path-entry';
 
 export type ExportFormat = 'json' | 'csv' | 'txt';
@@ -23,11 +26,10 @@ export function detectExportFormat(filepath: string): ExportFormat {
 
 export function exportToJson(data: ExportData): string {
   const obj = {
-    version: '1.0',
-    type: 'PathEditor',
-    exported: new Date().toISOString(),
-    system: data.system.map(e => e.path),
-    user: data.user.map(e => e.path),
+    version,
+    timestamp: new Date().toISOString(),
+    system: data.system.map(e => ({ path: e.path, enabled: e.enabled })),
+    user: data.user.map(e => ({ path: e.path, enabled: e.enabled })),
   };
   return JSON.stringify(obj, null, 2);
 }
@@ -37,13 +39,13 @@ export function exportToJson(data: ExportData): string {
 export function exportToCsv(data: ExportData): string {
   const lines: string[] = [];
   // UTF-8 BOM
-  lines.push('﻿type,path');
+  lines.push('﻿type,path,enabled');
 
   for (const entry of data.system) {
-    lines.push(`system,${escapeCsvField(entry.path)}`);
+    lines.push(`system,${escapeCsvField(entry.path)},${entry.enabled}`);
   }
   for (const entry of data.user) {
-    lines.push(`user,${escapeCsvField(entry.path)}`);
+    lines.push(`user,${escapeCsvField(entry.path)},${entry.enabled}`);
   }
 
   return lines.join('\n') + '\n';
@@ -92,10 +94,13 @@ export function importFromCsv(content: string): ImportResult {
 
     if (path.length === 0) continue;
 
+    // 第三列 enabled（可选，默认 true）
+    const enabled = fields.length >= 3 ? fields[2].trim().toLowerCase() !== 'false' : true;
+
     if (type === 'system') {
-      result.system.push({ path, enabled: true });
+      result.system.push({ path, enabled });
     } else if (type === 'user') {
-      result.user.push({ path, enabled: true });
+      result.user.push({ path, enabled });
     }
     // 未知类型忽略
   }
@@ -153,20 +158,31 @@ export function importFromJson(content: string): ImportResult {
   try {
     obj = JSON.parse(content);
   } catch {
-    return result; // 无效 JSON 返回空结果，由调用方显示错误
+    return result;
   }
 
   if (typeof obj !== 'object' || obj === null) return result;
 
+  const parseEntry = (item: unknown): { path: string; enabled: boolean } | null => {
+    if (typeof item === 'string') {
+      const trimmed = item.trim();
+      return trimmed.length > 0 ? { path: trimmed, enabled: true } : null;
+    }
+    if (typeof item === 'object' && item !== null) {
+      const rec = item as Record<string, unknown>;
+      const path = typeof rec.path === 'string' ? rec.path.trim() : '';
+      if (path.length === 0) return null;
+      const enabled = typeof rec.enabled === 'boolean' ? rec.enabled : true;
+      return { path, enabled };
+    }
+    return null;
+  };
+
   if (Array.isArray(obj.system)) {
-    result.system = obj.system
-      .filter((p: unknown) => typeof p === 'string' && p.trim().length > 0)
-      .map((p: string) => ({ path: p.trim(), enabled: true }));
+    result.system = obj.system.map(parseEntry).filter((e): e is { path: string; enabled: boolean } => e !== null);
   }
   if (Array.isArray(obj.user)) {
-    result.user = obj.user
-      .filter((p: unknown) => typeof p === 'string' && p.trim().length > 0)
-      .map((p: string) => ({ path: p.trim(), enabled: true }));
+    result.user = obj.user.map(parseEntry).filter((e): e is { path: string; enabled: boolean } => e !== null);
   }
 
   return result;
@@ -203,9 +219,10 @@ export function importFromContent(
     return importFromCsv(content);
   } else if (lower.endsWith('.json')) {
     return importFromJson(content);
-  } else {
-    // TXT 文件：所有路径放入 system（用户后续可选择目标）
+  } else if (lower.endsWith('.txt')) {
     return { system: importFromTxt(content), user: [] };
+  } else {
+    throw new Error(`不支持的导入格式: ${filepath}`);
   }
 }
 

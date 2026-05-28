@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
+import { version } from '../../../package.json';
 
 export function TitleBar() {
   const { t } = useTranslation();
@@ -13,7 +14,7 @@ export function TitleBar() {
       <h1 className="text-lg font-semibold">
         {isAdmin ? t('app.name') : t('app.nameReadonly')}
       </h1>
-      <span className="text-sm opacity-60">v4.0</span>
+      <span className="text-sm opacity-60">v{version}</span>
     </header>
   );
 }

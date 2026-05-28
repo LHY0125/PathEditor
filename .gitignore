@@ -26,3 +26,4 @@ dist-ssr
 CLAUDE.md
 e2e/debug-screenshot.png
 test-results/
+target/

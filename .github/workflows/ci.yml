@@ -36,9 +36,6 @@ jobs:
   rust:
     name: Rust 检查 (Check + Clippy + Test)
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: gui
     steps:
       - uses: actions/checkout@v4
 

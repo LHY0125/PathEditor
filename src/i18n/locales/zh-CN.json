@@ -98,6 +98,6 @@
     "deleted": "已删除配置 \"{{name}}\""
   },
   "help": {
-    "content": "PathEditor v4.0 — Windows 系统环境变量 (PATH) 编辑器\n\n功能:\n• 新建/编辑/删除路径条目\n• 上移/下移调整优先级\n• 一键清理无效和重复路径\n• 导入/导出 JSON、CSV、TXT 格式\n• 完整撤销/重做支持\n\n快捷键:\n• Ctrl+N 新建\n• Ctrl+S 保存\n• Ctrl+Z 撤销\n• Ctrl+Y 重做\n• Ctrl+F 搜索\n• Delete 删除选中\n• F1 帮助\n\n作者: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
+    "content": "PathEditor v5.0 — Windows 系统环境变量 (PATH) 编辑器\n\n功能:\n• 新建/编辑/删除路径条目\n• 上移/下移调整优先级\n• 一键清理无效和重复路径\n• 导入/导出 JSON、CSV、TXT 格式\n• 完整撤销/重做支持\n\n快捷键:\n• Ctrl+N 新建\n• Ctrl+S 保存\n• Ctrl+Z 撤销\n• Ctrl+Y 重做\n• Ctrl+F 搜索\n• Delete 删除选中\n• F1 帮助\n\n作者: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
   }
 }

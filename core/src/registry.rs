@@ -44,21 +44,41 @@ fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String])
 }
 
 
+/// 从 HKLM 注册表读取系统 PATH
+///
+/// # Returns
+/// - `Ok(Vec<String>)` — 系统 PATH 路径列表
+/// - `Err(String)` — 注册表读取失败
 pub fn load_system_paths() -> Result<Vec<String>, String> {
     load_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统")
 }
 
 
+/// 从 HKCU 注册表读取用户 PATH
+///
+/// # Returns
+/// - `Ok(Vec<String>)` — 用户 PATH 路径列表
+/// - `Err(String)` — 注册表读取失败
 pub fn load_user_paths() -> Result<Vec<String>, String> {
     load_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户")
 }
 
 
+/// 保存系统 PATH 到注册表，含 32767 字符上限检查
+///
+/// # Returns
+/// - `Ok(())` — 保存成功
+/// - `Err(String)` — 写入失败或超过字符上限
 pub fn save_system_paths(paths: Vec<String>) -> Result<(), String> {
     save_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统", &paths)
 }
 
 
+/// 保存用户 PATH 到注册表
+///
+/// # Returns
+/// - `Ok(())` — 保存成功
+/// - `Err(String)` — 写入失败
 pub fn save_user_paths(paths: Vec<String>) -> Result<(), String> {
     save_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户", &paths)
 }

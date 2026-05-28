@@ -98,6 +98,6 @@
     "deleted": "Profile \"{{name}}\" deleted"
   },
   "help": {
-    "content": "PathEditor v4.0 — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
+    "content": "PathEditor v5.0 — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
   }
 }
