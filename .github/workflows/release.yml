@@ -26,7 +26,7 @@ jobs:
 
       - name: 上传安装包到 Release
         run: |
-          $installer = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          $installer = Get-ChildItem -Path "target\release\bundle\nsis\*.exe" | Select-Object -First 1
           if (gh release view $env:GITHUB_REF_NAME 2>$null) {
             gh release upload $env:GITHUB_REF_NAME "$installer" --clobber
           } else {

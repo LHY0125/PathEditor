@@ -8,6 +8,6 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: ['e2e/**', 'node_modules/**', 'src-tauri/**'],
+    exclude: ['e2e/**', 'node_modules/**', 'gui/**'],
   },
 });

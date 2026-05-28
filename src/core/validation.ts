@@ -27,7 +27,7 @@ export function join_path(paths: string[]): string {
 }
 
 /** 分割 PATH 字符串。
- *  注意：Rust 端 src-tauri/src/commands/registry.rs 有相同逻辑的 split_path，修改时需同步两端。 */
+ *  注意：Rust 端 core/src/registry.rs 有相同逻辑的 split_path，修改时需同步两端。 */
 export function split_path(raw: string): string[] {
   return raw
     .split(';')

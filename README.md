@@ -174,10 +174,10 @@ npm run dev
 npm test
 
 # Rust 后端检查
-cd src-tauri && cargo check
+cd gui && cargo check
 
 # Rust 后端测试
-cd src-tauri && cargo test
+cd gui && cargo test
 ```
 
 ### 技术栈
@@ -211,7 +211,7 @@ src/                          # React 前端
 ├── i18n/                     # zh-CN / en
 └── config/                   # default.json
 
-src-tauri/                    # Rust 后端
+gui/                    # Rust 后端
 └── src/commands/
     ├── registry.rs           # 注册表读写
     ├── system.rs             # 权限检测、路径验证、环境变量展开

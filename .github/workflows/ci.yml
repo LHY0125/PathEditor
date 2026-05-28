@@ -38,7 +38,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: src-tauri
+        working-directory: gui
     steps:
       - uses: actions/checkout@v4
 
