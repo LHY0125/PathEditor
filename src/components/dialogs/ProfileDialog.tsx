@@ -95,7 +95,7 @@ export function ProfileDialog({ open, onClose }: Props) {
       <div className="flex flex-col" style={{ width: 680, maxHeight: '75vh' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--app-border)' }}>
           <h2 className="text-base font-semibold">{t('profile.title')}</h2>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <input
               type="text"
               value={newName}
@@ -111,6 +111,14 @@ export function ProfileDialog({ open, onClose }: Props) {
               onClick={handleSave}
             >
               {t('profile.save')}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-2 py-1 text-sm rounded hover:opacity-70 transition-opacity"
+              style={{ color: 'var(--app-fg)' }}
+              title="关闭"
+            >
+              ✕
             </button>
           </div>
         </div>
