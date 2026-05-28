@@ -20,11 +20,94 @@
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v4.2 使用 **Tauri 2.x + React 19 + TypeScript + Rust** 完全重写，替代了原有的 C + IUP GUI。
+v4.3 使用 **Tauri 2.x + React 19 + TypeScript + Rust** 完全重写，替代了原有的 C + IUP GUI。
 
-## 截图
+## 架构
 
-_[待补充]_
+```mermaid
+graph TB
+    subgraph 前端["React 前端"]
+        UI[UI 组件层<br/>AppShell / PathTable / Dialogs]
+        Store[状态管理<br/>Zustand Store]
+        Core[纯逻辑层<br/>undo-redo / path-manager / validation]
+        UI --> Store
+        UI --> Core
+        Store --> Core
+    end
+
+    subgraph IPC["Tauri IPC 桥接"]
+        invoke[invoke / plugin-dialog]
+    end
+
+    subgraph 后端["Rust 后端"]
+        Registry[注册表读写<br/>HKLM / HKCU]
+        System[系统操作<br/>权限检测 / 路径验证 / 环境变量展开]
+        Files[文件操作<br/>备份 / 配置 / 导入读取]
+        Scanner[分析引擎<br/>冲突检测 / 工具清单]
+    end
+
+    subgraph Windows["Windows 系统"]
+        Reg[(注册表<br/>SYSTEM / USER PATH)]
+        FS[(文件系统<br/>目录验证 / exe 扫描)]
+    end
+
+    UI --> invoke
+    invoke --> Registry
+    invoke --> System
+    invoke --> Files
+    invoke --> Scanner
+    Registry --> Reg
+    System --> FS
+    Scanner --> FS
+    Files --> FS
+```
+
+### 组件树
+
+```mermaid
+graph TD
+    App["App.tsx<br/>ErrorBoundary"]
+    Shell["AppShell<br/>布局编排 + 弹窗管理"]
+    TitleBar["TitleBar<br/>拖拽区域"]
+    ToolBar["ToolBar<br/>搜索 / 操作 / 分析 / 配置"]
+    PathTable["PathTable<br/>路径列表 + 验证 + 复选框"]
+    MergePreview["MergePreview<br/>系统+用户合并视图"]
+    StatusBar["StatusBar<br/>状态 / 权限 / 重试"]
+    Dialogs["弹窗层<br/>PathEdit / Import / Help / Analyze / Profile"]
+
+    App --> Shell
+    Shell --> TitleBar
+    Shell --> ToolBar
+    Shell --> PathTable
+    Shell --> MergePreview
+    Shell --> StatusBar
+    Shell --> Dialogs
+```
+
+### 操作流程
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant UI as React UI
+    participant Z as Zustand Store
+    participant IPC as Tauri IPC
+    participant R as Rust 后端
+    participant Win as Windows
+
+    U->>UI: 点击「保存」
+    UI->>Z: savePaths()
+    Z->>IPC: invoke('backup_registry')
+    IPC->>R: backup_registry()
+    R->>Win: 读取注册表 → 写入备份文件
+    Z->>IPC: Promise.allSettled([save_system, save_user])
+    IPC->>R: save_system_paths() / save_user_paths()
+    R->>Win: RegSetValueEx()
+    Z->>IPC: invoke('broadcast_env_change')
+    IPC->>R: SendMessageTimeout(WM_SETTINGCHANGE)
+    R->>Win: 通知所有进程
+    Z->>UI: isModified → false, statusMessage → '保存成功'
+```
 
 ## 功能
 
