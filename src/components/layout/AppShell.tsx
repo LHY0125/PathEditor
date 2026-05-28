@@ -13,6 +13,7 @@ import { PathEditDialog } from '@/components/dialogs/PathEditDialog';
 import { HelpDialog } from '@/components/dialogs/HelpDialog';
 import { ImportDialog } from '@/components/dialogs/ImportDialog';
 import { AnalyzeDialog } from '@/components/dialogs/AnalyzeDialog';
+import { ProfileDialog } from '@/components/dialogs/ProfileDialog';
 import { useAppActions, type DialogState } from '@/hooks/use-app-actions';
 
 /** Tauri's File object includes the native filesystem path */
@@ -35,10 +36,11 @@ export function AppShell() {
     open: false, system: [], user: [],
   });
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [profilesOpen, setProfilesOpen] = useState(false);
 
   const actions = useAppActions(activeTab, {
     editDialog, newDialog, helpOpen, importDialog,
-    setEditDialog, setNewDialog, setHelpOpen, setImportDialog, setAnalyzeOpen,
+    setEditDialog, setNewDialog, setHelpOpen, setImportDialog, setAnalyzeOpen, setProfilesOpen,
   });
 
   const tabConfig: { id: TabId; label: string }[] = [
@@ -86,6 +88,7 @@ export function AppShell() {
             const current = localStorage.getItem('i18nextLng') || 'zh-CN';
             i18n.changeLanguage(current === 'zh-CN' ? 'en' : 'zh-CN');
           }}
+          onProfiles={() => setProfilesOpen(true)}
           onAnalyze={() => setAnalyzeOpen(true)}
           onDarkMode={() => useThemeStore.getState().toggle()}
         />
@@ -116,6 +119,7 @@ export function AppShell() {
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ImportDialog open={importDialog.open} systemCount={importDialog.system.length} userCount={importDialog.user.length} onSelect={actions.handleImportSelect} onCancel={() => setImportDialog({ open: false, system: [], user: [] })} />
       <AnalyzeDialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} />
+      <ProfileDialog open={profilesOpen} onClose={() => setProfilesOpen(false)} />
     </div>
   );
 }

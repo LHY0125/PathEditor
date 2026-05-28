@@ -21,6 +21,7 @@ interface ToolBarProps {
   onLanguage: () => void;
   onDarkMode: () => void;
   onAnalyze: () => void;
+  onProfiles: () => void;
 }
 
 export function ToolBar(props: ToolBarProps) {
@@ -69,6 +70,9 @@ export function ToolBar(props: ToolBarProps) {
         </button>
         <button className={btnClass} style={btnStyle} onClick={props.onAnalyze}>
           {t('button.analyze')}
+        </button>
+        <button className={btnClass} style={btnStyle} onClick={props.onProfiles}>
+          {t('button.profiles')}
         </button>
         <button className={btnClass} style={btnStyle} onClick={props.onDarkMode}>
           {t('button.darkMode')}

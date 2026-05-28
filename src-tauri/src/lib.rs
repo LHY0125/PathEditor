@@ -30,6 +30,11 @@ pub fn run() {
             commands::disabled::load_disabled_state,
             commands::scanner::scan_conflicts,
             commands::scanner::scan_tools,
+            commands::profiles::list_profiles,
+            commands::profiles::save_profile,
+            commands::profiles::load_profile,
+            commands::profiles::delete_profile,
+            commands::profiles::rename_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
