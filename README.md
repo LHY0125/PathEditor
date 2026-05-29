@@ -35,15 +35,21 @@ graph TB
         Store --> Core
     end
 
+    subgraph CLI["CLI 命令行"]
+        Clap[clap 参数解析<br/>17 条命令]
+        Atomic[原子性保护<br/>verify_and_save]
+    end
+
     subgraph IPC["Tauri IPC 桥接"]
         invoke[invoke / plugin-dialog]
     end
 
-    subgraph 后端["Rust 后端"]
+    subgraph 后端["Rust core 库"]
         Registry[注册表读写<br/>HKLM / HKCU]
         System[系统操作<br/>权限检测 / 路径验证 / 环境变量展开]
-        Files[文件操作<br/>备份 / 配置 / 导入读取]
+        Files[文件操作<br/>备份 / 配置 / 导入导出]
         Scanner[分析引擎<br/>冲突检测 / 工具清单]
+        Profiles[配置管理<br/>save/load/apply/rename]
     end
 
     subgraph Windows["Windows 系统"]
@@ -56,10 +62,18 @@ graph TB
     invoke --> System
     invoke --> Files
     invoke --> Scanner
+    invoke --> Profiles
+    Clap --> Atomic
+    Atomic --> Registry
+    Atomic --> System
+    Atomic --> Files
+    Atomic --> Scanner
+    Atomic --> Profiles
     Registry --> Reg
     System --> FS
     Scanner --> FS
     Files --> FS
+    Profiles --> FS
 ```
 
 ### 组件树
@@ -107,6 +121,30 @@ sequenceDiagram
     IPC->>R: SendMessageTimeout(WM_SETTINGCHANGE)
     R->>Win: 通知所有进程
     Z->>UI: isModified → false, statusMessage → '保存成功'
+```
+
+### CLI 操作流程
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant CLI as patheditor-cli
+    participant Core as Rust core 库
+    participant Win as Windows
+
+    U->>CLI: patheditor add "D:\Tools" --system
+    CLI->>Core: load_system_paths() → 旧列表
+    CLI->>CLI: 执行操作 (push / splice / clean)
+    CLI->>Core: load_system_paths() → 重新读取
+    alt 注册表未修改
+        CLI->>Core: save_system_paths(new_list)
+        Core->>Win: RegSetValueEx()
+        CLI->>Core: broadcast_env_change()
+        Core->>Win: SendMessageTimeout(WM_SETTINGCHANGE)
+        CLI-->>U: 已添加到系统 PATH
+    else 注册表已被其他进程修改
+        CLI-->>U: 错误: 注册表已被其他进程修改
+    end
 ```
 
 ## CLI 命令行
