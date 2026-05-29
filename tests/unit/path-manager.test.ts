@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pathClean } from '../../src/core/path-manager';
+import { pathClean, analyzePaths } from '../../src/core/path-manager';
 import type { PathEntry } from '../../src/core/path-entry';
 
 function pe(s: string, enabled: boolean = true): PathEntry {
@@ -8,6 +8,31 @@ function pe(s: string, enabled: boolean = true): PathEntry {
 
 const alwaysValid = () => true;
 const validateFn = (path: string) => !path.includes('Invalid');
+
+describe('analyzePaths', () => {
+  it('检测大小写重复', () => {
+    const result = analyzePaths([pe('C:\\Windows'), pe('c:\\windows')], alwaysValid);
+    expect(result[0].isDuplicate).toBe(false);
+    expect(result[1].isDuplicate).toBe(true);
+  });
+
+  it('识别环境变量路径', () => {
+    const result = analyzePaths([pe('C:\\Normal'), pe('%JAVA_HOME%\\bin')], alwaysValid);
+    expect(result[0].isEnvVar).toBe(false);
+    expect(result[1].isEnvVar).toBe(true);
+  });
+
+  it('标记无效路径', () => {
+    const result = analyzePaths([pe('C:\\Valid'), pe('C:\\Invalid')], validateFn);
+    expect(result[0].isValid).toBe(true);
+    expect(result[1].isValid).toBe(false);
+  });
+
+  it('空数组返回空', () => {
+    const result = analyzePaths([], alwaysValid);
+    expect(result).toEqual([]);
+  });
+});
 
 describe('pathClean', () => {
   it('移除无效路径', () => {

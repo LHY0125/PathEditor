@@ -1,11 +1,16 @@
 use winreg::enums::*;
 use winreg::RegKey;
 
-pub(crate) const SYS_REG_PATH: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
+pub(crate) const SYS_REG_PATH: &str =
+    "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
 pub(crate) const USER_REG_PATH: &str = "Environment";
 const PATH_VALUE: &str = "Path";
 
-pub(crate) fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Result<Vec<String>, String> {
+pub(crate) fn load_paths(
+    root: winreg::HKEY,
+    sub_path: &str,
+    label: &str,
+) -> Result<Vec<String>, String> {
     let key = RegKey::predef(root);
     let env_key = key
         .open_subkey_with_flags(sub_path, KEY_READ)
@@ -18,17 +23,13 @@ pub(crate) fn load_paths(root: winreg::HKEY, sub_path: &str, label: &str) -> Res
     Ok(split_path(&value))
 }
 
-fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String]) -> Result<(), String> {
-    let value = join_path(paths);
-
-    // Windows 注册表 REG_EXPAND_SZ 上限 32767 字符
-    const MAX_PATH_LEN: usize = 32767;
-    if value.len() > MAX_PATH_LEN {
-        return Err(format!(
-            "{} PATH 总长度 {} 超出 Windows 限制 {} 字符，请移除部分路径后再保存",
-            label, value.len(), MAX_PATH_LEN
-        ));
-    }
+fn save_paths(
+    root: winreg::HKEY,
+    sub_path: &str,
+    label: &str,
+    paths: &[String],
+) -> Result<(), String> {
+    let value = validate_and_join_paths(paths, label)?;
 
     let key = RegKey::predef(root);
     let env_key = key
@@ -43,7 +44,6 @@ fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String])
     Ok(())
 }
 
-
 /// 从 HKLM 注册表读取系统 PATH
 ///
 /// # Returns
@@ -52,7 +52,6 @@ fn save_paths(root: winreg::HKEY, sub_path: &str, label: &str, paths: &[String])
 pub fn load_system_paths() -> Result<Vec<String>, String> {
     load_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统")
 }
-
 
 /// 从 HKCU 注册表读取用户 PATH
 ///
@@ -63,7 +62,6 @@ pub fn load_user_paths() -> Result<Vec<String>, String> {
     load_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户")
 }
 
-
 /// 保存系统 PATH 到注册表，含 32767 字符上限检查
 ///
 /// # Returns
@@ -72,7 +70,6 @@ pub fn load_user_paths() -> Result<Vec<String>, String> {
 pub fn save_system_paths(paths: Vec<String>) -> Result<(), String> {
     save_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统", &paths)
 }
-
 
 /// 保存用户 PATH 到注册表
 ///
@@ -99,6 +96,25 @@ fn join_path(paths: &[String]) -> String {
         .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()
         .join(";")
+}
+
+/// 验证路径列表并拼接为分号分隔字符串
+/// - 检查 null 字节
+/// - 检查 UTF-16 总长度不超过 32767
+fn validate_and_join_paths(paths: &[String], label: &str) -> Result<String, String> {
+    if let Some(bad) = paths.iter().find(|p| p.contains('\0')) {
+        return Err(format!("{} PATH 包含非法字符（null 字节）: {}", label, bad));
+    }
+    let value = join_path(paths);
+    const MAX_PATH_LEN: usize = 32767;
+    let utf16_len = value.encode_utf16().count();
+    if utf16_len > MAX_PATH_LEN {
+        return Err(format!(
+            "{} PATH 总长度 {} 超出 Windows 限制 {} 字符，请移除部分路径后再保存",
+            label, utf16_len, MAX_PATH_LEN
+        ));
+    }
+    Ok(value)
 }
 
 /// 清理路径列表：移除不存在的目录 + 重复路径（保留首次出现）
@@ -148,10 +164,7 @@ mod tests {
 
     #[test]
     fn split_trims_and_filters_empty() {
-        assert_eq!(
-            split_path(" C:\\ ; ; D:\\ "),
-            vec!["C:\\", "D:\\"]
-        );
+        assert_eq!(split_path(" C:\\ ; ; D:\\ "), vec!["C:\\", "D:\\"]);
     }
 
     #[test]
@@ -166,5 +179,30 @@ mod tests {
     fn join_trims_entries() {
         let paths = vec![" C:\\Windows ".to_string(), " D:\\ ".to_string()];
         assert_eq!(join_path(&paths), "C:\\Windows;D:\\");
+    }
+
+    #[test]
+    fn validate_rejects_null_bytes() {
+        let paths = vec!["C:\\safe".into(), "C:\0invalid".into()];
+        let result = validate_and_join_paths(&paths, "测试");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("null 字节"));
+    }
+
+    #[test]
+    fn validate_accepts_cjk_paths() {
+        let paths = vec!["C:\\用户\\工具".into()];
+        let result = validate_and_join_paths(&paths, "测试");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_oversized_paths() {
+        // 构造总长超过 32767 UTF-16 字符的路径
+        let long_path = "C:\\".to_string() + &"a".repeat(32767);
+        let paths = vec![long_path];
+        let result = validate_and_join_paths(&paths, "测试");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("超出 Windows 限制"));
     }
 }

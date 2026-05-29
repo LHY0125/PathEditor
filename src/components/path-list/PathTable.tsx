@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { invoke } from '@tauri-apps/api/core';
 import { TargetType } from '@/core/undo-redo';
@@ -17,6 +18,7 @@ type ValidationState = 'valid' | 'invalid' | 'unknown';
 const DEFAULT_VALIDATION_STATE: ValidationState = 'valid';
 
 export function PathTable({ tabId }: PathTableProps) {
+  const { t } = useTranslation();
   const sysPaths = useAppStore((s) => s.sysPaths);
   const userPaths = useAppStore((s) => s.userPaths);
   const searchQuery = useAppStore((s) => s.searchQuery);
@@ -34,6 +36,33 @@ export function PathTable({ tabId }: PathTableProps) {
 
   const validatedRef = useRef<Set<string>>(new Set());
   const expandedRef = useRef<Set<string>>(new Set());
+
+  // 清理不再存在的路径缓存
+  useEffect(() => {
+    const currentKeys = new Set(paths.map(p => p.path));
+    setValidationCache(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const key of next.keys()) {
+        if (!currentKeys.has(key)) { next.delete(key); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+    setExpandedCache(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const key of next.keys()) {
+        if (!currentKeys.has(key)) { next.delete(key); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+    for (const key of [...validatedRef.current]) {
+      if (!currentKeys.has(key)) validatedRef.current.delete(key);
+    }
+    for (const key of [...expandedRef.current]) {
+      if (!currentKeys.has(key)) expandedRef.current.delete(key);
+    }
+  }, [paths]);
 
   // 过滤搜索
   const filtered = useMemo<PathRow[]>(() => {
@@ -160,7 +189,7 @@ export function PathTable({ tabId }: PathTableProps) {
           >
             <th className="w-8 px-2 py-1">#</th>
             <th className="w-6 px-1 py-1"></th>
-            <th className="px-2 py-1">路径</th>
+            <th className="px-2 py-1">{t('table.path')}</th>
           </tr>
         </thead>
         <tbody>

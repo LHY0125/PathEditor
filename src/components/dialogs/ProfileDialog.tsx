@@ -151,7 +151,7 @@ export function ProfileDialog({ open, onClose }: Props) {
           <div className="flex-1 p-3 overflow-auto">
             {!selectedData ? (
               <div className="text-center py-10 text-sm" style={{ opacity: 0.4 }}>
-                {profiles.length === 0 ? t('profile.noProfiles') : '选择一个配置文件'}
+                {profiles.length === 0 ? t('profile.noProfiles') : t('profile.selectProfile')}
               </div>
             ) : (
               <div>
@@ -194,7 +194,7 @@ export function ProfileDialog({ open, onClose }: Props) {
                       style={{ backgroundColor: 'var(--app-list-bg)', color: 'var(--app-fg)', borderColor: 'var(--app-border)' }}
                     />
                     <button className="px-2 py-1 text-xs rounded text-white" style={{ backgroundColor: '#3b82f6' }} onClick={handleRename}>
-                      确认
+                      {t('button.save')}
                     </button>
                   </div>
                 )}
@@ -211,16 +211,17 @@ export function ProfileDialog({ open, onClose }: Props) {
 }
 
 function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
+  const { t } = useTranslation();
   return (
     <div className="mb-2">
       <div className="text-xs font-medium mb-1" style={{ opacity: 0.7 }}>{title}</div>
       {paths.length === 0 ? (
-        <div className="text-xs" style={{ opacity: 0.4 }}>（空）</div>
+        <div className="text-xs" style={{ opacity: 0.4 }}>{t('profile.empty')}</div>
       ) : (
         <div className="space-y-0.5 max-h-48 overflow-auto">
-          {paths.map((e, i) => (
+          {paths.map((e) => (
             <div
-              key={i}
+              key={e.path}
               className="text-xs font-mono px-2 py-0.5 rounded flex items-center gap-1.5"
               style={{
                 backgroundColor: 'var(--app-list-bg)',

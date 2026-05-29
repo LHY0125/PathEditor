@@ -1,7 +1,7 @@
+use crate::registry::{self, SYS_REG_PATH, USER_REG_PATH};
 use chrono::Local;
 use std::path::PathBuf;
 use winreg::enums::*;
-use crate::registry::{self, SYS_REG_PATH, USER_REG_PATH};
 
 fn backup_base_dir() -> PathBuf {
     dirs::home_dir()
@@ -23,20 +23,11 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
         _ => backup_base_dir(),
     };
 
-    std::fs::create_dir_all(&backup_dir)
-        .map_err(|e| format!("无法创建备份目录: {}", e))?;
+    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
 
     // 读取当前注册表中的值（保存前的旧值）
-    let sys_paths = registry::load_paths(
-        HKEY_LOCAL_MACHINE,
-        SYS_REG_PATH,
-        "系统",
-    )?;
-    let user_paths = registry::load_paths(
-        HKEY_CURRENT_USER,
-        USER_REG_PATH,
-        "用户",
-    )?;
+    let sys_paths = registry::load_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统")?;
+    let user_paths = registry::load_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户")?;
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f");
     let filename = format!("path_backup_{}.txt", timestamp);
@@ -56,8 +47,7 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
         content.push_str(&format!("{}\n", path));
     }
 
-    std::fs::write(&filepath, &content)
-        .map_err(|e| format!("无法写入备份文件: {}", e))?;
+    std::fs::write(&filepath, &content).map_err(|e| format!("无法写入备份文件: {}", e))?;
 
     let result = filepath.to_string_lossy().to_string();
     log::info!("备份已保存到: {}", result);

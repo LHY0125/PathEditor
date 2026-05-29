@@ -13,79 +13,109 @@ struct Cli {
 enum Command {
     /// 列出 PATH 路径
     List {
-        #[arg(short, long)] system: bool,
-        #[arg(short, long)] user: bool,
-        #[arg(long)] json: bool,
+        #[arg(short, long)]
+        system: bool,
+        #[arg(short, long)]
+        user: bool,
+        #[arg(long)]
+        json: bool,
     },
     /// 添加一条路径
     Add {
         path: String,
-        #[arg(short, long)] system: bool,
-        #[arg(short, long)] user: bool,
+        #[arg(short, long)]
+        system: bool,
+        #[arg(short, long)]
+        user: bool,
     },
     /// 删除指定位置的路径
     Remove {
         index: usize,
-        #[arg(short, long)] system: bool,
+        #[arg(short, long)]
+        system: bool,
     },
     /// 编辑指定位置的路径
     Edit {
         index: usize,
         new_path: String,
-        #[arg(short, long)] system: bool,
+        #[arg(short, long)]
+        system: bool,
     },
     /// 上移路径（--steps 指定移动格数，默认 1）
     MoveUp {
         index: usize,
-        #[arg(long, default_value = "1")] steps: usize,
-        #[arg(short, long)] system: bool,
+        #[arg(long, default_value = "1")]
+        steps: usize,
+        #[arg(short, long)]
+        system: bool,
     },
     /// 下移路径（--steps 指定移动格数，默认 1）
     MoveDown {
         index: usize,
-        #[arg(long, default_value = "1")] steps: usize,
-        #[arg(short, long)] system: bool,
+        #[arg(long, default_value = "1")]
+        steps: usize,
+        #[arg(short, long)]
+        system: bool,
     },
     /// 清理无效和重复路径
     Clean {
-        #[arg(short, long)] system: bool,
-        #[arg(short, long)] user: bool,
-        #[arg(long)] dry_run: bool,
-        #[arg(long)] json: bool,
+        #[arg(short, long)]
+        system: bool,
+        #[arg(short, long)]
+        user: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
     },
     /// 启用指定位置的路径
     Enable {
         index: usize,
-        #[arg(short, long)] system: bool,
-        #[arg(short, long)] user: bool,
+        #[arg(short, long)]
+        system: bool,
+        #[arg(short, long)]
+        user: bool,
     },
     /// 禁用指定位置的路径
     Disable {
         index: usize,
-        #[arg(short, long)] system: bool,
-        #[arg(short, long)] user: bool,
+        #[arg(short, long)]
+        system: bool,
+        #[arg(short, long)]
+        user: bool,
     },
     /// 从文件导入 PATH（JSON/CSV/TXT）
     Import {
         file: String,
-        #[arg(long, default_value = "both")] target: String,
+        #[arg(long, default_value = "both")]
+        target: String,
     },
     /// 导出 PATH 为文件
     Export {
-        #[arg(long, default_value = "json")] format: String,
-        #[arg(short, long)] output: Option<String>,
+        #[arg(long, default_value = "json")]
+        format: String,
+        #[arg(short, long)]
+        output: Option<String>,
     },
     /// 创建注册表备份
     Backup,
     /// 检测可执行文件冲突
-    Conflicts { #[arg(long)] json: bool },
+    Conflicts {
+        #[arg(long)]
+        json: bool,
+    },
     /// 列出 PATH 目录中的可执行文件
     Scan {
-        #[arg(long)] query: Option<String>,
-        #[arg(long)] json: bool,
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
     /// 检查管理员权限
-    CheckAdmin { #[arg(long)] json: bool },
+    CheckAdmin {
+        #[arg(long)]
+        json: bool,
+    },
     /// 管理配置文件
     #[command(subcommand)]
     Profile(ProfileCmd),
@@ -94,7 +124,10 @@ enum Command {
 #[derive(Subcommand)]
 enum ProfileCmd {
     /// 列出所有配置
-    List { #[arg(long)] json: bool },
+    List {
+        #[arg(long)]
+        json: bool,
+    },
     /// 保存当前 PATH 为配置
     Save { name: String },
     /// 加载配置（预览）
@@ -105,8 +138,10 @@ enum ProfileCmd {
     Delete { name: String },
     /// 重命名配置
     Rename {
-        #[arg(long)] old: String,
-        #[arg(long)] new: String,
+        #[arg(long)]
+        old: String,
+        #[arg(long)]
+        new: String,
     },
 }
 
@@ -116,8 +151,14 @@ fn exit_err(msg: &str) -> ! {
 }
 
 fn ensure_single_target(system: bool, user: bool) -> &'static str {
-    if system && user { exit_err("不能同时指定 --system 和 --user"); }
-    if system { "system" } else { "user" }
+    if system && user {
+        exit_err("不能同时指定 --system 和 --user");
+    }
+    if system {
+        "system"
+    } else {
+        "user"
+    }
 }
 
 type SaveFn = fn(Vec<String>) -> Result<(), String>;
@@ -131,7 +172,11 @@ fn verify_and_save(target: &str, original: &[String], new_list: Vec<String>) {
     if reload != original {
         exit_err("注册表已被其他进程修改，请重新执行操作");
     }
-    let save: SaveFn = if target == "system" { core::registry::save_system_paths } else { core::registry::save_user_paths };
+    let save: SaveFn = if target == "system" {
+        core::registry::save_system_paths
+    } else {
+        core::registry::save_user_paths
+    };
     save(new_list).unwrap_or_else(|e| exit_err(&e));
 }
 
@@ -163,11 +208,15 @@ fn cmd_list(system: bool, user: bool, json_out: bool) {
     } else {
         if !sys.is_empty() {
             println!("═══ 系统 PATH ({}) ═══", sys.len());
-            for (i, p) in sys.iter().enumerate() { println!("  [{}] {}", i, p); }
+            for (i, p) in sys.iter().enumerate() {
+                println!("  [{}] {}", i, p);
+            }
         }
         if !usr.is_empty() {
             println!("═══ 用户 PATH ({}) ═══", usr.len());
-            for (i, p) in usr.iter().enumerate() { println!("  [{}] {}", i, p); }
+            for (i, p) in usr.iter().enumerate() {
+                println!("  [{}] {}", i, p);
+            }
         }
     }
 }
@@ -178,7 +227,11 @@ fn cmd_add(path: String, system: bool, user: bool) {
         list.push(path.clone());
         list
     });
-    let label = if target == "system" { "系统" } else { "用户" };
+    let label = if target == "system" {
+        "系统"
+    } else {
+        "用户"
+    };
     println!("已添加到{} PATH: {path}", label);
     core::system::broadcast_env_change();
 }
@@ -191,7 +244,9 @@ fn cmd_remove(index: usize, system: bool) {
         core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
     let original = list.clone();
-    if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
+    if index >= list.len() {
+        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
+    }
     let removed = list.remove(index);
     verify_and_save(target, &original, list);
     println!("已删除: {removed}");
@@ -205,7 +260,9 @@ fn cmd_edit(index: usize, new_path: String, system: bool) {
     } else {
         core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
-    if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
+    if index >= list.len() {
+        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
+    }
     let original = list.clone();
     let old = std::mem::replace(&mut list[index], new_path.clone());
     verify_and_save(target, &original, list);
@@ -215,12 +272,18 @@ fn cmd_edit(index: usize, new_path: String, system: bool) {
 
 fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
     load_and_save(system, |mut list| {
-        if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
+        if index >= list.len() {
+            exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
+        }
         let end = if up {
             index.saturating_sub(steps)
         } else {
             let max = list.len() - 1;
-            if index + steps > max { max } else { index + steps }
+            if index + steps > max {
+                max
+            } else {
+                index + steps
+            }
         };
         let removed = list.remove(index);
         list.insert(end, removed);
@@ -232,19 +295,31 @@ fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
 }
 
 fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
-    if system && user { exit_err("不能同时指定 --system 和 --user"); }
+    if system && user {
+        exit_err("不能同时指定 --system 和 --user");
+    }
 
     let clean_sys = system || !user;
     let clean_usr = user || !system;
 
-    if clean_sys { clean_one("system", dry_run, json_out); }
-    if clean_usr { clean_one("user", dry_run, json_out); }
+    if clean_sys {
+        clean_one("system", dry_run, json_out);
+    }
+    if clean_usr {
+        clean_one("user", dry_run, json_out);
+    }
 
-    if !dry_run && !json_out { core::system::broadcast_env_change(); }
+    if !dry_run && !json_out {
+        core::system::broadcast_env_change();
+    }
 }
 
 fn clean_one(target: &str, dry_run: bool, json_out: bool) {
-    let label = if target == "system" { "系统" } else { "用户" };
+    let label = if target == "system" {
+        "系统"
+    } else {
+        "用户"
+    };
     let list = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
     } else {
@@ -253,18 +328,31 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
     let (kept, removed) = core::registry::clean_paths(list.clone());
 
     if json_out {
-        println!("{}", json!({ "target": target, "kept": kept, "removed": removed, "kept_count": kept.len(), "removed_count": removed.len() }));
+        println!(
+            "{}",
+            json!({ "target": target, "kept": kept, "removed": removed, "kept_count": kept.len(), "removed_count": removed.len() })
+        );
     } else if dry_run {
         println!("═══ {label} PATH — 将被移除（{} 条）═══", removed.len());
-        for r in &removed { println!("  ✗ {}", r); }
+        for r in &removed {
+            println!("  ✗ {}", r);
+        }
         println!("═══ {label} PATH — 将保留（{} 条）═══", kept.len());
-        for k in &kept { println!("  ✓ {}", k); }
+        for k in &kept {
+            println!("  ✓ {}", k);
+        }
     } else {
         let kept_count = kept.len();
         verify_and_save(target, &list, kept);
-        println!("{label} PATH 清理完成：移除 {} 条，保留 {} 条", removed.len(), kept_count);
+        println!(
+            "{label} PATH 清理完成：移除 {} 条，保留 {} 条",
+            removed.len(),
+            kept_count
+        );
         if !removed.is_empty() {
-            for r in &removed { println!("  已移除: {}", r); }
+            for r in &removed {
+                println!("  已移除: {}", r);
+            }
         }
     }
 }
@@ -276,11 +364,18 @@ fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
     } else {
         core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
     };
-    if index >= list.len() { exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len())); }
+    if index >= list.len() {
+        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
+    }
     let path = &list[index];
 
-    let (mut sys_dis, mut usr_dis) = core::disabled::load_disabled_state().unwrap_or_else(|_| (vec![], vec![]));
-    let target_list: &mut Vec<String> = if target == "system" { &mut sys_dis } else { &mut usr_dis };
+    let (mut sys_dis, mut usr_dis) =
+        core::disabled::load_disabled_state().unwrap_or_else(|_| (vec![], vec![]));
+    let target_list: &mut Vec<String> = if target == "system" {
+        &mut sys_dis
+    } else {
+        &mut usr_dis
+    };
 
     if enable {
         target_list.retain(|p| p != path);
@@ -322,6 +417,12 @@ fn cmd_export(format: String, output: Option<String>) {
     let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
     let content = core::fs::export_paths(&sys, &usr, &format).unwrap_or_else(|e| exit_err(&e));
     if let Some(path) = output {
+        // 拒绝写入系统关键目录
+        let normalized = path.replace('/', "\\").to_lowercase();
+        if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\")
+        {
+            exit_err(&format!("不允许导出到系统目录: {path}"));
+        }
         std::fs::write(&path, &content).unwrap_or_else(|e| exit_err(&format!("无法写入文件: {e}")));
         println!("已导出到: {path}");
     } else {
@@ -336,8 +437,12 @@ fn cmd_backup() {
 
 fn cmd_conflicts(json_out: bool) {
     let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::registry::load_system_paths() { paths.extend(sys); }
-    if let Ok(usr) = core::registry::load_user_paths() { paths.extend(usr); }
+    if let Ok(sys) = core::registry::load_system_paths() {
+        paths.extend(sys);
+    }
+    if let Ok(usr) = core::registry::load_user_paths() {
+        paths.extend(usr);
+    }
     let conflicts = core::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_err(&e));
     if json_out {
         println!("{}", serde_json::to_string_pretty(&conflicts).unwrap());
@@ -348,7 +453,15 @@ fn cmd_conflicts(json_out: bool) {
         for c in &conflicts {
             println!("  {}", c.name);
             for loc in &c.locations {
-                println!("    {}  {}", if loc.priority == 0 { "✓ 优先" } else { "✗ 遮蔽" }, loc.dir);
+                println!(
+                    "    {}  {}",
+                    if loc.priority == 0 {
+                        "✓ 优先"
+                    } else {
+                        "✗ 遮蔽"
+                    },
+                    loc.dir
+                );
             }
             println!();
         }
@@ -357,16 +470,26 @@ fn cmd_conflicts(json_out: bool) {
 
 fn cmd_scan(query: Option<String>, json_out: bool) {
     let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::registry::load_system_paths() { paths.extend(sys); }
-    if let Ok(usr) = core::registry::load_user_paths() { paths.extend(usr); }
-    let groups = core::scanner::scan_tools(paths, query.unwrap_or_default()).unwrap_or_else(|e| exit_err(&e));
+    if let Ok(sys) = core::registry::load_system_paths() {
+        paths.extend(sys);
+    }
+    if let Ok(usr) = core::registry::load_user_paths() {
+        paths.extend(usr);
+    }
+    let groups = core::scanner::scan_tools(paths, query.unwrap_or_default())
+        .unwrap_or_else(|e| exit_err(&e));
     if json_out {
         println!("{}", serde_json::to_string_pretty(&groups).unwrap());
     } else {
         for g in &groups {
-            if !g.exists { println!("  {} (不存在)", g.dir); continue; }
+            if !g.exists {
+                println!("  {} (不存在)", g.dir);
+                continue;
+            }
             println!("═══ {} ═══", g.dir);
-            for exe in &g.exes { println!("  {}", exe); }
+            for exe in &g.exes {
+                println!("  {}", exe);
+            }
         }
     }
 }
@@ -387,15 +510,29 @@ fn profile_list(json_out: bool) {
     } else if list.is_empty() {
         println!("暂无配置文件。");
     } else {
-        for p in &list { println!("  {}  ({})", p.name, p.modified); }
+        for p in &list {
+            println!("  {}  ({})", p.name, p.modified);
+        }
     }
 }
 
 fn profile_save(name: String) {
     let sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
     let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    let sys_entries = sys.into_iter().map(|p| core::ProfilePathEntry { path: p, enabled: true }).collect();
-    let usr_entries = usr.into_iter().map(|p| core::ProfilePathEntry { path: p, enabled: true }).collect();
+    let sys_entries = sys
+        .into_iter()
+        .map(|p| core::ProfilePathEntry {
+            path: p,
+            enabled: true,
+        })
+        .collect();
+    let usr_entries = usr
+        .into_iter()
+        .map(|p| core::ProfilePathEntry {
+            path: p,
+            enabled: true,
+        })
+        .collect();
     core::profiles::save_profile(&name, sys_entries, usr_entries).unwrap_or_else(|e| exit_err(&e));
     println!("已保存配置: {name}");
 }
@@ -403,15 +540,29 @@ fn profile_save(name: String) {
 fn profile_load(name: String) {
     let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
     println!("═══ 系统 PATH ({} 条) ═══", data.sys.len());
-    for e in &data.sys { println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path); }
+    for e in &data.sys {
+        println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path);
+    }
     println!("═══ 用户 PATH ({} 条) ═══", data.user.len());
-    for e in &data.user { println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path); }
+    for e in &data.user {
+        println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path);
+    }
 }
 
 fn profile_apply(name: String) {
     let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
-    let new_sys: Vec<String> = data.sys.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
-    let new_usr: Vec<String> = data.user.into_iter().filter(|e| e.enabled).map(|e| e.path).collect();
+    let new_sys: Vec<String> = data
+        .sys
+        .into_iter()
+        .filter(|e| e.enabled)
+        .map(|e| e.path)
+        .collect();
+    let new_usr: Vec<String> = data
+        .user
+        .into_iter()
+        .filter(|e| e.enabled)
+        .map(|e| e.path)
+        .collect();
 
     let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
     let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
@@ -438,12 +589,37 @@ fn main() {
         Command::List { system, user, json } => cmd_list(system, user, json),
         Command::Add { path, system, user } => cmd_add(path, system, user),
         Command::Remove { index, system } => cmd_remove(index, system),
-        Command::Edit { index, new_path, system } => cmd_edit(index, new_path, system),
-        Command::MoveUp { index, steps, system } => cmd_move(index, steps, system, true),
-        Command::MoveDown { index, steps, system } => cmd_move(index, steps, system, false),
-        Command::Clean { system, user, dry_run, json } => cmd_clean(system, user, dry_run, json),
-        Command::Enable { index, system, user } => cmd_toggle(index, system, user, true),
-        Command::Disable { index, system, user } => cmd_toggle(index, system, user, false),
+        Command::Edit {
+            index,
+            new_path,
+            system,
+        } => cmd_edit(index, new_path, system),
+        Command::MoveUp {
+            index,
+            steps,
+            system,
+        } => cmd_move(index, steps, system, true),
+        Command::MoveDown {
+            index,
+            steps,
+            system,
+        } => cmd_move(index, steps, system, false),
+        Command::Clean {
+            system,
+            user,
+            dry_run,
+            json,
+        } => cmd_clean(system, user, dry_run, json),
+        Command::Enable {
+            index,
+            system,
+            user,
+        } => cmd_toggle(index, system, user, true),
+        Command::Disable {
+            index,
+            system,
+            user,
+        } => cmd_toggle(index, system, user, false),
         Command::Import { file, target } => cmd_import(file, target),
         Command::Export { format, output } => cmd_export(format, output),
         Command::Backup => cmd_backup(),

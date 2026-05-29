@@ -32,16 +32,12 @@ pub fn expand_env_vars(path: &str) -> String {
     }
 
     // 转为 UTF-16 宽字符串（以 null 结尾）
-    let wide_path: Vec<u16> = path
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
+    let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
 
     // SAFETY: wide_path 是以 null 结尾的 UTF-16 字符串，lpDst 为 null 且 nSize 为 0，
     //         根据 MSDN 文档此时 API 只查询所需缓冲区大小而不写入数据
-    let required = unsafe {
-        ExpandEnvironmentStringsW(wide_path.as_ptr(), std::ptr::null_mut(), 0)
-    };
+    let required =
+        unsafe { ExpandEnvironmentStringsW(wide_path.as_ptr(), std::ptr::null_mut(), 0) };
 
     if required == 0 {
         log::warn!("expand_env_vars: API 查询缓冲区失败, 返回原始路径: {path}");
@@ -51,9 +47,8 @@ pub fn expand_env_vars(path: &str) -> String {
     // SAFETY: buffer 容量为 required（API 返回的精确大小），wide_path 以 null 结尾，
     //         且两个指针指向不同的内存区域，不存在重叠
     let mut buffer: Vec<u16> = vec![0; required as usize];
-    let result = unsafe {
-        ExpandEnvironmentStringsW(wide_path.as_ptr(), buffer.as_mut_ptr(), required)
-    };
+    let result =
+        unsafe { ExpandEnvironmentStringsW(wide_path.as_ptr(), buffer.as_mut_ptr(), required) };
 
     if result == 0 || result > required {
         log::warn!("expand_env_vars: 展开失败或缓冲区不足, 返回原始路径: {path}");
@@ -110,11 +105,7 @@ pub fn broadcast_env_change() {
 
 extern "system" {
     /// https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-expandenvironmentstringsw
-    fn ExpandEnvironmentStringsW(
-        lpSrc: *const u16,
-        lpDst: *mut u16,
-        nSize: u32,
-    ) -> u32;
+    fn ExpandEnvironmentStringsW(lpSrc: *const u16, lpDst: *mut u16, nSize: u32) -> u32;
 
     /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw
     fn SendMessageTimeoutW(

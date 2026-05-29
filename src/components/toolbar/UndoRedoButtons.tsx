@@ -6,6 +6,9 @@ export function UndoRedoButtons() {
   const { t } = useTranslation();
   const isAdmin = useAppStore((s) => s.isAdmin);
   const undoRedo = useAppStore((s) => s.undoRedo);
+  // 订阅路径数组长度变化，确保 undoRedo 内部状态变化时触发重渲染
+  useAppStore((s) => s.sysPaths.length);
+  useAppStore((s) => s.userPaths.length);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
 

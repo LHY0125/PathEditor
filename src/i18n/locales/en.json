@@ -8,6 +8,9 @@
     "user": "User Variables",
     "merged": "Merge Preview"
   },
+  "table": {
+    "path": "Path"
+  },
   "button": {
     "new": "New",
     "edit": "Edit",
@@ -51,7 +54,8 @@
     "readonly_label": "Read-only",
     "light": "Light",
     "dark": "Dark",
-    "adminWarning": "Running without administrator privileges, some features are disabled"
+    "adminWarning": "Running without administrator privileges, some features are disabled",
+    "saveWarningLongPaths": "PATH length exceeds recommended value. Continue saving?"
   },
   "dialog": {
     "newPath": "New Path",
@@ -70,7 +74,9 @@
     "backupMessage": "Back up registry before saving?",
     "confirm": "Confirm",
     "cancel": "Cancel",
-    "search": "Search paths..."
+    "search": "Search paths...",
+    "importSystemCount": "System: {{count}} entries",
+    "importUserCount": "User: {{count}} entries"
   },
   "analyze": {
     "title": "PATH Analysis",
@@ -82,7 +88,8 @@
     "priority": "Prioritized",
     "shadowed": "Shadowed",
     "searchPlaceholder": "Search executable name...",
-    "conflictCount": "{{count}} file conflict(s) found"
+    "conflictCount": "{{count}} file conflict(s) found",
+    "notExists": "(not found)"
   },
   "profile": {
     "title": "PATH Profiles",
@@ -95,7 +102,9 @@
     "rename": "Rename",
     "noProfiles": "No saved profiles",
     "applyConfirm": "This will overwrite current PATH with profile \"{{name}}\" and write to registry. Confirm?",
-    "deleted": "Profile \"{{name}}\" deleted"
+    "deleted": "Profile \"{{name}}\" deleted",
+    "selectProfile": "Select a profile",
+    "empty": "(empty)"
   },
   "help": {
     "content": "PathEditor v5.0 — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"

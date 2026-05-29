@@ -1,3 +1,4 @@
+use crate::fs::atomic_write;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -10,7 +11,15 @@ fn profiles_dir() -> PathBuf {
 }
 
 fn validate_profile_name(name: &str) -> Result<(), String> {
-    if name.is_empty() { return Err("配置名称不能为空".into()); }
+    if name.is_empty() {
+        return Err("配置名称不能为空".into());
+    }
+    if name.len() > 255 {
+        return Err("配置名称过长（最大 255 字符）".into());
+    }
+    if name.contains('\0') || name.chars().any(|c| c.is_control()) {
+        return Err("配置名称包含非法字符".into());
+    }
     if name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("配置名称包含非法字符".into());
     }
@@ -115,7 +124,7 @@ pub fn save_profile(
 
     let json =
         serde_json::to_string_pretty(&data).map_err(|e| format!("JSON 序列化失败: {}", e))?;
-    fs::write(&path, &json).map_err(|e| format!("无法写入配置文件: {}", e))?;
+    atomic_write(&path, &json).map_err(|e| format!("无法写入配置文件: {}", e))?;
 
     log::info!("已保存配置: {}", path.display());
     Ok(())
@@ -128,10 +137,8 @@ pub fn load_profile(name: &str) -> Result<ProfileData, String> {
     if !path.exists() {
         return Err(format!("配置文件不存在: {}", name));
     }
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("无法读取配置文件: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("JSON 解析失败: {}", e))
+    let content = fs::read_to_string(&path).map_err(|e| format!("无法读取配置文件: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("JSON 解析失败: {}", e))
 }
 
 /// 删除配置文件
@@ -152,8 +159,10 @@ pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
         return Err(format!("配置文件不存在: {}", old_name));
     }
 
-    let mut data: ProfileData =
-        serde_json::from_str(&fs::read_to_string(&old_path).map_err(|e| format!("无法读取配置文件: {}", e))?).map_err(|e| format!("JSON 解析失败: {}", e))?;
+    let mut data: ProfileData = serde_json::from_str(
+        &fs::read_to_string(&old_path).map_err(|e| format!("无法读取配置文件: {}", e))?,
+    )
+    .map_err(|e| format!("JSON 解析失败: {}", e))?;
 
     data.name = new_name.to_string();
     data.modified = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
@@ -161,7 +170,7 @@ pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
     let new_path = profile_path(new_name);
     let json =
         serde_json::to_string_pretty(&data).map_err(|e| format!("JSON 序列化失败: {}", e))?;
-    fs::write(&new_path, &json).map_err(|e| format!("无法写入配置文件: {}", e))?;
+    atomic_write(&new_path, &json).map_err(|e| format!("无法写入配置文件: {}", e))?;
 
     if old_path != new_path {
         fs::remove_file(&old_path).map_err(|e| format!("无法删除旧配置文件: {}", e))?;
@@ -176,7 +185,10 @@ mod tests {
     use super::*;
 
     fn test_entry(path: &str) -> ProfilePathEntry {
-        ProfilePathEntry { path: path.into(), enabled: true }
+        ProfilePathEntry {
+            path: path.into(),
+            enabled: true,
+        }
     }
 
     #[test]
@@ -197,11 +209,39 @@ mod tests {
     }
 
     #[test]
+    fn validate_name_rejects_null_bytes() {
+        assert!(validate_profile_name("foo\0bar").is_err());
+    }
+
+    #[test]
+    fn validate_name_rejects_control_chars() {
+        assert!(validate_profile_name("foo\tbar").is_err());
+        assert!(validate_profile_name("foo\nbar").is_err());
+    }
+
+    #[test]
+    fn validate_name_rejects_too_long() {
+        let long_name = "a".repeat(256);
+        assert!(validate_profile_name(&long_name).is_err());
+    }
+
+    #[test]
+    fn validate_name_accepts_255_chars() {
+        let name = "a".repeat(255);
+        assert!(validate_profile_name(&name).is_ok());
+    }
+
+    #[test]
     fn profile_crud() {
         // save -> load -> delete
         let name = "__test_profile_crud";
         let _ = delete_profile(name);
-        save_profile(name, vec![test_entry("C:\\sys")], vec![test_entry("D:\\usr")]).unwrap();
+        save_profile(
+            name,
+            vec![test_entry("C:\\sys")],
+            vec![test_entry("D:\\usr")],
+        )
+        .unwrap();
         let loaded = load_profile(name).unwrap();
         assert_eq!(loaded.sys[0].path, "C:\\sys");
         delete_profile(name).unwrap();

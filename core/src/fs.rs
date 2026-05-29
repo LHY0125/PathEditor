@@ -1,8 +1,37 @@
 // 注意：TS 端 src/core/import-export.ts 有对应的导入导出实现，
 // 前端使用 TS 版（需 ImportDialog 交互），CLI 使用 Rust 版，修改时需同步两端。
 
+/// 过滤导入路径：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
+fn sanitize_paths(paths: Vec<String>) -> Vec<String> {
+    paths
+        .into_iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty() && !p.contains('\0') && !p.contains(';'))
+        .collect()
+}
+
+/// 原子写入：先写临时文件，再 rename 覆盖
+pub fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 /// 读取文本文件内容（供前端原生对话框选择文件后使用）
+/// 仅允许 .json / .csv / .txt 扩展名，防止任意文件读取
 pub fn read_text_file(path: &str) -> Result<String, String> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !matches!(ext.as_str(), "json" | "csv" | "txt") {
+        return Err(format!(
+            "不支持的文件类型: .{}（仅允许 .json/.csv/.txt）",
+            ext
+        ));
+    }
     std::fs::read_to_string(path).map_err(|e| format!("无法读取文件: {}", e))
 }
 
@@ -32,7 +61,7 @@ fn import_json(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
     }
     let data: ImportData =
         serde_json::from_str(content).map_err(|e| format!("JSON 解析失败: {}", e))?;
-    Ok((data.system, data.user))
+    Ok((sanitize_paths(data.system), sanitize_paths(data.user)))
 }
 
 fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
@@ -41,7 +70,9 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
     let mut first = true;
     for line in content.lines() {
         let mut trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         // 处理 UTF-8 BOM（仅首行）
         if first {
@@ -54,7 +85,9 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
             if fields.len() >= 2 {
                 let c0 = fields[0].trim().to_lowercase();
                 let c1 = fields[1].trim().to_lowercase();
-                if c0 == "type" && c1 == "path" { continue; }
+                if c0 == "type" && c1 == "path" {
+                    continue;
+                }
             }
         }
 
@@ -63,12 +96,16 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
             match fields[0].trim().to_lowercase().as_str() {
                 "system" | "sys" => sys.push(fields[1].trim().to_string()),
                 "user" | "usr" => usr.push(fields[1].trim().to_string()),
-                _ => { log::warn!("import_csv: 无法识别的类型字段，已跳过: {trimmed}"); }
+                _ => {
+                    log::warn!("import_csv: 无法识别的类型字段，已跳过: {trimmed}");
+                }
             }
         } else {
             log::warn!("import_csv: 格式不正确（缺逗号），已跳过: {trimmed}");
         }
     }
+    let sys = sanitize_paths(sys);
+    let usr = sanitize_paths(usr);
     if sys.is_empty() && usr.is_empty() {
         return Err("CSV 文件中未找到有效路径".into());
     }
@@ -81,6 +118,7 @@ fn import_txt(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
+    let paths = sanitize_paths(paths);
     if paths.is_empty() {
         return Err("TXT 文件中未找到路径".into());
     }
@@ -98,7 +136,7 @@ pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<Stri
                 "system": sys,
                 "user": usr,
             });
-            Ok(serde_json::to_string_pretty(&data).unwrap_or_default())
+            Ok(serde_json::to_string_pretty(&data).expect("JSON 序列化 Value 不应失败"))
         }
         "csv" => {
             let mut out = String::from("type,path\n");
@@ -224,5 +262,45 @@ mod tests {
         let (sys, usr) = import_paths("test.txt", "C:\\x\nD:\\y\n").unwrap();
         assert!(sys.is_empty());
         assert_eq!(usr, vec!["C:\\x", "D:\\y"]);
+    }
+
+    #[test]
+    fn read_text_file_rejects_non_whitelisted_ext() {
+        let result = read_text_file("C:\\Windows\\System32\\evil.dll");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("不支持的文件类型"));
+    }
+
+    #[test]
+    fn read_text_file_rejects_no_ext() {
+        let result = read_text_file("/etc/passwd");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn import_json_filters_null_byte_paths() {
+        // sanitize_paths 作为额外防线
+        let paths = vec!["C:\\safe".into(), "C:\\bad\0path".into()];
+        assert_eq!(sanitize_paths(paths), vec!["C:\\safe"]);
+    }
+
+    #[test]
+    fn import_csv_filters_semicolon_paths() {
+        let csv = "type,path\nsystem,C:\\good\nsystem,C:\\bad;path\n";
+        let (sys, _) = import_csv(csv).unwrap();
+        assert_eq!(sys, vec!["C:\\good"]);
+    }
+
+    #[test]
+    fn import_txt_trims_and_filters() {
+        let txt = "  C:\\trimmed  \n\nC:\\bad\0path\n# comment\n";
+        let (_, usr) = import_txt(txt).unwrap();
+        assert_eq!(usr, vec!["C:\\trimmed"]);
+    }
+
+    #[test]
+    fn sanitize_paths_removes_empty_after_trim() {
+        let result = sanitize_paths(vec!["  ".into(), "C:\\ok".into()]);
+        assert_eq!(result, vec!["C:\\ok"]);
     }
 }

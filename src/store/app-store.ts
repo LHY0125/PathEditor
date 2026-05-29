@@ -45,7 +45,7 @@ interface AppState {
   redo: () => void;
 
   loadPaths: () => Promise<void>;
-  savePaths: () => Promise<void>;
+  savePaths: (force?: boolean) => Promise<boolean>;
   initialize: () => Promise<void>;
 
 }
@@ -248,7 +248,7 @@ export const useAppStore = create<AppState>((set, get) => {
     const sysDisabled = sys.filter(e => !e.enabled).map(e => e.path);
     const usrDisabled = usr.filter(e => !e.enabled).map(e => e.path);
     invoke('save_disabled_state', { system: sysDisabled, user: usrDisabled })
-      .catch(() => {});
+      .catch((e) => console.warn('保存禁用状态失败:', e));
   },
 
   undo: () => {
@@ -264,7 +264,7 @@ export const useAppStore = create<AppState>((set, get) => {
       invoke('save_disabled_state', {
         system: result[0].filter(e => !e.enabled).map(e => e.path),
         user: result[1].filter(e => !e.enabled).map(e => e.path),
-      }).catch(() => {});
+      }).catch((e) => console.warn('保存禁用状态失败:', e));
     }
   },
 
@@ -281,7 +281,7 @@ export const useAppStore = create<AppState>((set, get) => {
       invoke('save_disabled_state', {
         system: result[0].filter(e => !e.enabled).map(e => e.path),
         user: result[1].filter(e => !e.enabled).map(e => e.path),
-      }).catch(() => {});
+      }).catch((e) => console.warn('保存禁用状态失败:', e));
     }
   },
 
@@ -322,9 +322,9 @@ export const useAppStore = create<AppState>((set, get) => {
     }
   },
 
-  savePaths: async () => {
+  savePaths: async (force?: boolean) => {
     const state = get();
-    if (state.isSaving) return;
+    if (state.isSaving) return false;
     set({ isSaving: true, statusMessage: i18n.t('status.saving') });
 
     // 只保存 enabled 的路径到注册表
@@ -333,9 +333,11 @@ export const useAppStore = create<AppState>((set, get) => {
     const sysJoined = sysPaths.join(';');
     const userJoined = userPaths.join(';');
 
+    // 长度检查：非强制模式下返回警告，由 UI 层确认
     const { maxSystemLength, maxUserLength, maxCombinedLength } = appConfig.path;
-    if (sysJoined.length > maxSystemLength || userJoined.length > maxUserLength || (sysJoined + userJoined).length > maxCombinedLength) {
-      if (!window.confirm('PATH 长度超过建议值，是否继续保存？')) { set({ isSaving: false }); return; }
+    if (!force && (sysJoined.length > maxSystemLength || userJoined.length > maxUserLength || (sysJoined + userJoined).length > maxCombinedLength)) {
+      set({ isSaving: false, statusMessage: i18n.t('status.saveWarningLongPaths') });
+      return false;
     }
 
     // 备份当前注册表（保存前备份旧值，失败仅警告不中断）
@@ -357,12 +359,14 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ isModified: false, isSaving: false,
         statusMessage: backupFailed ? i18n.t('status.saved_without_backup') : i18n.t('status.saved'),
         _savedSys: savedSys, _savedUser: savedUser });
+      return true;
     } else {
       const sysErr = (!sysOk && sysResult.status === 'rejected') ? String(sysResult.reason) : '';
       const usrErr = (!userOk && userResult.status === 'rejected') ? String(userResult.reason) : '';
       const parts = [sysErr, usrErr].filter(Boolean);
       const msg = sysOk ? '用户 PATH 保存失败' : userOk ? '系统 PATH 保存失败' : `保存失败: ${parts.join('; ')}`;
       set({ isSaving: false, statusMessage: msg });
+      return false;
     }
   },
 

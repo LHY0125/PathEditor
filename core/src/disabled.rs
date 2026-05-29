@@ -1,3 +1,4 @@
+use crate::fs::atomic_write;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -23,15 +24,13 @@ pub fn save_disabled_state(system: Vec<String>, user: Vec<String>) -> Result<(),
     let path = disabled_file_path();
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("无法创建配置目录: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("无法创建配置目录: {}", e))?;
     }
 
-    let json = serde_json::to_string_pretty(&state)
-        .map_err(|e| format!("JSON 序列化失败: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&state).map_err(|e| format!("JSON 序列化失败: {}", e))?;
 
-    fs::write(&path, &json)
-        .map_err(|e| format!("无法写入 disabled.json: {}", e))?;
+    atomic_write(&path, &json).map_err(|e| format!("无法写入 disabled.json: {}", e))?;
 
     log::info!("已保存禁用状态到: {}", path.display());
     Ok(())
@@ -45,15 +44,15 @@ pub fn load_disabled_state() -> Result<(Vec<String>, Vec<String>), String> {
         return Ok((vec![], vec![]));
     }
 
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("无法读取 disabled.json: {}", e))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("无法读取 disabled.json: {}", e))?;
 
     if content.trim().is_empty() {
         return Ok((vec![], vec![]));
     }
 
-    let state: DisabledState = serde_json::from_str(&content)
-        .map_err(|e| format!("JSON 解析失败: {}", e))?;
+    let state: DisabledState =
+        serde_json::from_str(&content).map_err(|e| format!("JSON 解析失败: {}", e))?;
 
     Ok((state.system, state.user))
 }

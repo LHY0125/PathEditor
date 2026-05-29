@@ -8,6 +8,9 @@
     "user": "用户变量",
     "merged": "合并预览"
   },
+  "table": {
+    "path": "路径"
+  },
   "button": {
     "new": "新建",
     "edit": "编辑",
@@ -51,7 +54,8 @@
     "modified": "已修改",
     "readonly_label": "只读",
     "light": "浅色",
-    "dark": "深色"
+    "dark": "深色",
+    "saveWarningLongPaths": "PATH 长度超过建议值，是否继续保存？"
   },
   "dialog": {
     "newPath": "新建路径",
@@ -70,7 +74,9 @@
     "backupMessage": "保存前需要备份注册表吗？",
     "confirm": "确认",
     "cancel": "取消",
-    "search": "搜索路径..."
+    "search": "搜索路径...",
+    "importSystemCount": "系统变量: {{count}} 条",
+    "importUserCount": "用户变量: {{count}} 条"
   },
   "analyze": {
     "title": "PATH 分析",
@@ -82,7 +88,8 @@
     "priority": "优先执行",
     "shadowed": "被遮蔽",
     "searchPlaceholder": "搜索可执行文件名...",
-    "conflictCount": "发现 {{count}} 个文件冲突"
+    "conflictCount": "发现 {{count}} 个文件冲突",
+    "notExists": "（不存在）"
   },
   "profile": {
     "title": "PATH 配置文件",
@@ -95,7 +102,9 @@
     "rename": "重命名",
     "noProfiles": "暂无配置文件",
     "applyConfirm": "将用配置 \"{{name}}\" 覆盖当前 PATH 并写入注册表，确定吗？",
-    "deleted": "已删除配置 \"{{name}}\""
+    "deleted": "已删除配置 \"{{name}}\"",
+    "selectProfile": "选择一个配置文件",
+    "empty": "（空）"
   },
   "help": {
     "content": "PathEditor v5.0 — Windows 系统环境变量 (PATH) 编辑器\n\n功能:\n• 新建/编辑/删除路径条目\n• 上移/下移调整优先级\n• 一键清理无效和重复路径\n• 导入/导出 JSON、CSV、TXT 格式\n• 完整撤销/重做支持\n\n快捷键:\n• Ctrl+N 新建\n• Ctrl+S 保存\n• Ctrl+Z 撤销\n• Ctrl+Y 重做\n• Ctrl+F 搜索\n• Delete 删除选中\n• F1 帮助\n\n作者: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"

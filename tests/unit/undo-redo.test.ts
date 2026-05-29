@@ -174,4 +174,29 @@ describe('UndoRedoManager', () => {
     const r = mgr.redo(...u)!;
     expect(r[0][0].enabled).toBe(false);
   });
+
+  it('IMPORT_BOTH 撤销/重做（同时修改系统和用户路径）', () => {
+    const oldSys = [...sys];
+    const oldUser = [...user];
+    const newSys = [pe('C:\\ImportedSys')];
+    const newUser = [pe('C:\\ImportedUser')];
+
+    mgr.push({
+      type: OperationType.IMPORT_BOTH,
+      target: TargetType.SYSTEM,
+      index: 0, count: 0,
+      oldPaths: oldSys, newPaths: newSys,
+      oldPathsOther: oldUser, newPathsOther: newUser,
+    });
+    sys = newSys;
+    user = newUser;
+
+    const u = mgr.undo(sys, user)!;
+    expect(u[0]).toEqual(oldSys);
+    expect(u[1]).toEqual(oldUser);
+
+    const r = mgr.redo(...u)!;
+    expect(r[0]).toEqual(newSys);
+    expect(r[1]).toEqual(newUser);
+  });
 });

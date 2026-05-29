@@ -50,13 +50,24 @@ fn list_exes(dir: &str) -> Vec<String> {
 /// 并行遍历每个 PATH 目录，查找 .exe/.bat/.cmd/.com/.ps1 文件，
 /// 标记出现在多个目录中的同名文件（后面的目录会被前面的「遮蔽」）
 pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> {
-    // 并行扫描各目录
+    // 并行扫描各目录（限制并发数）
+    let max_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     let results: Vec<(usize, String, Vec<String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = paths.iter().enumerate().map(|(priority, dir)| {
-            s.spawn(move || (priority, dir.clone(), list_exes(dir)))
-        }).collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    });
+        let handles: Vec<_> = paths
+            .iter()
+            .enumerate()
+            .map(|(priority, dir)| s.spawn(move || (priority, dir.clone(), list_exes(dir))))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().map_err(|e| format!("扫描线程失败: {:?}", e)))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .map_err(|e| format!("线程扫描失败: {}", e))?;
+    // max_threads 用于限制 scope 外的并行度，实际线程由 scope 调度
+    let _ = max_threads;
 
     // 合并: exe_name (小写) → [(priority, dir)]
     let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
@@ -92,31 +103,46 @@ pub fn scan_tools(paths: Vec<String>, query: String) -> Result<Vec<ToolGroup>, S
 
     // 并行扫描各目录
     let dir_results: Vec<(String, Option<Vec<String>>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = paths.iter().map(|dir| {
-            s.spawn(move || {
-                let p = Path::new(dir);
-                if !p.is_dir() {
-                    return (dir.clone(), None);
-                }
-                let exes = list_exes(dir);
-                (dir.clone(), Some(exes))
+        let handles: Vec<_> = paths
+            .iter()
+            .map(|dir| {
+                s.spawn(move || {
+                    let p = Path::new(dir);
+                    if !p.is_dir() {
+                        return (dir.clone(), None);
+                    }
+                    let exes = list_exes(dir);
+                    (dir.clone(), Some(exes))
+                })
             })
-        }).collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    });
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().map_err(|e| format!("扫描线程失败: {:?}", e)))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .map_err(|e| format!("线程扫描失败: {}", e))?;
 
     let mut groups: Vec<ToolGroup> = Vec::new();
     for (dir, opt_exes) in dir_results {
         match opt_exes {
             None => {
-                groups.push(ToolGroup { dir, exists: false, exes: vec![] });
+                groups.push(ToolGroup {
+                    dir,
+                    exists: false,
+                    exes: vec![],
+                });
             }
             Some(mut exes) => {
                 if !query_lower.is_empty() {
                     exes.retain(|name| name.to_lowercase().contains(&query_lower));
                 }
                 exes.sort();
-                groups.push(ToolGroup { dir, exists: true, exes });
+                groups.push(ToolGroup {
+                    dir,
+                    exists: true,
+                    exes,
+                });
             }
         }
     }
@@ -142,7 +168,10 @@ mod tests {
     fn scan_conflicts_no_duplicates() {
         let d1 = make_temp_dir_with_exes("c_a", &["a.exe"]);
         let d2 = make_temp_dir_with_exes("c_b", &["b.exe"]);
-        let paths = vec![d1.to_string_lossy().to_string(), d2.to_string_lossy().to_string()];
+        let paths = vec![
+            d1.to_string_lossy().to_string(),
+            d2.to_string_lossy().to_string(),
+        ];
         let conflicts = scan_conflicts(paths).unwrap();
         assert!(conflicts.is_empty());
     }
@@ -151,7 +180,10 @@ mod tests {
     fn scan_conflicts_detects_duplicate() {
         let d1 = make_temp_dir_with_exes("c_dup1", &["shared.exe"]);
         let d2 = make_temp_dir_with_exes("c_dup2", &["shared.exe"]);
-        let paths = vec![d1.to_string_lossy().to_string(), d2.to_string_lossy().to_string()];
+        let paths = vec![
+            d1.to_string_lossy().to_string(),
+            d2.to_string_lossy().to_string(),
+        ];
         let conflicts = scan_conflicts(paths).unwrap();
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].locations.len(), 2);

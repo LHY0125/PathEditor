@@ -268,8 +268,8 @@ describe('savePaths', () => {
     // 第二次调用应被 isSaving 守卫拦截（此时 isSaving=true）
     const r2 = useAppStore.getState().savePaths();
 
-    // 第二次调用同步返回 undefined（被守卫拦截）
-    await expect(r2).resolves.toBeUndefined();
+    // 第二次调用同步返回 false（被守卫拦截）
+    await expect(r2).resolves.toBe(false);
 
     // 放行第一次调用的所有 invoke
     resolveAll!(undefined);

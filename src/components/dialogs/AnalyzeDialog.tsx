@@ -37,8 +37,9 @@ export function AnalyzeDialog({ open, onClose }: Props) {
 
   const prevOpen = useRef(false);
   useEffect(() => {
-    if (!open || prevOpen.current) return;
-    prevOpen.current = open;
+    if (!open) { prevOpen.current = false; return; }
+    if (prevOpen.current) return;
+    prevOpen.current = true;
     setLoading(true);
     const paths = getEnabledPaths();
     Promise.all([
@@ -184,7 +185,7 @@ function ToolsTab({
                 opacity: g.exists ? 1 : 0.6,
               }}
             >
-              {g.dir} {!g.exists && '(不存在)'}
+              {g.dir} {!g.exists && t('analyze.notExists')}
             </div>
             <div className="flex flex-wrap gap-1 mt-1 ml-2">
               {g.exes.map((exe) => (
