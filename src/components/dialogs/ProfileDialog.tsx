@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
@@ -39,8 +39,10 @@ export function ProfileDialog({ open, onClose }: Props) {
     setProfiles(list);
   }, []);
 
+  const prevOpen = useRef(false);
   useEffect(() => {
-    if (open) refreshProfiles();
+    if (open && !prevOpen.current) refreshProfiles();
+    prevOpen.current = open;
   }, [open, refreshProfiles]);
 
   const handleSave = async () => {

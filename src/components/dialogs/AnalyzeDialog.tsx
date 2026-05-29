@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
@@ -35,8 +35,10 @@ export function AnalyzeDialog({ open, onClose }: Props) {
   const [toolGroups, setToolGroups] = useState<ToolGroup[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const prevOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open || prevOpen.current) return;
+    prevOpen.current = open;
     setLoading(true);
     const paths = getEnabledPaths();
     Promise.all([
