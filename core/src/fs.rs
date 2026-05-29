@@ -64,6 +64,39 @@ fn import_json(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
     Ok((sanitize_paths(data.system), sanitize_paths(data.user)))
 }
 
+/// 解析 CSV 行，支持引号包裹的字段（RFC 4180 子集）
+/// 与 TS 端 src/core/import-export.ts parseCsvLine 逻辑一致
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if in_quotes {
+            if ch == '"' {
+                if chars.peek() == Some(&'"') {
+                    current.push('"');
+                    chars.next(); // 跳过转义引号
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                current.push(ch);
+            }
+        } else if ch == '"' {
+            in_quotes = true;
+        } else if ch == ',' {
+            fields.push(current);
+            current = String::new();
+        } else {
+            current.push(ch);
+        }
+    }
+    fields.push(current);
+    fields
+}
+
 fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
     let mut sys = Vec::new();
     let mut usr = Vec::new();
@@ -81,17 +114,17 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
                 trimmed = stripped;
             }
             // 跳过 header 行 "type,path"
-            let fields: Vec<&str> = trimmed.split(',').collect();
-            if fields.len() >= 2 {
-                let c0 = fields[0].trim().to_lowercase();
-                let c1 = fields[1].trim().to_lowercase();
+            let header_fields = parse_csv_line(trimmed);
+            if header_fields.len() >= 2 {
+                let c0 = header_fields[0].trim().to_lowercase();
+                let c1 = header_fields[1].trim().to_lowercase();
                 if c0 == "type" && c1 == "path" {
                     continue;
                 }
             }
         }
 
-        let fields: Vec<&str> = trimmed.split(',').collect();
+        let fields = parse_csv_line(trimmed);
         if fields.len() >= 2 {
             match fields[0].trim().to_lowercase().as_str() {
                 "system" | "sys" => sys.push(fields[1].trim().to_string()),
@@ -302,5 +335,33 @@ mod tests {
     fn sanitize_paths_removes_empty_after_trim() {
         let result = sanitize_paths(vec!["  ".into(), "C:\\ok".into()]);
         assert_eq!(result, vec!["C:\\ok"]);
+    }
+
+    #[test]
+    fn parse_csv_line_basic() {
+        assert_eq!(parse_csv_line("a,b,c"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn parse_csv_line_quoted_comma() {
+        assert_eq!(
+            parse_csv_line(r#"system,"C:\Program Files, Inc\bin""#),
+            vec!["system", r#"C:\Program Files, Inc\bin"#]
+        );
+    }
+
+    #[test]
+    fn parse_csv_line_escaped_quotes() {
+        assert_eq!(
+            parse_csv_line(r#"system,"He said ""hello""""#),
+            vec!["system", r#"He said "hello""#]
+        );
+    }
+
+    #[test]
+    fn import_csv_quoted_comma_path() {
+        let csv = "type,path\nsystem,\"C:\\Program Files, Inc\\bin\"\n";
+        let (sys, _) = import_csv(csv).unwrap();
+        assert_eq!(sys, vec!["C:\\Program Files, Inc\\bin"]);
     }
 }

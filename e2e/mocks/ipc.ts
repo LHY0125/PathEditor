@@ -1,7 +1,11 @@
-export function createIpcMock() {
+export type IpcOverrides = Partial<Record<string, unknown>>;
+
+export function createIpcMock(overrides: IpcOverrides = {}) {
   return `
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd, args) => {
+        const overrides = ${JSON.stringify(overrides)};
+        if (cmd in overrides) return overrides[cmd];
         switch (cmd) {
           case 'check_admin': return true;
           case 'load_system_paths': return ['C:\\\\Windows', 'C:\\\\Program Files'];
