@@ -1,0 +1,6 @@
+node_modules/
+dist/
+target/
+test-results/
+e2e/
+*.config.*
