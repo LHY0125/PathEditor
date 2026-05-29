@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[[bin]]
+name = "patheditor"
+path = "src/main.rs"
+
 [dependencies]
 path-editor-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }

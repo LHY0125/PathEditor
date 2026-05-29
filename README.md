@@ -128,7 +128,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor U as 用户
-    participant CLI as patheditor-cli
+    participant CLI as patheditor
     participant Core as Rust core 库
     participant Win as Windows
 
@@ -152,6 +152,9 @@ sequenceDiagram
 ```bash
 # 安装
 cargo install --path cli
+
+# 安装后可直接使用:
+patheditor --help
 
 # 查看 PATH
 patheditor list --system --json
