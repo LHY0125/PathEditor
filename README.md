@@ -36,7 +36,7 @@ graph TB
     end
 
     subgraph CLI["CLI 命令行"]
-        Clap[clap 参数解析<br/>17 条命令]
+        Clap[clap 参数解析<br/>18 条命令]
         Atomic[原子性保护<br/>verify_and_save]
     end
 
@@ -167,7 +167,7 @@ patheditor profile save "Python开发"
 patheditor profile apply "Python开发"
 ```
 
-完整 17 条命令：`patheditor --help`
+完整 18 条命令：`patheditor --help`
 
 ## 功能
 
@@ -271,7 +271,7 @@ core/                         # Rust 核心库（零 Tauri 依赖）
 gui/                          # Tauri 桌面应用
 └── src/commands/             # 薄包装 → 调用 core
 cli/                          # 命令行工具
-└── src/main.rs               # 17 条命令
+└── src/main.rs               # 18 条命令
 src/                          # React 前端
 ├── core/                     # 纯逻辑 — 零框架依赖
 ├── store/                    # Zustand 状态管理
