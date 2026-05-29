@@ -28,7 +28,7 @@ jobs:
         run: npx tsc -b --noEmit
 
       - name: ESLint
-        run: npx eslint src/ tests/
+        run: npx eslint src/ tests/ e2e/
 
       - name: Vitest 测试
         run: npm test

@@ -19,7 +19,14 @@ pub fn get_appdata_dir() -> String {
 /// 在保存前调用，备份的是注册表中的当前值（保存前的状态）
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
     let backup_dir = match custom_dir {
-        Some(ref dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
+        Some(ref dir) if !dir.is_empty() => {
+            let p = std::path::PathBuf::from(dir);
+            let normalized = dir.replace('/', "\\").to_lowercase();
+            if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\") {
+                return Err("不允许备份到系统目录".into());
+            }
+            p
+        }
         _ => backup_base_dir(),
     };
 
