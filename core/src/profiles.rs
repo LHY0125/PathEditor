@@ -3,11 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(not(test))]
 fn profiles_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".patheditor")
         .join("profiles")
+}
+
+#[cfg(test)]
+fn profiles_dir() -> PathBuf {
+    std::env::temp_dir().join("patheditor_test_profiles")
 }
 
 fn validate_profile_name(name: &str) -> Result<(), String> {
@@ -155,8 +161,12 @@ pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
     validate_profile_name(old_name)?;
     validate_profile_name(new_name)?;
     let old_path = profile_path(old_name);
+    let new_path = profile_path(new_name);
     if !old_path.exists() {
         return Err(format!("配置文件不存在: {}", old_name));
+    }
+    if old_path != new_path && new_path.exists() {
+        return Err(format!("目标配置名已存在: {}", new_name));
     }
 
     let mut data: ProfileData = serde_json::from_str(
@@ -167,7 +177,6 @@ pub fn rename_profile(old_name: &str, new_name: &str) -> Result<(), String> {
     data.name = new_name.to_string();
     data.modified = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
-    let new_path = profile_path(new_name);
     let json =
         serde_json::to_string_pretty(&data).map_err(|e| format!("JSON 序列化失败: {}", e))?;
     atomic_write(&new_path, &json).map_err(|e| format!("无法写入配置文件: {}", e))?;

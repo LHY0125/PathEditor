@@ -191,6 +191,29 @@ fn load_and_save(system: bool, f: impl FnOnce(Vec<String>) -> Vec<String>) {
     verify_and_save(target, &list, new_list);
 }
 
+/// 加载、检查索引、操作、验证、保存的通用模式
+/// `operate` 接收路径列表（包含原始列表）和要操作的索引，返回新列表和打印消息
+fn load_operate_save(
+    system: bool,
+    index: usize,
+    operate: impl FnOnce(Vec<String>, usize) -> (Vec<String>, String),
+) {
+    let target = ensure_single_target(system, false);
+    let list = if target == "system" {
+        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
+    } else {
+        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
+    };
+    if index >= list.len() {
+        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
+    }
+    let original = list.clone();
+    let (new_list, msg) = operate(list, index);
+    verify_and_save(target, &original, new_list);
+    println!("{msg}");
+    core::system::broadcast_env_change();
+}
+
 // ── 命令实现 ──
 
 fn cmd_list(system: bool, user: bool, json_out: bool) {
@@ -237,37 +260,17 @@ fn cmd_add(path: String, system: bool, user: bool) {
 }
 
 fn cmd_remove(index: usize, system: bool) {
-    let target = ensure_single_target(system, false);
-    let mut list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
-    } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
-    };
-    let original = list.clone();
-    if index >= list.len() {
-        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
-    }
-    let removed = list.remove(index);
-    verify_and_save(target, &original, list);
-    println!("已删除: {removed}");
-    core::system::broadcast_env_change();
+    load_operate_save(system, index, |mut list, idx| {
+        let removed = list.remove(idx);
+        (list, format!("已删除: {removed}"))
+    });
 }
 
 fn cmd_edit(index: usize, new_path: String, system: bool) {
-    let target = ensure_single_target(system, false);
-    let mut list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
-    } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
-    };
-    if index >= list.len() {
-        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
-    }
-    let original = list.clone();
-    let old = std::mem::replace(&mut list[index], new_path.clone());
-    verify_and_save(target, &original, list);
-    println!("已编辑: {old} → {new_path}");
-    core::system::broadcast_env_change();
+    load_operate_save(system, index, |mut list, idx| {
+        let old = std::mem::replace(&mut list[idx], new_path.clone());
+        (list, format!("已编辑: {old} → {new_path}"))
+    });
 }
 
 fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
@@ -389,23 +392,26 @@ fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
 
 fn cmd_import(file: String, target: String) {
     let content = core::fs::read_text_file(&file).unwrap_or_else(|e| exit_err(&e));
-    let (sys, usr) = core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_err(&e));
+    let (sys_entries, usr_entries) =
+        core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_err(&e));
+    let sys_paths: Vec<String> = sys_entries.into_iter().map(|e| e.path).collect();
+    let usr_paths: Vec<String> = usr_entries.into_iter().map(|e| e.path).collect();
     match target.as_str() {
         "system" => {
             let orig = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-            verify_and_save("system", &orig, sys);
+            verify_and_save("system", &orig, sys_paths);
             println!("已导入到系统 PATH");
         }
         "user" => {
             let orig = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-            verify_and_save("user", &orig, usr);
+            verify_and_save("user", &orig, usr_paths);
             println!("已导入到用户 PATH");
         }
         _ => {
             let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
             let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-            verify_and_save("system", &orig_sys, sys);
-            verify_and_save("user", &orig_usr, usr);
+            verify_and_save("system", &orig_sys, sys_paths);
+            verify_and_save("user", &orig_usr, usr_paths);
             println!("已导入到系统 + 用户 PATH");
         }
     }

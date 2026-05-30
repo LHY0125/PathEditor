@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist', 'gui'] },
+  { ignores: ['dist', 'gui', 'target', 'test-results', 'e2e', '*.config.*'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

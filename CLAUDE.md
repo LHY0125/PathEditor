@@ -65,11 +65,13 @@ PathEditor/
 │   │   ├── toolbar/            # ToolBar、ActionButtons、UndoRedoButtons
 │   │   ├── dialogs/            # PathEdit、Help、Import、Analyze、Profile
 │   │   └── ui/                 # Modal、buttons
-│   ├── hooks/                  # useAppActions、useKeyboard
+│   ├── hooks/                  # useAppActions、useKeyboard、usePathValidation
 │   ├── i18n/                   # zh-CN / en
 │   └── config/                 # default.json
+├── docs/                       # REMaining-ISSUES 等审查文档
 ├── tests/unit/                 # Vitest 前端单元测试
 ├── e2e/                        # Playwright E2E 测试
+├── rust-toolchain.toml         # 固定工具链版本
 └── Cargo.toml                  # Workspace 根 + [workspace.package]
 ```
 
@@ -144,7 +146,7 @@ patheditor profile       {list|save|load|apply|delete|rename}
 ## 关键约束
 
 - **TypeScript**：`strict: true`，零编译错误
-- **Rust 工具链**：`stable-x86_64-pc-windows-gnu`（项目已设 override）
+- **Rust 工具链**：`stable-x86_64-pc-windows-gnu`（`rust-toolchain.toml` 强制）
 - **MinGW 兼容**：`.cargo/config.toml` 添加 `-lmcfgthread`（GCC 15.2.0 运行时）
 - **运行权限**：需要管理员权限才能编辑系统 PATH，非管理员自动进入只读模式
 - **构建产物**：NSIS 安装包，约 8MB

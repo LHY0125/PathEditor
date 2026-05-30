@@ -50,10 +50,6 @@ fn list_exes(dir: &str) -> Vec<String> {
 /// 并行遍历每个 PATH 目录，查找 .exe/.bat/.cmd/.com/.ps1 文件，
 /// 标记出现在多个目录中的同名文件（后面的目录会被前面的「遮蔽」）
 pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> {
-    // 并行扫描各目录（限制并发数）
-    let max_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
     let results: Vec<(usize, String, Vec<String>)> = std::thread::scope(|s| {
         let handles: Vec<_> = paths
             .iter()
@@ -66,8 +62,6 @@ pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> 
             .collect::<Result<Vec<_>, _>>()
     })
     .map_err(|e| format!("线程扫描失败: {}", e))?;
-    // max_threads 用于限制 scope 外的并行度，实际线程由 scope 调度
-    let _ = max_threads;
 
     // 合并: exe_name (小写) → [(priority, dir)]
     let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
@@ -155,13 +149,29 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn make_temp_dir_with_exes(prefix: &str, exe_names: &[&str]) -> std::path::PathBuf {
+    struct TempDirGuard(std::path::PathBuf);
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for TempDirGuard {
+        type Target = std::path::PathBuf;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    fn make_temp_dir_with_exes(prefix: &str, exe_names: &[&str]) -> TempDirGuard {
         let dir = std::env::temp_dir().join(format!("patheditor_test_{}", prefix));
+        let _ = fs::remove_dir_all(&dir); // 清理残留
         fs::create_dir_all(&dir).unwrap();
         for name in exe_names {
             fs::write(dir.join(name), b"fake").unwrap();
         }
-        dir
+        TempDirGuard(dir)
     }
 
     #[test]

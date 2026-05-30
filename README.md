@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-72%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-157%20passed-brightgreen" alt="tests">
   <img src="https://github.com/LHY0125/PathEditor/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
@@ -259,8 +259,8 @@ npx tauri build
 | 国际化 | i18next |
 | 桌面框架 | Tauri 2.x |
 | 核心库 | Rust workspace (core + gui + cli) |
-| 前端测试 | Vitest (72 个测试) |
-| Rust 测试 | cargo test (10 个测试) |
+| 前端测试 | Vitest (100 个测试) |
+| Rust 测试 | cargo test (57 个测试) |
 | 构建 | Vite + Cargo |
 | 打包 | NSIS |
 
@@ -282,10 +282,11 @@ src/                          # React 前端
 ├── core/                     # 纯逻辑 — 零框架依赖
 ├── store/                    # Zustand 状态管理
 ├── components/               # UI 组件
-├── hooks/                    # useAppActions、useKeyboard
+├── hooks/                    # useAppActions、useKeyboard、usePathValidation
 ├── i18n/                     # zh-CN / en
 └── config/                   # default.json
 tests/unit/                   # 前端单元测试
+docs/                         # 审查文档
 ```
 
 ## 快捷键

@@ -23,6 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .claude/
+.codegraph/
 CLAUDE.md
 e2e/debug-screenshot.png
 test-results/

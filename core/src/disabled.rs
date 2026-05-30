@@ -3,11 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(not(test))]
 fn disabled_file_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".patheditor")
         .join("disabled.json")
+}
+
+#[cfg(test)]
+fn disabled_file_path() -> PathBuf {
+    std::env::temp_dir().join("patheditor_test_disabled.json")
 }
 
 #[derive(Serialize, Deserialize, Default)]

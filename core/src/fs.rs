@@ -1,12 +1,17 @@
 // 注意：TS 端 src/core/import-export.ts 有对应的导入导出实现，
 // 前端使用 TS 版（需 ImportDialog 交互），CLI 使用 Rust 版，修改时需同步两端。
 
-/// 过滤导入路径：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
-fn sanitize_paths(paths: Vec<String>) -> Vec<String> {
-    paths
+use crate::profiles::ProfilePathEntry;
+
+/// 过滤导入条目：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
+fn sanitize_entries(entries: Vec<ProfilePathEntry>) -> Vec<ProfilePathEntry> {
+    entries
         .into_iter()
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty() && !p.contains('\0') && !p.contains(';'))
+        .map(|e| ProfilePathEntry {
+            path: e.path.trim().to_string(),
+            enabled: e.enabled,
+        })
+        .filter(|e| !e.path.is_empty() && !e.path.contains('\0') && !e.path.contains(';'))
         .collect()
 }
 
@@ -35,8 +40,11 @@ pub fn read_text_file(path: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("无法读取文件: {}", e))
 }
 
-/// 导入路径文件（JSON / CSV / TXT），返回 (系统路径, 用户路径)
-pub fn import_paths(path: &str, content: &str) -> Result<(Vec<String>, Vec<String>), String> {
+/// 导入路径文件（JSON / CSV / TXT），返回 (系统条目, 用户条目)
+pub fn import_paths(
+    path: &str,
+    content: &str,
+) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
     let ext = std::path::Path::new(path)
         .extension()
         .map(|e| e.to_ascii_lowercase())
@@ -51,17 +59,39 @@ pub fn import_paths(path: &str, content: &str) -> Result<(Vec<String>, Vec<Strin
     }
 }
 
-fn import_json(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
+fn import_json(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
+    #[derive(serde::Deserialize)]
+    struct ImportItem {
+        path: String,
+        #[serde(default = "default_true")]
+        enabled: bool,
+    }
+    fn default_true() -> bool {
+        true
+    }
+
     #[derive(serde::Deserialize)]
     struct ImportData {
         #[serde(default)]
-        system: Vec<String>,
+        system: Vec<ImportItem>,
         #[serde(default)]
-        user: Vec<String>,
+        user: Vec<ImportItem>,
     }
     let data: ImportData =
         serde_json::from_str(content).map_err(|e| format!("JSON 解析失败: {}", e))?;
-    Ok((sanitize_paths(data.system), sanitize_paths(data.user)))
+    let into_entries = |items: Vec<ImportItem>| -> Vec<ProfilePathEntry> {
+        items
+            .into_iter()
+            .map(|i| ProfilePathEntry {
+                path: i.path,
+                enabled: i.enabled,
+            })
+            .collect()
+    };
+    Ok((
+        sanitize_entries(into_entries(data.system)),
+        sanitize_entries(into_entries(data.user)),
+    ))
 }
 
 /// 解析 CSV 行，支持引号包裹的字段（RFC 4180 子集）
@@ -97,7 +127,9 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     fields
 }
 
-fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
+fn import_csv(
+    content: &str,
+) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
     let mut sys = Vec::new();
     let mut usr = Vec::new();
     let mut first = true;
@@ -113,7 +145,7 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
             if let Some(stripped) = trimmed.strip_prefix('\u{FEFF}') {
                 trimmed = stripped;
             }
-            // 跳过 header 行 "type,path"
+            // 跳过 header 行，兼容 type,path 和 type,path,enabled 两种格式
             let header_fields = parse_csv_line(trimmed);
             if header_fields.len() >= 2 {
                 let c0 = header_fields[0].trim().to_lowercase();
@@ -126,9 +158,16 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
 
         let fields = parse_csv_line(trimmed);
         if fields.len() >= 2 {
+            let path = fields[1].trim().to_string();
+            let enabled = if fields.len() >= 3 {
+                fields[2].trim().to_lowercase() != "false"
+            } else {
+                true
+            };
+            let entry = ProfilePathEntry { path, enabled };
             match fields[0].trim().to_lowercase().as_str() {
-                "system" | "sys" => sys.push(fields[1].trim().to_string()),
-                "user" | "usr" => usr.push(fields[1].trim().to_string()),
+                "system" | "sys" => sys.push(entry),
+                "user" | "usr" => usr.push(entry),
                 _ => {
                     log::warn!("import_csv: 无法识别的类型字段，已跳过: {trimmed}");
                 }
@@ -137,47 +176,57 @@ fn import_csv(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
             log::warn!("import_csv: 格式不正确（缺逗号），已跳过: {trimmed}");
         }
     }
-    let sys = sanitize_paths(sys);
-    let usr = sanitize_paths(usr);
+    let sys = sanitize_entries(sys);
+    let usr = sanitize_entries(usr);
     if sys.is_empty() && usr.is_empty() {
         return Err("CSV 文件中未找到有效路径".into());
     }
     Ok((sys, usr))
 }
 
-fn import_txt(content: &str) -> Result<(Vec<String>, Vec<String>), String> {
-    let paths: Vec<String> = content
+fn import_txt(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
+    let entries: Vec<ProfilePathEntry> = content
         .lines()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|path| ProfilePathEntry {
+            path,
+            enabled: true,
+        })
         .collect();
-    let paths = sanitize_paths(paths);
-    if paths.is_empty() {
+    let entries = sanitize_entries(entries);
+    if entries.is_empty() {
         return Err("TXT 文件中未找到路径".into());
     }
     // TXT 格式全部导入为用户路径
-    Ok((vec![], paths))
+    Ok((vec![], entries))
 }
 
 /// 导出 PATH 为指定格式字符串
 pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<String, String> {
     match format {
         "json" => {
+            let to_entries = |paths: &[String]| -> Vec<serde_json::Value> {
+                paths
+                    .iter()
+                    .map(|p| serde_json::json!({"path": p, "enabled": true}))
+                    .collect()
+            };
             let data = serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "timestamp": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
-                "system": sys,
-                "user": usr,
+                "system": to_entries(sys),
+                "user": to_entries(usr),
             });
             Ok(serde_json::to_string_pretty(&data).expect("JSON 序列化 Value 不应失败"))
         }
         "csv" => {
-            let mut out = String::from("type,path\n");
+            let mut out = String::from("type,path,enabled\n");
             for p in sys {
-                out.push_str(&format!("system,{}\n", p));
+                out.push_str(&format!("system,{},true\n", p));
             }
             for p in usr {
-                out.push_str(&format!("user,{}\n", p));
+                out.push_str(&format!("user,{},true\n", p));
             }
             Ok(out)
         }
@@ -205,18 +254,45 @@ pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<Stri
 mod tests {
     use super::*;
 
+    fn entry(path: &str) -> ProfilePathEntry {
+        ProfilePathEntry {
+            path: path.into(),
+            enabled: true,
+        }
+    }
+
+    fn entry_disabled(path: &str) -> ProfilePathEntry {
+        ProfilePathEntry {
+            path: path.into(),
+            enabled: false,
+        }
+    }
+
     #[test]
     fn import_json_valid() {
-        let json = r#"{"system": ["C:\\sys1", "C:\\sys2"], "user": ["D:\\usr1"]}"#;
+        let json = r#"{"system": [{"path": "C:\\sys1"}, {"path": "C:\\sys2"}], "user": [{"path": "D:\\usr1"}]}"#;
         let (sys, usr) = import_json(json).unwrap();
-        assert_eq!(sys, vec!["C:\\sys1", "C:\\sys2"]);
-        assert_eq!(usr, vec!["D:\\usr1"]);
+        assert_eq!(sys.len(), 2);
+        assert_eq!(sys[0].path, "C:\\sys1");
+        assert!(sys[0].enabled);
+        assert_eq!(sys[1].path, "C:\\sys2");
+        assert_eq!(usr.len(), 1);
+        assert_eq!(usr[0].path, "D:\\usr1");
     }
 
     #[test]
     fn import_json_empty_arrays() {
         let (sys, usr) = import_json(r#"{"system": [], "user": []}"#).unwrap();
         assert!(sys.is_empty() && usr.is_empty());
+    }
+
+    #[test]
+    fn import_json_disabled_entry() {
+        let json = r#"{"system": [{"path": "C:\\on", "enabled": true}, {"path": "C:\\off", "enabled": false}]}"#;
+        let (sys, _) = import_json(json).unwrap();
+        assert_eq!(sys.len(), 2);
+        assert!(sys[0].enabled);
+        assert!(!sys[1].enabled);
     }
 
     #[test]
@@ -228,16 +304,20 @@ mod tests {
     #[test]
     fn import_csv_valid() {
         let csv = "type,path\nsystem,C:\\sys1\nuser,D:\\usr1\n";
-        let (sys, _usr) = import_csv(csv).unwrap();
-        assert_eq!(sys, vec!["C:\\sys1"]);
-        assert_eq!(_usr, vec!["D:\\usr1"]);
+        let (sys, usr) = import_csv(csv).unwrap();
+        assert_eq!(sys.len(), 1);
+        assert_eq!(sys[0].path, "C:\\sys1");
+        assert!(sys[0].enabled);
+        assert_eq!(usr.len(), 1);
+        assert_eq!(usr[0].path, "D:\\usr1");
+        assert!(usr[0].enabled);
     }
 
     #[test]
     fn import_csv_with_bom() {
         let csv = "\u{FEFF}type,path\nsystem,C:\\sys1\n";
         let (sys, _) = import_csv(csv).unwrap();
-        assert_eq!(sys, vec!["C:\\sys1"]);
+        assert_eq!(sys[0].path, "C:\\sys1");
     }
 
     #[test]
@@ -249,8 +329,27 @@ mod tests {
     fn import_csv_alternate_type_names() {
         let csv = "type,path\nsys,D:\\a\nusr,D:\\b\n";
         let (sys, usr) = import_csv(csv).unwrap();
-        assert_eq!(sys, vec!["D:\\a"]);
-        assert_eq!(usr, vec!["D:\\b"]);
+        assert_eq!(sys[0].path, "D:\\a");
+        assert_eq!(usr[0].path, "D:\\b");
+    }
+
+    #[test]
+    fn import_csv_reads_enabled_column() {
+        let csv = "type,path,enabled\nsystem,C:\\ok,true\nsystem,C:\\disabled,false\n";
+        let (sys, _) = import_csv(csv).unwrap();
+        assert_eq!(sys.len(), 2);
+        assert_eq!(sys[0].path, "C:\\ok");
+        assert!(sys[0].enabled);
+        assert_eq!(sys[1].path, "C:\\disabled");
+        assert!(!sys[1].enabled);
+    }
+
+    #[test]
+    fn import_csv_enabled_defaults_true() {
+        // 2 列格式（无 enabled 列）默认为 true
+        let csv = "type,path\nsystem,C:\\x\n";
+        let (sys, _) = import_csv(csv).unwrap();
+        assert!(sys[0].enabled);
     }
 
     #[test]
@@ -259,16 +358,18 @@ mod tests {
         let usr: Vec<String> = vec![];
         let exported = export_paths(&sys, &usr, "json").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&exported).unwrap();
-        assert_eq!(parsed["system"][0], "C:\\a");
+        assert_eq!(parsed["system"][0]["path"], "C:\\a");
+        assert_eq!(parsed["system"][0]["enabled"], true);
     }
 
     #[test]
-    fn export_csv_roundtrip() {
+    fn export_csv_includes_enabled_column() {
         let sys = vec!["C:\\a".into()];
         let usr = vec!["D:\\b".into()];
         let exported = export_paths(&sys, &usr, "csv").unwrap();
-        assert!(exported.contains("system,C:\\a"));
-        assert!(exported.contains("user,D:\\b"));
+        assert!(exported.starts_with("type,path,enabled"));
+        assert!(exported.contains("system,C:\\a,true"));
+        assert!(exported.contains("user,D:\\b,true"));
     }
 
     #[test]
@@ -287,14 +388,16 @@ mod tests {
     #[test]
     fn import_paths_detects_format() {
         let (sys, _) = import_paths("test.csv", "type,path\nsystem,C:\\x\n").unwrap();
-        assert_eq!(sys, vec!["C:\\x"]);
+        assert_eq!(sys[0].path, "C:\\x");
     }
 
     #[test]
     fn import_paths_txt_to_user() {
         let (sys, usr) = import_paths("test.txt", "C:\\x\nD:\\y\n").unwrap();
         assert!(sys.is_empty());
-        assert_eq!(usr, vec!["C:\\x", "D:\\y"]);
+        assert_eq!(usr.len(), 2);
+        assert_eq!(usr[0].path, "C:\\x");
+        assert_eq!(usr[1].path, "D:\\y");
     }
 
     #[test]
@@ -311,30 +414,42 @@ mod tests {
     }
 
     #[test]
-    fn import_json_filters_null_byte_paths() {
-        // sanitize_paths 作为额外防线
-        let paths = vec!["C:\\safe".into(), "C:\\bad\0path".into()];
-        assert_eq!(sanitize_paths(paths), vec!["C:\\safe"]);
+    fn sanitize_entries_filters_null_byte_paths() {
+        let entries = vec![entry("C:\\safe"), entry("C:\\bad\0path")];
+        let result = sanitize_entries(entries);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, "C:\\safe");
     }
 
     #[test]
     fn import_csv_filters_semicolon_paths() {
         let csv = "type,path\nsystem,C:\\good\nsystem,C:\\bad;path\n";
         let (sys, _) = import_csv(csv).unwrap();
-        assert_eq!(sys, vec!["C:\\good"]);
+        assert_eq!(sys.len(), 1);
+        assert_eq!(sys[0].path, "C:\\good");
     }
 
     #[test]
     fn import_txt_trims_and_filters() {
         let txt = "  C:\\trimmed  \n\nC:\\bad\0path\n# comment\n";
         let (_, usr) = import_txt(txt).unwrap();
-        assert_eq!(usr, vec!["C:\\trimmed"]);
+        assert_eq!(usr.len(), 1);
+        assert_eq!(usr[0].path, "C:\\trimmed");
     }
 
     #[test]
-    fn sanitize_paths_removes_empty_after_trim() {
-        let result = sanitize_paths(vec!["  ".into(), "C:\\ok".into()]);
-        assert_eq!(result, vec!["C:\\ok"]);
+    fn sanitize_entries_removes_empty_after_trim() {
+        let result = sanitize_entries(vec![entry("  "), entry("C:\\ok")]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, "C:\\ok");
+    }
+
+    #[test]
+    fn sanitize_entries_preserves_enabled_flag() {
+        let result = sanitize_entries(vec![entry_disabled("C:\\keep")]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, "C:\\keep");
+        assert!(!result[0].enabled);
     }
 
     #[test]
@@ -362,6 +477,15 @@ mod tests {
     fn import_csv_quoted_comma_path() {
         let csv = "type,path\nsystem,\"C:\\Program Files, Inc\\bin\"\n";
         let (sys, _) = import_csv(csv).unwrap();
-        assert_eq!(sys, vec!["C:\\Program Files, Inc\\bin"]);
+        assert_eq!(sys[0].path, "C:\\Program Files, Inc\\bin");
+    }
+
+    #[test]
+    fn csv_roundtrip_preserves_enabled() {
+        let csv = "type,path,enabled\nsystem,C:\\on,true\nsystem,C:\\off,false\n";
+        let (sys, _) = import_csv(csv).unwrap();
+        assert_eq!(sys.len(), 2);
+        assert!(sys[0].enabled);
+        assert!(!sys[1].enabled);
     }
 }
