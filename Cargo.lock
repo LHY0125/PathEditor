@@ -2379,7 +2379,7 @@ dependencies = [
 
 [[package]]
 name = "path-editor-core"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -2391,7 +2391,7 @@ dependencies = [
 
 [[package]]
 name = "patheditor"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "log",
  "path-editor-core",
@@ -2404,7 +2404,7 @@ dependencies = [
 
 [[package]]
 name = "patheditor-cli"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "clap",
  "path-editor-core",
