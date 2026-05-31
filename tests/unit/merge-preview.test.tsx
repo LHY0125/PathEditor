@@ -18,6 +18,21 @@ vi.mock('@/store/app-store', () => ({
   }),
 }));
 
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: (options: any) => ({
+    getVirtualItems: () => {
+      // return an array of objects to mock virtual items
+      return Array.from({ length: options.count }).map((_, index) => ({
+        index,
+        start: index * 28,
+        size: 28,
+        key: `mock-key-${index}`,
+      }));
+    },
+    getTotalSize: () => options.count * 28,
+  }),
+}));
+
 vi.mock('@/i18n', () => ({
   default: { t: vi.fn((key: string) => key) },
 }));

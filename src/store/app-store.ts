@@ -352,9 +352,12 @@ export const useAppStore = create<AppState>((set, get) => {
     await invoke('backup_registry', { customDir: null })
       .catch(() => { backupFailed = true; });
 
+    const origSys = state._savedSys.filter(e => e.enabled).map(e => e.path);
+    const origUser = state._savedUser.filter(e => e.enabled).map(e => e.path);
+
     const [sysResult, userResult] = await Promise.allSettled([
-      invoke('save_system_paths', { paths: sysPaths }),
-      invoke('save_user_paths', { paths: userPaths }),
+      invoke('save_system_paths', { paths: sysPaths, original: origSys }),
+      invoke('save_user_paths', { paths: userPaths, original: origUser }),
     ]);
 
     const sysOk = sysResult.status === 'fulfilled';

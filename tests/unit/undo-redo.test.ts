@@ -125,6 +125,26 @@ describe('UndoRedoManager', () => {
     expect(mgr.canRedo()).toBe(false);
   });
 
+  it('空历史栈的撤销与重做', () => {
+    expect(mgr.undo(sys, user)).toBeNull();
+    expect(mgr.redo(sys, user)).toBeNull();
+  });
+
+  it('超出栈底/栈顶的安全处理', () => {
+    mgr.push(makeRecord(OperationType.ADD, TargetType.SYSTEM, 2, 1, [], [pe('C:\\NewPath')]));
+    sys.push(pe('C:\\NewPath'));
+    
+    // undo一次
+    mgr.undo(sys, user);
+    // 再次undo，此时应到达底部返回null
+    expect(mgr.undo(sys, user)).toBeNull();
+    
+    // redo一次
+    mgr.redo(sys, user);
+    // 再次redo，应到达顶部返回null
+    expect(mgr.redo(sys, user)).toBeNull();
+  });
+
   it('超出最大历史容量时移除最旧记录', () => {
     const small = new UndoRedoManager(3);
     for (let i = 0; i < 5; i++) {

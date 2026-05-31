@@ -1,3 +1,7 @@
+use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
+};
 use winreg::enums::*;
 use winreg::RegKey;
 
@@ -26,6 +30,7 @@ pub fn validate_path(path: &str) -> bool {
 }
 
 /// 展开路径中的环境变量（如 %JAVA_HOME%\bin → C:\Program Files\Java\jdk-17\bin）
+/// 包含 % 的路径（环境变量路径）无法展开，返回原始路径
 pub fn expand_env_vars(path: &str) -> String {
     if !path.contains('%') {
         return path.to_string();
@@ -46,7 +51,7 @@ pub fn expand_env_vars(path: &str) -> String {
 
     // SAFETY: buffer 容量为 required（API 返回的精确大小），wide_path 以 null 结尾，
     //         且两个指针指向不同的内存区域，不存在重叠
-    let mut buffer: Vec<u16> = vec![0; required as usize];
+    let mut buffer = vec![0_u16; required as usize];
     let result =
         unsafe { ExpandEnvironmentStringsW(wide_path.as_ptr(), buffer.as_mut_ptr(), required) };
 
@@ -73,10 +78,6 @@ fn decode_utf16_preserving(v: &[u16]) -> String {
 /// 广播环境变量更改通知（WM_SETTINGCHANGE）
 /// 广播 `WM_SETTINGCHANGE` 通知系统环境变量已变更
 pub fn broadcast_env_change() {
-    const HWND_BROADCAST: isize = 0xFFFF;
-    const WM_SETTINGCHANGE: u32 = 0x001A;
-    const SMTO_ABORTIFHUNG: u32 = 0x0002;
-
     // SAFETY: env_str 是以 null 结尾的 UTF-16 字符串，所有指针和常量均遵循 Win32 API 约定
     let env_str: Vec<u16> = "Environment\0".encode_utf16().collect();
 
@@ -84,7 +85,7 @@ pub fn broadcast_env_change() {
     //         lpdwResult 为 null 表示不需要返回值，其他参数均为常量
     let result = unsafe {
         SendMessageTimeoutW(
-            HWND_BROADCAST,
+            HWND_BROADCAST as _,
             WM_SETTINGCHANGE,
             0,
             env_str.as_ptr() as isize,
@@ -99,24 +100,6 @@ pub fn broadcast_env_change() {
     } else {
         log::info!("已广播环境变量更改通知");
     }
-}
-
-// ── 外部 FFI 声明 ──
-
-extern "system" {
-    /// https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-expandenvironmentstringsw
-    fn ExpandEnvironmentStringsW(lpSrc: *const u16, lpDst: *mut u16, nSize: u32) -> u32;
-
-    /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw
-    fn SendMessageTimeoutW(
-        hWnd: isize,
-        Msg: u32,
-        wParam: usize,
-        lParam: isize,
-        fuFlags: u32,
-        uTimeout: u32,
-        lpdwResult: *mut usize,
-    ) -> isize;
 }
 
 #[cfg(test)]
