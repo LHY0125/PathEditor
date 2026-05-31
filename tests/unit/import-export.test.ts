@@ -24,7 +24,7 @@ describe('exportToJson', () => {
   it('导出结构化 JSON', () => {
     const json = exportToJson(sampleData);
     const parsed = JSON.parse(json);
-    expect(parsed.version).toBe('5.0.0');
+    expect(parsed.version).toBe('5.1.0');
     expect(parsed.timestamp).toBeDefined();
     expect(parsed.system.map((e: { path: string }) => e.path)).toEqual(sampleData.system.map(e => e.path));
     expect(parsed.user.map((e: { path: string }) => e.path)).toEqual(sampleData.user.map(e => e.path));

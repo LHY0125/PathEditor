@@ -118,8 +118,8 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
   }, []);
 
   const handleSave = useCallback(async () => {
-    const saved = await useAppStore.getState().savePaths();
-    if (!saved && !useAppStore.getState().isSaving) {
+    const result = await useAppStore.getState().savePaths();
+    if (result.kind === 'warning') {
       // 长度超限，需要用户确认
       const { ask } = await import('@tauri-apps/plugin-dialog');
       const confirmed = await ask(i18n.t('status.saveWarningLongPaths'), { title: i18n.t('dialog.backupTitle'), kind: 'warning' });

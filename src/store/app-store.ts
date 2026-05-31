@@ -8,6 +8,13 @@ import appConfig from '@/config/default.json';
 
 export type TabId = 'system' | 'user' | 'merged';
 
+export type SaveResult =
+  | { kind: 'success' }
+  | { kind: 'warning'; reason: 'lengthExceeded' }
+  | { kind: 'failure'; message: string }
+  | { kind: 'partial'; message: string }
+  | { kind: 'blocked' };
+
 interface AppState {
   sysPaths: PathEntry[];
   userPaths: PathEntry[];
@@ -45,7 +52,7 @@ interface AppState {
   redo: () => void;
 
   loadPaths: () => Promise<void>;
-  savePaths: (force?: boolean) => Promise<boolean>;
+  savePaths: (force?: boolean) => Promise<SaveResult>;
   initialize: () => Promise<void>;
 
 }
@@ -324,7 +331,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
   savePaths: async (force?: boolean) => {
     const state = get();
-    if (state.isSaving) return false;
+    if (state.isSaving) return { kind: 'blocked' };
     set({ isSaving: true, statusMessage: i18n.t('status.saving') });
 
     // 只保存 enabled 的路径到注册表
@@ -337,7 +344,7 @@ export const useAppStore = create<AppState>((set, get) => {
     const { maxSystemLength, maxUserLength, maxCombinedLength } = appConfig.path;
     if (!force && (sysJoined.length > maxSystemLength || userJoined.length > maxUserLength || (sysJoined + userJoined).length > maxCombinedLength)) {
       set({ isSaving: false, statusMessage: i18n.t('status.saveWarningLongPaths') });
-      return false;
+      return { kind: 'warning', reason: 'lengthExceeded' };
     }
 
     // 备份当前注册表（保存前备份旧值，失败仅警告不中断）
@@ -359,14 +366,24 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ isModified: false, isSaving: false,
         statusMessage: backupFailed ? i18n.t('status.saved_without_backup') : i18n.t('status.saved'),
         _savedSys: savedSys, _savedUser: savedUser });
-      return true;
+      return { kind: 'success' };
     } else {
       const sysErr = (!sysOk && sysResult.status === 'rejected') ? String(sysResult.reason) : '';
       const usrErr = (!userOk && userResult.status === 'rejected') ? String(userResult.reason) : '';
       const parts = [sysErr, usrErr].filter(Boolean);
-      const msg = sysOk ? '用户 PATH 保存失败' : userOk ? '系统 PATH 保存失败' : `保存失败: ${parts.join('; ')}`;
-      set({ isSaving: false, statusMessage: msg });
-      return false;
+      
+      const msg = sysOk ? `用户 PATH 保存失败: ${usrErr}` : userOk ? `系统 PATH 保存失败: ${sysErr}` : `保存失败: ${parts.join('; ')}`;
+      
+      if (sysOk || userOk) {
+        // partial success
+        set({ isSaving: false });
+        await get().loadPaths(); // reload to avoid state drift
+        set({ statusMessage: msg }); // restore the error message overwritten by loadPaths
+        return { kind: 'partial', message: msg };
+      } else {
+        set({ isSaving: false, statusMessage: msg });
+        return { kind: 'failure', message: msg };
+      }
     }
   },
 

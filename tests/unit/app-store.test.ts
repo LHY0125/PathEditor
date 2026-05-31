@@ -239,19 +239,26 @@ describe('savePaths', () => {
 
   it('保存成功', async () => {
     mockedInvoke.mockResolvedValue(undefined);
-    await useAppStore.getState().savePaths();
+    const result = await useAppStore.getState().savePaths();
+    expect(result).toEqual({ kind: 'success' });
     const s = useAppStore.getState();
     expect(s.isSaving).toBe(false);
     expect(s.isModified).toBe(false);
     expect(s.statusMessage).toBe('保存成功');
   });
 
-  it('部分失败时报告具体 hive', async () => {
+  it('部分失败时报告具体 hive 并回读', async () => {
     mockedInvoke
       .mockResolvedValueOnce(undefined)       // backup_registry
       .mockResolvedValueOnce(undefined)       // save_system_paths
-      .mockRejectedValueOnce('权限不足');     // save_user_paths
-    await useAppStore.getState().savePaths();
+      .mockRejectedValueOnce('权限不足')      // save_user_paths
+      // 以下为 partial 触发的 loadPaths 调用
+      .mockResolvedValueOnce(['A'])           // load_system_paths
+      .mockResolvedValueOnce(['B'])           // load_user_paths
+      .mockResolvedValueOnce([[], []]);       // load_disabled_state
+
+    const result = await useAppStore.getState().savePaths();
+    expect(result.kind).toBe('partial');
     const s = useAppStore.getState();
     expect(s.isSaving).toBe(false);
     expect(s.statusMessage).toContain('用户 PATH 保存失败');
@@ -268,8 +275,8 @@ describe('savePaths', () => {
     // 第二次调用应被 isSaving 守卫拦截（此时 isSaving=true）
     const r2 = useAppStore.getState().savePaths();
 
-    // 第二次调用同步返回 false（被守卫拦截）
-    await expect(r2).resolves.toBe(false);
+    // 第二次调用同步返回 blocked（被守卫拦截）
+    await expect(r2).resolves.toEqual({ kind: 'blocked' });
 
     // 放行第一次调用的所有 invoke
     resolveAll!(undefined);

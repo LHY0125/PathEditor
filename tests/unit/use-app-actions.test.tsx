@@ -208,26 +208,40 @@ describe('useAppActions', () => {
 
   it('handleSave 正常保存', async () => {
     mockedInvoke.mockResolvedValue(undefined);
+    vi.spyOn(useAppStore.getState(), 'savePaths').mockResolvedValue({ kind: 'success' });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
     await act(async () => { await result.current.handleSave(); });
-    // invoke 被调用（backup + save_system + save_user + broadcast）
-    expect(mockedInvoke).toHaveBeenCalled();
+    // savePaths is called
+    expect(useAppStore.getState().savePaths).toHaveBeenCalled();
   });
 
   it('handleSave 超长确认后强制保存', async () => {
-    // 第一次 savePaths 返回 false（超长）
-    // 第二次（force=true）返回 true
+    // 第一次 savePaths 返回 warning（超长）
+    // 第二次（force=true）返回 success
     let callCount = 0;
     vi.spyOn(useAppStore.getState(), 'savePaths').mockImplementation(async (force?: boolean) => {
       callCount++;
-      if (!force) return false; // 第一次：超长警告
-      return true; // 第二次：强制保存成功
+      if (!force) return { kind: 'warning', reason: 'lengthExceeded' }; // 第一次：超长警告
+      return { kind: 'success' }; // 第二次：强制保存成功
     });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
     await act(async () => { await result.current.handleSave(); });
     expect(callCount).toBe(2);
     expect(mockAsk).toHaveBeenCalled();
+  });
+
+  it('handleSave 普通失败不弹确认框', async () => {
+    let callCount = 0;
+    vi.spyOn(useAppStore.getState(), 'savePaths').mockImplementation(async () => {
+      callCount++;
+      return { kind: 'failure', message: '权限不足' };
+    });
+    const { useAppActions } = await import('@/hooks/use-app-actions');
+    const { result } = renderHook(() => useAppActions('system', dialogs));
+    await act(async () => { await result.current.handleSave(); });
+    expect(callCount).toBe(1); // 仅调用一次，不重试
+    expect(mockAsk).not.toHaveBeenCalled();
   });
 });

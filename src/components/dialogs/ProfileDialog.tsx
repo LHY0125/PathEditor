@@ -73,8 +73,19 @@ export function ProfileDialog({ open, onClose }: Props) {
       system: selectedData.sys.filter(e => !e.enabled).map(e => e.path),
       user: selectedData.user.filter(e => !e.enabled).map(e => e.path),
     });
-    await useAppStore.getState().savePaths();
-    onClose();
+    const result = await useAppStore.getState().savePaths();
+    if (result.kind === 'success') {
+      onClose();
+    } else if (result.kind === 'warning') {
+      const { ask } = await import('@tauri-apps/plugin-dialog');
+      const confirmed = await ask(t('status.saveWarningLongPaths'), { title: t('dialog.backupTitle'), kind: 'warning' });
+      if (confirmed) {
+        const forceResult = await useAppStore.getState().savePaths(true);
+        if (forceResult.kind === 'success') {
+          onClose();
+        }
+      }
+    }
   };
 
   const handleDelete = async (name: string) => {
