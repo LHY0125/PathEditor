@@ -37,7 +37,7 @@ jobs:
         run: npx vitest run --coverage
 
       - name: 上传覆盖率到 Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage/cobertura-coverage.xml
           flags: frontend
