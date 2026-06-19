@@ -56,8 +56,7 @@ export function MergePreview() {
               <tr
                 key={`${source}-${displayIndex}`}
                 style={{
-                  backgroundColor:
-                    rowIdx % 2 === 0 ? 'var(--app-list-bg)' : 'var(--app-list-alt)',
+                  backgroundColor: rowIdx % 2 === 0 ? 'var(--app-list-bg)' : 'var(--app-list-alt)',
                   color: 'var(--app-fg)',
                 }}
               >

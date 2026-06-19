@@ -6,22 +6,36 @@ test.beforeEach(async ({ page }) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       invoke: async (cmd, args) => {
         switch (cmd) {
-          case 'check_admin': return true;
-          case 'load_system_paths': return ['C:\\\\Windows', 'invalid_path', 'C:\\\\Temp'];
-          case 'load_user_paths': return [];
-          case 'load_disabled_state': return { system: [], user: [] };
-          case 'save_system_paths': return undefined;
-          case 'save_user_paths': return undefined;
-          case 'save_disabled_state': return undefined;
-          case 'backup_registry': return '';
-          case 'broadcast_env_change': return undefined;
-          case 'validate_path': return false;
-          case 'expand_env_vars': return '';
-          case 'read_text_file': return '';
-          case 'get_appdata_dir': return '';
-          default: return undefined;
+          case 'check_admin':
+            return true;
+          case 'load_system_paths':
+            return ['C:\\\\Windows', 'invalid_path', 'C:\\\\Temp'];
+          case 'load_user_paths':
+            return [];
+          case 'load_disabled_state':
+            return { system: [], user: [] };
+          case 'save_system_paths':
+            return undefined;
+          case 'save_user_paths':
+            return undefined;
+          case 'save_disabled_state':
+            return undefined;
+          case 'backup_registry':
+            return '';
+          case 'broadcast_env_change':
+            return undefined;
+          case 'validate_path':
+            return false;
+          case 'expand_env_vars':
+            return '';
+          case 'read_text_file':
+            return '';
+          case 'get_appdata_dir':
+            return '';
+          default:
+            return undefined;
         }
-      }
+      },
     };
   });
   await page.goto('/');

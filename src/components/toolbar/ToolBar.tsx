@@ -36,12 +36,7 @@ export function ToolBar(props: ToolBarProps) {
         <SearchInput />
         <div className="flex-1" />
         <UndoRedoButtons />
-        <button
-          className={btnClass}
-          style={btnStyle}
-          disabled={!isAdmin}
-          onClick={props.onImport}
-        >
+        <button className={btnClass} style={btnStyle} disabled={!isAdmin} onClick={props.onImport}>
           {t('button.import')}
         </button>
         <button className={btnClass} style={btnStyle} onClick={props.onExport}>

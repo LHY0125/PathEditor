@@ -11,8 +11,30 @@
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/tests-72%20passed-brightgreen" alt="tests">
+  <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.0/graph/badge.svg" alt="coverage"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
   <img src="https://github.com/LHY0125/PathEditor/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
+
+---
+
+## 截图
+
+> 📸 将截图放置在此区域（`docs/screenshots/` 目录），并取消注释对应的图片链接。
+
+<!--
+### 主界面
+![主界面](docs/screenshots/main-window.png)
+
+### 路径编辑
+![路径编辑](docs/screenshots/path-edit.png)
+
+### 冲突检测
+![冲突检测](docs/screenshots/conflict-analysis.png)
+
+### CLI 命令行
+![CLI](docs/screenshots/cli-demo.gif)
+-->
 
 ---
 
@@ -251,18 +273,18 @@ npx tauri build
 
 ### 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 前端框架 | React 19 + TypeScript (strict) |
-| UI 样式 | Tailwind CSS 4 |
-| 状态管理 | Zustand |
-| 国际化 | i18next |
-| 桌面框架 | Tauri 2.x |
-| 核心库 | Rust workspace (core + gui + cli) |
-| 前端测试 | Vitest (72 个测试) |
-| Rust 测试 | cargo test (10 个测试) |
-| 构建 | Vite + Cargo |
-| 打包 | NSIS |
+| 层        | 技术                              |
+| --------- | --------------------------------- |
+| 前端框架  | React 19 + TypeScript (strict)    |
+| UI 样式   | Tailwind CSS 4                    |
+| 状态管理  | Zustand                           |
+| 国际化    | i18next                           |
+| 桌面框架  | Tauri 2.x                         |
+| 核心库    | Rust workspace (core + gui + cli) |
+| 前端测试  | Vitest (72 个测试)                |
+| Rust 测试 | cargo test (10 个测试)            |
+| 构建      | Vite + Cargo                      |
+| 打包      | NSIS                              |
 
 ### 项目结构
 
@@ -290,15 +312,15 @@ tests/unit/                   # 前端单元测试
 
 ## 快捷键
 
-| 快捷键 | 功能 |
-|--------|------|
+| 快捷键   | 功能     |
+| -------- | -------- |
 | `Ctrl+N` | 新建路径 |
-| `Ctrl+S` | 保存 |
-| `Ctrl+Z` | 撤销 |
-| `Ctrl+Y` | 重做 |
-| `Ctrl+F` | 搜索 |
+| `Ctrl+S` | 保存     |
+| `Ctrl+Z` | 撤销     |
+| `Ctrl+Y` | 重做     |
+| `Ctrl+F` | 搜索     |
 | `Delete` | 删除选中 |
-| `F1` | 帮助 |
+| `F1`     | 帮助     |
 
 ## 贡献
 

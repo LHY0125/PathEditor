@@ -21,7 +21,11 @@ export function analyzePaths(
     const lower = entry.path.toLowerCase();
     const isDuplicate = seen.has(lower);
     seen.add(lower);
-    result.push({ isValid: validateFn(entry.path), isDuplicate, isEnvVar: entry.path.includes('%') });
+    result.push({
+      isValid: validateFn(entry.path),
+      isDuplicate,
+      isEnvVar: entry.path.includes('%'),
+    });
   }
 
   return result;

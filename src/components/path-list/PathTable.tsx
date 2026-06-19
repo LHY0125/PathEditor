@@ -42,7 +42,8 @@ export function PathTable({ tabId }: PathTableProps) {
     const result: PathRow[] = [];
     for (let i = 0; i < paths.length; i++) {
       const p = paths[i];
-      if (p.path.toLowerCase().includes(q)) result.push({ path: p.path, index: i, enabled: p.enabled });
+      if (p.path.toLowerCase().includes(q))
+        result.push({ path: p.path, index: i, enabled: p.enabled });
     }
     return result;
   }, [paths, searchQuery]);
@@ -74,15 +75,15 @@ export function PathTable({ tabId }: PathTableProps) {
       });
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [paths]);
 
   // 异步展开环境变量（用于 tooltip）
   useEffect(() => {
     let cancelled = false;
-    const toExpand = paths.filter(
-      (p) => p.path.includes('%') && !expandedRef.current.has(p.path),
-    );
+    const toExpand = paths.filter((p) => p.path.includes('%') && !expandedRef.current.has(p.path));
     if (toExpand.length === 0) return;
 
     const batch = toExpand.slice(0, 20);
@@ -105,7 +106,9 @@ export function PathTable({ tabId }: PathTableProps) {
       });
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [paths]);
 
   // 所有路径默认有效（异步验证结果回来后再精确染色）
@@ -194,7 +197,10 @@ export function PathTable({ tabId }: PathTableProps) {
                       : 'var(--app-list-alt)',
                 }}
               >
-                <td className="w-8 px-2 py-0.5 text-xs opacity-50" style={{ color: 'var(--app-fg)' }}>
+                <td
+                  className="w-8 px-2 py-0.5 text-xs opacity-50"
+                  style={{ color: 'var(--app-fg)' }}
+                >
                   {index + 1}
                 </td>
                 <td className="w-6 px-1 py-0.5">

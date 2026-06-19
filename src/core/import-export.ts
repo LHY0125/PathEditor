@@ -28,8 +28,8 @@ export function exportToJson(data: ExportData): string {
   const obj = {
     version,
     timestamp: new Date().toISOString(),
-    system: data.system.map(e => ({ path: e.path, enabled: e.enabled })),
-    user: data.user.map(e => ({ path: e.path, enabled: e.enabled })),
+    system: data.system.map((e) => ({ path: e.path, enabled: e.enabled })),
+    user: data.user.map((e) => ({ path: e.path, enabled: e.enabled })),
   };
   return JSON.stringify(obj, null, 2);
 }
@@ -179,10 +179,14 @@ export function importFromJson(content: string): ImportResult {
   };
 
   if (Array.isArray(obj.system)) {
-    result.system = obj.system.map(parseEntry).filter((e): e is { path: string; enabled: boolean } => e !== null);
+    result.system = obj.system
+      .map(parseEntry)
+      .filter((e): e is { path: string; enabled: boolean } => e !== null);
   }
   if (Array.isArray(obj.user)) {
-    result.user = obj.user.map(parseEntry).filter((e): e is { path: string; enabled: boolean } => e !== null);
+    result.user = obj.user
+      .map(parseEntry)
+      .filter((e): e is { path: string; enabled: boolean } => e !== null);
   }
 
   return result;
@@ -210,10 +214,7 @@ export function importFromTxt(content: string): PathEntry[] {
 
 // ── 自动检测导入 ──
 
-export function importFromContent(
-  content: string,
-  filepath: string,
-): ImportResult {
+export function importFromContent(content: string, filepath: string): ImportResult {
   const lower = filepath.toLowerCase();
   if (lower.endsWith('.csv')) {
     return importFromCsv(content);

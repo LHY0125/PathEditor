@@ -10,9 +10,7 @@ vi.mock('@/store/app-store', () => ({
         { path: 'C:\\Windows', enabled: true },
         { path: 'C:\\Disabled', enabled: false },
       ],
-      userPaths: [
-        { path: 'D:\\UserApp', enabled: true },
-      ],
+      userPaths: [{ path: 'D:\\UserApp', enabled: true }],
       searchQuery: '',
     };
     return selector(state);

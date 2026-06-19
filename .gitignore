@@ -12,8 +12,21 @@ dist
 dist-ssr
 *.local
 
+# Coverage
+coverage/
+*.lcov
+
+# Sync conflicts
+*.sync-conflict-*
+
+# Test artifacts
+test-results/
+playwright-report/
+.nyc_output/
+
 # Editor directories and files
 .vscode/*
+.codegraph/*
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -22,8 +35,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# AI assistant
 .claude/
 CLAUDE.md
+
+# Platform
 e2e/debug-screenshot.png
-test-results/
 target/
+
+# Archive
+*.zip
+*.7z
+*.tar.gz

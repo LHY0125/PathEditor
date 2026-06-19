@@ -26,8 +26,12 @@ describe('exportToJson', () => {
     const parsed = JSON.parse(json);
     expect(parsed.version).toBe('5.0.0');
     expect(parsed.timestamp).toBeDefined();
-    expect(parsed.system.map((e: { path: string }) => e.path)).toEqual(sampleData.system.map(e => e.path));
-    expect(parsed.user.map((e: { path: string }) => e.path)).toEqual(sampleData.user.map(e => e.path));
+    expect(parsed.system.map((e: { path: string }) => e.path)).toEqual(
+      sampleData.system.map((e) => e.path),
+    );
+    expect(parsed.user.map((e: { path: string }) => e.path)).toEqual(
+      sampleData.user.map((e) => e.path),
+    );
     expect(parsed.system[0].enabled).toBe(true);
     expect(parsed.user[0].enabled).toBe(true);
   });
@@ -36,8 +40,8 @@ describe('exportToJson', () => {
 describe('importFromJson', () => {
   it('正确导入 JSON', () => {
     const json = JSON.stringify({
-      system: sampleData.system.map(e => e.path),
-      user: sampleData.user.map(e => e.path),
+      system: sampleData.system.map((e) => e.path),
+      user: sampleData.user.map((e) => e.path),
     });
     const result = importFromJson(json);
     expect(result.system).toEqual(sampleData.system);

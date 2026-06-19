@@ -66,7 +66,10 @@ export function AnalyzeDialog({ open, onClose }: Props) {
     <Modal open={open} onClose={onClose}>
       <div className="flex flex-col" style={{ width: 680, maxHeight: '75vh' }}>
         {/* 标题栏 */}
-        <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--app-border)' }}>
+        <div
+          className="flex items-center justify-between px-5 py-3 border-b"
+          style={{ borderColor: 'var(--app-border)' }}
+        >
           <h2 className="text-base font-semibold">{t('analyze.title')}</h2>
           <div className="flex gap-1">
             {(['conflicts', 'tools'] as TabType[]).map((tb) => (
@@ -88,7 +91,10 @@ export function AnalyzeDialog({ open, onClose }: Props) {
         {/* 内容 */}
         <div className="flex-1 overflow-auto p-4">
           {loading ? (
-            <div className="flex items-center justify-center py-12 text-sm" style={{ color: 'var(--app-fg)', opacity: 0.6 }}>
+            <div
+              className="flex items-center justify-center py-12 text-sm"
+              style={{ color: 'var(--app-fg)', opacity: 0.6 }}
+            >
               {t('analyze.scanning')}
             </div>
           ) : tab === 'conflicts' ? (
@@ -214,5 +220,7 @@ function EmptyHint({ text }: { text: string }) {
 
 function getEnabledPaths(): string[] {
   const { sysPaths, userPaths } = useAppStore.getState();
-  return [...sysPaths.filter((e) => e.enabled), ...userPaths.filter((e) => e.enabled)].map((e) => e.path);
+  return [...sysPaths.filter((e) => e.enabled), ...userPaths.filter((e) => e.enabled)].map(
+    (e) => e.path,
+  );
 }

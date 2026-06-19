@@ -3,7 +3,12 @@ import { useAppStore } from '@/store/app-store';
 import { TargetType } from '@/core/undo-redo';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { importFromContent, exportToJson, exportToCsv, flattenImportResult } from '@/core/import-export';
+import {
+  importFromContent,
+  exportToJson,
+  exportToCsv,
+  flattenImportResult,
+} from '@/core/import-export';
 import type { PathEntry } from '@/core/path-entry';
 import { is_valid_path_format } from '@/core/validation';
 import { useKeyboard } from './use-keyboard';
@@ -38,9 +43,10 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     const idx = useAppStore.getState().selectedIndices[0];
     if (idx === undefined) return;
     const target = activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM;
-    const list = target === TargetType.SYSTEM
-      ? useAppStore.getState().sysPaths
-      : useAppStore.getState().userPaths;
+    const list =
+      target === TargetType.SYSTEM
+        ? useAppStore.getState().sysPaths
+        : useAppStore.getState().userPaths;
     const entry = list[idx];
     if (entry) setEditDialog({ open: true, index: idx, value: entry.path, target });
   }, [activeTab, setEditDialog]);
@@ -71,14 +77,9 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
   }, [getCurrentTarget]);
 
   const handleClean = useCallback(() => {
-    const removed = useAppStore.getState().cleanPaths(
-      getCurrentTarget(),
-      is_valid_path_format,
-    );
+    const removed = useAppStore.getState().cleanPaths(getCurrentTarget(), is_valid_path_format);
     if (removed.length > 0) {
-      useAppStore.getState().setStatusMessage(
-        i18n.t('status.deleted', { count: removed.length }),
-      );
+      useAppStore.getState().setStatusMessage(i18n.t('status.deleted', { count: removed.length }));
     }
   }, [getCurrentTarget]);
 
@@ -95,9 +96,15 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
     if (result.system.length > 0 && result.user.length > 0) {
       setImportDialog({ open: true, system: result.system, user: result.user });
     } else if (result.system.length > 0) {
-      useAppStore.getState().replacePaths(TargetType.SYSTEM, result.system.map(e => e.path));
+      useAppStore.getState().replacePaths(
+        TargetType.SYSTEM,
+        result.system.map((e) => e.path),
+      );
     } else if (result.user.length > 0) {
-      useAppStore.getState().replacePaths(TargetType.USER, result.user.map(e => e.path));
+      useAppStore.getState().replacePaths(
+        TargetType.USER,
+        result.user.map((e) => e.path),
+      );
     }
   }, [setImportDialog]);
 
@@ -148,33 +155,62 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
 
   // ── 弹窗确认 ──
 
-  const handleNewConfirm = useCallback((value: string) => {
-    setNewDialog(false);
-    if (value.trim()) useAppStore.getState().addPath(value.trim(), getCurrentTarget());
-  }, [getCurrentTarget, setNewDialog]);
+  const handleNewConfirm = useCallback(
+    (value: string) => {
+      setNewDialog(false);
+      if (value.trim()) useAppStore.getState().addPath(value.trim(), getCurrentTarget());
+    },
+    [getCurrentTarget, setNewDialog],
+  );
 
-  const handleEditConfirm = useCallback((value: string) => {
-    const d = dialogs.editDialog;
-    setEditDialog({ open: false, index: -1, value: '', target: TargetType.SYSTEM });
-    if (value.trim()) useAppStore.getState().editPath(d.index, value.trim(), d.target);
-  }, [dialogs.editDialog, setEditDialog]);
+  const handleEditConfirm = useCallback(
+    (value: string) => {
+      const d = dialogs.editDialog;
+      setEditDialog({ open: false, index: -1, value: '', target: TargetType.SYSTEM });
+      if (value.trim()) useAppStore.getState().editPath(d.index, value.trim(), d.target);
+    },
+    [dialogs.editDialog, setEditDialog],
+  );
 
-  const handleImportSelect = useCallback((target: 'system' | 'user' | 'both') => {
-    const { system, user } = dialogs.importDialog;
-    const flat = flattenImportResult({ system, user }, target);
-    if (target === 'both' && flat.system.length > 0 && flat.user.length > 0) {
-      useAppStore.getState().replaceBothPaths(flat.system.map(e => e.path), flat.user.map(e => e.path));
-    } else {
-      if (flat.system.length > 0) useAppStore.getState().replacePaths(TargetType.SYSTEM, flat.system.map(e => e.path));
-      if (flat.user.length > 0) useAppStore.getState().replacePaths(TargetType.USER, flat.user.map(e => e.path));
-    }
-    setImportDialog({ open: false, system: [], user: [] });
-  }, [dialogs.importDialog, setImportDialog]);
+  const handleImportSelect = useCallback(
+    (target: 'system' | 'user' | 'both') => {
+      const { system, user } = dialogs.importDialog;
+      const flat = flattenImportResult({ system, user }, target);
+      if (target === 'both' && flat.system.length > 0 && flat.user.length > 0) {
+        useAppStore.getState().replaceBothPaths(
+          flat.system.map((e) => e.path),
+          flat.user.map((e) => e.path),
+        );
+      } else {
+        if (flat.system.length > 0)
+          useAppStore.getState().replacePaths(
+            TargetType.SYSTEM,
+            flat.system.map((e) => e.path),
+          );
+        if (flat.user.length > 0)
+          useAppStore.getState().replacePaths(
+            TargetType.USER,
+            flat.user.map((e) => e.path),
+          );
+      }
+      setImportDialog({ open: false, system: [], user: [] });
+    },
+    [dialogs.importDialog, setImportDialog],
+  );
 
   return {
-    handleNew, handleEdit, handleBrowse, handleDelete,
-    handleMoveUp, handleMoveDown, handleClean,
-    handleImport, handleExport, handleSave,
-    handleNewConfirm, handleEditConfirm, handleImportSelect,
+    handleNew,
+    handleEdit,
+    handleBrowse,
+    handleDelete,
+    handleMoveUp,
+    handleMoveDown,
+    handleClean,
+    handleImport,
+    handleExport,
+    handleSave,
+    handleNewConfirm,
+    handleEditConfirm,
+    handleImportSelect,
   };
 }

@@ -28,19 +28,32 @@ export function AppShell() {
   const setSelectedIndices = useAppStore((s) => s.setSelectedIndices);
 
   const [editDialog, setEditDialog] = useState<DialogState['editDialog']>({
-    open: false, index: -1, value: '', target: TargetType.SYSTEM,
+    open: false,
+    index: -1,
+    value: '',
+    target: TargetType.SYSTEM,
   });
   const [newDialog, setNewDialog] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [importDialog, setImportDialog] = useState<DialogState['importDialog']>({
-    open: false, system: [], user: [],
+    open: false,
+    system: [],
+    user: [],
   });
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
 
   const actions = useAppActions(activeTab, {
-    editDialog, newDialog, helpOpen, importDialog,
-    setEditDialog, setNewDialog, setHelpOpen, setImportDialog, setAnalyzeOpen, setProfilesOpen,
+    editDialog,
+    newDialog,
+    helpOpen,
+    importDialog,
+    setEditDialog,
+    setNewDialog,
+    setHelpOpen,
+    setImportDialog,
+    setAnalyzeOpen,
+    setProfilesOpen,
   });
 
   const tabConfig: { id: TabId; label: string }[] = [
@@ -50,14 +63,20 @@ export function AppShell() {
   ];
 
   return (
-    <div className="flex flex-col h-screen" style={{ backgroundColor: 'var(--app-bg)', color: 'var(--app-fg)' }}>
+    <div
+      className="flex flex-col h-screen"
+      style={{ backgroundColor: 'var(--app-bg)', color: 'var(--app-fg)' }}
+    >
       <TitleBar />
 
       <div className="flex border-b px-4" style={{ borderColor: 'var(--app-border)' }}>
         {tabConfig.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setSelectedIndices([]); }}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setSelectedIndices([]);
+            }}
             className={`px-4 py-1.5 text-sm font-medium transition-colors ${activeTab === tab.id ? 'tab-active' : 'opacity-60'}`}
             style={{ color: activeTab === tab.id ? '#3b82f6' : 'var(--app-fg)' }}
           >
@@ -96,7 +115,10 @@ export function AppShell() {
 
       <div
         className="flex-1 overflow-auto"
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'link'; }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'link';
+        }}
         onDrop={(e) => {
           e.preventDefault();
           if (activeTab === 'merged') return;
@@ -104,20 +126,47 @@ export function AppShell() {
             const entry = e.dataTransfer.items[i].webkitGetAsEntry();
             if (entry?.isDirectory) {
               const file = e.dataTransfer.files[i] as TauriFile;
-              if (file.path) useAppStore.getState().addPath(file.path, activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM);
+              if (file.path)
+                useAppStore
+                  .getState()
+                  .addPath(file.path, activeTab === 'user' ? TargetType.USER : TargetType.SYSTEM);
             }
           }
         }}
       >
-        {activeTab === 'merged' ? <MergePreview /> : <PathTable tabId={activeTab as 'system' | 'user'} />}
+        {activeTab === 'merged' ? (
+          <MergePreview />
+        ) : (
+          <PathTable tabId={activeTab as 'system' | 'user'} />
+        )}
       </div>
 
       <StatusBar />
 
-      <PathEditDialog open={newDialog} title={t('dialog.newPath')} initialValue="" onConfirm={actions.handleNewConfirm} onCancel={() => setNewDialog(false)} />
-      <PathEditDialog open={editDialog.open} title={t('dialog.editPath')} initialValue={editDialog.value} onConfirm={actions.handleEditConfirm} onCancel={() => setEditDialog({ open: false, index: -1, value: '', target: TargetType.SYSTEM })} />
+      <PathEditDialog
+        open={newDialog}
+        title={t('dialog.newPath')}
+        initialValue=""
+        onConfirm={actions.handleNewConfirm}
+        onCancel={() => setNewDialog(false)}
+      />
+      <PathEditDialog
+        open={editDialog.open}
+        title={t('dialog.editPath')}
+        initialValue={editDialog.value}
+        onConfirm={actions.handleEditConfirm}
+        onCancel={() =>
+          setEditDialog({ open: false, index: -1, value: '', target: TargetType.SYSTEM })
+        }
+      />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <ImportDialog open={importDialog.open} systemCount={importDialog.system.length} userCount={importDialog.user.length} onSelect={actions.handleImportSelect} onCancel={() => setImportDialog({ open: false, system: [], user: [] })} />
+      <ImportDialog
+        open={importDialog.open}
+        systemCount={importDialog.system.length}
+        userCount={importDialog.user.length}
+        onSelect={actions.handleImportSelect}
+        onCancel={() => setImportDialog({ open: false, system: [], user: [] })}
+      />
       <AnalyzeDialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} />
       <ProfileDialog open={profilesOpen} onClose={() => setProfilesOpen(false)} />
     </div>
