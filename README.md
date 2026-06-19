@@ -20,21 +20,21 @@
 
 ## 截图
 
-> 📸 将截图放置在此区域（`docs/screenshots/` 目录），并取消注释对应的图片链接。
-
-<!--
 ### 主界面
+
 ![主界面](docs/screenshots/main-window.png)
 
 ### 路径编辑
+
 ![路径编辑](docs/screenshots/path-edit.png)
 
 ### 冲突检测
+
 ![冲突检测](docs/screenshots/conflict-analysis.png)
 
 ### CLI 命令行
-![CLI](docs/screenshots/cli-demo.gif)
--->
+
+![CLI](docs/screenshots/cli-demo.png)
 
 ---
 
