@@ -7,16 +7,19 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 // Mock i18n
 vi.mock('@/i18n', () => ({
-  default: { t: vi.fn((key: string, opts?: Record<string, unknown>) => {
-    if (key === 'status.loaded') return `已加载 ${opts?.sysCount} 条系统 PATH，${opts?.userCount} 条用户 PATH`;
-    if (key === 'status.error') return '加载失败';
-    if (key === 'status.saving') return '正在保存...';
-    if (key === 'status.saved') return '保存成功';
-    if (key === 'status.warning_backup') return '备份失败，但保存继续';
-    if (key === 'status.readonly') return '只读模式';
-    if (key === 'status.deleted') return `已删除 ${opts?.count} 条路径`;
-    return key;
-  }) },
+  default: {
+    t: vi.fn((key: string, opts?: Record<string, unknown>) => {
+      if (key === 'status.loaded')
+        return `已加载 ${opts?.sysCount} 条系统 PATH，${opts?.userCount} 条用户 PATH`;
+      if (key === 'status.error') return '加载失败';
+      if (key === 'status.saving') return '正在保存...';
+      if (key === 'status.saved') return '保存成功';
+      if (key === 'status.warning_backup') return '备份失败，但保存继续';
+      if (key === 'status.readonly') return '只读模式';
+      if (key === 'status.deleted') return `已删除 ${opts?.count} 条路径`;
+      return key;
+    }),
+  },
 }));
 
 import type { PathEntry } from '../../src/core/path-entry';
@@ -56,7 +59,7 @@ describe('app-store CRUD', () => {
   it('addPath 追加到 sysPaths', () => {
     useAppStore.getState().addPath('C:\\test', TargetType.SYSTEM);
     const s = useAppStore.getState();
-    expect(s.sysPaths.map(e => e.path)).toEqual(['C:\\test']);
+    expect(s.sysPaths.map((e) => e.path)).toEqual(['C:\\test']);
     expect(s.isModified).toBe(true);
     expect(s.undoRedo.historyLength).toBe(1);
   });
@@ -64,7 +67,7 @@ describe('app-store CRUD', () => {
   it('addPath 追加到 userPaths', () => {
     useAppStore.getState().addPath('D:\\user', TargetType.USER);
     const s = useAppStore.getState();
-    expect(s.userPaths.map(e => e.path)).toEqual(['D:\\user']);
+    expect(s.userPaths.map((e) => e.path)).toEqual(['D:\\user']);
     expect(s.sysPaths).toEqual([]);
   });
 
@@ -72,7 +75,7 @@ describe('app-store CRUD', () => {
     const store = useAppStore.getState();
     store.addPath('C:\\old', TargetType.SYSTEM);
     store.editPath(0, 'C:\\new', TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\new']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\new']);
   });
 
   it('editPath 越界 index 无崩溃', () => {
@@ -87,7 +90,7 @@ describe('app-store CRUD', () => {
     store.addPath('B', TargetType.SYSTEM);
     store.addPath('C', TargetType.SYSTEM);
     store.deletePaths([1], TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A', 'C']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['A', 'C']);
     expect(useAppStore.getState().selectedIndices).toEqual([]);
   });
 
@@ -98,7 +101,7 @@ describe('app-store CRUD', () => {
     store.addPath('C', TargetType.USER);
     store.addPath('D', TargetType.USER);
     store.deletePaths([1, 3], TargetType.USER);
-    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['A', 'C']);
+    expect(useAppStore.getState().userPaths.map((e) => e.path)).toEqual(['A', 'C']);
   });
 
   it('deletePaths 非连续多选删除后可 undo 恢复到正确位置', () => {
@@ -108,16 +111,16 @@ describe('app-store CRUD', () => {
     store.addPath('C', TargetType.SYSTEM);
     store.addPath('D', TargetType.SYSTEM);
     store.deletePaths([1, 3], TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A', 'C']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['A', 'C']);
     useAppStore.getState().undo();
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A', 'B', 'C', 'D']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['A', 'B', 'C', 'D']);
   });
 
   it('moveUp index=0 无操作', () => {
     const store = useAppStore.getState();
     store.addPath('A', TargetType.SYSTEM);
     store.moveUp(0, TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['A']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['A']);
   });
 
   it('moveUp 正常交换位置', () => {
@@ -125,7 +128,7 @@ describe('app-store CRUD', () => {
     store.addPath('A', TargetType.SYSTEM);
     store.addPath('B', TargetType.SYSTEM);
     store.moveUp(1, TargetType.SYSTEM);
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['B', 'A']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['B', 'A']);
     expect(useAppStore.getState().selectedIndices).toEqual([0]);
   });
 
@@ -133,7 +136,7 @@ describe('app-store CRUD', () => {
     const store = useAppStore.getState();
     store.addPath('A', TargetType.USER);
     store.moveDown(0, TargetType.USER);
-    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['A']);
+    expect(useAppStore.getState().userPaths.map((e) => e.path)).toEqual(['A']);
   });
 
   it('cleanPaths 移除无效路径并返回 removed', () => {
@@ -143,7 +146,7 @@ describe('app-store CRUD', () => {
     // is_valid_path_format 拒绝全标点路径
     const removed = store.cleanPaths(TargetType.SYSTEM, (p) => !p.includes(':::'));
     expect(removed).toEqual([':::invalid:::']);
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\valid']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\valid']);
   });
 
   it('replacePaths 整体替换列表', () => {
@@ -151,7 +154,7 @@ describe('app-store CRUD', () => {
     store.addPath('old1', TargetType.USER);
     store.addPath('old2', TargetType.USER);
     store.replacePaths(TargetType.USER, ['new1', 'new2', 'new3']);
-    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['new1', 'new2', 'new3']);
+    expect(useAppStore.getState().userPaths.map((e) => e.path)).toEqual(['new1', 'new2', 'new3']);
   });
 
   it('clearPaths 清空列表', () => {
@@ -187,7 +190,7 @@ describe('undo/redo', () => {
     store.addPath('test', TargetType.SYSTEM);
     store.undo();
     store.redo();
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['test']);
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['test']);
   });
 
   it('undo/redo 正确更新 isModified', () => {
@@ -214,8 +217,8 @@ describe('loadPaths', () => {
     mockedInvoke.mockResolvedValueOnce(['D:\\usr1']);
     await useAppStore.getState().loadPaths();
     const s = useAppStore.getState();
-    expect(s.sysPaths.map(e => e.path)).toEqual(['C:\\sys1', 'C:\\sys2']);
-    expect(s.userPaths.map(e => e.path)).toEqual(['D:\\usr1']);
+    expect(s.sysPaths.map((e) => e.path)).toEqual(['C:\\sys1', 'C:\\sys2']);
+    expect(s.userPaths.map((e) => e.path)).toEqual(['D:\\usr1']);
     expect(s.isLoading).toBe(false);
     expect(s.isModified).toBe(false);
   });
@@ -239,19 +242,26 @@ describe('savePaths', () => {
 
   it('保存成功', async () => {
     mockedInvoke.mockResolvedValue(undefined);
-    await useAppStore.getState().savePaths();
+    const result = await useAppStore.getState().savePaths();
+    expect(result).toEqual({ kind: 'success' });
     const s = useAppStore.getState();
     expect(s.isSaving).toBe(false);
     expect(s.isModified).toBe(false);
     expect(s.statusMessage).toBe('保存成功');
   });
 
-  it('部分失败时报告具体 hive', async () => {
+  it('部分失败时报告具体 hive 并回读', async () => {
     mockedInvoke
-      .mockResolvedValueOnce(undefined)       // backup_registry
-      .mockResolvedValueOnce(undefined)       // save_system_paths
-      .mockRejectedValueOnce('权限不足');     // save_user_paths
-    await useAppStore.getState().savePaths();
+      .mockResolvedValueOnce(undefined) // backup_registry
+      .mockResolvedValueOnce(undefined) // save_system_paths
+      .mockRejectedValueOnce('权限不足') // save_user_paths
+      // 以下为 partial 触发的 loadPaths 调用
+      .mockResolvedValueOnce(['A']) // load_system_paths
+      .mockResolvedValueOnce(['B']) // load_user_paths
+      .mockResolvedValueOnce([[], []]); // load_disabled_state
+
+    const result = await useAppStore.getState().savePaths();
+    expect(result.kind).toBe('partial');
     const s = useAppStore.getState();
     expect(s.isSaving).toBe(false);
     expect(s.statusMessage).toContain('用户 PATH 保存失败');
@@ -259,7 +269,9 @@ describe('savePaths', () => {
 
   it('isSaving 守卫：并发第二次调用直接返回', async () => {
     let resolveAll: (v: unknown) => void;
-    const pending = new Promise((r) => { resolveAll = r; });
+    const pending = new Promise((r) => {
+      resolveAll = r;
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockedInvoke.mockReturnValue(pending as any);
 
@@ -268,8 +280,8 @@ describe('savePaths', () => {
     // 第二次调用应被 isSaving 守卫拦截（此时 isSaving=true）
     const r2 = useAppStore.getState().savePaths();
 
-    // 第二次调用同步返回 false（被守卫拦截）
-    await expect(r2).resolves.toBe(false);
+    // 第二次调用同步返回 blocked（被守卫拦截）
+    await expect(r2).resolves.toEqual({ kind: 'blocked' });
 
     // 放行第一次调用的所有 invoke
     resolveAll!(undefined);
@@ -285,21 +297,21 @@ describe('initialize', () => {
 
   it('管理员模式初始化', async () => {
     mockedInvoke
-      .mockResolvedValueOnce(true)   // check_admin
+      .mockResolvedValueOnce(true) // check_admin
       .mockResolvedValueOnce(['S1']) // load_system_paths
       .mockResolvedValueOnce(['U1']); // load_user_paths
     await useAppStore.getState().initialize();
     const s = useAppStore.getState();
     expect(s.isAdmin).toBe(true);
-    expect(s.sysPaths.map(e => e.path)).toEqual(['S1']);
-    expect(s.userPaths.map(e => e.path)).toEqual(['U1']);
+    expect(s.sysPaths.map((e) => e.path)).toEqual(['S1']);
+    expect(s.userPaths.map((e) => e.path)).toEqual(['U1']);
   });
 
   it('非管理员初始化进入只读模式', async () => {
     mockedInvoke
-      .mockResolvedValueOnce(false)   // check_admin
-      .mockResolvedValueOnce([])      // load_system_paths
-      .mockResolvedValueOnce([]);     // load_user_paths
+      .mockResolvedValueOnce(false) // check_admin
+      .mockResolvedValueOnce([]) // load_system_paths
+      .mockResolvedValueOnce([]); // load_user_paths
     await useAppStore.getState().initialize();
     expect(useAppStore.getState().isAdmin).toBe(false);
     // statusMessage 被后续 loadPaths 覆盖为加载完成消息，但 isAdmin=false 不变

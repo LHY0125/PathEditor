@@ -60,17 +60,15 @@ export function usePathValidation(paths: readonly PathEntry[]) {
 
     const batch = toValidate.slice(0, 20);
     Promise.all(
-      batch.map(
-        async (p): Promise<[string, ValidationState]> => {
-          try {
-            if (p.path.includes('%')) return [p.path, 'valid'];
-            const valid: boolean = await invoke('validate_path', { path: p.path });
-            return [p.path, valid ? 'valid' : 'invalid'];
-          } catch {
-            return [p.path, 'unknown'];
-          }
-        },
-      ),
+      batch.map(async (p): Promise<[string, ValidationState]> => {
+        try {
+          if (p.path.includes('%')) return [p.path, 'valid'];
+          const valid: boolean = await invoke('validate_path', { path: p.path });
+          return [p.path, valid ? 'valid' : 'invalid'];
+        } catch {
+          return [p.path, 'unknown'];
+        }
+      }),
     ).then((results) => {
       if (cancelled) return;
       for (const [p] of results) validatedRef.current.add(p);
@@ -89,23 +87,19 @@ export function usePathValidation(paths: readonly PathEntry[]) {
   // 异步展开环境变量（setState 在 .then() 回调中）
   useEffect(() => {
     let cancelled = false;
-    const toExpand = paths.filter(
-      (p) => p.path.includes('%') && !expandedRef.current.has(p.path),
-    );
+    const toExpand = paths.filter((p) => p.path.includes('%') && !expandedRef.current.has(p.path));
     if (toExpand.length === 0) return;
 
     const batch = toExpand.slice(0, 20);
     Promise.all(
-      batch.map(
-        async (p): Promise<[string, string]> => {
-          try {
-            const expanded: string = await invoke('expand_env_vars', { path: p.path });
-            return [p.path, expanded !== p.path ? expanded : ''];
-          } catch {
-            return [p.path, ''];
-          }
-        },
-      ),
+      batch.map(async (p): Promise<[string, string]> => {
+        try {
+          const expanded: string = await invoke('expand_env_vars', { path: p.path });
+          return [p.path, expanded !== p.path ? expanded : ''];
+        } catch {
+          return [p.path, ''];
+        }
+      }),
     ).then((results) => {
       if (cancelled) return;
       for (const [p] of results) expandedRef.current.add(p);

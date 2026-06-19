@@ -26,9 +26,7 @@ vi.mock('@/i18n', () => ({
 
 describe('AnalyzeDialog', () => {
   it('渲染冲突检测和工具清单标签页，不崩溃', () => {
-    const { container } = render(
-      <AnalyzeDialog open={true} onClose={() => {}} />,
-    );
+    const { container } = render(<AnalyzeDialog open={true} onClose={() => {}} />);
     const text = container.textContent || '';
     expect(text).toContain('analyze.conflicts');
     expect(text).toContain('analyze.tools');

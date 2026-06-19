@@ -14,11 +14,13 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 vi.mock('@/i18n', () => ({
-  default: { t: vi.fn((key: string, opts?: Record<string, unknown>) => {
-    if (key === 'status.deleted') return `已删除 ${opts?.count} 条`;
-    if (key === 'status.saveWarningLongPaths') return 'PATH 长度超限';
-    return key;
-  }) },
+  default: {
+    t: vi.fn((key: string, opts?: Record<string, unknown>) => {
+      if (key === 'status.deleted') return `已删除 ${opts?.count} 条`;
+      if (key === 'status.saveWarningLongPaths') return 'PATH 长度超限';
+      return key;
+    }),
+  },
 }));
 
 vi.mock('@/hooks/use-keyboard', () => ({
@@ -83,7 +85,9 @@ describe('useAppActions', () => {
   it('handleNew 打开新建弹窗', async () => {
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleNew(); });
+    act(() => {
+      result.current.handleNew();
+    });
     expect(dialogs.setNewDialog).toHaveBeenCalledWith(true);
   });
 
@@ -93,9 +97,14 @@ describe('useAppActions', () => {
     useAppStore.setState({ selectedIndices: [0] });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleEdit(); });
+    act(() => {
+      result.current.handleEdit();
+    });
     expect(dialogs.setEditDialog).toHaveBeenCalledWith({
-      open: true, index: 0, value: 'C:\\Windows', target: TargetType.SYSTEM,
+      open: true,
+      index: 0,
+      value: 'C:\\Windows',
+      target: TargetType.SYSTEM,
     });
   });
 
@@ -103,7 +112,9 @@ describe('useAppActions', () => {
     useAppStore.setState({ selectedIndices: [] });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleEdit(); });
+    act(() => {
+      result.current.handleEdit();
+    });
     expect(dialogs.setEditDialog).not.toHaveBeenCalled();
   });
 
@@ -113,15 +124,19 @@ describe('useAppActions', () => {
     useAppStore.setState({ selectedIndices: [0] });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleDelete(); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\Program Files']);
+    act(() => {
+      result.current.handleDelete();
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\Program Files']);
   });
 
   it('handleDelete 无选中项不操作', async () => {
     useAppStore.setState({ selectedIndices: [] });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleDelete(); });
+    act(() => {
+      result.current.handleDelete();
+    });
     expect(useAppStore.getState().sysPaths.length).toBe(2);
   });
 
@@ -131,16 +146,26 @@ describe('useAppActions', () => {
     useAppStore.setState({ selectedIndices: [1] });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleMoveUp(); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\Program Files', 'C:\\Windows']);
+    act(() => {
+      result.current.handleMoveUp();
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual([
+      'C:\\Program Files',
+      'C:\\Windows',
+    ]);
   });
 
   it('handleMoveDown 下移选中项', async () => {
     useAppStore.setState({ selectedIndices: [0] });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleMoveDown(); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\Program Files', 'C:\\Windows']);
+    act(() => {
+      result.current.handleMoveDown();
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual([
+      'C:\\Program Files',
+      'C:\\Windows',
+    ]);
   });
 
   // ── handleClean ──
@@ -149,8 +174,10 @@ describe('useAppActions', () => {
     resetStore([pe('C:\\Windows'), pe('invalid_path!@#')]);
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleClean(); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\Windows']);
+    act(() => {
+      result.current.handleClean();
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\Windows']);
     expect(useAppStore.getState().statusMessage).toContain('已删除 1 条');
   });
 
@@ -159,15 +186,19 @@ describe('useAppActions', () => {
   it('handleNewConfirm 添加新路径', async () => {
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleNewConfirm('C:\\New'); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toContain('C:\\New');
+    act(() => {
+      result.current.handleNewConfirm('C:\\New');
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toContain('C:\\New');
     expect(dialogs.setNewDialog).toHaveBeenCalledWith(false);
   });
 
   it('handleNewConfirm 空白不添加', async () => {
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleNewConfirm('  '); });
+    act(() => {
+      result.current.handleNewConfirm('  ');
+    });
     expect(useAppStore.getState().sysPaths.length).toBe(2);
   });
 
@@ -177,7 +208,9 @@ describe('useAppActions', () => {
     dialogs.editDialog = { open: true, index: 0, value: 'C:\\Windows', target: TargetType.SYSTEM };
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleEditConfirm('C:\\Edited'); });
+    act(() => {
+      result.current.handleEditConfirm('C:\\Edited');
+    });
     expect(useAppStore.getState().sysPaths[0].path).toBe('C:\\Edited');
   });
 
@@ -189,45 +222,73 @@ describe('useAppActions', () => {
     dialogs.importDialog = { open: true, system: sysImport, user: usrImport };
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleImportSelect('both'); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\ImportSys']);
-    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['D:\\ImportUsr']);
+    act(() => {
+      result.current.handleImportSelect('both');
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\ImportSys']);
+    expect(useAppStore.getState().userPaths.map((e) => e.path)).toEqual(['D:\\ImportUsr']);
     expect(dialogs.setImportDialog).toHaveBeenCalledWith({ open: false, system: [], user: [] });
   });
 
   it('handleImportSelect system 模式只替换 system', async () => {
-    dialogs.importDialog = { open: true, system: [pe('C:\\ImportSys')], user: [pe('D:\\ImportUsr')] };
+    dialogs.importDialog = {
+      open: true,
+      system: [pe('C:\\ImportSys')],
+      user: [pe('D:\\ImportUsr')],
+    };
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => { result.current.handleImportSelect('system'); });
-    expect(useAppStore.getState().sysPaths.map(e => e.path)).toEqual(['C:\\ImportSys']);
-    expect(useAppStore.getState().userPaths.map(e => e.path)).toEqual(['D:\\User']); // 未变
+    act(() => {
+      result.current.handleImportSelect('system');
+    });
+    expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\ImportSys']);
+    expect(useAppStore.getState().userPaths.map((e) => e.path)).toEqual(['D:\\User']); // 未变
   });
 
   // ── handleSave ──
 
   it('handleSave 正常保存', async () => {
     mockedInvoke.mockResolvedValue(undefined);
+    vi.spyOn(useAppStore.getState(), 'savePaths').mockResolvedValue({ kind: 'success' });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    await act(async () => { await result.current.handleSave(); });
-    // invoke 被调用（backup + save_system + save_user + broadcast）
-    expect(mockedInvoke).toHaveBeenCalled();
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    // savePaths is called
+    expect(useAppStore.getState().savePaths).toHaveBeenCalled();
   });
 
   it('handleSave 超长确认后强制保存', async () => {
-    // 第一次 savePaths 返回 false（超长）
-    // 第二次（force=true）返回 true
+    // 第一次 savePaths 返回 warning（超长）
+    // 第二次（force=true）返回 success
     let callCount = 0;
     vi.spyOn(useAppStore.getState(), 'savePaths').mockImplementation(async (force?: boolean) => {
       callCount++;
-      if (!force) return false; // 第一次：超长警告
-      return true; // 第二次：强制保存成功
+      if (!force) return { kind: 'warning', reason: 'lengthExceeded' }; // 第一次：超长警告
+      return { kind: 'success' }; // 第二次：强制保存成功
     });
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    await act(async () => { await result.current.handleSave(); });
+    await act(async () => {
+      await result.current.handleSave();
+    });
     expect(callCount).toBe(2);
     expect(mockAsk).toHaveBeenCalled();
+  });
+
+  it('handleSave 普通失败不弹确认框', async () => {
+    let callCount = 0;
+    vi.spyOn(useAppStore.getState(), 'savePaths').mockImplementation(async () => {
+      callCount++;
+      return { kind: 'failure', message: '权限不足' };
+    });
+    const { useAppActions } = await import('@/hooks/use-app-actions');
+    const { result } = renderHook(() => useAppActions('system', dialogs));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(callCount).toBe(1); // 仅调用一次，不重试
+    expect(mockAsk).not.toHaveBeenCalled();
   });
 });

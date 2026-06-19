@@ -5,7 +5,16 @@
 import type { PathEntry } from './path-entry';
 
 export const OperationType = {
-  ADD: 0, DELETE: 1, EDIT: 2, MOVE_UP: 3, MOVE_DOWN: 4, CLEAN: 5, CLEAR: 6, IMPORT: 7, TOGGLE: 8, IMPORT_BOTH: 9,
+  ADD: 0,
+  DELETE: 1,
+  EDIT: 2,
+  MOVE_UP: 3,
+  MOVE_DOWN: 4,
+  CLEAN: 5,
+  CLEAR: 6,
+  IMPORT: 7,
+  TOGGLE: 8,
+  IMPORT_BOTH: 9,
 } as const;
 export type OperationType = (typeof OperationType)[keyof typeof OperationType];
 
@@ -47,7 +56,10 @@ export class UndoRedoManager {
     this.current = this.records.length - 1;
   }
 
-  undo(sysPaths: readonly PathEntry[], userPaths: readonly PathEntry[]): [PathEntry[], PathEntry[]] | null {
+  undo(
+    sysPaths: readonly PathEntry[],
+    userPaths: readonly PathEntry[],
+  ): [PathEntry[], PathEntry[]] | null {
     if (this.current < 0) return null;
 
     const rec = this.records[this.current];
@@ -103,7 +115,10 @@ export class UndoRedoManager {
     return [sys, user];
   }
 
-  redo(sysPaths: readonly PathEntry[], userPaths: readonly PathEntry[]): [PathEntry[], PathEntry[]] | null {
+  redo(
+    sysPaths: readonly PathEntry[],
+    userPaths: readonly PathEntry[],
+  ): [PathEntry[], PathEntry[]] | null {
     if (this.current >= this.records.length - 1) return null;
 
     this.current++;
@@ -159,8 +174,17 @@ export class UndoRedoManager {
     return [sys, user];
   }
 
-  canUndo(): boolean { return this.current >= 0; }
-  canRedo(): boolean { return this.current < this.records.length - 1; }
-  clear(): void { this.records = []; this.current = -1; }
-  get historyLength(): number { return this.records.length; }
+  canUndo(): boolean {
+    return this.current >= 0;
+  }
+  canRedo(): boolean {
+    return this.current < this.records.length - 1;
+  }
+  clear(): void {
+    this.records = [];
+    this.current = -1;
+  }
+  get historyLength(): number {
+    return this.records.length;
+  }
 }

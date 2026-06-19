@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   frontend:
-    name: 前端检查 (TypeScript + Lint + Test)
+    name: 前端检查 (格式 + 类型 + Lint + 测试 + 覆盖率)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,22 +24,36 @@ jobs:
 
       - run: npm ci
 
+      - name: Prettier 格式检查
+        run: npx prettier --check "src/**/*.{ts,tsx}" "tests/**/*.{ts,tsx}" "e2e/**/*.ts"
+
       - name: TypeScript 类型检查
         run: npx tsc -b --noEmit
 
       - name: ESLint
         run: npx eslint src/ tests/ e2e/
 
-      - name: Vitest 测试
-        run: npm test
+      - name: Vitest 测试 + 覆盖率
+        run: npx vitest run --coverage
+
+      - name: 上传覆盖率到 Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/cobertura-coverage.xml
+          flags: frontend
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   rust:
-    name: Rust 检查 (Check + Clippy + Test)
+    name: Rust 检查 (格式 + Check + Clippy + Test)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Format Check
+        run: cargo fmt --check
 
       - name: Cargo Check
         run: cargo check
@@ -49,6 +63,3 @@ jobs:
 
       - name: Cargo Test
         run: cargo test
-
-      - name: Cargo Format Check
-        run: cargo fmt --check

@@ -2,11 +2,13 @@ import { test, expect } from '@playwright/test';
 import { createIpcMock } from '../mocks/ipc';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(createIpcMock({
-    load_system_paths: ['C:\\Windows', 'invalid_path', 'C:\\Temp'],
-    load_user_paths: [],
-    validate_path: false,
-  }));
+  await page.addInitScript(
+    createIpcMock({
+      load_system_paths: ['C:\\Windows', 'invalid_path', 'C:\\Temp'],
+      load_user_paths: [],
+      validate_path: false,
+    }),
+  );
   await page.goto('/');
 });
 

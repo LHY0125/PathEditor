@@ -1,12 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { UndoRedoManager, OperationType, TargetType, type OpRecord } from '../../src/core/undo-redo';
+import {
+  UndoRedoManager,
+  OperationType,
+  TargetType,
+  type OpRecord,
+} from '../../src/core/undo-redo';
 import type { PathEntry } from '../../src/core/path-entry';
 
 function pe(s: string, enabled: boolean = true): PathEntry {
   return { path: s, enabled };
 }
 
-function makeRecord(type: OperationType, target: TargetType, index: number, count: number, oldPaths: PathEntry[], newPaths: PathEntry[]): OpRecord {
+function makeRecord(
+  type: OperationType,
+  target: TargetType,
+  index: number,
+  count: number,
+  oldPaths: PathEntry[],
+  newPaths: PathEntry[],
+): OpRecord {
   return { type, target, index, count, oldPaths, newPaths };
 }
 
@@ -31,10 +43,10 @@ describe('UndoRedoManager', () => {
     mgr.push(makeRecord(OperationType.ADD, TargetType.SYSTEM, 2, 1, [], [pe('C:\\NewPath')]));
 
     const u = mgr.undo(sys, user)!;
-    expect(u[0].map(e => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
+    expect(u[0].map((e) => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
 
     const r = mgr.redo(...u)!;
-    expect(r[0].map(e => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files', 'C:\\NewPath']);
+    expect(r[0].map((e) => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files', 'C:\\NewPath']);
   });
 
   it('DELETE 撤销/重做', () => {
@@ -46,11 +58,20 @@ describe('UndoRedoManager', () => {
     expect(u[0][0].path).toBe(removed.path);
 
     const r = mgr.redo(...u)!;
-    expect(r[0].map(e => e.path)).toEqual(['C:\\Program Files']);
+    expect(r[0].map((e) => e.path)).toEqual(['C:\\Program Files']);
   });
 
   it('EDIT 撤销/重做', () => {
-    mgr.push(makeRecord(OperationType.EDIT, TargetType.SYSTEM, 0, 1, [pe('C:\\Windows')], [pe('C:\\Edited')]));
+    mgr.push(
+      makeRecord(
+        OperationType.EDIT,
+        TargetType.SYSTEM,
+        0,
+        1,
+        [pe('C:\\Windows')],
+        [pe('C:\\Edited')],
+      ),
+    );
     sys[0] = pe('C:\\Edited');
 
     const u = mgr.undo(sys, user)!;
@@ -65,10 +86,10 @@ describe('UndoRedoManager', () => {
     [sys[0], sys[1]] = [sys[1], sys[0]];
 
     const u = mgr.undo(sys, user)!;
-    expect(u[0].map(e => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
+    expect(u[0].map((e) => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
 
     const r = mgr.redo(...u)!;
-    expect(r[0].map(e => e.path)).toEqual(['C:\\Program Files', 'C:\\Windows']);
+    expect(r[0].map((e) => e.path)).toEqual(['C:\\Program Files', 'C:\\Windows']);
   });
 
   it('MOVE_DOWN 撤销/重做', () => {
@@ -76,7 +97,7 @@ describe('UndoRedoManager', () => {
     [sys[0], sys[1]] = [sys[1], sys[0]];
 
     const u = mgr.undo(sys, user)!;
-    expect(u[0].map(e => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
+    expect(u[0].map((e) => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
   });
 
   it('CLEAN 撤销/重做', () => {
@@ -125,6 +146,26 @@ describe('UndoRedoManager', () => {
     expect(mgr.canRedo()).toBe(false);
   });
 
+  it('空历史栈的撤销与重做', () => {
+    expect(mgr.undo(sys, user)).toBeNull();
+    expect(mgr.redo(sys, user)).toBeNull();
+  });
+
+  it('超出栈底/栈顶的安全处理', () => {
+    mgr.push(makeRecord(OperationType.ADD, TargetType.SYSTEM, 2, 1, [], [pe('C:\\NewPath')]));
+    sys.push(pe('C:\\NewPath'));
+
+    // undo一次
+    mgr.undo(sys, user);
+    // 再次undo，此时应到达底部返回null
+    expect(mgr.undo(sys, user)).toBeNull();
+
+    // redo一次
+    mgr.redo(sys, user);
+    // 再次redo，应到达顶部返回null
+    expect(mgr.redo(sys, user)).toBeNull();
+  });
+
   it('超出最大历史容量时移除最旧记录', () => {
     const small = new UndoRedoManager(3);
     for (let i = 0; i < 5; i++) {
@@ -140,9 +181,12 @@ describe('UndoRedoManager', () => {
     // 删除 indices [1, 3]（C:\Program Files 和 C:\Extra2）
     const removed = [sys[1], sys[3]];
     mgr.push({
-      type: OperationType.DELETE, target: TargetType.SYSTEM,
-      index: 1, count: 2,
-      oldPaths: removed, newPaths: [],
+      type: OperationType.DELETE,
+      target: TargetType.SYSTEM,
+      index: 1,
+      count: 2,
+      oldPaths: removed,
+      newPaths: [],
       indices: [1, 3],
     });
     sys.splice(3, 1);
@@ -152,21 +196,29 @@ describe('UndoRedoManager', () => {
     expect(u[0]).toEqual(old);
 
     const r = mgr.redo(...u)!;
-    expect(r[0].map(e => e.path)).toEqual(['C:\\Windows', 'C:\\Extra1']);
+    expect(r[0].map((e) => e.path)).toEqual(['C:\\Windows', 'C:\\Extra1']);
   });
 
   it('操作 USER 路径', () => {
     user.push(pe('C:\\NewUserPath'));
     mgr.push(makeRecord(OperationType.ADD, TargetType.USER, 1, 1, [], [pe('C:\\NewUserPath')]));
     const u = mgr.undo(sys, user)!;
-    expect(u[1].map(e => e.path)).toEqual(['C:\\Users\\me\\AppData']);
-    expect(u[0].map(e => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
+    expect(u[1].map((e) => e.path)).toEqual(['C:\\Users\\me\\AppData']);
+    expect(u[0].map((e) => e.path)).toEqual(['C:\\Windows', 'C:\\Program Files']);
   });
 
   it('TOGGLE 撤销/重做', () => {
     sys[0] = pe('C:\\Windows', false);
-    mgr.push(makeRecord(OperationType.TOGGLE, TargetType.SYSTEM, 0, 1,
-      [pe('C:\\Windows', true)], [pe('C:\\Windows', false)]));
+    mgr.push(
+      makeRecord(
+        OperationType.TOGGLE,
+        TargetType.SYSTEM,
+        0,
+        1,
+        [pe('C:\\Windows', true)],
+        [pe('C:\\Windows', false)],
+      ),
+    );
 
     const u = mgr.undo(sys, user)!;
     expect(u[0][0].enabled).toBe(true);
@@ -184,9 +236,12 @@ describe('UndoRedoManager', () => {
     mgr.push({
       type: OperationType.IMPORT_BOTH,
       target: TargetType.SYSTEM,
-      index: 0, count: 0,
-      oldPaths: oldSys, newPaths: newSys,
-      oldPathsOther: oldUser, newPathsOther: newUser,
+      index: 0,
+      count: 0,
+      oldPaths: oldSys,
+      newPaths: newSys,
+      oldPathsOther: oldUser,
+      newPathsOther: newUser,
     });
     sys = newSys;
     user = newUser;
