@@ -37,7 +37,8 @@ export function PathTable({ tabId }: PathTableProps) {
     const result: PathRow[] = [];
     for (let i = 0; i < paths.length; i++) {
       const p = paths[i];
-      if (p.path.toLowerCase().includes(q)) result.push({ path: p.path, index: i, enabled: p.enabled });
+      if (p.path.toLowerCase().includes(q))
+        result.push({ path: p.path, index: i, enabled: p.enabled });
     }
     return result;
   }, [paths, searchQuery]);
@@ -141,7 +142,10 @@ export function PathTable({ tabId }: PathTableProps) {
                     : 'var(--app-list-alt)',
               }}
             >
-              <div className="w-8 px-2 py-0.5 text-xs opacity-50" style={{ color: 'var(--app-fg)' }}>
+              <div
+                className="w-8 px-2 py-0.5 text-xs opacity-50"
+                style={{ color: 'var(--app-fg)' }}
+              >
                 {index + 1}
               </div>
               <div className="w-6 px-1 py-0.5 flex items-center">

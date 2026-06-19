@@ -1,0 +1,20 @@
+# 代码所有者 — 自动分配 PR 审查
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# 全局所有者
+* @LHY0125
+
+# Rust 代码
+/core/ @LHY0125
+/cli/ @LHY0125
+/gui/ @LHY0125
+/Cargo.toml @LHY0125
+/rust-toolchain.toml @LHY0125
+
+# 前端代码
+/src/ @LHY0125
+/tests/ @LHY0125
+/e2e/ @LHY0125
+
+# CI/CD 和配置文件
+/.github/ @LHY0125

@@ -9,7 +9,13 @@ interface ImportDialogProps {
   onCancel: () => void;
 }
 
-export function ImportDialog({ open, systemCount, userCount, onSelect, onCancel }: ImportDialogProps) {
+export function ImportDialog({
+  open,
+  systemCount,
+  userCount,
+  onSelect,
+  onCancel,
+}: ImportDialogProps) {
   const { t } = useTranslation();
 
   return (
@@ -21,10 +27,40 @@ export function ImportDialog({ open, systemCount, userCount, onSelect, onCancel 
         {userCount > 0 && t('dialog.importUserCount', { count: userCount })}
       </p>
       <div className="flex flex-col gap-2">
-        {systemCount > 0 && <button className="px-4 py-2 text-sm rounded border text-left" style={{ borderColor: 'var(--app-border)' }} onClick={() => onSelect('system')}>{t('dialog.importSystem')}</button>}
-        {userCount > 0 && <button className="px-4 py-2 text-sm rounded border text-left" style={{ borderColor: 'var(--app-border)' }} onClick={() => onSelect('user')}>{t('dialog.importUser')}</button>}
-        {systemCount > 0 && userCount > 0 && <button className="px-4 py-2 text-sm rounded border text-left" style={{ borderColor: 'var(--app-border)' }} onClick={() => onSelect('both')}>{t('dialog.importBoth')}</button>}
-        <button className="px-4 py-2 text-sm rounded border mt-2" style={{ borderColor: 'var(--app-border)' }} onClick={onCancel}>{t('dialog.cancel')}</button>
+        {systemCount > 0 && (
+          <button
+            className="px-4 py-2 text-sm rounded border text-left"
+            style={{ borderColor: 'var(--app-border)' }}
+            onClick={() => onSelect('system')}
+          >
+            {t('dialog.importSystem')}
+          </button>
+        )}
+        {userCount > 0 && (
+          <button
+            className="px-4 py-2 text-sm rounded border text-left"
+            style={{ borderColor: 'var(--app-border)' }}
+            onClick={() => onSelect('user')}
+          >
+            {t('dialog.importUser')}
+          </button>
+        )}
+        {systemCount > 0 && userCount > 0 && (
+          <button
+            className="px-4 py-2 text-sm rounded border text-left"
+            style={{ borderColor: 'var(--app-border)' }}
+            onClick={() => onSelect('both')}
+          >
+            {t('dialog.importBoth')}
+          </button>
+        )}
+        <button
+          className="px-4 py-2 text-sm rounded border mt-2"
+          style={{ borderColor: 'var(--app-border)' }}
+          onClick={onCancel}
+        >
+          {t('dialog.cancel')}
+        </button>
       </div>
     </Modal>
   );

@@ -9,9 +9,7 @@ vi.mock('@/store/app-store', () => ({
         { path: 'C:\\Windows', enabled: true },
         { path: 'C:\\Disabled', enabled: false },
       ],
-      userPaths: [
-        { path: 'D:\\UserApp', enabled: true },
-      ],
+      userPaths: [{ path: 'D:\\UserApp', enabled: true }],
       searchQuery: '',
     };
     return selector(state);
@@ -19,7 +17,7 @@ vi.mock('@/store/app-store', () => ({
 }));
 
 vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: (options: any) => ({
+  useVirtualizer: (options: Record<string, number>) => ({
     getVirtualItems: () => {
       // return an array of objects to mock virtual items
       return Array.from({ length: options.count }).map((_, index) => ({
