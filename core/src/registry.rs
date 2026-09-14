@@ -1,3 +1,5 @@
+use crate::path_entry::PathEntry;
+use std::path::Path;
 use winreg::enums::*;
 use winreg::RegKey;
 
@@ -80,8 +82,14 @@ pub fn save_user_paths(paths: Vec<String>) -> Result<(), String> {
     save_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户", &paths)
 }
 
+/// 探测当前用户是否有权写入 HKCU 的 PATH 注册表项。
+pub fn can_write_user() -> bool {
+    let key = RegKey::predef(HKEY_CURRENT_USER);
+    key.open_subkey_with_flags(USER_REG_PATH, KEY_WRITE).is_ok()
+}
+
 /// 将分号分隔的 PATH 字符串拆分为数组。
-/// 注意：TS 端 src/core/validation.ts 有相同逻辑的 split_path，修改时需同步两端。
+/// TS 端 split_path 仅保留为测试夹具；正式 PATH 解析以此处为准。
 fn split_path(raw: &str) -> Vec<String> {
     raw.split(';')
         .map(|s| s.trim().to_string())
@@ -117,27 +125,54 @@ fn validate_and_join_paths(paths: &[String], label: &str) -> Result<String, Stri
     Ok(value)
 }
 
-/// 清理路径列表：移除不存在的目录 + 重复路径（保留首次出现）
-/// 返回 (保留的路径, 被移除的路径)
-pub fn clean_paths(paths: Vec<String>) -> (Vec<String>, Vec<String>) {
+/// 清理 PathEntry 列表：移除空路径、不存在的目录和重复路径（保留首次出现）。
+///
+/// 环境变量路径会先展开；无法展开的路径视为 unknown 并保留，避免误删。
+pub fn clean_path_entries(entries: Vec<PathEntry>) -> (Vec<PathEntry>, Vec<PathEntry>) {
     use std::collections::HashSet;
+
     let mut seen: HashSet<String> = HashSet::new();
     let mut kept = Vec::new();
     let mut removed = Vec::new();
-    for p in paths {
-        let key = p.trim().to_lowercase();
-        if seen.contains(&key) {
-            removed.push(p);
+
+    for entry in entries {
+        let trimmed = entry.path.trim();
+        let key = trimmed.to_lowercase();
+        if key.is_empty() || seen.contains(&key) {
+            removed.push(entry);
             continue;
         }
         seen.insert(key);
-        if !p.contains('%') && !std::path::Path::new(&p).is_dir() {
-            removed.push(p);
-            continue;
+
+        let expanded = crate::system::expand_env_vars(trimmed);
+        let exists = expanded.contains('%') || Path::new(&expanded).is_dir();
+        if exists {
+            kept.push(PathEntry {
+                path: trimmed.to_string(),
+                enabled: entry.enabled,
+            });
+        } else {
+            removed.push(entry);
         }
-        kept.push(p);
     }
+
     (kept, removed)
+}
+
+/// 清理路径字符串列表；保留旧 CLI 接口，语义与 `clean_path_entries` 一致。
+pub fn clean_paths(paths: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let entries = paths
+        .into_iter()
+        .map(|path| PathEntry {
+            path,
+            enabled: true,
+        })
+        .collect();
+    let (kept, removed) = clean_path_entries(entries);
+    (
+        kept.into_iter().map(|entry| entry.path).collect(),
+        removed.into_iter().map(|entry| entry.path).collect(),
+    )
 }
 
 #[cfg(test)]

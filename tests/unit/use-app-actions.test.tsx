@@ -18,6 +18,7 @@ vi.mock('@/i18n', () => ({
     t: vi.fn((key: string, opts?: Record<string, unknown>) => {
       if (key === 'status.deleted') return `已删除 ${opts?.count} 条`;
       if (key === 'status.saveWarningLongPaths') return 'PATH 长度超限';
+      if (key === 'dialog.importFilterName') return '受支持格式';
       return key;
     }),
   },
@@ -46,11 +47,19 @@ function resetStore(sys: PathEntry[] = [], user: PathEntry[] = []) {
     undoRedo: new UndoRedoManager(50),
     _savedSys: sys,
     _savedUser: user,
+    _pendingSys: null,
+    _pendingUser: null,
     selectedIndices: [],
     isModified: false,
     isLoading: false,
     isSaving: false,
     isAdmin: true,
+    pathCapabilities: {
+      canReadSystem: true,
+      canWriteSystem: true,
+      canReadUser: true,
+      canWriteUser: true,
+    },
     statusMessage: '',
   });
 }
@@ -172,10 +181,11 @@ describe('useAppActions', () => {
 
   it('handleClean 清理无效路径', async () => {
     resetStore([pe('C:\\Windows'), pe('invalid_path!@#')]);
+    mockedInvoke.mockResolvedValueOnce([[pe('C:\\Windows')], [pe('invalid_path!@#')]]);
     const { useAppActions } = await import('@/hooks/use-app-actions');
     const { result } = renderHook(() => useAppActions('system', dialogs));
-    act(() => {
-      result.current.handleClean();
+    await act(async () => {
+      await result.current.handleClean();
     });
     expect(useAppStore.getState().sysPaths.map((e) => e.path)).toEqual(['C:\\Windows']);
     expect(useAppStore.getState().statusMessage).toContain('已删除 1 条');
@@ -245,6 +255,34 @@ describe('useAppActions', () => {
     expect(useAppStore.getState().userPaths.map((e) => e.path)).toEqual(['D:\\User']); // 未变
   });
 
+  it('handleImportSelect 对无权限 hive 给出提示且不改草稿', async () => {
+    useAppStore.setState({
+      isAdmin: false,
+      pathCapabilities: {
+        canReadSystem: true,
+        canWriteSystem: false,
+        canReadUser: true,
+        canWriteUser: true,
+      },
+    });
+    dialogs.importDialog = {
+      open: true,
+      system: [pe('C:\\ImportSys')],
+      user: [],
+    };
+    const { useAppActions } = await import('@/hooks/use-app-actions');
+    const { result } = renderHook(() => useAppActions('user', dialogs));
+    act(() => {
+      result.current.handleImportSelect('system');
+    });
+
+    expect(useAppStore.getState().sysPaths.map((entry) => entry.path)).toEqual([
+      'C:\\Windows',
+      'C:\\Program Files',
+    ]);
+    expect(useAppStore.getState().statusMessage).toBe('status.noSystemPermission');
+    expect(dialogs.setImportDialog).not.toHaveBeenCalled();
+  });
   // ── handleSave ──
 
   it('handleSave 正常保存', async () => {

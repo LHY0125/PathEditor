@@ -10,5 +10,5 @@ test.beforeEach(async ({ page }) => {
 test('打开配置管理对话框', async ({ page }) => {
   await page.click('text=配置');
   await page.waitForTimeout(500);
-  await expect(page.locator('text=保存当前配置')).toBeVisible();
+  await expect(page.getByText('PATH 配置文件')).toBeVisible();
 });

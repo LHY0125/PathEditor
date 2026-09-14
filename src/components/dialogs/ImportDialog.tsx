@@ -5,6 +5,8 @@ interface ImportDialogProps {
   open: boolean;
   systemCount: number;
   userCount: number;
+  canWriteSystem: boolean;
+  canWriteUser: boolean;
   onSelect: (target: 'system' | 'user' | 'both') => void;
   onCancel: () => void;
 }
@@ -13,10 +15,16 @@ export function ImportDialog({
   open,
   systemCount,
   userCount,
+  canWriteSystem,
+  canWriteUser,
   onSelect,
   onCancel,
 }: ImportDialogProps) {
   const { t } = useTranslation();
+  const optionClass = (allowed: boolean) =>
+    `px-4 py-2 text-sm rounded border text-left ${
+      allowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+    }`;
 
   return (
     <Modal open={open} onClose={onCancel}>
@@ -29,8 +37,9 @@ export function ImportDialog({
       <div className="flex flex-col gap-2">
         {systemCount > 0 && (
           <button
-            className="px-4 py-2 text-sm rounded border text-left"
+            className={optionClass(canWriteSystem)}
             style={{ borderColor: 'var(--app-border)' }}
+            disabled={!canWriteSystem}
             onClick={() => onSelect('system')}
           >
             {t('dialog.importSystem')}
@@ -38,8 +47,9 @@ export function ImportDialog({
         )}
         {userCount > 0 && (
           <button
-            className="px-4 py-2 text-sm rounded border text-left"
+            className={optionClass(canWriteUser)}
             style={{ borderColor: 'var(--app-border)' }}
+            disabled={!canWriteUser}
             onClick={() => onSelect('user')}
           >
             {t('dialog.importUser')}
@@ -47,8 +57,9 @@ export function ImportDialog({
         )}
         {systemCount > 0 && userCount > 0 && (
           <button
-            className="px-4 py-2 text-sm rounded border text-left"
+            className={optionClass(canWriteSystem && canWriteUser)}
             style={{ borderColor: 'var(--app-border)' }}
+            disabled={!canWriteSystem || !canWriteUser}
             onClick={() => onSelect('both')}
           >
             {t('dialog.importBoth')}

@@ -1,31 +1,35 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import i18n from '@/i18n';
 import { UndoRedoManager, OperationType, TargetType } from '@/core/undo-redo';
-import { pathClean } from '@/core/path-manager';
 import type { PathEntry } from '@/core/path-entry';
 import appConfig from '@/config/default.json';
+import { backend } from '@/services/backend';
+import {
+  arraysEqual,
+  loadPathSnapshot,
+  savePathSnapshot,
+  type SaveResult,
+} from '@/services/path-session';
+import { EMPTY_CAPABILITIES, type PathCapabilities, type TabId } from '@/core/path-capabilities';
 
-export type TabId = 'system' | 'user' | 'merged';
-
-export type SaveResult =
-  | { kind: 'success' }
-  | { kind: 'warning'; reason: 'lengthExceeded' }
-  | { kind: 'failure'; message: string }
-  | { kind: 'partial'; message: string }
-  | { kind: 'blocked' };
+export { canWriteTarget, EMPTY_CAPABILITIES, targetForTab } from '@/core/path-capabilities';
+export type { PathCapabilities, TabId } from '@/core/path-capabilities';
+export type { SaveResult } from '@/services/path-session';
 
 interface AppState {
   sysPaths: PathEntry[];
   userPaths: PathEntry[];
   undoRedo: UndoRedoManager;
-  _savedSys: PathEntry[]; // 上次保存时的快照，用于 isModified 判断
+  _savedSys: PathEntry[]; // 上次成功写入注册表的快照，用于 isModified 判断
   _savedUser: PathEntry[];
+  _pendingSys: PathEntry[] | null; // 注册表已提交、但 disabled.json 待补写的快照
+  _pendingUser: PathEntry[] | null;
 
   activeTab: TabId;
   searchQuery: string;
   selectedIndices: number[];
   isAdmin: boolean;
+  pathCapabilities: PathCapabilities;
   statusMessage: string;
   isModified: boolean;
   isLoading: boolean;
@@ -41,9 +45,9 @@ interface AppState {
   deletePaths: (indices: number[], target: TargetType) => void;
   moveUp: (index: number, target: TargetType) => void;
   moveDown: (index: number, target: TargetType) => void;
-  cleanPaths: (target: TargetType, validateFn: (p: string) => boolean) => string[];
-  replacePaths: (target: TargetType, newPaths: string[]) => void;
-  replaceBothPaths: (sysPaths: string[], userPaths: string[]) => void;
+  cleanPaths: (target: TargetType) => Promise<string[]>;
+  replacePaths: (target: TargetType, newEntries: PathEntry[]) => void;
+  replaceBothPaths: (sysEntries: PathEntry[], userEntries: PathEntry[]) => void;
   clearPaths: (target: TargetType) => void;
 
   togglePath: (index: number, target: TargetType) => void;
@@ -56,16 +60,15 @@ interface AppState {
   initialize: () => Promise<void>;
 }
 
-function arraysEqual(a: readonly PathEntry[], b: readonly PathEntry[]): boolean {
-  return (
-    a.length === b.length && a.every((v, i) => v.path === b[i].path && v.enabled === b[i].enabled)
-  );
-}
-
 export const useAppStore = create<AppState>((set, get) => {
   const markDirty = () => {
-    const { _savedSys, _savedUser, sysPaths, userPaths } = get();
-    set({ isModified: !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)) });
+    const { _savedSys, _savedUser, _pendingSys, _pendingUser, sysPaths, userPaths } = get();
+    set({
+      isModified:
+        !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)) ||
+        Boolean(_pendingSys) ||
+        Boolean(_pendingUser),
+    });
   };
 
   return {
@@ -74,11 +77,14 @@ export const useAppStore = create<AppState>((set, get) => {
     undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
     _savedSys: [],
     _savedUser: [],
+    _pendingSys: null,
+    _pendingUser: null,
 
     activeTab: 'system',
     searchQuery: '',
     selectedIndices: [],
     isAdmin: false,
+    pathCapabilities: { ...EMPTY_CAPABILITIES },
     statusMessage: '',
     isModified: false,
     isLoading: true,
@@ -191,10 +197,10 @@ export const useAppStore = create<AppState>((set, get) => {
       markDirty();
     },
 
-    cleanPaths: (target, validateFn) => {
+    cleanPaths: async (target) => {
       const state = get();
       const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
-      const [kept, removed] = pathClean(list, validateFn);
+      const [kept, removed] = await backend.cleanPathEntries(list);
 
       if (removed.length > 0) {
         state.undoRedo.push({
@@ -210,14 +216,14 @@ export const useAppStore = create<AppState>((set, get) => {
         markDirty();
       }
 
-      return removed.map((e) => e.path);
+      return removed.map((entry) => entry.path);
     },
 
-    replacePaths: (target, newPaths) => {
-      if (newPaths.length === 0) return;
+    replacePaths: (target, newEntries) => {
+      if (newEntries.length === 0) return;
       const state = get();
       const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
-      const entries: PathEntry[] = newPaths.map((p) => ({ path: p, enabled: true }));
+      const entries = newEntries.map((entry) => ({ ...entry }));
 
       state.undoRedo.push({
         type: OperationType.IMPORT,
@@ -233,21 +239,21 @@ export const useAppStore = create<AppState>((set, get) => {
       markDirty();
     },
 
-    replaceBothPaths: (sysPaths, userPaths) => {
+    replaceBothPaths: (sysEntries, userEntries) => {
       const state = get();
-      const sysEntries: PathEntry[] = sysPaths.map((p) => ({ path: p, enabled: true }));
-      const usrEntries: PathEntry[] = userPaths.map((p) => ({ path: p, enabled: true }));
+      const nextSys = sysEntries.map((entry) => ({ ...entry }));
+      const nextUser = userEntries.map((entry) => ({ ...entry }));
       state.undoRedo.push({
         type: OperationType.IMPORT_BOTH,
         target: TargetType.SYSTEM,
         index: 0,
-        count: sysEntries.length + usrEntries.length,
+        count: nextSys.length + nextUser.length,
         oldPaths: [...state.sysPaths],
-        newPaths: [...sysEntries],
+        newPaths: [...nextSys],
         oldPathsOther: [...state.userPaths],
-        newPathsOther: [...usrEntries],
+        newPathsOther: [...nextUser],
       });
-      set({ sysPaths: [...sysEntries], userPaths: [...usrEntries], selectedIndices: [] });
+      set({ sysPaths: [...nextSys], userPaths: [...nextUser], selectedIndices: [] });
       markDirty();
     },
 
@@ -291,94 +297,64 @@ export const useAppStore = create<AppState>((set, get) => {
       if (target === TargetType.SYSTEM) set({ sysPaths: newList });
       else set({ userPaths: newList });
       markDirty();
-
-      // 即时保存禁用状态
-      const { sysPaths: sys, userPaths: usr } = get();
-      const sysDisabled = sys.filter((e) => !e.enabled).map((e) => e.path);
-      const usrDisabled = usr.filter((e) => !e.enabled).map((e) => e.path);
-      invoke('save_disabled_state', { system: sysDisabled, user: usrDisabled }).catch((e) =>
-        console.warn('保存禁用状态失败:', e),
-      );
     },
 
     undo: () => {
-      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser } = get();
+      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser, _pendingSys, _pendingUser } =
+        get();
       const result = undoRedo.undo(sysPaths, userPaths);
       if (result) {
         set({
           sysPaths: result[0],
           userPaths: result[1],
           selectedIndices: [],
-          // 内联计算 isModified 而非调用 markDirty()，避免两次 set() 导致额外渲染
-          isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
+          isModified:
+            !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)) ||
+            Boolean(_pendingSys) ||
+            Boolean(_pendingUser),
         });
-        // 同步持久化 disabled 状态，与 togglePath 保持一致
-        invoke('save_disabled_state', {
-          system: result[0].filter((e) => !e.enabled).map((e) => e.path),
-          user: result[1].filter((e) => !e.enabled).map((e) => e.path),
-        }).catch((e) => console.warn('保存禁用状态失败:', e));
       }
     },
 
     redo: () => {
-      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser } = get();
+      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser, _pendingSys, _pendingUser } =
+        get();
       const result = undoRedo.redo(sysPaths, userPaths);
       if (result) {
         set({
           sysPaths: result[0],
           userPaths: result[1],
           selectedIndices: [],
-          // 内联计算 isModified 而非调用 markDirty()，避免两次 set() 导致额外渲染
-          isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
+          isModified:
+            !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)) ||
+            Boolean(_pendingSys) ||
+            Boolean(_pendingUser),
         });
-        // 同步持久化 disabled 状态，与 togglePath 保持一致
-        invoke('save_disabled_state', {
-          system: result[0].filter((e) => !e.enabled).map((e) => e.path),
-          user: result[1].filter((e) => !e.enabled).map((e) => e.path),
-        }).catch((e) => console.warn('保存禁用状态失败:', e));
       }
     },
 
     loadPaths: async () => {
       try {
         set({ isLoading: true });
-        const [sysArr, userArr] = await Promise.all([
-          invoke<string[]>('load_system_paths'),
-          invoke<string[]>('load_user_paths'),
-        ]);
-
-        // 加载禁用状态（文件不存在时返回空）
-        let sysDisabled: string[] = [];
-        let usrDisabled: string[] = [];
-        try {
-          const result = await invoke<[string[], string[]]>('load_disabled_state');
-          sysDisabled = result[0];
-          usrDisabled = result[1];
-        } catch {
-          // 文件不存在或损坏，忽略
-        }
-
-        const sysSet = new Set(sysDisabled);
-        const usrSet = new Set(usrDisabled);
-
-        const sysEntries: PathEntry[] = sysArr.map((p) => ({ path: p, enabled: !sysSet.has(p) }));
-        const usrEntries: PathEntry[] = userArr.map((p) => ({ path: p, enabled: !usrSet.has(p) }));
+        const { sysEntries, usrEntries } = await loadPathSnapshot();
 
         set({
           sysPaths: sysEntries,
           userPaths: usrEntries,
           _savedSys: [...sysEntries],
           _savedUser: [...usrEntries],
+          _pendingSys: null,
+          _pendingUser: null,
           undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
           isLoading: false,
           isModified: false,
           statusMessage: i18n.t('status.loaded', {
-            sysCount: sysArr.length,
-            userCount: userArr.length,
+            sysCount: sysEntries.length,
+            userCount: usrEntries.length,
           }),
         });
-      } catch (e) {
-        set({ isLoading: false, statusMessage: `${i18n.t('status.error')}: ${String(e)}` });
+      } catch (error) {
+        set({ isLoading: false, statusMessage: `${i18n.t('status.error')}: ${String(error)}` });
       }
     },
 
@@ -386,87 +362,61 @@ export const useAppStore = create<AppState>((set, get) => {
       const state = get();
       if (state.isSaving) return { kind: 'blocked' };
       set({ isSaving: true, statusMessage: i18n.t('status.saving') });
-
-      // 只保存 enabled 的路径到注册表
-      const sysPaths = state.sysPaths.filter((e) => e.enabled).map((e) => e.path);
-      const userPaths = state.userPaths.filter((e) => e.enabled).map((e) => e.path);
-      const sysJoined = sysPaths.join(';');
-      const userJoined = userPaths.join(';');
-
-      // 长度检查：非强制模式下返回警告，由 UI 层确认
-      const { maxSystemLength, maxUserLength, maxCombinedLength } = appConfig.path;
-      if (
-        !force &&
-        (sysJoined.length > maxSystemLength ||
-          userJoined.length > maxUserLength ||
-          (sysJoined + userJoined).length > maxCombinedLength)
-      ) {
-        set({ isSaving: false, statusMessage: i18n.t('status.saveWarningLongPaths') });
-        return { kind: 'warning', reason: 'lengthExceeded' };
-      }
-
-      // 备份当前注册表（保存前备份旧值，失败仅警告不中断）
-      let backupFailed = false;
-      await invoke('backup_registry', { customDir: null }).catch(() => {
-        backupFailed = true;
+      const outcome = await savePathSnapshot({
+        sysPaths: state.sysPaths,
+        userPaths: state.userPaths,
+        savedSys: state._savedSys,
+        savedUser: state._savedUser,
+        pendingSys: state._pendingSys,
+        pendingUser: state._pendingUser,
+        isAdmin: state.isAdmin,
+        capabilities: state.pathCapabilities,
+        force,
       });
-
-      const origSys = state._savedSys.filter((e) => e.enabled).map((e) => e.path);
-      const origUser = state._savedUser.filter((e) => e.enabled).map((e) => e.path);
-
-      const [sysResult, userResult] = await Promise.allSettled([
-        invoke('save_system_paths', { paths: sysPaths, original: origSys }),
-        invoke('save_user_paths', { paths: userPaths, original: origUser }),
-      ]);
-
-      const sysOk = sysResult.status === 'fulfilled';
-      const userOk = userResult.status === 'fulfilled';
-
-      if (sysOk && userOk) {
-        invoke('broadcast_env_change').catch(() => {});
-        const savedSys = [...state.sysPaths],
-          savedUser = [...state.userPaths];
-        set({
-          isModified: false,
-          isSaving: false,
-          statusMessage: backupFailed
-            ? i18n.t('status.saved_without_backup')
-            : i18n.t('status.saved'),
-          _savedSys: savedSys,
-          _savedUser: savedUser,
-        });
-        return { kind: 'success' };
-      } else {
-        const sysErr = !sysOk && sysResult.status === 'rejected' ? String(sysResult.reason) : '';
-        const usrErr = !userOk && userResult.status === 'rejected' ? String(userResult.reason) : '';
-        const parts = [sysErr, usrErr].filter(Boolean);
-
-        const msg = sysOk
-          ? `用户 PATH 保存失败: ${usrErr}`
-          : userOk
-            ? `系统 PATH 保存失败: ${sysErr}`
-            : `保存失败: ${parts.join('; ')}`;
-
-        if (sysOk || userOk) {
-          // partial success
-          set({ isSaving: false });
-          await get().loadPaths(); // reload to avoid state drift
-          set({ statusMessage: msg }); // restore the error message overwritten by loadPaths
-          return { kind: 'partial', message: msg };
-        } else {
-          set({ isSaving: false, statusMessage: msg });
-          return { kind: 'failure', message: msg };
-        }
-      }
+      set({
+        isModified:
+          !(
+            arraysEqual(state.sysPaths, outcome.savedSys) &&
+            arraysEqual(state.userPaths, outcome.savedUser)
+          ) ||
+          Boolean(outcome.pendingSys) ||
+          Boolean(outcome.pendingUser),
+        isSaving: false,
+        statusMessage: outcome.statusMessage,
+        _savedSys: outcome.savedSys,
+        _savedUser: outcome.savedUser,
+        _pendingSys: outcome.pendingSys,
+        _pendingUser: outcome.pendingUser,
+      });
+      return outcome.result;
     },
 
     initialize: async () => {
       try {
-        const isAdmin: boolean = await invoke('check_admin');
-        set({ isAdmin });
-        if (!isAdmin) set({ statusMessage: i18n.t('status.readonly') });
+        const capabilities = await backend.getPathCapabilities().catch(() => null);
+        if (capabilities) {
+          set({
+            pathCapabilities: capabilities,
+            isAdmin: capabilities.canWriteSystem,
+          });
+        } else {
+          const isAdmin = await backend.checkAdmin().catch(() => false);
+          set({
+            isAdmin,
+            pathCapabilities: {
+              canReadSystem: isAdmin,
+              canWriteSystem: isAdmin,
+              canReadUser: true,
+              canWriteUser: true,
+            },
+          });
+        }
       } catch {
-        set({ isAdmin: false, statusMessage: i18n.t('status.readonly') });
+        set({
+          isAdmin: false,
+          pathCapabilities: { ...EMPTY_CAPABILITIES },
+          statusMessage: i18n.t('status.readonly'),
+        });
       }
       await get().loadPaths();
     },

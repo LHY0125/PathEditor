@@ -27,9 +27,9 @@ test('F1 打开帮助', async ({ page }) => {
 
 test('Delete 删除选中行', async ({ page }) => {
   // 先选中第一行
-  await page.locator('table tbody tr').first().click();
+  await page.getByTestId('path-row').first().click();
   await page.keyboard.press('Delete');
   await page.waitForTimeout(300);
   // 应有 1 行被删除 (原 2 行剩 1 行)
-  await expect(page.locator('table tbody tr')).toHaveCount(1);
+  await expect(page.getByTestId('path-row')).toHaveCount(1);
 });

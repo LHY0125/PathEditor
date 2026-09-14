@@ -26,8 +26,7 @@ export function join_path(paths: string[]): string {
   return paths.join(';');
 }
 
-/** 分割 PATH 字符串。
- *  注意：Rust 端 core/src/registry.rs 有相同逻辑的 split_path，修改时需同步两端。 */
+/** 分割 PATH 字符串；仅保留给测试夹具，运行时由 Rust registry 处理。 */
 export function split_path(raw: string): string[] {
   return raw
     .split(';')

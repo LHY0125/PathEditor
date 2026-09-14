@@ -1,7 +1,8 @@
 {
   "app": {
     "name": "PathEditor",
-    "nameReadonly": "PathEditor (Read-only)"
+    "nameReadonly": "PathEditor (Read-only)",
+    "errorTitle": "Application Error"
   },
   "tab": {
     "system": "System Variables",
@@ -31,7 +32,8 @@
     "darkMode": "Dark Mode",
     "lightMode": "Light Mode",
     "language": "Language",
-    "retry": "Retry"
+    "retry": "Retry",
+    "close": "Close"
   },
   "merge": {
     "system": "System",
@@ -55,7 +57,13 @@
     "light": "Light",
     "dark": "Dark",
     "adminWarning": "Running without administrator privileges, some features are disabled",
-    "saveWarningLongPaths": "PATH length exceeds recommended value. Continue saving?"
+    "saveWarningLongPaths": "PATH length exceeds recommended value. Continue saving?",
+    "noSystemPermission": "No permission to write the system PATH",
+    "noUserPermission": "No permission to write the user PATH",
+    "disabledStateFailed": "Registry saved, but disabled-state persistence failed",
+    "saveFailure": "Save failed: {{details}}",
+    "saveSystemFailed": "System PATH: {{error}}",
+    "saveUserFailed": "User PATH: {{error}}"
   },
   "dialog": {
     "newPath": "New Path",
@@ -75,6 +83,8 @@
     "confirm": "Confirm",
     "cancel": "Cancel",
     "search": "Search paths...",
+    "unsavedConfirm": "You have unsaved changes. Exit anyway?",
+    "importFilterName": "Supported formats",
     "importSystemCount": "System: {{count}} entries",
     "importUserCount": "User: {{count}} entries"
   },
@@ -89,7 +99,8 @@
     "shadowed": "Shadowed",
     "searchPlaceholder": "Search executable name...",
     "conflictCount": "{{count}} file conflict(s) found",
-    "notExists": "(not found)"
+    "notExists": "(not found)",
+    "error": "Analysis failed"
   },
   "profile": {
     "title": "PATH Profiles",
@@ -102,11 +113,12 @@
     "rename": "Rename",
     "noProfiles": "No saved profiles",
     "applyConfirm": "This will overwrite current PATH with profile \"{{name}}\" and write to registry. Confirm?",
+    "deleteConfirm": "Delete profile \"{{name}}\"?",
     "deleted": "Profile \"{{name}}\" deleted",
     "selectProfile": "Select a profile",
     "empty": "(empty)"
   },
   "help": {
-    "content": "PathEditor v5.0 — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
+    "content": "PathEditor v{{version}} — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
   }
 }

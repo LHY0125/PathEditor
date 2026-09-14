@@ -1,4 +1,5 @@
 use path_editor_core::registry;
+use path_editor_core::PathEntry;
 
 #[tauri::command]
 pub fn load_system_paths() -> Result<Vec<String>, String> {
@@ -27,4 +28,9 @@ pub fn save_user_paths(paths: Vec<String>, original: Option<Vec<String>>) -> Res
         }
     }
     registry::save_user_paths(paths)
+}
+
+#[tauri::command]
+pub fn clean_path_entries(entries: Vec<PathEntry>) -> (Vec<PathEntry>, Vec<PathEntry>) {
+    registry::clean_path_entries(entries)
 }

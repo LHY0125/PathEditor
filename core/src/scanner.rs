@@ -23,6 +23,12 @@ pub struct ToolGroup {
     pub exes: Vec<String>,
 }
 
+#[derive(serde::Serialize)]
+pub struct ScanResult {
+    pub conflicts: Vec<ConflictEntry>,
+    pub tools: Vec<ToolGroup>,
+}
+
 /// 扫描单个目录中的可执行文件名
 fn list_exes(dir: &str) -> Vec<String> {
     let p = Path::new(dir);
@@ -45,103 +51,92 @@ fn list_exes(dir: &str) -> Vec<String> {
     exes
 }
 
-/// 扫描 PATH 中的可执行文件冲突
-///
-/// 并行遍历每个 PATH 目录，查找 .exe/.bat/.cmd/.com/.ps1 文件，
-/// 标记出现在多个目录中的同名文件（后面的目录会被前面的「遮蔽」）
-pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> {
-    let results: Vec<(usize, String, Vec<String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = paths
-            .iter()
-            .enumerate()
-            .map(|(priority, dir)| s.spawn(move || (priority, dir.clone(), list_exes(dir))))
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().map_err(|e| format!("扫描线程失败: {:?}", e)))
-            .collect::<Result<Vec<_>, _>>()
-    })
-    .map_err(|e| format!("线程扫描失败: {}", e))?;
+/// 单次枚举 PATH 目录，最多使用 8 个扫描线程。
+fn enumerate_paths(paths: &[String]) -> Vec<(usize, String, bool, Vec<String>)> {
+    if paths.is_empty() {
+        return vec![];
+    }
 
-    // 合并: exe_name (小写) → [(priority, dir)]
+    let workers = 8usize.min(paths.len());
+    let chunk_size = paths.len().div_ceil(workers);
+    let mut results = Vec::new();
+
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(workers);
+        for (chunk_index, chunk) in paths.chunks(chunk_size).enumerate() {
+            let start = chunk_index * chunk_size;
+            handles.push(scope.spawn(move || {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, dir)| {
+                        let exists = Path::new(dir).is_dir();
+                        let exes = if exists { list_exes(dir) } else { vec![] };
+                        (start + offset, dir.clone(), exists, exes)
+                    })
+                    .collect::<Vec<_>>()
+            }));
+        }
+        for handle in handles {
+            if let Ok(partial) = handle.join() {
+                results.extend(partial);
+            }
+        }
+    });
+
+    results.sort_by_key(|result| result.0);
+    results
+}
+
+/// 只枚举一次目录，同时生成冲突和工具清单结果。
+pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, String> {
+    let query_lower = query.to_lowercase();
     let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
-    for (priority, dir, exes) in results {
-        for name in exes {
+    let mut tools = Vec::new();
+
+    for (priority, dir, exists, exes) in enumerate_paths(&paths) {
+        for name in &exes {
             map.entry(name.to_lowercase())
                 .or_default()
                 .push((priority, dir.clone()));
         }
+
+        let mut filtered = exes;
+        if !query_lower.is_empty() {
+            filtered.retain(|name| name.to_lowercase().contains(&query_lower));
+        }
+        filtered.sort();
+        tools.push(ToolGroup {
+            dir,
+            exists,
+            exes: filtered,
+        });
     }
 
-    let mut results: Vec<ConflictEntry> = map
+    let mut conflicts: Vec<ConflictEntry> = map
         .into_iter()
-        .filter(|(_, locs)| locs.len() >= 2)
-        .map(|(name, locs)| ConflictEntry {
+        .filter(|(_, locations)| locations.len() >= 2)
+        .map(|(name, locations)| ConflictEntry {
             name,
-            locations: locs
+            locations: locations
                 .into_iter()
                 .map(|(priority, dir)| ConflictLocation { dir, priority })
                 .collect(),
         })
         .collect();
+    conflicts.sort_by(|a, b| a.name.cmp(&b.name));
 
-    results.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(results)
+    Ok(ScanResult { conflicts, tools })
 }
 
-/// 扫描 PATH 中各目录提供的可执行文件
-///
-/// query 非空时只返回文件名包含关键词的结果。各目录并行扫描。
+/// 扫描 PATH 中的可执行文件冲突。
+pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> {
+    scan_paths(paths, String::new()).map(|result| result.conflicts)
+}
+
+/// 扫描 PATH 中各目录提供的可执行文件。
 pub fn scan_tools(paths: Vec<String>, query: String) -> Result<Vec<ToolGroup>, String> {
-    let query_lower = query.to_lowercase();
-
-    // 并行扫描各目录
-    let dir_results: Vec<(String, Option<Vec<String>>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = paths
-            .iter()
-            .map(|dir| {
-                s.spawn(move || {
-                    let p = Path::new(dir);
-                    if !p.is_dir() {
-                        return (dir.clone(), None);
-                    }
-                    let exes = list_exes(dir);
-                    (dir.clone(), Some(exes))
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().map_err(|e| format!("扫描线程失败: {:?}", e)))
-            .collect::<Result<Vec<_>, _>>()
-    })
-    .map_err(|e| format!("线程扫描失败: {}", e))?;
-
-    let mut groups: Vec<ToolGroup> = Vec::new();
-    for (dir, opt_exes) in dir_results {
-        match opt_exes {
-            None => {
-                groups.push(ToolGroup {
-                    dir,
-                    exists: false,
-                    exes: vec![],
-                });
-            }
-            Some(mut exes) => {
-                if !query_lower.is_empty() {
-                    exes.retain(|name| name.to_lowercase().contains(&query_lower));
-                }
-                exes.sort();
-                groups.push(ToolGroup {
-                    dir,
-                    exists: true,
-                    exes,
-                });
-            }
-        }
-    }
-
-    Ok(groups)
+    scan_paths(paths, query).map(|result| result.tools)
 }
 
 #[cfg(test)]

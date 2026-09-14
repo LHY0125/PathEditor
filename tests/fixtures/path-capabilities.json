@@ -1,0 +1,6 @@
+{
+  "canReadSystem": true,
+  "canWriteSystem": false,
+  "canReadUser": true,
+  "canWriteUser": true
+}

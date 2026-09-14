@@ -7,6 +7,7 @@ export function StatusBar() {
   const statusMessage = useAppStore((s) => s.statusMessage);
   const isLoading = useAppStore((s) => s.isLoading);
   const isAdmin = useAppStore((s) => s.isAdmin);
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const isModified = useAppStore((s) => s.isModified);
   const isDark = useThemeStore((s) => s.isDark);
   const hasError = statusMessage.includes(t('status.error'));
@@ -34,7 +35,9 @@ export function StatusBar() {
       </div>
       <div className="flex gap-3">
         {isModified && <span className="text-yellow-500">● {t('status.modified')}</span>}
-        {!isAdmin && <span className="text-yellow-500">{t('status.readonly_label')}</span>}
+        {!isAdmin && !pathCapabilities.canWriteUser && (
+          <span className="text-yellow-500">{t('status.readonly_label')}</span>
+        )}
         <span style={{ opacity: 0.5 }}>{isDark ? t('status.dark') : t('status.light')}</span>
       </div>
     </footer>

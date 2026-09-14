@@ -25,6 +25,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "verify": "npm run format:check && npm run lint && npm run build && npm run test:coverage && cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "verify:all": "npm run verify && npm run test:e2e",
     "prepare": "husky"
   },
   "dependencies": {

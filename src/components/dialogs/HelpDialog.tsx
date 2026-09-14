@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
+import packageJson from '../../../package.json';
 
 interface HelpDialogProps {
   open: boolean;
@@ -13,7 +14,7 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
     <Modal open={open} onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">{t('dialog.helpTitle')}</h2>
       <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed max-w-lg">
-        {t('help.content')}
+        {t('help.content', { version: packageJson.version })}
       </pre>
       <div className="flex justify-end mt-4">
         <button

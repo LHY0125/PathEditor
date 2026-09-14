@@ -22,7 +22,9 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
         Some(ref dir) if !dir.is_empty() => {
             let p = std::path::PathBuf::from(dir);
             let normalized = dir.replace('/', "\\").to_lowercase();
-            if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\") {
+            if normalized.starts_with("c:\\windows\\")
+                || normalized.starts_with("c:\\program files\\")
+            {
                 return Err("不允许备份到系统目录".into());
             }
             p

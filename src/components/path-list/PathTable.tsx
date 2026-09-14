@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '@/store/app-store';
+import { canWriteTarget, useAppStore } from '@/store/app-store';
 import { TargetType } from '@/core/undo-redo';
 import { usePathValidation } from '@/hooks/use-path-validation';
 import type { ValidationState } from '@/hooks/use-path-validation';
@@ -24,9 +24,13 @@ export function PathTable({ tabId }: PathTableProps) {
   const selectedIndices = useAppStore((s) => s.selectedIndices);
   const setSelectedIndices = useAppStore((s) => s.setSelectedIndices);
   const activeTab = useAppStore((s) => s.activeTab);
+  const isAdmin = useAppStore((s) => s.isAdmin);
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
 
   const paths = tabId === 'system' ? sysPaths : userPaths;
   const isActive = activeTab === tabId;
+  const target = tabId === 'system' ? TargetType.SYSTEM : TargetType.USER;
+  const canWrite = canWriteTarget(isAdmin, pathCapabilities, target);
 
   const { validationCache, expandedCache } = usePathValidation(paths);
 
@@ -50,7 +54,7 @@ export function PathTable({ tabId }: PathTableProps) {
       const lower = path.toLowerCase();
       const isDuplicate = seen.has(lower);
       seen.add(lower);
-      const state: ValidationState = validationCache.get(path) ?? 'valid';
+      const state: ValidationState = validationCache.get(path) ?? 'pending';
       return { state, isDuplicate, isEnvVar: path.includes('%') };
     });
   }, [filtered, validationCache]);
@@ -92,7 +96,7 @@ export function PathTable({ tabId }: PathTableProps) {
   });
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-auto relative">
+    <div ref={parentRef} className="flex-1 overflow-auto relative" data-testid="path-table">
       <div
         className="sticky top-0 z-10 flex text-left text-xs uppercase"
         style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
@@ -120,6 +124,7 @@ export function PathTable({ tabId }: PathTableProps) {
 
           let textDecoration = 'none';
           let opacity = 1;
+          if (v.state === 'pending') opacity = 0.65;
           if (!enabled) {
             textColor = '#6b7280';
             textDecoration = 'line-through';
@@ -129,6 +134,8 @@ export function PathTable({ tabId }: PathTableProps) {
           return (
             <div
               key={virtualRow.key}
+              data-testid="path-row"
+              data-path={path}
               onClick={(e) => handleClick(index, e)}
               onDoubleClick={() => handleDoubleClick(index)}
               className="cursor-pointer select-none flex items-center absolute top-0 left-0 w-full"
@@ -151,15 +158,17 @@ export function PathTable({ tabId }: PathTableProps) {
               <div className="w-6 px-1 py-0.5 flex items-center">
                 <input
                   type="checkbox"
+                  data-testid="path-enabled"
                   checked={enabled}
+                  disabled={!canWrite}
                   onChange={() => {
-                    const target = tabId === 'system' ? TargetType.SYSTEM : TargetType.USER;
                     useAppStore.getState().togglePath(index, target);
                   }}
-                  className="cursor-pointer"
+                  className={canWrite ? 'cursor-pointer' : 'cursor-not-allowed'}
                 />
               </div>
               <div
+                data-testid="path-text"
                 className="px-2 py-0.5 text-sm truncate flex-1"
                 style={{ color: textColor, textDecoration, opacity }}
                 title={expandedCache.get(path) || undefined}

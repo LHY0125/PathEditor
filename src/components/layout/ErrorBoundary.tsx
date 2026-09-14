@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import i18n from '@/i18n';
 
 interface Props {
   children: ReactNode;
@@ -28,14 +29,14 @@ export class ErrorBoundary extends Component<Props, State> {
           style={{ backgroundColor: 'var(--app-bg)', color: 'var(--app-fg)' }}
         >
           <div className="text-center space-y-4">
-            <h2 className="text-xl font-bold">应用出错</h2>
+            <h2 className="text-xl font-bold">{i18n.t('app.errorTitle')}</h2>
             <p className="text-sm opacity-70">{this.state.error}</p>
             <button
               className="px-4 py-2 rounded border"
               onClick={() => this.setState({ hasError: false })}
               style={{ borderColor: 'var(--app-border)' }}
             >
-              重试
+              {i18n.t('button.retry')}
             </button>
           </div>
         </div>

@@ -1,6 +1,6 @@
-// 注意：TS 端 src/core/import-export.ts 有对应的导入导出实现，
-// 前端使用 TS 版（需 ImportDialog 交互），CLI 使用 Rust 版，修改时需同步两端。
+// TS 端 src/core/import-export.ts 仅保留为历史测试夹具；GUI/CLI 运行时统一使用本模块。
 
+use crate::path_entry::PathEntry;
 use crate::profiles::ProfilePathEntry;
 
 /// 过滤导入条目：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
@@ -38,6 +38,32 @@ pub fn read_text_file(path: &str) -> Result<String, String> {
         ));
     }
     std::fs::read_to_string(path).map_err(|e| format!("无法读取文件: {}", e))
+}
+
+/// 读取导入文件时限制在用户目录、临时目录或当前工作目录内。
+pub fn read_text_file_scoped(path: &str) -> Result<String, String> {
+    let requested = std::path::Path::new(path);
+    let canonical = std::fs::canonicalize(requested).map_err(|e| format!("无法读取文件: {}", e))?;
+
+    let mut roots = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        roots.push(home);
+    }
+    roots.push(std::env::temp_dir());
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd);
+    }
+
+    let allowed = roots.into_iter().any(|root| {
+        std::fs::canonicalize(root)
+            .map(|canonical_root| canonical.starts_with(canonical_root))
+            .unwrap_or(false)
+    });
+    if !allowed {
+        return Err("仅允许读取用户目录、临时目录或当前工作目录中的导入文件".into());
+    }
+
+    read_text_file(path)
 }
 
 /// 导入路径文件（JSON / CSV / TXT），返回 (系统条目, 用户条目)
@@ -95,7 +121,7 @@ fn import_json(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathE
 }
 
 /// 解析 CSV 行，支持引号包裹的字段（RFC 4180 子集）
-/// 与 TS 端 src/core/import-export.ts parseCsvLine 逻辑一致
+/// 与测试夹具 src/core/import-export.ts 的兼容语义保持一致。
 fn parse_csv_line(line: &str) -> Vec<String> {
     let mut fields = Vec::new();
     let mut current = String::new();
@@ -127,9 +153,7 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     fields
 }
 
-fn import_csv(
-    content: &str,
-) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
+fn import_csv(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
     let mut sys = Vec::new();
     let mut usr = Vec::new();
     let mut first = true;
@@ -202,31 +226,45 @@ fn import_txt(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEn
     Ok((vec![], entries))
 }
 
-/// 导出 PATH 为指定格式字符串
-pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<String, String> {
+fn escape_csv_field(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r') {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}
+
+/// 导出 PathEntry 为指定格式字符串，保留 enabled 状态。
+pub fn export_path_entries(
+    sys: &[PathEntry],
+    usr: &[PathEntry],
+    format: &str,
+) -> Result<String, String> {
     match format {
         "json" => {
-            let to_entries = |paths: &[String]| -> Vec<serde_json::Value> {
-                paths
-                    .iter()
-                    .map(|p| serde_json::json!({"path": p, "enabled": true}))
-                    .collect()
-            };
             let data = serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "timestamp": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
-                "system": to_entries(sys),
-                "user": to_entries(usr),
+                "system": sys,
+                "user": usr,
             });
             Ok(serde_json::to_string_pretty(&data).expect("JSON 序列化 Value 不应失败"))
         }
         "csv" => {
             let mut out = String::from("type,path,enabled\n");
-            for p in sys {
-                out.push_str(&format!("system,{},true\n", p));
+            for entry in sys {
+                out.push_str(&format!(
+                    "system,{},{}\n",
+                    escape_csv_field(&entry.path),
+                    entry.enabled
+                ));
             }
-            for p in usr {
-                out.push_str(&format!("user,{},true\n", p));
+            for entry in usr {
+                out.push_str(&format!(
+                    "user,{},{}\n",
+                    escape_csv_field(&entry.path),
+                    entry.enabled
+                ));
             }
             Ok(out)
         }
@@ -234,20 +272,39 @@ pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<Stri
             let mut out = String::new();
             if !sys.is_empty() {
                 out.push_str(&format!("# 系统 PATH ({})\n", sys.len()));
-                for p in sys {
-                    out.push_str(&format!("{}\n", p));
+                for entry in sys {
+                    out.push_str(&format!("{}\n", entry.path));
                 }
             }
             if !usr.is_empty() {
                 out.push_str(&format!("# 用户 PATH ({})\n", usr.len()));
-                for p in usr {
-                    out.push_str(&format!("{}\n", p));
+                for entry in usr {
+                    out.push_str(&format!("{}\n", entry.path));
                 }
             }
             Ok(out)
         }
         _ => Err(format!("不支持的导出格式: {}", format)),
     }
+}
+
+/// 导出字符串路径列表；兼容旧 CLI 调用，默认全部启用。
+pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<String, String> {
+    let sys = sys
+        .iter()
+        .map(|path| PathEntry {
+            path: path.clone(),
+            enabled: true,
+        })
+        .collect::<Vec<_>>();
+    let usr = usr
+        .iter()
+        .map(|path| PathEntry {
+            path: path.clone(),
+            enabled: true,
+        })
+        .collect::<Vec<_>>();
+    export_path_entries(&sys, &usr, format)
 }
 
 #[cfg(test)]
@@ -411,6 +468,15 @@ mod tests {
     fn read_text_file_rejects_no_ext() {
         let result = read_text_file("/etc/passwd");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_text_file_scoped_allows_temp_import() {
+        let path = std::env::temp_dir().join("patheditor_scoped_import.json");
+        std::fs::write(&path, "{\"system\":[]}").unwrap();
+        let result = read_text_file_scoped(path.to_string_lossy().as_ref());
+        assert!(result.is_ok());
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

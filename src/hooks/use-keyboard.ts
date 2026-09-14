@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore } from '@/store/app-store';
+import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
 
 interface KeyboardActions {
   onNew: () => void;
@@ -17,6 +17,10 @@ interface KeyboardActions {
  */
 export function useKeyboard(actions: KeyboardActions) {
   const isAdmin = useAppStore((s) => s.isAdmin);
+  const activeTab = useAppStore((s) => s.activeTab);
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
+  const target = targetForTab(activeTab);
+  const canWrite = target === null ? false : canWriteTarget(isAdmin, pathCapabilities, target);
   const actionsRef = useRef(actions);
   // eslint-disable-next-line react-hooks/refs -- React 官方推荐的 ref 同步模式，避免每次渲染重复注册事件监听器
   actionsRef.current = actions;
@@ -37,23 +41,23 @@ export function useKeyboard(actions: KeyboardActions) {
       const ctrl = e.ctrlKey || e.metaKey;
 
       if (ctrl && e.key === 'z') {
-        if (!isAdmin) return;
+        if (!canWrite) return;
         e.preventDefault();
         a.onUndo();
       } else if (ctrl && e.key === 'y') {
-        if (!isAdmin) return;
+        if (!canWrite) return;
         e.preventDefault();
         a.onRedo();
       } else if (ctrl && e.key === 'n') {
-        if (!isAdmin) return;
+        if (!canWrite) return;
         e.preventDefault();
         a.onNew();
       } else if (ctrl && e.key === 's') {
-        if (!isAdmin) return;
+        if (!canWrite) return;
         e.preventDefault();
         a.onSave();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (!isAdmin) return;
+        if (!canWrite) return;
         e.preventDefault();
         a.onDelete();
       } else if (e.key === 'F1') {
@@ -64,5 +68,5 @@ export function useKeyboard(actions: KeyboardActions) {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isAdmin]); // 只依赖 isAdmin，actions 通过 ref 读取
+  }, [canWrite]); // actions 通过 ref 读取
 }

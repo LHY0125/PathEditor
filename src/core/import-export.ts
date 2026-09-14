@@ -1,8 +1,7 @@
 /**
  * 导入导出模块 — 支持 JSON、CSV、TXT 三种格式
  *
- * 注意：Rust 端 core/src/fs.rs 有对应的导入导出实现，
- * 前端使用此模块（需 ImportDialog 交互），CLI 使用 Rust 版，修改时需同步两端。
+ * 仅作为历史兼容/测试夹具保留；运行时 GUI 与 CLI 均统一走 Rust core/src/fs.rs。
  */
 import { version } from '../../package.json';
 import type { PathEntry } from './path-entry';

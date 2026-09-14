@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAppStore, type TabId } from '@/store/app-store';
+import { canWriteTarget, useAppStore, type TabId } from '@/store/app-store';
 import { useThemeStore } from '@/store/theme-store';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
@@ -26,6 +26,10 @@ export function AppShell() {
   const activeTab = useAppStore((s) => s.activeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setSelectedIndices = useAppStore((s) => s.setSelectedIndices);
+  const isAdmin = useAppStore((s) => s.isAdmin);
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
+  const canWriteSystem = canWriteTarget(isAdmin, pathCapabilities, TargetType.SYSTEM);
+  const canWriteUser = canWriteTarget(isAdmin, pathCapabilities, TargetType.USER);
 
   const [editDialog, setEditDialog] = useState<DialogState['editDialog']>({
     open: false,
@@ -99,7 +103,7 @@ export function AppShell() {
           onSave={actions.handleSave}
           onCancel={() => {
             const state = useAppStore.getState();
-            if (state.isModified && !window.confirm('有未保存的修改，确定退出吗？')) return;
+            if (state.isModified && !window.confirm(t('dialog.unsavedConfirm'))) return;
             window.close();
           }}
           onHelp={() => setHelpOpen(true)}
@@ -164,6 +168,8 @@ export function AppShell() {
         open={importDialog.open}
         systemCount={importDialog.system.length}
         userCount={importDialog.user.length}
+        canWriteSystem={canWriteSystem}
+        canWriteUser={canWriteUser}
         onSelect={actions.handleImportSelect}
         onCancel={() => setImportDialog({ open: false, system: [], user: [] })}
       />

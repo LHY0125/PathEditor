@@ -5,6 +5,10 @@ pub fn check_admin() -> bool {
     system::check_admin()
 }
 #[tauri::command]
+pub fn get_path_capabilities() -> path_editor_core::capabilities::PathCapabilities {
+    path_editor_core::capabilities::detect()
+}
+#[tauri::command]
 pub fn validate_path(path: &str) -> bool {
     system::validate_path(path)
 }

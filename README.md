@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-157%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-195%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
   <img src="https://github.com/LHY0125/PathEditor/actions/workflows/ci.yml/badge.svg" alt="CI">
@@ -42,7 +42,7 @@
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v5.0 使用 **Tauri 2.x + React 19 + TypeScript + Rust** 完全重写，替代了原有的 C + IUP GUI。
+v5.1 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，替代了原有的 C + IUP GUI。
 
 ## 架构
 
@@ -63,7 +63,7 @@ graph TB
     end
 
     subgraph IPC["Tauri IPC 桥接"]
-        invoke[invoke / plugin-dialog]
+        invoke[services/backend.ts<br/>统一 IPC 边界]
     end
 
     subgraph 后端["Rust core 库"]
@@ -223,8 +223,10 @@ patheditor profile apply "Python开发"
 
 - 保存前自动备份注册表到 `%APPDATA%/PathEditor/backups/`
 - PATH 长度检查（Windows 单变量上限 32767 字符）
-- 非管理员自动进入**只读模式**
+- 非管理员仅系统 PATH 只读，用户 PATH 仍可编辑
 - 保存中途失败精确提示哪个注册表 hive 出错
+
+- 禁用路径从注册表移除后仍会以完整快照保留，重启后可恢复显示并重新启用。
 
 ### 界面
 
@@ -235,7 +237,7 @@ patheditor profile apply "Python开发"
 
 ## 安装
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.0.0_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.0_x64-setup.exe` 安装。
 
 或从源码构建：
 
@@ -281,8 +283,8 @@ npx tauri build
 | 国际化    | i18next                           |
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
-| 前端测试  | Vitest (100 个测试)               |
-| Rust 测试 | cargo test (57 个测试)            |
+| 前端测试  | Vitest + Playwright (124 + 13)    |
+| Rust 测试 | cargo test (58 个测试)            |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
 
@@ -299,16 +301,18 @@ core/                         # Rust 核心库（零 Tauri 依赖）
 gui/                          # Tauri 桌面应用
 └── src/commands/             # 薄包装 → 调用 core
 cli/                          # 命令行工具
-└── src/main.rs               # 18 条命令
+├── src/main.rs               # Clap 定义、CRUD、分派
+└── src/                      # runtime / import_export / profile_ops / scan_ops
 src/                          # React 前端
 ├── core/                     # 纯逻辑 — 零框架依赖
 ├── store/                    # Zustand 状态管理
+├── services/                 # backend IPC + path session
 ├── components/               # UI 组件
 ├── hooks/                    # useAppActions、useKeyboard、usePathValidation
 ├── i18n/                     # zh-CN / en
 └── config/                   # default.json
 tests/unit/                   # 前端单元测试
-docs/                         # 审查文档
+docs/审核和开发/              # 审查与开发记录
 ```
 
 ## 快捷键

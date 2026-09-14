@@ -2,6 +2,21 @@ use clap::{Parser, Subcommand};
 use path_editor_core as core;
 use serde_json::json;
 
+mod import_export;
+mod profile_ops;
+mod runtime;
+mod scan_ops;
+
+use import_export::{cmd_export, cmd_import};
+use profile_ops::{
+    profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
+};
+use runtime::{
+    ensure_single_target, exit_err, load_and_save, load_operate_save, persist_snapshot,
+    verify_and_save,
+};
+use scan_ops::{cmd_check_admin, cmd_conflicts, cmd_scan};
+
 #[derive(Parser)]
 #[command(name = "patheditor", version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
@@ -145,100 +160,71 @@ enum ProfileCmd {
     },
 }
 
-fn exit_err(msg: &str) -> ! {
-    eprintln!("错误: {msg}");
-    std::process::exit(1);
-}
-
-fn ensure_single_target(system: bool, user: bool) -> &'static str {
-    if system && user {
-        exit_err("不能同时指定 --system 和 --user");
-    }
-    if system {
-        "system"
-    } else {
-        "user"
-    }
-}
-
-type SaveFn = fn(Vec<String>) -> Result<(), String>;
-
-fn verify_and_save(target: &str, original: &[String], new_list: Vec<String>) {
-    let reload = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
-    } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
-    };
-    if reload != original {
-        exit_err("注册表已被其他进程修改，请重新执行操作");
-    }
-    let save: SaveFn = if target == "system" {
-        core::registry::save_system_paths
-    } else {
-        core::registry::save_user_paths
-    };
-    save(new_list).unwrap_or_else(|e| exit_err(&e));
-}
-
-fn load_and_save(system: bool, f: impl FnOnce(Vec<String>) -> Vec<String>) {
-    let target = ensure_single_target(system, false);
-    let list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
-    } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
-    };
-    let new_list = f(list.clone());
-    verify_and_save(target, &list, new_list);
-}
-
-/// 加载、检查索引、操作、验证、保存的通用模式
-/// `operate` 接收路径列表（包含原始列表）和要操作的索引，返回新列表和打印消息
-fn load_operate_save(
-    system: bool,
-    index: usize,
-    operate: impl FnOnce(Vec<String>, usize) -> (Vec<String>, String),
-) {
-    let target = ensure_single_target(system, false);
-    let list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
-    } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
-    };
-    if index >= list.len() {
-        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
-    }
-    let original = list.clone();
-    let (new_list, msg) = operate(list, index);
-    verify_and_save(target, &original, new_list);
-    println!("{msg}");
-    core::system::broadcast_env_change();
-}
-
 // ── 命令实现 ──
 
 fn cmd_list(system: bool, user: bool, json_out: bool) {
-    let mut sys: Vec<String> = vec![];
-    let mut usr: Vec<String> = vec![];
+    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let mut sys = Vec::new();
+    let mut usr = Vec::new();
     if system || !user {
-        sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
+        sys = snapshot.system;
     }
     if user || !system {
-        usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
+        usr = snapshot.user;
     }
     if json_out {
-        let output = json!({ "system": { "paths": sys, "count": sys.len() }, "user": { "paths": usr, "count": usr.len() } });
+        let output = json!({
+            "system": {
+                "entries": sys.iter().enumerate().map(|(index, entry)| json!({
+                    "index": index,
+                    "path": entry.path,
+                    "enabled": entry.enabled,
+                })).collect::<Vec<_>>(),
+                "count": sys.len(),
+                "enabledCount": sys.iter().filter(|entry| entry.enabled).count(),
+            },
+            "user": {
+                "entries": usr.iter().enumerate().map(|(index, entry)| json!({
+                    "index": index,
+                    "path": entry.path,
+                    "enabled": entry.enabled,
+                })).collect::<Vec<_>>(),
+                "count": usr.len(),
+                "enabledCount": usr.iter().filter(|entry| entry.enabled).count(),
+            },
+        });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         if !sys.is_empty() {
-            println!("═══ 系统 PATH ({}) ═══", sys.len());
-            for (i, p) in sys.iter().enumerate() {
-                println!("  [{}] {}", i, p);
+            let disabled = sys.iter().filter(|entry| !entry.enabled).count();
+            println!(
+                "═══ 系统 PATH ({} 条，其中禁用 {} 条) ═══",
+                sys.len(),
+                disabled
+            );
+            for (i, entry) in sys.iter().enumerate() {
+                println!(
+                    "  [{}] [{}] {}",
+                    i,
+                    if entry.enabled { "✓" } else { "✗" },
+                    entry.path
+                );
             }
         }
         if !usr.is_empty() {
-            println!("═══ 用户 PATH ({}) ═══", usr.len());
-            for (i, p) in usr.iter().enumerate() {
-                println!("  [{}] {}", i, p);
+            let disabled = usr.iter().filter(|entry| !entry.enabled).count();
+            println!(
+                "═══ 用户 PATH ({} 条，其中禁用 {} 条) ═══",
+                usr.len(),
+                disabled
+            );
+            for (i, entry) in usr.iter().enumerate() {
+                println!(
+                    "  [{}] [{}] {}",
+                    i,
+                    if entry.enabled { "✓" } else { "✗" },
+                    entry.path
+                );
             }
         }
     }
@@ -247,7 +233,10 @@ fn cmd_list(system: bool, user: bool, json_out: bool) {
 fn cmd_add(path: String, system: bool, user: bool) {
     let target = ensure_single_target(system, user);
     load_and_save(system, |mut list| {
-        list.push(path.clone());
+        list.push(core::PathEntry {
+            path: path.clone(),
+            enabled: true,
+        });
         list
     });
     let label = if target == "system" {
@@ -262,13 +251,14 @@ fn cmd_add(path: String, system: bool, user: bool) {
 fn cmd_remove(index: usize, system: bool) {
     load_operate_save(system, index, |mut list, idx| {
         let removed = list.remove(idx);
-        (list, format!("已删除: {removed}"))
+        (list, format!("已删除: {}", removed.path))
     });
 }
 
 fn cmd_edit(index: usize, new_path: String, system: bool) {
     load_operate_save(system, index, |mut list, idx| {
-        let old = std::mem::replace(&mut list[idx], new_path.clone());
+        let old = list[idx].path.clone();
+        list[idx].path = new_path.clone();
         (list, format!("已编辑: {old} → {new_path}"))
     });
 }
@@ -362,231 +352,44 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
 
 fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
     let target = ensure_single_target(system, user);
-    let list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
+    let mut snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let entries = if target == "system" {
+        &mut snapshot.system
     } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
+        &mut snapshot.user
     };
-    if index >= list.len() {
-        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", list.len()));
+    if index >= entries.len() {
+        exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", entries.len()));
     }
-    let path = &list[index];
 
-    let (mut sys_dis, mut usr_dis) =
-        core::disabled::load_disabled_state().unwrap_or_else(|_| (vec![], vec![]));
-    let target_list: &mut Vec<String> = if target == "system" {
-        &mut sys_dis
+    let original: Vec<String> = entries
+        .iter()
+        .filter(|entry| entry.enabled)
+        .map(|entry| entry.path.clone())
+        .collect();
+    entries[index].enabled = enable;
+
+    let new_list: Vec<String> = entries
+        .iter()
+        .filter(|entry| entry.enabled)
+        .map(|entry| entry.path.clone())
+        .collect();
+    verify_and_save(target, &original, new_list);
+
+    let path = entries[index].path.clone();
+    if target == "system" {
+        persist_snapshot(Some(snapshot.system), None);
     } else {
-        &mut usr_dis
-    };
-
-    if enable {
-        target_list.retain(|p| p != path);
-    } else if !target_list.contains(path) {
-        target_list.push(path.clone());
-    }
-    core::disabled::save_disabled_state(sys_dis, usr_dis).unwrap_or_else(|e| exit_err(&e));
-    let action = if enable { "启用" } else { "禁用" };
-    println!("已{action}: {path}");
-}
-
-fn cmd_import(file: String, target: String) {
-    let content = core::fs::read_text_file(&file).unwrap_or_else(|e| exit_err(&e));
-    let (sys_entries, usr_entries) =
-        core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_err(&e));
-    let sys_paths: Vec<String> = sys_entries.into_iter().map(|e| e.path).collect();
-    let usr_paths: Vec<String> = usr_entries.into_iter().map(|e| e.path).collect();
-    match target.as_str() {
-        "system" => {
-            let orig = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-            verify_and_save("system", &orig, sys_paths);
-            println!("已导入到系统 PATH");
-        }
-        "user" => {
-            let orig = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-            verify_and_save("user", &orig, usr_paths);
-            println!("已导入到用户 PATH");
-        }
-        _ => {
-            let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-            let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-            verify_and_save("system", &orig_sys, sys_paths);
-            verify_and_save("user", &orig_usr, usr_paths);
-            println!("已导入到系统 + 用户 PATH");
-        }
+        persist_snapshot(None, Some(snapshot.user));
     }
     core::system::broadcast_env_change();
-}
-
-fn cmd_export(format: String, output: Option<String>) {
-    let sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-    let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    let content = core::fs::export_paths(&sys, &usr, &format).unwrap_or_else(|e| exit_err(&e));
-    if let Some(path) = output {
-        // 拒绝写入系统关键目录
-        let normalized = path.replace('/', "\\").to_lowercase();
-        if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\")
-        {
-            exit_err(&format!("不允许导出到系统目录: {path}"));
-        }
-        std::fs::write(&path, &content).unwrap_or_else(|e| exit_err(&format!("无法写入文件: {e}")));
-        println!("已导出到: {path}");
-    } else {
-        println!("{content}");
-    }
+    let action = if enable { "启用" } else { "禁用" };
+    println!("已{action}: {path}");
 }
 
 fn cmd_backup() {
     let path = core::backup::backup_registry(None).unwrap_or_else(|e| exit_err(&e));
     println!("备份已保存: {path}");
-}
-
-fn cmd_conflicts(json_out: bool) {
-    let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::registry::load_system_paths() {
-        paths.extend(sys);
-    }
-    if let Ok(usr) = core::registry::load_user_paths() {
-        paths.extend(usr);
-    }
-    let conflicts = core::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_err(&e));
-    if json_out {
-        println!("{}", serde_json::to_string_pretty(&conflicts).unwrap());
-    } else if conflicts.is_empty() {
-        println!("未发现可执行文件冲突。");
-    } else {
-        println!("═══ 可执行文件冲突（{} 个）═══\n", conflicts.len());
-        for c in &conflicts {
-            println!("  {}", c.name);
-            for loc in &c.locations {
-                println!(
-                    "    {}  {}",
-                    if loc.priority == 0 {
-                        "✓ 优先"
-                    } else {
-                        "✗ 遮蔽"
-                    },
-                    loc.dir
-                );
-            }
-            println!();
-        }
-    }
-}
-
-fn cmd_scan(query: Option<String>, json_out: bool) {
-    let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::registry::load_system_paths() {
-        paths.extend(sys);
-    }
-    if let Ok(usr) = core::registry::load_user_paths() {
-        paths.extend(usr);
-    }
-    let groups = core::scanner::scan_tools(paths, query.unwrap_or_default())
-        .unwrap_or_else(|e| exit_err(&e));
-    if json_out {
-        println!("{}", serde_json::to_string_pretty(&groups).unwrap());
-    } else {
-        for g in &groups {
-            if !g.exists {
-                println!("  {} (不存在)", g.dir);
-                continue;
-            }
-            println!("═══ {} ═══", g.dir);
-            for exe in &g.exes {
-                println!("  {}", exe);
-            }
-        }
-    }
-}
-
-fn cmd_check_admin(json_out: bool) {
-    let is_admin = core::system::check_admin();
-    if json_out {
-        println!("{}", json!({"admin": is_admin}));
-    } else {
-        println!("管理员权限: {}", if is_admin { "是" } else { "否" });
-    }
-}
-
-fn profile_list(json_out: bool) {
-    let list = core::profiles::list_profiles().unwrap_or_else(|e| exit_err(&e));
-    if json_out {
-        println!("{}", serde_json::to_string_pretty(&list).unwrap());
-    } else if list.is_empty() {
-        println!("暂无配置文件。");
-    } else {
-        for p in &list {
-            println!("  {}  ({})", p.name, p.modified);
-        }
-    }
-}
-
-fn profile_save(name: String) {
-    let sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-    let usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    let sys_entries = sys
-        .into_iter()
-        .map(|p| core::ProfilePathEntry {
-            path: p,
-            enabled: true,
-        })
-        .collect();
-    let usr_entries = usr
-        .into_iter()
-        .map(|p| core::ProfilePathEntry {
-            path: p,
-            enabled: true,
-        })
-        .collect();
-    core::profiles::save_profile(&name, sys_entries, usr_entries).unwrap_or_else(|e| exit_err(&e));
-    println!("已保存配置: {name}");
-}
-
-fn profile_load(name: String) {
-    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
-    println!("═══ 系统 PATH ({} 条) ═══", data.sys.len());
-    for e in &data.sys {
-        println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path);
-    }
-    println!("═══ 用户 PATH ({} 条) ═══", data.user.len());
-    for e in &data.user {
-        println!("  [{}] {}", if e.enabled { "✓" } else { "✗" }, e.path);
-    }
-}
-
-fn profile_apply(name: String) {
-    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
-    let new_sys: Vec<String> = data
-        .sys
-        .into_iter()
-        .filter(|e| e.enabled)
-        .map(|e| e.path)
-        .collect();
-    let new_usr: Vec<String> = data
-        .user
-        .into_iter()
-        .filter(|e| e.enabled)
-        .map(|e| e.path)
-        .collect();
-
-    let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-    let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    verify_and_save("system", &orig_sys, new_sys);
-    verify_and_save("user", &orig_usr, new_usr);
-
-    core::system::broadcast_env_change();
-    println!("配置文件 \"{name}\" 已写入注册表。");
-}
-
-fn profile_delete(name: String) {
-    core::profiles::delete_profile(&name).unwrap_or_else(|e| exit_err(&e));
-    println!("已删除配置: {name}");
-}
-
-fn profile_rename(old_name: String, new_name: String) {
-    core::profiles::rename_profile(&old_name, &new_name).unwrap_or_else(|e| exit_err(&e));
-    println!("已重命名: {old_name} → {new_name}");
 }
 
 fn main() {

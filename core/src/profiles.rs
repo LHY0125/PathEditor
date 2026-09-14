@@ -1,4 +1,5 @@
 use crate::fs::atomic_write;
+use crate::path_entry::PathEntry;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -41,12 +42,8 @@ fn profile_path(name: &str) -> PathBuf {
     profiles_dir().join(format!("{}.json", name))
 }
 
-/// 内部用的 PathEntry（与前端 PathEntry 字段一致）
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ProfilePathEntry {
-    pub path: String,
-    pub enabled: bool,
-}
+/// 兼容旧调用方的名称，底层复用统一的 PathEntry。
+pub type ProfilePathEntry = PathEntry;
 
 #[derive(Serialize, Deserialize)]
 pub struct ProfileMeta {

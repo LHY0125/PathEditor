@@ -127,8 +127,7 @@ mod tests {
 
     #[test]
     fn check_admin_returns_bool() {
-        let result = check_admin();
-        // 在任意机器上应返回 true 或 false，不应 panic
-        assert!((result == true) || (result == false));
+        // 在任意机器上都不应 panic；具体权限值取决于当前进程。
+        let _result = check_admin();
     }
 }

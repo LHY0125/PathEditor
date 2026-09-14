@@ -1,115 +1,129 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PathEntry } from '@/core/path-entry';
+import { backend } from '@/services/backend';
 
-export type ValidationState = 'valid' | 'invalid' | 'unknown';
+export type ValidationState = 'pending' | 'valid' | 'invalid' | 'unknown';
+
+/** 有界并发，避免 1000 条 PATH 同时发起 IPC。 */
+export const VALIDATION_CONCURRENCY = 8;
+
+type ValidationCache = Map<string, ValidationState>;
+type ExpandedCache = Map<string, string>;
+
+interface InspectResult {
+  path: string;
+  state: ValidationState;
+  expanded: string;
+}
+
+async function inspectPath(path: string): Promise<InspectResult> {
+  try {
+    if (!path.includes('%')) {
+      const valid = await backend.validatePath(path);
+      return { path, state: valid ? 'valid' : 'invalid', expanded: '' };
+    }
+
+    const expanded = await backend.expandEnvVars(path);
+    if (!expanded || expanded === path || expanded.includes('%')) {
+      return { path, state: 'unknown', expanded: expanded === path ? '' : expanded };
+    }
+
+    const valid = await backend.validatePath(expanded);
+    return { path, state: valid ? 'valid' : 'invalid', expanded };
+  } catch {
+    return { path, state: 'unknown', expanded: '' };
+  }
+}
 
 /**
- * 异步验证路径目录是否真实存在 + 展开环境变量
- * 缓存结果避免重复 IPC 调用。
- * setState 仅在异步 .then() 回调中调用（符合 React 规则），
- * 不存在路径的缓存清理通过 useMemo 派生。
+ * 异步验证路径目录是否真实存在，并展开环境变量。
+ *
+ * 同一路径共享 in-flight Promise：列表 rerender 时，新 effect 会等待正在进行的请求并
+ * 应用结果，不会因为取消旧批次而永久停在 pending。
  */
 export function usePathValidation(paths: readonly PathEntry[]) {
-  const validatedRef = useRef<Set<string>>(new Set());
-  const expandedRef = useRef<Set<string>>(new Set());
-  const [validationCache, setValidationCache] = useState<Map<string, ValidationState>>(new Map());
-  const [expandedCache, setExpandedCache] = useState<Map<string, string>>(new Map());
+  const validationRef = useRef<ValidationCache>(new Map());
+  const expandedRef = useRef<ExpandedCache>(new Map());
+  const inFlightRef = useRef<Map<string, Promise<InspectResult>>>(new Map());
+  const [validationCache, setValidationCache] = useState<ValidationCache>(new Map());
+  const [expandedCache, setExpandedCache] = useState<ExpandedCache>(new Map());
 
-  // 仅保留当前 paths 中存在的条目（派生 state，不在 effect 中同步 setState）
-  const currentKeys = useMemo(() => new Set(paths.map((p) => p.path)), [paths]);
+  const currentKeys = useMemo(() => new Set(paths.map((entry) => entry.path)), [paths]);
+
   const cleanedValidationCache = useMemo(() => {
     const next = new Map(validationCache);
-    let changed = false;
     for (const key of next.keys()) {
-      if (!currentKeys.has(key)) {
-        next.delete(key);
-        changed = true;
-      }
+      if (!currentKeys.has(key)) next.delete(key);
     }
-    return changed ? next : validationCache;
+    return next;
   }, [validationCache, currentKeys]);
 
   const cleanedExpandedCache = useMemo(() => {
     const next = new Map(expandedCache);
-    let changed = false;
     for (const key of next.keys()) {
-      if (!currentKeys.has(key)) {
-        next.delete(key);
-        changed = true;
-      }
+      if (!currentKeys.has(key)) next.delete(key);
     }
-    return changed ? next : expandedCache;
+    return next;
   }, [expandedCache, currentKeys]);
 
-  // 同步清理 ref（ref 不能在 render 期间修改，放在 effect 中不 setState 是安全的）
   useEffect(() => {
-    for (const key of validatedRef.current) {
-      if (!currentKeys.has(key)) validatedRef.current.delete(key);
+    for (const key of validationRef.current.keys()) {
+      if (!currentKeys.has(key)) validationRef.current.delete(key);
     }
-    for (const key of expandedRef.current) {
+    for (const key of expandedRef.current.keys()) {
       if (!currentKeys.has(key)) expandedRef.current.delete(key);
     }
   }, [currentKeys]);
 
-  // 异步验证路径（setState 在 .then() 回调中，符合 React 规则）
   useEffect(() => {
     let cancelled = false;
-    const toValidate = paths.filter((p) => !validatedRef.current.has(p.path));
-    if (toValidate.length === 0) return;
+    const uniquePaths = [...new Set(paths.map((entry) => entry.path))];
 
-    const batch = toValidate.slice(0, 20);
-    Promise.all(
-      batch.map(async (p): Promise<[string, ValidationState]> => {
-        try {
-          if (p.path.includes('%')) return [p.path, 'valid'];
-          const valid: boolean = await invoke('validate_path', { path: p.path });
-          return [p.path, valid ? 'valid' : 'invalid'];
-        } catch {
-          return [p.path, 'unknown'];
+    const initialPending: ValidationCache = new Map(validationRef.current);
+    for (const path of uniquePaths) {
+      if (!initialPending.has(path)) initialPending.set(path, 'pending');
+    }
+    validationRef.current = initialPending;
+
+    const getInFlight = (path: string): Promise<InspectResult> => {
+      const existing = inFlightRef.current.get(path);
+      if (existing) return existing;
+
+      const promise = inspectPath(path).finally(() => {
+        if (inFlightRef.current.get(path) === promise) {
+          inFlightRef.current.delete(path);
         }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      for (const [p] of results) validatedRef.current.add(p);
-      setValidationCache((prev) => {
-        const next = new Map(prev);
-        for (const [p, v] of results) next.set(p, v);
-        return next;
       });
-    });
-
-    return () => {
-      cancelled = true;
+      inFlightRef.current.set(path, promise);
+      return promise;
     };
-  }, [paths]);
 
-  // 异步展开环境变量（setState 在 .then() 回调中）
-  useEffect(() => {
-    let cancelled = false;
-    const toExpand = paths.filter((p) => p.path.includes('%') && !expandedRef.current.has(p.path));
-    if (toExpand.length === 0) return;
+    const run = async () => {
+      for (let index = 0; index < uniquePaths.length; index += VALIDATION_CONCURRENCY) {
+        if (cancelled) return;
 
-    const batch = toExpand.slice(0, 20);
-    Promise.all(
-      batch.map(async (p): Promise<[string, string]> => {
-        try {
-          const expanded: string = await invoke('expand_env_vars', { path: p.path });
-          return [p.path, expanded !== p.path ? expanded : ''];
-        } catch {
-          return [p.path, ''];
+        const batch = uniquePaths
+          .slice(index, index + VALIDATION_CONCURRENCY)
+          .filter((path) => validationRef.current.get(path) === 'pending');
+        if (batch.length === 0) continue;
+
+        const results = await Promise.all(batch.map((path) => getInFlight(path)));
+        if (cancelled) return;
+
+        const nextValidation = new Map(validationRef.current);
+        const nextExpanded = new Map(expandedRef.current);
+        for (const result of results) {
+          nextValidation.set(result.path, result.state);
+          if (result.expanded) nextExpanded.set(result.path, result.expanded);
         }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      for (const [p] of results) expandedRef.current.add(p);
-      setExpandedCache((prev) => {
-        const next = new Map(prev);
-        for (const [p, v] of results) next.set(p, v);
-        return next;
-      });
-    });
+        validationRef.current = nextValidation;
+        expandedRef.current = nextExpanded;
+        setValidationCache(nextValidation);
+        setExpandedCache(nextExpanded);
+      }
+    };
 
+    void run();
     return () => {
       cancelled = true;
     };

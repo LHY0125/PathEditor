@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '@/store/app-store';
+import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
 import { btnClass, btnStyle } from '@/components/ui/buttons';
 import { SearchInput } from './SearchInput';
 import { ActionButtons } from './ActionButtons';
@@ -27,7 +27,11 @@ interface ToolBarProps {
 export function ToolBar(props: ToolBarProps) {
   const { t } = useTranslation();
   const isAdmin = useAppStore((s) => s.isAdmin);
+  const activeTab = useAppStore((s) => s.activeTab);
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const isModified = useAppStore((s) => s.isModified);
+  const target = targetForTab(activeTab);
+  const canWrite = target === null ? false : canWriteTarget(isAdmin, pathCapabilities, target);
 
   return (
     <div className="space-y-2 pb-2 border-b" style={{ borderColor: 'var(--app-border)' }}>
@@ -36,7 +40,7 @@ export function ToolBar(props: ToolBarProps) {
         <SearchInput />
         <div className="flex-1" />
         <UndoRedoButtons />
-        <button className={btnClass} style={btnStyle} disabled={!isAdmin} onClick={props.onImport}>
+        <button className={btnClass} style={btnStyle} disabled={!canWrite} onClick={props.onImport}>
           {t('button.import')}
         </button>
         <button className={btnClass} style={btnStyle} onClick={props.onExport}>
@@ -49,7 +53,7 @@ export function ToolBar(props: ToolBarProps) {
             backgroundColor: isModified ? '#2563eb' : btnStyle.backgroundColor,
             color: isModified ? '#fff' : btnStyle.color,
           }}
-          disabled={!isAdmin}
+          disabled={!canWrite}
           onClick={props.onSave}
         >
           {t('button.save')}

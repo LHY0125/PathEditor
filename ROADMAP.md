@@ -2,12 +2,12 @@
 
 PathEditor 的未来发展方向。
 
-## v5.1 (下一个版本)
+## v5.1 (当前开发线)
 
-- [ ] **CLI 模块化** — `cli/src/main.rs` 拆分为 `commands/` 子模块
+- [x] **CLI 模块化** — `cli/src/main.rs` 已拆分为 runtime / import_export / profile_ops / scan_ops
 - [ ] **自动更新** — 内置 Tauri updater，无需手动下载安装包
 - [ ] **深色模式优化** — 对齐 Windows 系统主题自动切换
-- [ ] **性能优化** — 虚拟滚动支持超长 PATH 列表（1000+ 条目）
+- [x] **性能优化** — 虚拟滚动 + 1000+ 条目有界验证/扫描队列
 
 ## v5.2
 

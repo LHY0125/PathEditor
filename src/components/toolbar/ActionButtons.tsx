@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '@/store/app-store';
+import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
 import { btnClass, btnStyle } from '@/components/ui/buttons';
 
 interface ActionButtonsProps {
@@ -22,8 +22,11 @@ export function ActionButtons({
   onClean,
 }: ActionButtonsProps) {
   const { t } = useTranslation();
+  const activeTab = useAppStore((s) => s.activeTab);
   const isAdmin = useAppStore((s) => s.isAdmin);
-  const disabled = !isAdmin;
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
+  const target = targetForTab(activeTab);
+  const disabled = target === null || !canWriteTarget(isAdmin, pathCapabilities, target);
 
   return (
     <div className="flex gap-1 flex-wrap">
