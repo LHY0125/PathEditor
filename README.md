@@ -13,7 +13,6 @@
   <img src="https://img.shields.io/badge/tests-195%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
-  <img src="https://github.com/LHY0125/PathEditor/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
 ---
