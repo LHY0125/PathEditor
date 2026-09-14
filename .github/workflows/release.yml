@@ -1,3 +1,6 @@
+# PathEditor — 自动发布
+# 推送 v* tag 时自动构建 NSIS 安装包和 CLI，并创建 GitHub Release。
+# 若该 tag 的 Release 已存在（例如已手动发布），则跳过构建和发布流程。
 name: Release
 
 on:
@@ -5,32 +8,163 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
-    name: 构建 NSIS 安装包并发布
+    name: 构建安装包并发布
     runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 完整历史：生成发布日志需要上一个 tag
+          fetch-depth: 0
+
+      - name: 解析发布标签
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$') {
+            throw "发布 tag 必须符合 vMAJOR.MINOR.PATCH（可带预发布后缀）格式，当前为: $tag"
+          }
+          $version = $Matches['version']
+
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: 检查 Release 是否已存在
+        id: check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "exists=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            "exists=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - name: Setup Node
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      # rust-toolchain.toml 固定为本机 GNU 工具链；GitHub Windows runner
+      # 使用 MSVC 工具链更稳定，因此在这里覆盖。
+      - name: Setup Rust (MSVC)
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+          rustup override set stable-x86_64-pc-windows-msvc
+
+      - name: 校验项目版本
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          $version = $env:VERSION
+          $packageVersion = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content -LiteralPath 'gui\tauri.conf.json' -Raw | ConvertFrom-Json).version
+
+          $cargoToml = Get-Content -LiteralPath 'Cargo.toml' -Raw
+          if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
+            throw '无法从 Cargo.toml 读取 workspace version'
+          }
+          $cargoVersion = $Matches[1]
+
+          $mismatches = @()
+          if ($packageVersion -ne $version) { $mismatches += "package.json=$packageVersion" }
+          if ($tauriVersion -ne $version) { $mismatches += "gui/tauri.conf.json=$tauriVersion" }
+          if ($cargoVersion -ne $version) { $mismatches += "Cargo.toml=$cargoVersion" }
+
+          if ($mismatches.Count -gt 0) {
+            throw "tag=$env:RELEASE_TAG 与项目版本号不一致：$($mismatches -join ', ')"
+          }
+
+      - name: 安装前端依赖
+        if: steps.check.outputs.exists == 'false'
+        run: npm ci
 
       - name: Tauri Build
+        if: steps.check.outputs.exists == 'false'
         run: npx tauri build
 
-      - name: 上传安装包到 Release
+      - name: 构建 CLI
+        if: steps.check.outputs.exists == 'false'
+        run: cargo build --release -p patheditor-cli
+
+      - name: 整理发布产物
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
         run: |
-          $installer = Get-ChildItem -Path "target\release\bundle\nsis\*.exe" | Select-Object -First 1
-          if (gh release view $env:GITHUB_REF_NAME 2>$null) {
-            gh release upload $env:GITHUB_REF_NAME "$installer" --clobber
-          } else {
-            gh release create $env:GITHUB_REF_NAME "$installer" --title "$env:GITHUB_REF_NAME" --generate-notes
+          $assetDir = 'release-assets'
+          New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
+
+          $installer = Get-ChildItem -LiteralPath 'target\release\bundle\nsis' -File |
+            Where-Object { $_.Name -eq "PathEditor_${env:VERSION}_x64-setup.exe" } |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "未找到 Tauri NSIS 安装包: PathEditor_$($env:VERSION)_x64-setup.exe"
           }
+          Copy-Item -LiteralPath $installer.FullName -Destination $assetDir
+
+          $cli = 'target\release\patheditor.exe'
+          if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+            throw "未找到 CLI 可执行文件: $cli"
+          }
+          Copy-Item -LiteralPath $cli -Destination (Join-Path $assetDir "patheditor-cli_${env:VERSION}_x64.exe")
+
+      - name: 生成发布日志
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          $version = $env:VERSION
+          $notes = @("## PathEditor $tag", "")
+
+          $section = $null
+          if (Test-Path -LiteralPath 'CHANGELOG.md') {
+            $changelog = Get-Content -LiteralPath 'CHANGELOG.md' -Raw
+            $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)"
+            $match = [regex]::Match($changelog, $pattern)
+            if ($match.Success) {
+              $section = $match.Value.Trim()
+            }
+          }
+
+          if ($section) {
+            $notes += $section
+          } else {
+            $previousTag = git describe --tags --abbrev=0 "$tag^" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $previousTag) {
+              $notes += '### 变更'
+              $notes += ''
+              $notes += git log --pretty=format:'- %s (%h)' "$previousTag..$tag"
+            } else {
+              $notes += '首次发布'
+            }
+          }
+
+          $notes | Set-Content -LiteralPath 'RELEASE_NOTES.md' -Encoding utf8
+
+      - name: 创建 GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath 'release-assets' -File |
+            ForEach-Object { $_.FullName }
+
+          gh release create "$env:RELEASE_TAG" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --title "PathEditor $env:RELEASE_TAG" `
+            --notes-file RELEASE_NOTES.md `
+            --latest `
+            @assets
