@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-PathEditor v5.1.1 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
+PathEditor v5.1.2 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -146,7 +146,7 @@ patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|del
 
 ## 版本号升级清单
 
-当前版本为 `5.1.1`。升级时至少检查：
+当前版本为 `5.1.2`。升级时至少检查：
 
 | 文件                  | 字段                          |
 | --------------------- | ----------------------------- |

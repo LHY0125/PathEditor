@@ -1,7 +1,8 @@
 use crate::path_entry::PathEntry;
 use std::path::Path;
 use winreg::enums::*;
-use winreg::RegKey;
+use winreg::types::ToRegValue;
+use winreg::{RegKey, RegValue};
 
 pub(crate) const SYS_REG_PATH: &str =
     "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
@@ -25,6 +26,25 @@ pub(crate) fn load_paths(
     Ok(split_path(&value))
 }
 
+fn select_path_value_type(existing: Option<RegType>) -> RegType {
+    match existing {
+        Some(REG_SZ) => REG_SZ,
+        _ => REG_EXPAND_SZ,
+    }
+}
+
+fn path_value_type(env_key: &RegKey) -> RegType {
+    let existing = env_key.get_raw_value(PATH_VALUE).ok().map(|raw| raw.vtype);
+    select_path_value_type(existing)
+}
+
+fn make_path_value(value: &str, vtype: RegType) -> RegValue {
+    // 复用 winreg 的 UTF-16LE 编码与结尾 NUL 逻辑，只覆盖值类型。
+    let mut raw = value.to_reg_value();
+    raw.vtype = vtype;
+    raw
+}
+
 fn save_paths(
     root: winreg::HKEY,
     sub_path: &str,
@@ -34,18 +54,21 @@ fn save_paths(
     let value = validate_and_join_paths(paths, label)?;
 
     let key = RegKey::predef(root);
+    // 需要同时读取原值类型并写回，因此请求 READ | WRITE。
     let env_key = key
-        .open_subkey_with_flags(sub_path, KEY_WRITE)
+        .open_subkey_with_flags(sub_path, KEY_READ | KEY_WRITE)
         .map_err(|e| format!("无法写入{}注册表（需要管理员权限）: {}", label, e))?;
 
+    let vtype = path_value_type(&env_key);
+    let raw = make_path_value(&value, vtype);
+
     env_key
-        .set_value(PATH_VALUE, &value)
+        .set_raw_value(PATH_VALUE, &raw)
         .map_err(|e| format!("无法写入{} PATH: {}", label, e))?;
 
     log::info!("已保存{} PATH，{} 个条目", label, paths.len());
     Ok(())
 }
-
 /// 从 HKLM 注册表读取系统 PATH
 ///
 /// # Returns
@@ -239,5 +262,108 @@ mod tests {
         let result = validate_and_join_paths(&paths, "测试");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("超出 Windows 限制"));
+    }
+}
+
+#[cfg(test)]
+mod issue26_tests {
+    use super::{join_path, make_path_value, save_paths, select_path_value_type, PATH_VALUE};
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, REG_DWORD, REG_EXPAND_SZ, REG_SZ};
+    use winreg::types::FromRegValue;
+    use winreg::RegKey;
+
+    struct TempRegistryKey {
+        root: winreg::HKEY,
+        path: String,
+    }
+
+    impl Drop for TempRegistryKey {
+        fn drop(&mut self) {
+            let root = RegKey::predef(self.root);
+            let _ = root.delete_subkey_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn select_path_value_type_keeps_expand_sz() {
+        assert_eq!(select_path_value_type(Some(REG_EXPAND_SZ)), REG_EXPAND_SZ);
+    }
+
+    #[test]
+    fn select_path_value_type_keeps_sz() {
+        assert_eq!(select_path_value_type(Some(REG_SZ)), REG_SZ);
+    }
+
+    #[test]
+    fn select_path_value_type_defaults_for_missing_value() {
+        assert_eq!(select_path_value_type(None), REG_EXPAND_SZ);
+    }
+
+    #[test]
+    fn select_path_value_type_defaults_for_non_string_value() {
+        assert_eq!(select_path_value_type(Some(REG_DWORD)), REG_EXPAND_SZ);
+    }
+
+    #[test]
+    fn make_path_value_preserves_type_and_text() {
+        let raw = make_path_value("%SystemRoot%\\system32", REG_EXPAND_SZ);
+        assert_eq!(raw.vtype, REG_EXPAND_SZ);
+        assert_eq!(
+            String::from_reg_value(&raw).expect("解码注册表值失败"),
+            "%SystemRoot%\\system32"
+        );
+    }
+
+    #[test]
+    fn make_path_value_uses_utf16_nul_terminator() {
+        let raw = make_path_value("C:\\Windows", REG_SZ);
+        assert_eq!(raw.bytes.len() % 2, 0);
+        assert_eq!(&raw.bytes[raw.bytes.len() - 2..], &[0, 0]);
+    }
+
+    #[test]
+    #[ignore = "需要真实注册表写权限；只使用隔离测试键，不接触 PATH"]
+    fn save_paths_keeps_expand_sz_in_isolated_key() {
+        let parent = "Software\\PathEditor\\Tests";
+        let unique = format!(
+            "{}\\issue26-{}-{}",
+            parent,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("系统时间早于 UNIX_EPOCH")
+                .as_nanos()
+        );
+
+        let root = RegKey::predef(HKEY_CURRENT_USER);
+        root.create_subkey(parent).expect("创建隔离测试父键失败");
+        let (key, _) = root.create_subkey(&unique).expect("创建隔离测试键失败");
+        key.set_raw_value(
+            PATH_VALUE,
+            &make_path_value("C:\\Windows;%SystemRoot%\\system32", REG_EXPAND_SZ),
+        )
+        .expect("写入初始 REG_EXPAND_SZ 失败");
+        drop(key);
+
+        let _guard = TempRegistryKey {
+            root: HKEY_CURRENT_USER,
+            path: unique.clone(),
+        };
+
+        let paths = vec![
+            "C:\\Windows".to_string(),
+            "%SystemRoot%\\system32".to_string(),
+        ];
+        save_paths(HKEY_CURRENT_USER, &unique, "测试", &paths).expect("保存测试 PATH 失败");
+
+        let key = root
+            .open_subkey_with_flags(&unique, KEY_READ)
+            .expect("重新打开隔离测试键失败");
+        let raw = key.get_raw_value(PATH_VALUE).expect("读取测试值失败");
+        assert_eq!(raw.vtype, REG_EXPAND_SZ);
+        assert_eq!(
+            String::from_reg_value(&raw).expect("解码测试值失败"),
+            join_path(&paths)
+        );
     }
 }
