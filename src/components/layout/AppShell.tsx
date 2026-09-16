@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { canWriteTarget, useAppStore, type TabId } from '@/store/app-store';
 import { useThemeStore } from '@/store/theme-store';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,11 @@ import { ImportDialog } from '@/components/dialogs/ImportDialog';
 import { AnalyzeDialog } from '@/components/dialogs/AnalyzeDialog';
 import { ProfileDialog } from '@/components/dialogs/ProfileDialog';
 import { useAppActions, type DialogState } from '@/hooks/use-app-actions';
+import { EnvVarTable } from '@/components/env-list/EnvVarTable';
+import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
+import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
+import { useEnvStore } from '@/store/env-store';
+import { envVarKey, type EnvVarMeta } from '@/core/env-var';
 
 /** Tauri's File object includes the native filesystem path */
 interface TauriFile extends File {
@@ -46,6 +51,14 @@ export function AppShell() {
   });
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
+  const [newVarOpen, setNewVarOpen] = useState(false);
+  const [selectedVar, setSelectedVar] = useState<EnvVarMeta | null>(null);
+  const loadEnvVars = useEnvStore((s) => s.load);
+
+  // 首次进入「全部变量」时加载一次；切换 hiveFilter 由 store 内部完成，不触发 IPC。
+  useEffect(() => {
+    if (activeTab === 'allVars') void loadEnvVars();
+  }, [activeTab, loadEnvVars]);
 
   const actions = useAppActions(activeTab, {
     editDialog,
@@ -63,6 +76,7 @@ export function AppShell() {
   const tabConfig: { id: TabId; label: string }[] = [
     { id: 'system', label: t('tab.system') },
     { id: 'user', label: t('tab.user') },
+    { id: 'allVars', label: t('tab.allVars') },
     { id: 'merged', label: t('tab.merged') },
   ];
 
@@ -90,42 +104,62 @@ export function AppShell() {
       </div>
 
       <div className="px-4 py-2">
-        <ToolBar
-          onNew={actions.handleNew}
-          onEdit={actions.handleEdit}
-          onBrowse={actions.handleBrowse}
-          onDelete={actions.handleDelete}
-          onMoveUp={actions.handleMoveUp}
-          onMoveDown={actions.handleMoveDown}
-          onClean={actions.handleClean}
-          onImport={actions.handleImport}
-          onExport={actions.handleExport}
-          onSave={actions.handleSave}
-          onCancel={() => {
-            const state = useAppStore.getState();
-            if (state.isModified && !window.confirm(t('dialog.unsavedConfirm'))) return;
-            window.close();
-          }}
-          onHelp={() => setHelpOpen(true)}
-          onLanguage={() => {
-            const current = localStorage.getItem('i18nextLng') || 'zh-CN';
-            i18n.changeLanguage(current === 'zh-CN' ? 'en' : 'zh-CN');
-          }}
-          onProfiles={() => setProfilesOpen(true)}
-          onAnalyze={() => setAnalyzeOpen(true)}
-          onDarkMode={() => useThemeStore.getState().toggle()}
-        />
+        {/* 「全部变量」使用独立工具栏：PATH 的上移/下移/清理/导入/导出对其语义不成立。 */}
+        {activeTab === 'allVars' ? (
+          <EnvVarToolbar
+            onCreate={() => setNewVarOpen(true)}
+            onEdit={() => {
+              if (selectedVar)
+                useEnvStore.getState().setDraft(selectedVar, selectedVar.preview ?? '');
+            }}
+            onDelete={() => {
+              if (selectedVar) void useEnvStore.getState().remove(selectedVar);
+            }}
+            onRefresh={() => void useEnvStore.getState().load()}
+            selected={selectedVar}
+          />
+        ) : (
+          <ToolBar
+            onNew={actions.handleNew}
+            onEdit={actions.handleEdit}
+            onBrowse={actions.handleBrowse}
+            onDelete={actions.handleDelete}
+            onMoveUp={actions.handleMoveUp}
+            onMoveDown={actions.handleMoveDown}
+            onClean={actions.handleClean}
+            onImport={actions.handleImport}
+            onExport={actions.handleExport}
+            onSave={actions.handleSave}
+            onCancel={() => {
+              const state = useAppStore.getState();
+              // 环境变量草稿尚未提交时同样需要确认，否则关窗会静默丢弃用户输入。
+              const hasPendingChanges = state.isModified || useEnvStore.getState().hasDrafts();
+              if (hasPendingChanges && !window.confirm(t('dialog.unsavedConfirm'))) return;
+              window.close();
+            }}
+            onHelp={() => setHelpOpen(true)}
+            onLanguage={() => {
+              const current = localStorage.getItem('i18nextLng') || 'zh-CN';
+              i18n.changeLanguage(current === 'zh-CN' ? 'en' : 'zh-CN');
+            }}
+            onProfiles={() => setProfilesOpen(true)}
+            onAnalyze={() => setAnalyzeOpen(true)}
+            onDarkMode={() => useThemeStore.getState().toggle()}
+          />
+        )}
       </div>
 
       <div
         className="flex-1 overflow-auto"
+        data-testid="path-drop-zone"
         onDragOver={(e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'link';
         }}
         onDrop={(e) => {
           e.preventDefault();
-          if (activeTab === 'merged') return;
+          // 拖放只对 PATH 有语义：merged 与环境变量视图下直接忽略。
+          if (activeTab === 'merged' || activeTab === 'allVars') return;
           for (let i = 0; i < e.dataTransfer.items.length; i++) {
             const entry = e.dataTransfer.items[i].webkitGetAsEntry();
             if (entry?.isDirectory) {
@@ -140,8 +174,14 @@ export function AppShell() {
       >
         {activeTab === 'merged' ? (
           <MergePreview />
+        ) : activeTab === 'allVars' ? (
+          <EnvVarTable
+            searchQuery=""
+            onSelect={setSelectedVar}
+            selectedKey={selectedVar ? envVarKey(selectedVar) : null}
+          />
         ) : (
-          <PathTable tabId={activeTab as 'system' | 'user'} />
+          <PathTable tabId={activeTab} />
         )}
       </div>
 
@@ -175,6 +215,15 @@ export function AppShell() {
       />
       <AnalyzeDialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} />
       <ProfileDialog open={profilesOpen} onClose={() => setProfilesOpen(false)} />
+      {newVarOpen && (
+        <NewEnvVarDialog
+          onCancel={() => setNewVarOpen(false)}
+          onConfirm={(hive, name, value, kind) => {
+            setNewVarOpen(false);
+            void useEnvStore.getState().create(hive, name, value, kind);
+          }}
+        />
+      )}
     </div>
   );
 }

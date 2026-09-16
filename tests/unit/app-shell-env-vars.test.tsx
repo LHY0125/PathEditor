@@ -1,0 +1,260 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+
+// 异步工厂 + vi.mocked(backend)：与 env-var-table.test.tsx / env-store.test.ts 一致。
+// 不能在工厂外引用 mock 变量 —— vi.mock 会被提升到 import 之前，外层 const 仍处于 TDZ。
+vi.mock('@/services/backend', async () => {
+  const { vi: viModule } = await import('vitest');
+  return {
+    backend: {
+      listAllEnvVars: viModule.fn(),
+      loadPathSnapshot: viModule.fn(),
+      getPathCapabilities: viModule.fn(),
+      revealEnvVar: viModule.fn(),
+      updateEnvVar: viModule.fn(),
+      createEnvVar: viModule.fn(),
+      deleteEnvVar: viModule.fn(),
+      expandEnvVars: viModule.fn(),
+      validatePath: viModule.fn(),
+    },
+  };
+});
+
+// i18n 用**部分 mock**：保留 initReactI18next 等真实导出（src/i18n 在模块加载时要用），
+// 只覆盖 useTranslation，并以真实 zh-CN 词条取值，断言基于可见文案而非 i18n key。
+vi.mock('react-i18next', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-i18next')>();
+  const zh = ((await import('@/i18n/locales/zh-CN.json')).default ?? {}) as Record<string, unknown>;
+  const t = (key: string): string => {
+    let node: unknown = zh;
+    for (const part of key.split('.')) {
+      if (node === null || typeof node !== 'object') return key;
+      node = (node as Record<string, unknown>)[part];
+    }
+    return typeof node === 'string' ? node : key;
+  };
+  return { ...actual, useTranslation: () => ({ t }) };
+});
+
+// jsdom 下虚拟滚动容器高度为 0，真实实现不会渲染任何行；按 merge-preview.test.tsx
+// 的既有做法 mock 掉，让 getVirtualItems 返回全部条目。
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: (options: Record<string, number>) => ({
+    getVirtualItems: () =>
+      Array.from({ length: options.count }).map((_, index) => ({
+        index,
+        start: index * 34,
+        size: 34,
+        key: `mock-key-${index}`,
+      })),
+    getTotalSize: () => options.count * 34,
+    measureElement: () => {},
+  }),
+}));
+
+import { AppShell } from '@/components/layout/AppShell';
+import { backend } from '@/services/backend';
+import { useAppStore } from '@/store/app-store';
+import { useEnvStore } from '@/store/env-store';
+import type { EnvVarMeta } from '@/core/env-var';
+
+const mockBackend = vi.mocked(backend);
+
+function meta(overrides: Partial<EnvVarMeta> = {}): EnvVarMeta {
+  return {
+    name: 'JAVA_HOME',
+    kind: 'string',
+    hive: 'user',
+    canEdit: true,
+    canDelete: true,
+    sensitive: false,
+    preview: 'C:\\Java',
+    revision: 'rev-1',
+    ...overrides,
+  };
+}
+
+/** 取真实的 drop 容器（PATH Tab 的拖放区）。 */
+function dropZone(container: HTMLElement): Element {
+  const zone = container.querySelector('[data-testid="path-drop-zone"]');
+  if (zone === null) throw new Error('未找到拖放区');
+  return zone;
+}
+
+/** 构造一次“拖入一个文件夹”的 drop 事件。 */
+function dropFolder(zone: Element, path: string): void {
+  fireEvent.drop(zone, {
+    dataTransfer: {
+      items: [{ webkitGetAsEntry: () => ({ isDirectory: true }) }],
+      files: [{ path }],
+    },
+  });
+}
+
+beforeEach(() => {
+  // resetAllMocks 而非 clearAllMocks：后者保留 mock 实现，会导致跨用例残留。
+  vi.resetAllMocks();
+  mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [] });
+  mockBackend.loadPathSnapshot.mockResolvedValue({ system: [], user: [] });
+  mockBackend.getPathCapabilities.mockResolvedValue({
+    canReadSystem: true,
+    canWriteSystem: true,
+    canReadUser: true,
+    canWriteUser: true,
+  });
+  mockBackend.expandEnvVars.mockResolvedValue('');
+  mockBackend.validatePath.mockResolvedValue(true);
+
+  useAppStore.setState({ activeTab: 'system', isModified: false, sysPaths: [], userPaths: [] });
+  useEnvStore.setState({ draft: new Map(), snapshot: { system: [], user: [] } });
+});
+
+// 本仓库未开启 vitest globals，RTL 的自动 cleanup 不会生效：不显式清理会让
+// screen（绑定 document.body）跨用例累积多个 AppShell，getByText 直接报“匹配到多个元素”。
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe('AppShell Tab 结构', () => {
+  it('渲染 4 个 Tab 且「全部变量」可用', () => {
+    render(<AppShell />);
+    expect(screen.getByText('系统 PATH')).not.toBeNull();
+    expect(screen.getByText('用户 PATH')).not.toBeNull();
+    expect(screen.getByText('全部变量')).not.toBeNull();
+    expect(screen.getByText('合并预览')).not.toBeNull();
+  });
+
+  it('切到「全部变量」后触发 env-store 加载', async () => {
+    render(<AppShell />);
+    expect(mockBackend.listAllEnvVars).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalledTimes(1));
+  });
+
+  it('「全部变量」下 PATH 专用按钮不可见', async () => {
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalled());
+
+    expect(screen.queryByRole('button', { name: '上移' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下移' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '一键清理' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '导入' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '导出' })).toBeNull();
+  });
+
+  it('「全部变量」下渲染环境变量工具栏与表格', async () => {
+    mockBackend.listAllEnvVars.mockResolvedValue({
+      system: [meta({ name: 'windir', hive: 'system' })],
+      user: [meta({ name: 'JAVA_HOME', hive: 'user' })],
+    });
+    const { container } = render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+
+    // 工具栏
+    await waitFor(() => expect(screen.getByRole('button', { name: '新建变量' })).not.toBeNull());
+    expect(container.querySelector('[data-env-var-key="system:windir"]')).not.toBeNull();
+    expect(container.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull();
+    // PATH 表格不得同时存在
+    expect(container.querySelector('[data-testid="path-table"]')).toBeNull();
+  });
+
+  it('PATH Tab 下环境变量工具栏不可见', () => {
+    render(<AppShell />);
+    expect(screen.queryByRole('button', { name: '新建变量' })).toBeNull();
+  });
+
+  it('切到「合并预览」不触发环境变量加载（PATH 行为不变）', () => {
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('合并预览'));
+    expect(mockBackend.listAllEnvVars).not.toHaveBeenCalled();
+  });
+});
+
+describe('「全部变量」拖放早退（决策 3）', () => {
+  it('PATH Tab 下拖入文件夹会新增条目（对照组）', () => {
+    const { container } = render(<AppShell />);
+    dropFolder(dropZone(container), 'D:\\NewFolder');
+    expect(useAppStore.getState().sysPaths.map((entry) => entry.path)).toEqual(['D:\\NewFolder']);
+  });
+
+  it('「全部变量」Tab 下拖入文件夹被忽略', async () => {
+    const { container } = render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalled());
+
+    dropFolder(dropZone(container), 'D:\\NewFolder');
+    expect(useAppStore.getState().sysPaths).toEqual([]);
+    expect(useAppStore.getState().userPaths).toEqual([]);
+  });
+});
+
+describe('关窗确认纳入环境变量草稿（决策 4）', () => {
+  it('仅有环境变量草稿时也会弹确认，取消则不关窗', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+    // isModified 为 false，草稿是唯一待提交内容。
+    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'secret']]) });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(closeSpy).not.toHaveBeenCalled();
+  });
+
+  it('确认后关窗', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+    useAppStore.setState({ isModified: true });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalled();
+  });
+
+  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalled();
+  });
+});
+
+describe('新建环境变量弹窗', () => {
+  it('点「新建变量」打开弹窗，确定后调用 createEnvVar', async () => {
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: '新建变量' }));
+    fireEvent.change(screen.getByLabelText('变量名'), { target: { value: 'MY_VAR' } });
+    fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'hello' } });
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+
+    await waitFor(() =>
+      expect(mockBackend.createEnvVar).toHaveBeenCalledWith('user', 'MY_VAR', 'hello', 'string'),
+    );
+  });
+
+  it('变量名非法时不调用 createEnvVar 并显示错误', async () => {
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: '新建变量' }));
+    fireEvent.change(screen.getByLabelText('变量名'), { target: { value: 'A=B' } });
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+
+    expect(screen.getByText('变量名不能包含等号')).not.toBeNull();
+    expect(mockBackend.createEnvVar).not.toHaveBeenCalled();
+  });
+});
