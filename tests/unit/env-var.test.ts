@@ -108,6 +108,21 @@ describe('filterEnvVars', () => {
     expect(result[0].name).toBe('JAVA_HOME');
   });
 
+  it('空查询返回副本而非快照本体引用', () => {
+    // store 可能对结果做原地排序/增删，若返回本体会污染共享快照
+    const systemResult = filterEnvVars(snapshot, 'system', '');
+    expect(systemResult).not.toBe(snapshot.system);
+    expect(systemResult).toEqual(snapshot.system);
+
+    const userResult = filterEnvVars(snapshot, 'user', '');
+    expect(userResult).not.toBe(snapshot.user);
+    expect(userResult).toEqual(snapshot.user);
+
+    const allResult = filterEnvVars(snapshot, 'all', '');
+    expect(allResult).not.toBe(snapshot.system);
+    expect(allResult).not.toBe(snapshot.user);
+  });
+
   it('搜索忽略大小写且只匹配变量名', () => {
     expect(filterEnvVars(snapshot, 'all', 'java')).toHaveLength(1);
     expect(filterEnvVars(snapshot, 'all', 'WINDIR')).toHaveLength(1);

@@ -86,7 +86,9 @@ export function filterEnvVars(
         : [...snapshot.system, ...snapshot.user];
 
   const trimmed = query.trim().toLowerCase();
-  if (trimmed.length === 0) return source;
+  // 空查询也要返回副本：`system` / `user` 分支的 source 是快照本体引用，
+  // 调用方（store）若对结果做原地排序或增删，会直接污染共享快照。
+  if (trimmed.length === 0) return [...source];
 
   return source.filter((meta) => meta.name.toLowerCase().includes(trimmed));
 }
