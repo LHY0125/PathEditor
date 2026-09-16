@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { PathEntry, PathSnapshot } from '@/core/path-entry';
 import type { PathCapabilities } from '@/core/path-capabilities';
+import type { EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot } from '@/core/env-var';
 
 export type { PathCapabilities } from '@/core/path-capabilities';
 
@@ -87,6 +88,44 @@ function parsePathCapabilities(value: unknown): PathCapabilities {
   };
 }
 
+const ENV_VALUE_KINDS: readonly EnvValueKind[] = ['string', 'expandString', 'unsupported'];
+const ENV_HIVES: readonly EnvHive[] = ['system', 'user'];
+
+/**
+ * EnvVarMeta 契约上不存在 `value` 字段 —— 明文只能经 reveal_env_var 获取，
+ * 因此这里刻意不校验也不读取 `value`。
+ */
+function isEnvVarMeta(value: unknown): value is EnvVarMeta {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.name === 'string' &&
+    ENV_VALUE_KINDS.includes(value.kind as EnvValueKind) &&
+    ENV_HIVES.includes(value.hive as EnvHive) &&
+    typeof value.canEdit === 'boolean' &&
+    typeof value.canDelete === 'boolean' &&
+    typeof value.sensitive === 'boolean' &&
+    (value.preview === null || typeof value.preview === 'string') &&
+    typeof value.revision === 'string'
+  );
+}
+
+function parseEnvVarMetas(value: unknown, label: string): EnvVarMeta[] {
+  if (!Array.isArray(value) || !value.every(isEnvVarMeta)) {
+    throw new Error(`${label} 返回了无效的 EnvVarMeta[] 契约`);
+  }
+  return value;
+}
+
+function parseEnvVarSnapshot(value: unknown): EnvVarSnapshot {
+  if (!isRecord(value)) {
+    throw new Error('list_all_env_vars 返回了无效的 EnvVarSnapshot 契约');
+  }
+  return {
+    system: parseEnvVarMetas(value.system, 'list_all_env_vars.system'),
+    user: parseEnvVarMetas(value.user, 'list_all_env_vars.user'),
+  };
+}
+
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
   loadSystemPaths: async () =>
@@ -134,4 +173,12 @@ export const backend = {
   deleteProfile: (name: string) => invoke<void>('delete_profile', { name }),
   renameProfile: (oldName: string, newName: string) =>
     invoke<void>('rename_profile', { oldName, newName }),
+  listAllEnvVars: async () => parseEnvVarSnapshot(await invoke<unknown>('list_all_env_vars')),
+  revealEnvVar: (hive: EnvHive, name: string) => invoke<string>('reveal_env_var', { hive, name }),
+  updateEnvVar: (hive: EnvHive, name: string, value: string, expectedRevision: string) =>
+    invoke<void>('update_env_var', { hive, name, value, expectedRevision }),
+  createEnvVar: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) =>
+    invoke<void>('create_env_var', { hive, name, value, kind }),
+  deleteEnvVar: (hive: EnvHive, name: string, expectedRevision: string) =>
+    invoke<void>('delete_env_var', { hive, name, expectedRevision }),
 };
