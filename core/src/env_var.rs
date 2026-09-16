@@ -140,12 +140,40 @@ pub fn is_sensitive(name: &str) -> bool {
     SENSITIVE_KEYWORDS.iter().any(|kw| upper.contains(kw))
 }
 
+/// FNV-1a 64 位散列。用于变更检测摘要，不用于防篡改。
+///
+/// 手写实现，零依赖 —— 摘要只需"任意改动都会变"，不需要密码学强度，
+/// 因此不引入 sha2 / blake3。
+fn fnv1a_64(input: &str) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut hash = OFFSET_BASIS;
+    for byte in input.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 /// 计算并发校验摘要。任一组成部分变化都会改变结果。
+///
+/// 摘要基于 name + vtype + value 的散列，**不含明文** —— 该字段会经 IPC
+/// 发到前端，因此绝不能携带敏感变量的值本身。散列使得任意改动（含等长
+/// 改动）都能被检测到。
+///
+/// 分隔符用 \u{1} 而非 `|`，避免值本身含 `|` 时产生歧义。
 ///
 /// 注意：这是变更检测摘要，不是密码学哈希。目的是发现"值被改动"，
 /// 不用于防篡改。
 pub fn revision_of(name: &str, vtype: RegType, value: &str) -> String {
-    format!("{}|{}|{}", name.to_ascii_lowercase(), vtype as u32, value)
+    let material = format!(
+        "{}\u{1}{}\u{1}{}",
+        name.to_ascii_lowercase(),
+        vtype as u32,
+        value
+    );
+    format!("{:016x}", fnv1a_64(&material))
 }
 
 /// 净化并截断展示摘要。剔除控制字符；净化后为空则返回 `None`。
@@ -230,6 +258,18 @@ mod tests {
         assert_ne!(base, revision_of("JAVA_HOME", REG_SZ, "C:\\Other"));
         assert_ne!(base, revision_of("JAVA_HOME", REG_EXPAND_SZ, "C:\\Java"));
         assert_ne!(base, revision_of("GOPATH", REG_SZ, "C:\\Java"));
+    }
+
+    #[test]
+    fn revision_does_not_leak_value_and_detects_same_length_change() {
+        let a = revision_of("MY_TOKEN", REG_SZ, "secret-A");
+        let b = revision_of("MY_TOKEN", REG_SZ, "secret-B");
+        // 等长不同值必须产生不同 revision
+        assert_ne!(a, b);
+        // 摘要中不得出现明文片段
+        assert!(!a.contains("secret"));
+        // 同值稳定
+        assert_eq!(a, revision_of("MY_TOKEN", REG_SZ, "secret-A"));
     }
 
     #[test]
