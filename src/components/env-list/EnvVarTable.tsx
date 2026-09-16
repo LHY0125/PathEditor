@@ -2,12 +2,17 @@ import { useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEnvStore } from '@/store/env-store';
+import { canWriteTarget, useAppStore } from '@/store/app-store';
+import { TargetType } from '@/core/undo-redo';
 import { displayValue, envVarKey, filterEnvVars } from '@/core/env-var';
 import type { EnvVarMeta } from '@/core/env-var';
 
 interface EnvVarTableProps {
   searchQuery?: string;
   onSelect?: (meta: EnvVarMeta) => void;
+  onEdit?: (meta: EnvVarMeta) => void;
+  onDelete?: (meta: EnvVarMeta) => void;
+  onGoToPath?: () => void;
   selectedKey?: string | null;
 }
 
@@ -19,13 +24,22 @@ const TYPE_LABEL_KEY: Record<EnvVarMeta['kind'], string> = {
 
 const ROW_HEIGHT = 34;
 
-export function EnvVarTable({ searchQuery = '', onSelect, selectedKey }: EnvVarTableProps) {
+export function EnvVarTable({
+  searchQuery = '',
+  onSelect,
+  onEdit,
+  onDelete,
+  onGoToPath,
+  selectedKey,
+}: EnvVarTableProps) {
   const { t } = useTranslation();
   const snapshot = useEnvStore((s) => s.snapshot);
   const hiveFilter = useEnvStore((s) => s.hiveFilter);
   const revealed = useEnvStore((s) => s.revealed);
   const reveal = useEnvStore((s) => s.reveal);
   const hide = useEnvStore((s) => s.hide);
+  const isAdmin = useAppStore((s) => s.isAdmin);
+  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Path 由 Rust 侧过滤；此处防御性再滤一次，避免契约被破坏时泄漏到 UI。
@@ -46,7 +60,14 @@ export function EnvVarTable({ searchQuery = '', onSelect, selectedKey }: EnvVarT
 
   return (
     <div className="flex flex-col h-full" data-testid="env-var-table">
-      <div className="px-3 py-1.5 text-xs opacity-70">{t('envVar.pathGuide')}</div>
+      <div className="flex items-center gap-2 px-3 py-1.5 text-xs opacity-70">
+        <span>{t('envVar.pathGuide')}</span>
+        {onGoToPath && (
+          <button className="underline" onClick={onGoToPath}>
+            {t('envVar.pathGuideAction')}
+          </button>
+        )}
+      </div>
       <div
         className="flex items-center gap-2 px-3 py-1 text-xs font-medium border-b"
         style={{ borderColor: 'var(--app-border)' }}
@@ -63,6 +84,11 @@ export function EnvVarTable({ searchQuery = '', onSelect, selectedKey }: EnvVarT
             const meta = rows[item.index];
             const key = envVarKey(meta);
             const revealedValue = revealed.get(key) ?? null;
+            const hiveWritable = canWriteTarget(
+              isAdmin,
+              pathCapabilities,
+              meta.hive === 'system' ? TargetType.SYSTEM : TargetType.USER,
+            );
             return (
               <div
                 key={key}
@@ -88,7 +114,7 @@ export function EnvVarTable({ searchQuery = '', onSelect, selectedKey }: EnvVarT
                   {meta.name}
                 </span>
                 <span className="flex-[2] truncate font-mono text-xs">
-                  {displayValue(meta, revealedValue)}
+                  {displayValue(meta, revealedValue, t('envVar.unsupportedValue'))}
                 </span>
                 <span className="w-28 text-xs opacity-70">{t(TYPE_LABEL_KEY[meta.kind])}</span>
                 <span className="w-16 text-xs opacity-70">
@@ -106,10 +132,28 @@ export function EnvVarTable({ searchQuery = '', onSelect, selectedKey }: EnvVarT
                       {revealedValue === null ? t('envVar.show') : t('envVar.hide')}
                     </button>
                   )}
-                  <button className="text-xs" disabled={!meta.canEdit} title={editHint(meta, t)}>
+                  <button
+                    className="text-xs"
+                    disabled={!meta.canEdit || (meta.sensitive && revealedValue === null)}
+                    title={editHint(meta, revealedValue === null, hiveWritable, t)}
+                    aria-label={`${t('button.edit')} ${meta.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit?.(meta);
+                    }}
+                  >
                     {t('button.edit')}
                   </button>
-                  <button className="text-xs" disabled={!meta.canDelete} title={editHint(meta, t)}>
+                  <button
+                    className="text-xs"
+                    disabled={!meta.canDelete}
+                    title={editHint(meta, revealedValue === null, hiveWritable, t)}
+                    aria-label={`${t('button.delete')} ${meta.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete?.(meta);
+                    }}
+                  >
                     {t('button.delete')}
                   </button>
                 </span>
@@ -122,9 +166,21 @@ export function EnvVarTable({ searchQuery = '', onSelect, selectedKey }: EnvVarT
   );
 }
 
-/** 禁用原因提示；权限已由 Rust 算好，此处只做映射。 */
-function editHint(meta: EnvVarMeta, t: (key: string) => string): string {
+/**
+ * 禁用原因提示；权限已由 Rust 算好，此处只做映射：
+ * hive 本身不可写 → 权限提示；hive 可写但变量不可编辑 → 内置保护提示；
+ * 敏感变量打码 → 要求先「显示」。
+ */
+function editHint(
+  meta: EnvVarMeta,
+  masked: boolean,
+  hiveWritable: boolean,
+  t: (key: string) => string,
+): string {
   if (meta.kind === 'unsupported') return t('envVar.typeUnsupported');
-  if (!meta.canEdit) return t('envVar.protectedHint');
+  if (!meta.canEdit) {
+    return hiveWritable ? t('envVar.protectedHint') : t('envVar.readonlyHint');
+  }
+  if (masked && meta.sensitive) return t('envVar.revealFirstHint');
   return '';
 }

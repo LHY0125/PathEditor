@@ -81,6 +81,16 @@ describe('displayValue', () => {
       '(不支持的注册表类型)',
     );
   });
+
+  it('Unsupported 占位可由调用方传入本地化文案', () => {
+    expect(
+      displayValue(
+        meta({ kind: 'unsupported', preview: null }),
+        null,
+        '(Unsupported registry type)',
+      ),
+    ).toBe('(Unsupported registry type)');
+  });
 });
 
 describe('filterEnvVars', () => {

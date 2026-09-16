@@ -59,7 +59,7 @@ PathEditor/
 │   ├── services/backend.ts      # 唯一 IPC 适配入口 + 运行时形状校验
 │   ├── services/path-session.ts # 加载、保存计划、部分成功、禁用快照
 │   ├── store/                   # Zustand 状态、CRUD、撤销重做、action 编排
-│   ├── components/              # layout / path-list / toolbar / dialogs / ui
+│   ├── components/              # layout / path-list / toolbar / env-list / dialogs / ui
 │   ├── hooks/                   # useAppActions、useKeyboard、usePathValidation
 │   └── i18n/                    # zh-CN / en
 ├── tests/unit/                  # Vitest 测试

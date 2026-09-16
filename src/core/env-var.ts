@@ -59,8 +59,12 @@ function hiveOf(meta: EnvVarMeta): string {
 }
 
 /** 计算某变量在表格中的展示值。 */
-export function displayValue(meta: EnvVarMeta, revealedValue: string | null): string {
-  if (meta.kind === 'unsupported') return UNSUPPORTED_PLACEHOLDER;
+export function displayValue(
+  meta: EnvVarMeta,
+  revealedValue: string | null,
+  unsupportedPlaceholder: string = UNSUPPORTED_PLACEHOLDER,
+): string {
+  if (meta.kind === 'unsupported') return unsupportedPlaceholder;
   if (meta.sensitive) {
     return revealedValue === null ? MASK_PLACEHOLDER : revealedValue;
   }

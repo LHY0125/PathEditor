@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { canWriteTarget, useAppStore, type TabId } from '@/store/app-store';
 import { useThemeStore } from '@/store/theme-store';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +18,7 @@ import { useAppActions, type DialogState } from '@/hooks/use-app-actions';
 import { EnvVarTable } from '@/components/env-list/EnvVarTable';
 import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
+import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { useEnvStore } from '@/store/env-store';
 import { envVarKey, type EnvVarMeta } from '@/core/env-var';
 
@@ -52,10 +53,21 @@ export function AppShell() {
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
   const [newVarOpen, setNewVarOpen] = useState(false);
-  const [selectedVar, setSelectedVar] = useState<EnvVarMeta | null>(null);
+  // 选中只存键；具体 meta 从快照派生（ revision 始终最新，刷新/删除后自动失效）。
+  const [selectedVarKey, setSelectedVarKey] = useState<string | null>(null);
+  const [editVar, setEditVar] = useState<EnvVarMeta | null>(null);
+  const [envSearch, setEnvSearch] = useState('');
+  const envSnapshot = useEnvStore((s) => s.snapshot);
   const loadEnvVars = useEnvStore((s) => s.load);
 
-  // 首次进入「全部变量」时加载一次；切换 hiveFilter 由 store 内部完成，不触发 IPC。
+  const selectedVar = useMemo<EnvVarMeta | null>(() => {
+    if (selectedVarKey === null || envSnapshot === null) return null;
+    const all = [...envSnapshot.system, ...envSnapshot.user];
+    return all.find((m) => envVarKey(m) === selectedVarKey) ?? null;
+  }, [selectedVarKey, envSnapshot]);
+
+  // 进入「全部变量」时刷新列表与 revision；工具栏「刷新」共用同一入口。
+  // 悬空选中无需在此清理：selectedVar 由快照派生，快照刷新后自动失效。
   useEffect(() => {
     if (activeTab === 'allVars') void loadEnvVars();
   }, [activeTab, loadEnvVars]);
@@ -79,6 +91,12 @@ export function AppShell() {
     { id: 'allVars', label: t('tab.allVars') },
     { id: 'merged', label: t('tab.merged') },
   ];
+
+  /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
+  const confirmRemoveVar = (meta: EnvVarMeta) => {
+    if (!window.confirm(t('envVar.deleteConfirm', { name: meta.name }))) return;
+    void useEnvStore.getState().remove(meta);
+  };
 
   return (
     <div
@@ -109,13 +127,14 @@ export function AppShell() {
           <EnvVarToolbar
             onCreate={() => setNewVarOpen(true)}
             onEdit={() => {
-              if (selectedVar)
-                useEnvStore.getState().setDraft(selectedVar, selectedVar.preview ?? '');
+              if (selectedVar) setEditVar(selectedVar);
             }}
             onDelete={() => {
-              if (selectedVar) void useEnvStore.getState().remove(selectedVar);
+              if (selectedVar) confirmRemoveVar(selectedVar);
             }}
-            onRefresh={() => void useEnvStore.getState().load()}
+            onRefresh={() => void loadEnvVars()}
+            onSearchChange={setEnvSearch}
+            searchQuery={envSearch}
             selected={selectedVar}
           />
         ) : (
@@ -176,9 +195,18 @@ export function AppShell() {
           <MergePreview />
         ) : activeTab === 'allVars' ? (
           <EnvVarTable
-            searchQuery=""
-            onSelect={setSelectedVar}
-            selectedKey={selectedVar ? envVarKey(selectedVar) : null}
+            searchQuery={envSearch}
+            onSelect={(meta) => setSelectedVarKey(envVarKey(meta))}
+            onEdit={(meta) => {
+              setSelectedVarKey(envVarKey(meta));
+              setEditVar(meta);
+            }}
+            onDelete={(meta) => {
+              setSelectedVarKey(envVarKey(meta));
+              confirmRemoveVar(meta);
+            }}
+            onGoToPath={() => setActiveTab('system')}
+            selectedKey={selectedVarKey}
           />
         ) : (
           <PathTable tabId={activeTab} />
@@ -217,10 +245,32 @@ export function AppShell() {
       <ProfileDialog open={profilesOpen} onClose={() => setProfilesOpen(false)} />
       {newVarOpen && (
         <NewEnvVarDialog
+          canWriteSystem={canWriteSystem}
           onCancel={() => setNewVarOpen(false)}
-          onConfirm={(hive, name, value, kind) => {
-            setNewVarOpen(false);
-            void useEnvStore.getState().create(hive, name, value, kind);
+          onConfirm={async (hive, name, value, kind) => {
+            // Rust 是重复变量与权限的最终裁判；失败时弹窗保留并显示错误。
+            const ok = await useEnvStore.getState().create(hive, name, value, kind);
+            if (ok) setNewVarOpen(false);
+            return ok;
+          }}
+        />
+      )}
+      {editVar && (
+        <EditEnvVarDialog
+          meta={editVar}
+          onCancel={() => setEditVar(null)}
+          onConfirm={async (value) => {
+            const store = useEnvStore.getState();
+            store.setDraft(editVar, value);
+            const ok = await store.save(editVar);
+            if (ok) {
+              setEditVar(null);
+            } else {
+              // 失败即清草稿：输入仍留在弹窗本地状态中，重试会重写草稿。
+              // 否则残留草稿会反复触发关窗确认。
+              store.clearDraft(editVar);
+            }
+            return ok;
           }}
         />
       )}

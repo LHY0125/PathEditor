@@ -1,28 +1,38 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
+import { useEnvStore } from '@/store/env-store';
 import { validateVarName, type EnvHive, type EnvValueKind } from '@/core/env-var';
 
 interface NewEnvVarDialogProps {
+  /** 系统 hive 不可写时禁用「系统」来源（Spec 权限矩阵：非管理员不得新建系统变量）。 */
+  canWriteSystem: boolean;
   onCancel: () => void;
-  onConfirm: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => void;
+  /** 返回是否创建成功；失败时弹窗保留并显示 store 的错误消息。 */
+  onConfirm: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
 }
 
-export function NewEnvVarDialog({ onCancel, onConfirm }: NewEnvVarDialogProps) {
+export function NewEnvVarDialog({ canWriteSystem, onCancel, onConfirm }: NewEnvVarDialogProps) {
   const { t } = useTranslation();
   const [hive, setHive] = useState<EnvHive>('user');
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [kind, setKind] = useState<EnvValueKind>('string');
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const invalid = validateVarName(name);
     if (invalid !== null) {
       setError(invalid);
       return;
     }
-    onConfirm(hive, name, value, kind);
+    setError(null);
+    setSubmitting(true);
+    // Rust 是重复变量与权限的最终裁判：失败时保留弹窗，把 store 的错误透出。
+    const ok = await onConfirm(hive, name, value, kind);
+    setSubmitting(false);
+    if (!ok) setError(useEnvStore.getState().statusMessage);
   };
 
   return (
@@ -39,7 +49,9 @@ export function NewEnvVarDialog({ onCancel, onConfirm }: NewEnvVarDialogProps) {
             style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
           >
             <option value="user">{t('merge.user')}</option>
-            <option value="system">{t('merge.system')}</option>
+            <option value="system" disabled={!canWriteSystem}>
+              {t('merge.system')}
+            </option>
           </select>
         </label>
 
@@ -89,7 +101,8 @@ export function NewEnvVarDialog({ onCancel, onConfirm }: NewEnvVarDialogProps) {
           <button
             className="px-4 py-1.5 text-sm rounded text-white"
             style={{ backgroundColor: '#2563eb' }}
-            onClick={submit}
+            onClick={() => void submit()}
+            disabled={submitting}
           >
             {t('button.save')}
           </button>

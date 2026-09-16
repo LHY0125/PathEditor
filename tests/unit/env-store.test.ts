@@ -174,3 +174,43 @@ describe('setHiveFilter', () => {
     expect(mockBackend.listAllEnvVars).not.toHaveBeenCalled();
   });
 });
+
+describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
+  it('save 成功返回 true，失败返回 false', async () => {
+    const target = meta();
+
+    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+    await expect(useEnvStore.getState().save(target)).resolves.toBe(true);
+
+    mockBackend.updateEnvVar.mockRejectedValue(new Error('boom'));
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+    await expect(useEnvStore.getState().save(target)).resolves.toBe(false);
+  });
+
+  it('create 成功返回 true，失败返回 false', async () => {
+    mockBackend.createEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    await expect(useEnvStore.getState().create('user', 'N1', 'v', 'string')).resolves.toBe(true);
+
+    mockBackend.createEnvVar.mockRejectedValue(new Error('变量已存在'));
+    await expect(useEnvStore.getState().create('user', 'N2', 'v', 'string')).resolves.toBe(false);
+  });
+
+  it('remove 成功返回 true，失败返回 false', async () => {
+    const target = meta();
+
+    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    await expect(useEnvStore.getState().remove(target)).resolves.toBe(true);
+
+    mockBackend.deleteEnvVar.mockRejectedValue(new Error('boom'));
+    await expect(useEnvStore.getState().remove(target)).resolves.toBe(false);
+  });
+
+  it('无草稿时 save 直接返回 false', async () => {
+    await expect(useEnvStore.getState().save(meta())).resolves.toBe(false);
+    expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
+  });
+});

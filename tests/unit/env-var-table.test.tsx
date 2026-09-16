@@ -29,7 +29,11 @@ const TRANSLATIONS: Record<string, string> = {
   'envVar.typeString': 'String',
   'envVar.typeExpand': 'ExpandString',
   'envVar.typeUnsupported': '不支持的类型',
+  'envVar.unsupportedValue': '(不支持的注册表类型)',
   'envVar.protectedHint': '系统内置变量，修改可能导致系统异常',
+  'envVar.readonlyHint': '没有写入该 hive 的权限',
+  'envVar.revealFirstHint': '请先点「显示」查看当前值后再编辑',
+  'envVar.pathGuideAction': '前往',
   'button.edit': '编辑',
   'button.delete': '删除',
   'merge.system': '系统',
@@ -153,16 +157,50 @@ describe('EnvVarTable', () => {
 
   it('保护行与只读行的编辑按钮禁用', () => {
     render(<EnvVarTable />);
-    const editButtons = screen.getAllByRole('button', { name: '编辑' });
-    // system 两条（windir 保护、SYS_BIN 不支持）应禁用
+    const editButtons = screen.getAllByRole('button', { name: /^编辑/ });
+    // system 两条（windir 保护、SYS_BIN 不支持）+ 敏感打码行（MY_TOKEN）均应禁用
     const disabled = editButtons.filter((b) => (b as HTMLButtonElement).disabled);
     expect(disabled.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('顶部引导提供「前往」入口并回调', () => {
+    const onGoToPath = vi.fn();
+    render(<EnvVarTable onGoToPath={onGoToPath} />);
+    fireEvent.click(screen.getByRole('button', { name: '前往' }));
+    expect(onGoToPath).toHaveBeenCalledTimes(1);
   });
 
   it('Unsupported 行显示类型占位而非值', () => {
     const { container } = render(<EnvVarTable />);
     const row = container.querySelector('[data-env-var-key="system:SYS_BIN"]');
     expect(row?.textContent).toContain('(不支持的注册表类型)');
+  });
+
+  it('可编辑行点击编辑回调，敏感变量未显示时不允许编辑', () => {
+    const onEdit = vi.fn();
+    const { container } = render(<EnvVarTable onEdit={onEdit} />);
+
+    const javaRow = container.querySelector('[data-env-var-key="user:JAVA_HOME"]');
+    const javaEdit = javaRow?.querySelector('button[aria-label="编辑 JAVA_HOME"]');
+    expect(javaEdit).not.toBeNull();
+    fireEvent.click(javaEdit!);
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'JAVA_HOME' }));
+
+    const tokenRow = container.querySelector('[data-env-var-key="user:MY_TOKEN"]');
+    const tokenEdit = tokenRow?.querySelector('button[aria-label="编辑 MY_TOKEN"]');
+    expect((tokenEdit as HTMLButtonElement | null)?.disabled).toBe(true);
+  });
+
+  it('可删除行点击删除回调', () => {
+    const onDelete = vi.fn();
+    const { container } = render(<EnvVarTable onDelete={onDelete} />);
+
+    const javaRow = container.querySelector('[data-env-var-key="user:JAVA_HOME"]');
+    const javaDelete = javaRow?.querySelector('button[aria-label="删除 JAVA_HOME"]');
+    expect(javaDelete).not.toBeNull();
+    fireEvent.click(javaDelete!);
+
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ name: 'JAVA_HOME' }));
   });
 
   it('顶部显示 Path 引导提示', () => {

@@ -27,9 +27,10 @@ interface EnvState {
   setHiveFilter: (filter: HiveFilter) => void;
   setDraft: (meta: EnvVarMeta, value: string) => void;
   clearDraft: (meta: EnvVarMeta) => void;
-  save: (meta: EnvVarMeta) => Promise<void>;
-  create: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<void>;
-  remove: (meta: EnvVarMeta) => Promise<void>;
+  /** 返回是否写入成功；弹窗据此决定关闭还是保留并显示错误。 */
+  save: (meta: EnvVarMeta) => Promise<boolean>;
+  create: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
+  remove: (meta: EnvVarMeta) => Promise<boolean>;
   reveal: (meta: EnvVarMeta) => Promise<void>;
   hide: (meta: EnvVarMeta) => void;
   hasDrafts: () => boolean;
@@ -82,7 +83,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
 
     save: async (meta) => {
       const value = get().draft.get(envVarKey(meta));
-      if (value === undefined) return;
+      if (value === undefined) return false;
       set({ isSaving: true });
       try {
         await backend.updateEnvVar(meta.hive, meta.name, value, meta.revision);
@@ -90,6 +91,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         draft.delete(envVarKey(meta));
         set({ draft, isSaving: false, statusMessage: i18n.t('status.saved') });
         await get().load();
+        return true;
       } catch (error) {
         const message = String(error);
         if (message.includes(CONFLICT_MARKER)) {
@@ -98,6 +100,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         } else {
           set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
         }
+        return false;
       }
     },
 
@@ -105,15 +108,17 @@ export const useEnvStore = create<EnvState>((set, get) => {
       const invalid = validateVarName(name);
       if (invalid !== null) {
         set({ statusMessage: invalid });
-        return;
+        return false;
       }
       set({ isSaving: true });
       try {
         await backend.createEnvVar(hive, name, value, kind);
         set({ isSaving: false, statusMessage: i18n.t('status.saved') });
         await get().load();
+        return true;
       } catch (error) {
         set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${String(error)}` });
+        return false;
       }
     },
 
@@ -123,6 +128,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await backend.deleteEnvVar(meta.hive, meta.name, meta.revision);
         set({ isSaving: false, statusMessage: i18n.t('status.saved') });
         await get().load();
+        return true;
       } catch (error) {
         const message = String(error);
         if (message.includes(CONFLICT_MARKER)) {
@@ -130,6 +136,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         } else {
           set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
         }
+        return false;
       }
     },
 

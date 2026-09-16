@@ -105,7 +105,19 @@ beforeEach(() => {
   mockBackend.expandEnvVars.mockResolvedValue('');
   mockBackend.validatePath.mockResolvedValue(true);
 
-  useAppStore.setState({ activeTab: 'system', isModified: false, sysPaths: [], userPaths: [] });
+  useAppStore.setState({
+    activeTab: 'system',
+    isModified: false,
+    sysPaths: [],
+    userPaths: [],
+    isAdmin: false,
+    pathCapabilities: {
+      canReadSystem: false,
+      canWriteSystem: false,
+      canReadUser: false,
+      canWriteUser: false,
+    },
+  });
   useEnvStore.setState({ draft: new Map(), snapshot: { system: [], user: [] } });
 });
 
@@ -157,6 +169,7 @@ describe('AppShell Tab 结构', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '新建变量' })).not.toBeNull());
     expect(container.querySelector('[data-env-var-key="system:windir"]')).not.toBeNull();
     expect(container.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull();
+    expect(screen.getByPlaceholderText('搜索变量名')).not.toBeNull();
     // PATH 表格不得同时存在
     expect(container.querySelector('[data-testid="path-table"]')).toBeNull();
   });
@@ -245,6 +258,42 @@ describe('新建环境变量弹窗', () => {
     );
   });
 
+  it('创建失败时保留弹窗并显示错误', async () => {
+    mockBackend.createEnvVar.mockRejectedValue(new Error('变量已存在'));
+    const { container } = render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: '新建变量' }));
+    fireEvent.change(screen.getByLabelText('变量名'), { target: { value: 'MY_VAR' } });
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+
+    await waitFor(() => expect(screen.getAllByText(/变量已存在/).length).toBeGreaterThan(0));
+    expect(screen.getByRole('heading', { name: '新建环境变量' })).not.toBeNull();
+    // allVars 下状态栏显示 env-store 的错误消息
+    expect(container.querySelector('footer')?.textContent).toContain('变量已存在');
+  });
+
+  it('系统 PATH 不可写时禁用新建变量的系统来源', async () => {
+    // 该流程中无人调用 getPathCapabilities（能力在 loadPaths 时加载），
+    // 直接设置 store 状态更可靠。
+    useAppStore.setState({
+      isAdmin: false,
+      pathCapabilities: {
+        canReadSystem: true,
+        canWriteSystem: false,
+        canReadUser: true,
+        canWriteUser: true,
+      },
+    });
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() => expect(mockBackend.listAllEnvVars).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '新建变量' }));
+
+    expect((screen.getByRole('option', { name: '系统' }) as HTMLOptionElement).disabled).toBe(true);
+  });
+
   it('变量名非法时不调用 createEnvVar 并显示错误', async () => {
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
@@ -256,5 +305,132 @@ describe('新建环境变量弹窗', () => {
 
     expect(screen.getByText('变量名不能包含等号')).not.toBeNull();
     expect(mockBackend.createEnvVar).not.toHaveBeenCalled();
+  });
+});
+
+describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
+  async function openEditDialog(): Promise<void> {
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+
+    // 先点行选中，工具栏「编辑」才启用
+    await waitFor(() =>
+      expect(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')!);
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+
+    // 工具栏「编辑」打开弹窗
+    await waitFor(() => expect(screen.getByLabelText('变量值')).not.toBeNull());
+  }
+
+  it('确定后调用 updateEnvVar 并携带 revision', async () => {
+    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    await openEditDialog();
+    fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'C:\\NewJava' } });
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+
+    await waitFor(() =>
+      expect(mockBackend.updateEnvVar).toHaveBeenCalledWith(
+        'user',
+        'JAVA_HOME',
+        'C:\\NewJava',
+        'rev-1',
+      ),
+    );
+  });
+
+  it('保存失败时弹窗保留并显示错误', async () => {
+    mockBackend.updateEnvVar.mockRejectedValue(new Error('变量已被其他进程修改，请重新加载'));
+    await openEditDialog();
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+
+    await waitFor(() => expect(screen.getAllByText(/已被其他进程修改/).length).toBeGreaterThan(0));
+    expect(screen.getByLabelText('变量值')).not.toBeNull();
+  });
+
+  it('取消后不调用 updateEnvVar', async () => {
+    await openEditDialog();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
+    expect(useEnvStore.getState().draft.size).toBe(0);
+  });
+});
+
+describe('删除与选中管理', () => {
+  /** 选中 JAVA_HOME 行，使工具栏删除/编辑启用。 */
+  async function selectJavaHome(): Promise<void> {
+    await waitFor(() =>
+      expect(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')!);
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '删除' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+  }
+
+  it('删除需要确认；确认后调用 deleteEnvVar 并清除选中', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()] });
+    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [] });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await selectJavaHome();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockBackend.deleteEnvVar).toHaveBeenCalledWith('user', 'JAVA_HOME', 'rev-1'),
+    );
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '删除' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
+  });
+
+  it('取消删除时不调用 deleteEnvVar', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()] });
+    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [] });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await selectJavaHome();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    expect(mockBackend.deleteEnvVar).not.toHaveBeenCalled();
+    // 选中保留，编辑按钮仍可用
+    expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('刷新后清除指向已不存在变量的选中', async () => {
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()] });
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [] });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await selectJavaHome();
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '删除' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
   });
 });

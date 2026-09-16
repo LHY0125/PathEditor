@@ -93,8 +93,8 @@ export function ProfileDetail({
         </div>
       )}
 
-      <PathSection title={`${t('tab.system')} PATH (${data.sys.length})`} paths={data.sys} />
-      <PathSection title={`${t('tab.user')} PATH (${data.user.length})`} paths={data.user} />
+      <PathSection title={`${t('merge.system')} PATH (${data.sys.length})`} paths={data.sys} />
+      <PathSection title={`${t('merge.user')} PATH (${data.user.length})`} paths={data.user} />
     </div>
   );
 }
