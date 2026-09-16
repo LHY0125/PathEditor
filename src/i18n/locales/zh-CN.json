@@ -5,9 +5,36 @@
     "errorTitle": "应用出错"
   },
   "tab": {
-    "system": "系统变量",
-    "user": "用户变量",
+    "system": "系统 PATH",
+    "user": "用户 PATH",
+    "allVars": "全部变量",
     "merged": "合并预览"
+  },
+  "envVar": {
+    "name": "变量名",
+    "value": "值",
+    "type": "类型",
+    "source": "来源",
+    "actions": "操作",
+    "search": "搜索变量名",
+    "newVar": "新建变量",
+    "refresh": "刷新",
+    "show": "显示",
+    "hide": "隐藏",
+    "all": "全部",
+    "typeString": "String",
+    "typeExpand": "ExpandString",
+    "typeUnsupported": "不支持的类型",
+    "unsupportedValue": "(不支持的注册表类型)",
+    "protectedHint": "系统内置变量，修改可能导致系统异常",
+    "readonlyHint": "没有写入该 hive 的权限",
+    "pathGuide": "Path 请在「系统 PATH」/「用户 PATH」中编辑",
+    "pathGuideAction": "前往",
+    "newVarTitle": "新建环境变量",
+    "newVarName": "变量名",
+    "newVarValue": "变量值",
+    "newVarKind": "值类型",
+    "revealFirstHint": "请先点「显示」查看当前值后再编辑"
   },
   "table": {
     "path": "路径"
