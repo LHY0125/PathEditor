@@ -42,7 +42,9 @@ const snapshot = {
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // resetAllMocks 而非 clearAllMocks：后者只清调用记录，会留下上一个用例设置的
+  // mockResolvedValue / mockRejectedValue 实现，造成用例间顺序耦合。
+  vi.resetAllMocks();
   useEnvStore.setState({
     snapshot: null,
     revealed: new Map(),
