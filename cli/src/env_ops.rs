@@ -122,6 +122,77 @@ pub(crate) fn apply_concurrency(result: Result<(), String>) {
     }
 }
 
+/// 注册表类型的人类可读标签。
+pub(crate) fn kind_label(kind: EnvValueKind) -> &'static str {
+    match kind {
+        EnvValueKind::String => "string",
+        EnvValueKind::ExpandString => "expand",
+        EnvValueKind::Unsupported => "unsupported",
+    }
+}
+
+/// PREVIEW 列内容。敏感变量永不显示值（core 已置 `preview=None`，此处再加一层显式标记）；
+/// 非敏感但无 preview（空值 / `Unsupported`）显示 `-`。
+pub(crate) fn render_preview(meta: &EnvVarMeta) -> String {
+    if meta.sensitive {
+        return "(敏感)".to_string();
+    }
+    meta.preview.clone().unwrap_or_else(|| "-".to_string())
+}
+
+/// NAME 列内容。不可编辑的变量加 `(只读)` 后缀。
+pub(crate) fn render_name(meta: &EnvVarMeta) -> String {
+    if meta.can_edit {
+        meta.name.clone()
+    } else {
+        format!("{} (只读)", meta.name)
+    }
+}
+
+/// 渲染变量表格。空列表返回占位文案。
+pub(crate) fn render_table(metas: &[EnvVarMeta]) -> String {
+    if metas.is_empty() {
+        return "（无变量）".to_string();
+    }
+    let rows: Vec<(String, &str, String)> = metas
+        .iter()
+        .map(|m| (render_name(m), kind_label(m.kind), render_preview(m)))
+        .collect();
+    let name_w = rows
+        .iter()
+        .map(|r| r.0.chars().count())
+        .chain(std::iter::once("NAME".len()))
+        .max()
+        .unwrap_or(4);
+    let kind_w = rows
+        .iter()
+        .map(|r| r.1.len())
+        .chain(std::iter::once("KIND".len()))
+        .max()
+        .unwrap_or(4);
+
+    let mut out = format!(
+        "{:<name_w$}  {:<kind_w$}  {}\n",
+        "NAME",
+        "KIND",
+        "PREVIEW",
+        name_w = name_w,
+        kind_w = kind_w
+    );
+    for (name, kind, preview) in &rows {
+        let pad = name_w.saturating_sub(name.chars().count());
+        out.push_str(&format!(
+            "{}{}  {:<kind_w$}  {}\n",
+            name,
+            " ".repeat(pad),
+            kind,
+            preview,
+            kind_w = kind_w
+        ));
+    }
+    out.trim_end().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,5 +304,109 @@ mod tests {
         // 此处断言模式本身：Force 不产生 revision 字符串。
         let mode = resolve_concurrency(None, true);
         assert!(matches!(mode, Concurrency::Force));
+    }
+
+    // ── 表格渲染 ──
+
+    fn meta(
+        name: &str,
+        kind: EnvValueKind,
+        preview: Option<&str>,
+        can_edit: bool,
+        sensitive: bool,
+    ) -> EnvVarMeta {
+        EnvVarMeta {
+            name: name.into(),
+            kind,
+            hive: EnvHive::User,
+            can_edit,
+            can_delete: can_edit,
+            sensitive,
+            preview: preview.map(|p| p.to_string()),
+            revision: "0000000000000000".into(),
+        }
+    }
+
+    #[test]
+    fn kind_label_maps_all_variants() {
+        assert_eq!(kind_label(EnvValueKind::String), "string");
+        assert_eq!(kind_label(EnvValueKind::ExpandString), "expand");
+        assert_eq!(kind_label(EnvValueKind::Unsupported), "unsupported");
+    }
+
+    #[test]
+    fn sensitive_variable_hides_preview() {
+        let m = meta("MY_TOKEN", EnvValueKind::String, None, true, true);
+        assert_eq!(render_preview(&m), "(敏感)");
+    }
+
+    #[test]
+    fn non_sensitive_variable_shows_preview() {
+        let m = meta(
+            "JAVA_HOME",
+            EnvValueKind::String,
+            Some("C:\\Java"),
+            true,
+            false,
+        );
+        assert_eq!(render_preview(&m), "C:\\Java");
+    }
+
+    #[test]
+    fn empty_preview_renders_dash() {
+        // preview=None 且非敏感（空值 / Unsupported）→ 占位
+        let m = meta("EMPTY_VAR", EnvValueKind::String, None, true, false);
+        assert_eq!(render_preview(&m), "-");
+    }
+
+    #[test]
+    fn unwritable_variable_shows_readonly_marker() {
+        let m = meta(
+            "windir",
+            EnvValueKind::String,
+            Some("C:\\Windows"),
+            false,
+            false,
+        );
+        assert_eq!(render_name(&m), "windir (只读)");
+    }
+
+    #[test]
+    fn writable_variable_has_no_marker() {
+        let m = meta(
+            "JAVA_HOME",
+            EnvValueKind::String,
+            Some("C:\\Java"),
+            true,
+            false,
+        );
+        assert_eq!(render_name(&m), "JAVA_HOME");
+    }
+
+    #[test]
+    fn table_contains_header_and_rows() {
+        let metas = vec![
+            meta(
+                "JAVA_HOME",
+                EnvValueKind::String,
+                Some("C:\\Java"),
+                true,
+                false,
+            ),
+            meta("MY_TOKEN", EnvValueKind::String, None, true, true),
+        ];
+        let table = render_table(&metas);
+        assert!(table.contains("NAME"));
+        assert!(table.contains("KIND"));
+        assert!(table.contains("PREVIEW"));
+        assert!(table.contains("JAVA_HOME"));
+        assert!(table.contains("string"));
+        assert!(table.contains("C:\\Java"));
+        assert!(table.contains("(敏感)"));
+    }
+
+    #[test]
+    fn empty_table_reports_none() {
+        assert_eq!(render_table(&[]), "（无变量）");
     }
 }
