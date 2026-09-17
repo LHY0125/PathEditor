@@ -20,7 +20,8 @@ const TYPE_LABEL_KEY: Record<EnvVarMeta['kind'], string> = {
   unsupported: 'envVar.typeUnsupported',
 };
 
-const ROW_HEIGHT = 34;
+// 与 PathTable 一致：28px 固定行高（UI 规范对齐）
+const ROW_HEIGHT = 28;
 
 export function EnvVarTable({
   searchQuery = '',
@@ -51,12 +52,16 @@ export function EnvVarTable({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 12,
+    initialRect: { width: 800, height: 600 },
   });
+
+  /** 行内小操作按钮：与工具栏描边按钮同风格，尺寸收窄以适配行高。 */
+  const rowBtn =
+    'px-1.5 text-xs rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 
   return (
     <div className="flex flex-col h-full" data-testid="env-var-table">
-      <div className="flex items-center gap-2 px-3 py-1.5 text-xs opacity-70">
+      <div className="flex items-center gap-2 px-2 py-1 text-xs opacity-70">
         <span>{t('envVar.pathGuide')}</span>
         {onGoToPath && (
           <button className="underline" onClick={onGoToPath}>
@@ -64,57 +69,81 @@ export function EnvVarTable({
           </button>
         )}
       </div>
+      {/* sticky 大写表头，与 PathTable 同规范 */}
       <div
-        className="flex items-center gap-2 px-3 py-1 text-xs font-medium border-b"
-        style={{ borderColor: 'var(--app-border)' }}
+        className="sticky top-0 z-10 flex text-left text-xs uppercase"
+        style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
       >
-        <span className="flex-1">{t('envVar.name')}</span>
-        <span className="flex-[2]">{t('envVar.value')}</span>
-        <span className="w-28">{t('envVar.type')}</span>
-        <span className="w-16">{t('envVar.source')}</span>
-        <span className="w-32">{t('envVar.actions')}</span>
+        <div className="w-8 px-2 py-1">#</div>
+        <div className="px-2 py-1 flex-1">{t('envVar.name')}</div>
+        <div className="px-2 py-1 flex-[2]">{t('envVar.value')}</div>
+        <div className="w-24 px-2 py-1">{t('envVar.type')}</div>
+        <div className="w-14 px-2 py-1">{t('envVar.source')}</div>
+        <div className="w-44 px-2 py-1">{t('envVar.actions')}</div>
       </div>
       <div ref={parentRef} className="flex-1 overflow-auto">
-        <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-          {virtualizer.getVirtualItems().map((item) => {
-            const meta = rows[item.index];
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const rowIdx = virtualRow.index;
+            const meta = rows[rowIdx];
             const key = envVarKey(meta);
             const revealedValue = revealed.get(key) ?? null;
+            const isSelected = selectedKey === key;
             return (
               <div
                 key={key}
                 // Task 8 的 E2E 用该属性精确定位行（区分同名跨 hive 变量），不可移除。
                 data-env-var-key={key}
-                data-index={item.index}
-                ref={virtualizer.measureElement}
-                className={`flex items-center gap-2 px-3 text-sm border-b ${
-                  selectedKey === key ? 'row-selected' : ''
-                }`}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${item.start}px)`,
-                  borderColor: 'var(--app-border)',
-                  minHeight: ROW_HEIGHT,
-                }}
+                data-index={rowIdx}
                 onClick={() => onSelect?.(meta)}
+                className="cursor-pointer select-none flex items-center absolute top-0 left-0 w-full"
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  backgroundColor: isSelected
+                    ? 'var(--app-select-row)'
+                    : rowIdx % 2 === 0
+                      ? 'var(--app-list-bg)'
+                      : 'var(--app-list-alt)',
+                }}
               >
-                <span className="flex-1 truncate" title={meta.name}>
+                <div
+                  className="w-8 px-2 py-0.5 text-xs opacity-50"
+                  style={{ color: 'var(--app-fg)' }}
+                >
+                  {rowIdx + 1}
+                </div>
+                <div className="px-2 py-0.5 text-sm truncate flex-1" title={meta.name}>
                   {meta.name}
-                </span>
-                <span className="flex-[2] truncate font-mono text-xs">
+                </div>
+                <div
+                  className="px-2 py-0.5 text-sm truncate flex-[2]"
+                  title={displayValue(meta, revealedValue, t('envVar.unsupportedValue'))}
+                >
                   {displayValue(meta, revealedValue, t('envVar.unsupportedValue'))}
-                </span>
-                <span className="w-28 text-xs opacity-70">{t(TYPE_LABEL_KEY[meta.kind])}</span>
-                <span className="w-16 text-xs opacity-70">
+                </div>
+                <div className="w-24 px-2 py-0.5 text-xs opacity-70">
+                  {t(TYPE_LABEL_KEY[meta.kind])}
+                </div>
+                <div className="w-14 px-2 py-0.5 text-xs opacity-70">
                   {meta.hive === 'system' ? t('merge.system') : t('merge.user')}
-                </span>
-                <span className="w-32 flex items-center gap-2">
+                </div>
+                <div className="w-44 px-2 py-0.5 flex items-center gap-1">
                   {meta.sensitive && (
                     <button
-                      className="text-xs underline"
+                      className={rowBtn}
+                      style={{
+                        backgroundColor: 'var(--app-bg)',
+                        borderColor: 'var(--app-border)',
+                        color: 'var(--app-fg)',
+                      }}
+                      title={editHint(meta, revealedValue === null, t)}
                       onClick={(e) => {
                         e.stopPropagation();
                         void (revealedValue === null ? reveal(meta) : hide(meta));
@@ -124,7 +153,12 @@ export function EnvVarTable({
                     </button>
                   )}
                   <button
-                    className="text-xs"
+                    className={rowBtn}
+                    style={{
+                      backgroundColor: 'var(--app-bg)',
+                      borderColor: 'var(--app-border)',
+                      color: 'var(--app-fg)',
+                    }}
                     disabled={!meta.canEdit || (meta.sensitive && revealedValue === null)}
                     title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.edit')} ${meta.name}`}
@@ -136,7 +170,12 @@ export function EnvVarTable({
                     {t('button.edit')}
                   </button>
                   <button
-                    className="text-xs"
+                    className={rowBtn}
+                    style={{
+                      backgroundColor: 'var(--app-bg)',
+                      borderColor: 'var(--app-border)',
+                      color: 'var(--app-fg)',
+                    }}
                     disabled={!meta.canDelete}
                     title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.delete')} ${meta.name}`}
@@ -147,7 +186,7 @@ export function EnvVarTable({
                   >
                     {t('button.delete')}
                   </button>
-                </span>
+                </div>
               </div>
             );
           })}
