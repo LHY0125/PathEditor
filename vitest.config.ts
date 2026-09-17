@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    exclude: ['e2e/**', 'node_modules/**', 'gui/**'],
+    exclude: ['e2e/**', 'node_modules/**', 'gui/**', '.claude/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'cobertura'],
