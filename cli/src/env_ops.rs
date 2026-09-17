@@ -217,6 +217,96 @@ pub(crate) fn snapshot_json(
     serde_json::Value::Object(map)
 }
 
+/// hive 选择：默认 user，`--system` 切换。
+///
+/// 写操作绝不跨 hive 兜底 —— 用户没指定 `--system` 时改的是 user hive，
+/// 同名变量存在于系统 hive 也不会被意外写入。`--system` 与 `--user` 同时给出
+/// 由 clap 的 `conflicts_with` 拒绝（见 main.rs）。
+pub(crate) fn select_hive(system: bool, user: bool) -> EnvHive {
+    let _ = user;
+    if system {
+        EnvHive::System
+    } else {
+        EnvHive::User
+    }
+}
+
+/// hive 的中文标签（用于提示文案）。
+pub(crate) fn hive_label(hive: EnvHive) -> &'static str {
+    match hive {
+        EnvHive::System => "系统",
+        EnvHive::User => "用户",
+    }
+}
+
+/// `env get` 的 stdout 负载：裸值 + 换行。
+///
+/// 无前缀、无引号、无标签 —— 使 `patheditor env get JAVA_HOME` 可直接被
+/// 命令替换或管道消费（对齐 `git config --get`）。
+pub(crate) fn format_get_output(value: &str) -> String {
+    format!("{value}\n")
+}
+
+/// `env list` —— 列出变量元数据（不含明文）。
+pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
+    let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_err(&e));
+    if json_out {
+        let value = snapshot_json(&snapshot, system, user);
+        println!("{}", serde_json::to_string_pretty(&value).unwrap());
+        return;
+    }
+    let show_sys = system || !user;
+    let show_usr = user || !system;
+    if show_sys {
+        println!("═══ 系统环境变量（{} 个）═══", snapshot.system.len());
+        println!("{}", render_table(&snapshot.system));
+    }
+    if show_usr {
+        println!("═══ 用户环境变量（{} 个）═══", snapshot.user.len());
+        println!("{}", render_table(&snapshot.user));
+    }
+}
+
+/// `env get` —— 读取单个变量的明文。这是 CLI 侧唯一的明文出口。
+pub(crate) fn cmd_env_get(name: String, system: bool) {
+    let hive = select_hive(system, false);
+    match core::registry::reveal_env_var(hive, &name) {
+        Ok(value) => print!("{}", format_get_output(&value)),
+        Err(msg) => {
+            // 仅只读路径提供「变量存在于另一 hive」的提示，帮助用户加 --system。
+            // 写操作不做此兜底 —— 见设计文档「hive 选择」。
+            if let Some(other) = other_hive_hint(&name, hive) {
+                exit_err(&format!("{msg}\n{other}"));
+            }
+            exit_err(&msg)
+        }
+    }
+}
+
+/// 当前 hive 未命中时，探测另一 hive 以生成更准确的错误提示。
+///
+/// 返回 `None` 表示另一 hive 也没有该变量（沉默，避免误导）。
+fn other_hive_hint(name: &str, current: EnvHive) -> Option<String> {
+    let other = match current {
+        EnvHive::System => EnvHive::User,
+        EnvHive::User => EnvHive::System,
+    };
+    let snapshot = core::registry::list_all_env_vars().ok()?;
+    let metas = match other {
+        EnvHive::System => &snapshot.system,
+        EnvHive::User => &snapshot.user,
+    };
+    let found = metas.iter().any(|m| m.name.eq_ignore_ascii_case(name));
+    if found {
+        Some(format!(
+            "提示：{name} 存在于{} hive，请加 --system",
+            hive_label(other)
+        ))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,5 +587,44 @@ mod tests {
         let value = snapshot_json(&empty, false, false);
         assert_eq!(value["system"].as_array().map(Vec::len), Some(0));
         assert_eq!(value["user"].as_array().map(Vec::len), Some(0));
+    }
+
+    // ── hive 选择 ──
+
+    #[test]
+    fn hive_defaults_to_user() {
+        assert_eq!(select_hive(false, false), EnvHive::User);
+    }
+
+    #[test]
+    fn hive_system_flag_wins() {
+        assert_eq!(select_hive(true, false), EnvHive::System);
+    }
+
+    #[test]
+    fn hive_user_flag_selects_user() {
+        assert_eq!(select_hive(false, true), EnvHive::User);
+    }
+
+    #[test]
+    fn hive_label_is_chinese() {
+        assert_eq!(hive_label(EnvHive::System), "系统");
+        assert_eq!(hive_label(EnvHive::User), "用户");
+    }
+
+    // ── get 的输出必须是裸值 ──
+
+    #[test]
+    fn get_output_is_bare_value() {
+        // stdout 契约：值 + 换行，无前缀、无引号、无标签
+        assert_eq!(format_get_output("C:\\Java"), "C:\\Java\n");
+        assert_eq!(format_get_output(""), "\n");
+        assert_eq!(format_get_output("a b"), "a b\n");
+    }
+
+    #[test]
+    fn get_output_preserves_inner_newlines() {
+        // 值内部的换行不处理，仅补一个结尾换行
+        assert_eq!(format_get_output("a\nb"), "a\nb\n");
     }
 }
