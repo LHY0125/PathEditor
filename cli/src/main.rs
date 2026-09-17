@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use path_editor_core as core;
 use serde_json::json;
 
+mod env_ops;
 mod import_export;
 mod profile_ops;
 mod runtime;
