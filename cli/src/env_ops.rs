@@ -84,6 +84,44 @@ pub(crate) fn read_value(src: &ValueSource) -> String {
     }
 }
 
+/// 写操作的并发控制模式。二选一，强制显式给出。
+pub(crate) enum Concurrency {
+    /// `--revision <R>`：CAS 校验，与 GUI 同强度
+    Revision(String),
+    /// `--force`：跳过校验直接覆盖（脚本 setx 风格）
+    Force,
+}
+
+/// 统计并发选项数（互斥与缺失校验用）。
+pub(crate) fn concurrency_count(revision: Option<&str>, force: bool) -> usize {
+    usize::from(revision.is_some()) + usize::from(force)
+}
+
+/// 校验并发选项：必须且只能给一个。
+///
+/// 设计意图：CLI 是一次性进程，静默降级为「现读现写」会让用户在毫秒级竞态窗口下
+/// 最后写入者胜，与仓库 `verify_and_save` 的安全文化相悖。强制显式选择让每次
+/// 覆盖都是知情决策。
+pub(crate) fn resolve_concurrency(revision: Option<String>, force: bool) -> Concurrency {
+    match concurrency_count(revision.as_deref(), force) {
+        1 => match revision {
+            Some(r) => Concurrency::Revision(r),
+            None => Concurrency::Force,
+        },
+        0 => exit_err("需要提供 --revision（并发校验）或 --force（跳过校验）"),
+        _ => exit_err("--revision 与 --force 互斥，只能指定一个"),
+    }
+}
+
+/// 统一处理写操作结果：冲突走退出码 3，其他错误走退出码 1。
+pub(crate) fn apply_concurrency(result: Result<(), String>) {
+    match result {
+        Ok(()) => {}
+        Err(msg) if is_conflict(&msg) => exit_conflict(&msg),
+        Err(msg) => exit_err(&msg),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +193,45 @@ mod tests {
     fn strips_lone_cr() {
         // 单独的 \r（旧式 Mac / 误操作）也按换行处理
         assert_eq!(strip_trailing_newline("a\r"), "a");
+    }
+
+    // ── 并发模式互斥 ──
+
+    #[test]
+    fn concurrency_accepts_revision_alone() {
+        let mode = resolve_concurrency(Some("a1b2c3".into()), false);
+        assert!(matches!(mode, Concurrency::Revision(r) if r == "a1b2c3"));
+    }
+
+    #[test]
+    fn concurrency_accepts_force_alone() {
+        let mode = resolve_concurrency(None, true);
+        assert!(matches!(mode, Concurrency::Force));
+    }
+
+    #[test]
+    fn concurrency_channel_count_rule() {
+        // 互斥与缺失的判定是纯函数，单独断言避免依赖 process::exit
+        assert_eq!(concurrency_count(Some("r"), false), 1);
+        assert_eq!(concurrency_count(None, true), 1);
+        assert_eq!(concurrency_count(Some("r"), true), 2); // 互斥冲突
+        assert_eq!(concurrency_count(None, false), 0); // 缺失
+    }
+
+    // ── 冲突结果映射到退出码 3 ──
+
+    #[test]
+    fn conflict_result_maps_to_exit_3() {
+        let core_msg = core::registry::conflict_message();
+        assert!(is_conflict(&core_msg), "core 冲突消息必须被判为冲突");
+        assert!(!is_conflict("变量不存在"));
+    }
+
+    #[test]
+    fn force_mode_skips_revision_check() {
+        // Force 模式不携带 revision；写入时不传 expected_revision 的路径由 cmd 层负责。
+        // 此处断言模式本身：Force 不产生 revision 字符串。
+        let mode = resolve_concurrency(None, true);
+        assert!(matches!(mode, Concurrency::Force));
     }
 }
