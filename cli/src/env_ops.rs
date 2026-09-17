@@ -307,6 +307,98 @@ fn other_hive_hint(name: &str, current: EnvHive) -> Option<String> {
     }
 }
 
+/// 解析 `--kind` 取值。非法值由 clap 的 `value_parser` 提前拒绝。
+pub(crate) fn parse_kind(raw: &str) -> EnvValueKind {
+    if raw.eq_ignore_ascii_case("expand") {
+        EnvValueKind::ExpandString
+    } else {
+        EnvValueKind::String
+    }
+}
+
+/// 从元数据中按名（忽略大小写）查找 revision。
+///
+/// 用于 `--force` 模式：core 的写入口签名恒要求 `expected_revision`，
+/// 跳过校验的语义由「立即重新读取当前 revision 并传入」表达。
+pub(crate) fn find_revision(metas: &[EnvVarMeta], name: &str) -> Option<String> {
+    // 优先精确大小写匹配，保证写回时使用注册表中的原始名对应的 revision
+    metas
+        .iter()
+        .find(|m| m.name == name)
+        .or_else(|| metas.iter().find(|m| m.name.eq_ignore_ascii_case(name)))
+        .map(|m| m.revision.clone())
+}
+
+/// 按 hive 取当前 revision（`--force` 模式用）。
+fn current_revision(hive: EnvHive, name: &str) -> String {
+    let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_err(&e));
+    let metas = match hive {
+        EnvHive::System => &snapshot.system,
+        EnvHive::User => &snapshot.user,
+    };
+    find_revision(metas, name)
+        .unwrap_or_else(|| exit_err(&format!("{} hive 中未找到变量 {name}", hive_label(hive))))
+}
+
+/// 把并发模式转换成 core 需要的 `expected_revision`。
+fn expected_revision(hive: EnvHive, name: &str, mode: &Concurrency) -> String {
+    match mode {
+        Concurrency::Revision(r) => r.clone(),
+        Concurrency::Force => current_revision(hive, name),
+    }
+}
+
+/// `env set` —— 修改已有变量的值。类型跟随注册表现状，不可更改。
+pub(crate) fn cmd_env_set(
+    name: String,
+    value: Option<String>,
+    stdin: bool,
+    value_file: Option<String>,
+    revision: Option<String>,
+    force: bool,
+    system: bool,
+) {
+    let hive = select_hive(system, false);
+    let mode = resolve_concurrency(revision, force);
+    let src = resolve_value(value, stdin, value_file, true);
+    let new_value = read_value(&src);
+    let expected = expected_revision(hive, &name, &mode);
+    apply_concurrency(core::registry::update_env_var(
+        hive, &name, &new_value, &expected,
+    ));
+    core::system::broadcast_env_change();
+    println!("已更新{}变量: {name}", hive_label(hive));
+}
+
+/// `env add` —— 新建变量。`--kind` 决定注册表类型。
+pub(crate) fn cmd_env_add(
+    name: String,
+    value: Option<String>,
+    stdin: bool,
+    value_file: Option<String>,
+    kind: String,
+    system: bool,
+) {
+    let hive = select_hive(system, false);
+    let src = resolve_value(value, stdin, value_file, true);
+    let new_value = read_value(&src);
+    let kind = parse_kind(&kind);
+    // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
+    core::registry::create_env_var(hive, &name, &new_value, kind).unwrap_or_else(|e| exit_err(&e));
+    core::system::broadcast_env_change();
+    println!("已新建{}变量: {name}", hive_label(hive));
+}
+
+/// `env remove` —— 删除变量。
+pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool, system: bool) {
+    let hive = select_hive(system, false);
+    let mode = resolve_concurrency(revision, force);
+    let expected = expected_revision(hive, &name, &mode);
+    apply_concurrency(core::registry::delete_env_var(hive, &name, &expected));
+    core::system::broadcast_env_change();
+    println!("已删除{}变量: {name}", hive_label(hive));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,5 +718,47 @@ mod tests {
     fn get_output_preserves_inner_newlines() {
         // 值内部的换行不处理，仅补一个结尾换行
         assert_eq!(format_get_output("a\nb"), "a\nb\n");
+    }
+
+    // ── kind 解析 ──
+
+    #[test]
+    fn parse_kind_maps_both_writable_kinds() {
+        assert_eq!(parse_kind("string"), EnvValueKind::String);
+        assert_eq!(parse_kind("expand"), EnvValueKind::ExpandString);
+    }
+
+    #[test]
+    fn parse_kind_is_case_insensitive() {
+        assert_eq!(parse_kind("STRING"), EnvValueKind::String);
+        assert_eq!(parse_kind("Expand"), EnvValueKind::ExpandString);
+    }
+
+    // ── force 模式的 revision 获取 ──
+
+    #[test]
+    fn force_revision_source_is_documented() {
+        // Force 模式仍需向 core 传 expected_revision；取当前值的方式是
+        // 从 list_all_env_vars 的元数据里找同名项。此处断言匹配规则：
+        // 注册表名大小写不敏感，匹配必须忽略大小写。
+        let metas = vec![meta(
+            "Java_Home",
+            EnvValueKind::String,
+            Some("C:\\Java"),
+            true,
+            false,
+        )];
+        assert_eq!(
+            find_revision(&metas, "JAVA_HOME").as_deref(),
+            Some("0000000000000000")
+        );
+        assert_eq!(find_revision(&metas, "GOPATH"), None);
+    }
+
+    #[test]
+    fn find_revision_prefers_exact_case_then_falls_back() {
+        // 同名不同大小写（注册表允许）时，优先精确匹配以保留原始大小写
+        let metas = vec![meta("JAVA_HOME", EnvValueKind::String, None, true, false)];
+        assert!(find_revision(&metas, "java_home").is_some());
     }
 }
