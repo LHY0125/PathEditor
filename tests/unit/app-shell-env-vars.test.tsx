@@ -311,6 +311,8 @@ describe('新建环境变量弹窗', () => {
 describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   async function openEditDialog(): Promise<void> {
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
+    // 弹窗打开时经 fetchFullValue（revealEnvVar）取完整原值作为编辑数据源（F-01）
+    mockBackend.revealEnvVar.mockResolvedValue('C:\\Java');
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
 
@@ -326,9 +328,33 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: '编辑' }));
 
-    // 工具栏「编辑」打开弹窗
-    await waitFor(() => expect(screen.getByLabelText('变量值')).not.toBeNull());
+    // 等完整原值加载完成（输入框从 disabled 变为可用且预填原值）
+    const valueInput = screen.getByLabelText('变量值') as HTMLInputElement;
+    await waitFor(() => expect(valueInput.disabled).toBe(false));
+    expect(valueInput.value).toBe('C:\\Java');
   }
+
+  it('打开弹窗时加载完整原值而非截断 preview（F-01）', async () => {
+    // 快照 preview 是 256 字符截断摘要；reveal 返回完整值
+    const longFull = 'x'.repeat(300);
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
+    mockBackend.revealEnvVar.mockResolvedValue(longFull);
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')!);
+    fireEvent.click(
+      screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement /** 已启用 */,
+    );
+
+    const valueInput = screen.getByLabelText('变量值') as HTMLInputElement;
+    await waitFor(() => expect(valueInput.disabled).toBe(false));
+    // 编辑框数据源是完整原值（300 字符），不是 preview
+    expect(valueInput.value).toBe(longFull);
+    expect(mockBackend.revealEnvVar).toHaveBeenCalledWith('user', 'JAVA_HOME');
+  });
 
   it('确定后调用 updateEnvVar 并携带 revision', async () => {
     mockBackend.updateEnvVar.mockResolvedValue(undefined);
@@ -346,9 +372,53 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     );
   });
 
-  it('保存失败时弹窗保留并显示错误', async () => {
-    mockBackend.updateEnvVar.mockRejectedValue(new Error('变量已被其他进程修改，请重新加载'));
+  it('revision 冲突后刷新，第二次提交携带新 revision 并成功（F-02）', async () => {
+    const oldMeta = meta({ revision: 'rev-1' });
+    const newMeta = meta({ revision: 'rev-2' });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta] });
+    mockBackend.revealEnvVar.mockResolvedValue('C:\\Java');
+    // 第一次提交冲突，之后刷新返回新 revision；第二次提交成功
+    mockBackend.updateEnvVar
+      .mockRejectedValueOnce(new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'))
+      .mockResolvedValueOnce(undefined);
+    mockBackend.listAllEnvVars
+      .mockResolvedValueOnce({ system: [], user: [oldMeta] })
+      .mockResolvedValue({ system: [], user: [newMeta] });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')!);
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    const valueInput = screen.getByLabelText('变量值') as HTMLInputElement;
+    await waitFor(() => expect(valueInput.disabled).toBe(false));
+
+    // 第一次提交：冲突 → 弹窗保留并显示错误
+    fireEvent.change(valueInput, { target: { value: 'C:\\NewJava' } });
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+    await waitFor(() => expect(screen.getAllByText(/已被其他进程修改/).length).toBeGreaterThan(0));
+    expect(screen.getByLabelText('变量值')).not.toBeNull();
+
+    // 第二次提交：弹窗未关，直接再点确定 → 自动携带刷新后的 rev-2
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+    await waitFor(() =>
+      expect(mockBackend.updateEnvVar).toHaveBeenLastCalledWith(
+        'user',
+        'JAVA_HOME',
+        'C:\\NewJava',
+        'rev-2',
+      ),
+    );
+  });
+
+  it('非冲突保存失败时弹窗保留并显示错误', async () => {
+    mockBackend.updateEnvVar.mockRejectedValue(
+      new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'),
+    );
     await openEditDialog();
+    fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'C:\\NewJava' } });
     fireEvent.click(screen.getByRole('button', { name: '确定' }));
 
     await waitFor(() => expect(screen.getAllByText(/已被其他进程修改/).length).toBeGreaterThan(0));
@@ -361,6 +431,21 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
 
     expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
     expect(useEnvStore.getState().draft.size).toBe(0);
+  });
+
+  it('编辑中的真实输入镜像进草稿，参与关窗确认（F-04）', async () => {
+    await openEditDialog();
+    // 打开后草稿为空（只有 fetch 后尚未输入）
+    expect(useEnvStore.getState().hasDrafts()).toBe(false);
+
+    // 用户在弹窗中输入 → 草稿实时镜像 → 关窗确认条件成立
+    fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'C:\\Typing' } });
+    expect(useEnvStore.getState().hasDrafts()).toBe(true);
+    expect(useEnvStore.getState().draft.get('user:JAVA_HOME')).toBe('C:\\Typing');
+
+    // 取消弹窗 → 草稿清除（弹窗内取消不残留确认条件）
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(useEnvStore.getState().hasDrafts()).toBe(false);
   });
 });
 

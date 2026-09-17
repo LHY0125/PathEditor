@@ -34,13 +34,13 @@ export function envVarKey(meta: EnvVarMeta): string {
 }
 
 /**
- * 敏感值的固定占位符。
+ * 按键从快照派生最新 meta。
  *
- * 刻意不接受真实值作参数 —— 确保明文不会经过本函数（也就不会进入
- * 调用栈、日志或调试器）。
+ * 弹窗/壳层不得长期持有 EnvVarMeta 本体 —— 冲突刷新等场景下快照会换代，
+ * 固化旧 meta 会拿旧 revision 反复提交（F-02）。提交前必须经此函数取最新。
  */
-export function maskValue(): string {
-  return MASK_PLACEHOLDER;
+export function findMetaByKey(snapshot: EnvVarSnapshot, key: string): EnvVarMeta | null {
+  return [...snapshot.system, ...snapshot.user].find((m) => envVarKey(m) === key) ?? null;
 }
 
 /**
@@ -52,10 +52,6 @@ export function validateVarName(name: string): string | null {
   if (name.includes('\0')) return '变量名不能包含 null 字节';
   if (name.includes('=')) return '变量名不能包含等号';
   return null;
-}
-
-function hiveOf(meta: EnvVarMeta): string {
-  return meta.hive === 'system' ? 'system' : 'user';
 }
 
 /** 计算某变量在表格中的展示值。 */
@@ -96,10 +92,3 @@ export function filterEnvVars(
 
   return source.filter((meta) => meta.name.toLowerCase().includes(trimmed));
 }
-
-/** 筛选值是否属于已知范围（用于运行时校验）。 */
-export function isHiveFilter(value: unknown): value is HiveFilter {
-  return value === 'system' || value === 'user' || value === 'all';
-}
-
-export { hiveOf };

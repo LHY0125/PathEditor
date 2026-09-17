@@ -122,8 +122,9 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
           case 'reveal_env_var': return 'plaintext-secret-value';
           case 'update_env_var':
+            // 冲突契约：与 Rust 侧一致，携带 [E_CONFLICT] 前缀（前端按前缀匹配）
             if (window.__conflictOverride) {
-              throw new Error('变量已被其他进程修改，请重新加载');
+              throw new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载');
             }
             return undefined;
           case 'create_env_var': return undefined;

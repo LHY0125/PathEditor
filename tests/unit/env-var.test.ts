@@ -3,7 +3,7 @@ import {
   displayValue,
   envVarKey,
   filterEnvVars,
-  maskValue,
+  findMetaByKey,
   validateVarName,
   type EnvVarMeta,
   type EnvVarSnapshot,
@@ -30,10 +30,19 @@ describe('envVarKey', () => {
   });
 });
 
-describe('maskValue', () => {
-  it('返回固定占位符，不泄露真实长度', () => {
-    expect(maskValue()).toBe('••••••••');
-    expect(maskValue()).toHaveLength(8);
+describe('findMetaByKey', () => {
+  const snapshot: EnvVarSnapshot = {
+    system: [meta({ name: 'windir', hive: 'system' })],
+    user: [meta()],
+  };
+
+  it('按键命中两个 hive 中的条目', () => {
+    expect(findMetaByKey(snapshot, 'user:JAVA_HOME')?.revision).toBe('rev-1');
+    expect(findMetaByKey(snapshot, 'system:windir')?.name).toBe('windir');
+  });
+
+  it('未命中返回 null', () => {
+    expect(findMetaByKey(snapshot, 'user:NOPE')).toBeNull();
   });
 });
 

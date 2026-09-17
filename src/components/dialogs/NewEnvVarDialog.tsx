@@ -7,14 +7,23 @@ import { validateVarName, type EnvHive, type EnvValueKind } from '@/core/env-var
 interface NewEnvVarDialogProps {
   /** 系统 hive 不可写时禁用「系统」来源（Spec 权限矩阵：非管理员不得新建系统变量）。 */
   canWriteSystem: boolean;
+  /** 用户 hive 不可写时禁用「用户」来源（F-08：此前只门禁系统侧）。 */
+  canWriteUser: boolean;
   onCancel: () => void;
   /** 返回是否创建成功；失败时弹窗保留并显示 store 的错误消息。 */
   onConfirm: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
 }
 
-export function NewEnvVarDialog({ canWriteSystem, onCancel, onConfirm }: NewEnvVarDialogProps) {
+export function NewEnvVarDialog({
+  canWriteSystem,
+  canWriteUser,
+  onCancel,
+  onConfirm,
+}: NewEnvVarDialogProps) {
   const { t } = useTranslation();
-  const [hive, setHive] = useState<EnvHive>('user');
+  const [hive, setHive] = useState<EnvHive>(
+    canWriteUser ? 'user' : canWriteSystem ? 'system' : 'user',
+  );
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [kind, setKind] = useState<EnvValueKind>('string');
@@ -48,7 +57,9 @@ export function NewEnvVarDialog({ canWriteSystem, onCancel, onConfirm }: NewEnvV
             className="px-1 py-0.5 rounded border"
             style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
           >
-            <option value="user">{t('merge.user')}</option>
+            <option value="user" disabled={!canWriteUser}>
+              {t('merge.user')}
+            </option>
             <option value="system" disabled={!canWriteSystem}>
               {t('merge.system')}
             </option>

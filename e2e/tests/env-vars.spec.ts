@@ -71,6 +71,33 @@ test('「全部变量」下 PATH 专用按钮不可见', async ({ page }) => {
   await expect(page.getByRole('button', { name: '一键清理' })).toHaveCount(0);
 });
 
+test('「全部变量」下拖放文件夹无效（设计文档 a2）', async ({ page }) => {
+  await page.getByRole('button', { name: '全部变量' }).click();
+  await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();
+
+  // webkitGetAsEntry 是函数，无法经 dispatchEvent 跨进程序列化，
+  // 需在浏览器上下文内构造 drop 事件
+  await page.evaluate(() => {
+    const zone = document.querySelector('[data-testid="path-drop-zone"]');
+    if (!zone) throw new Error('未找到拖放区');
+    const dt = new DataTransfer();
+    Object.defineProperty(dt, 'items', {
+      value: [{ webkitGetAsEntry: () => ({ isDirectory: true }) }],
+    });
+    Object.defineProperty(dt, 'files', {
+      value: [{ path: 'D:\\DroppedFolder' }],
+    });
+    zone.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }),
+    );
+  });
+
+  // drop handler 在 allVars 下早退：PATH 快照通路未被触碰，
+  // 切回系统 PATH 后仍是 mock 的 2 条，无新增
+  await page.getByRole('button', { name: '系统 PATH' }).click();
+  await expect(page.getByTestId('path-row')).toHaveCount(2);
+});
+
 test('切换来源筛选只显示对应 hive', async ({ page }) => {
   await page.getByRole('button', { name: '全部变量' }).click();
   await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();

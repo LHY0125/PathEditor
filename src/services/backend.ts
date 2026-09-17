@@ -92,28 +92,60 @@ const ENV_VALUE_KINDS: readonly EnvValueKind[] = ['string', 'expandString', 'uns
 const ENV_HIVES: readonly EnvHive[] = ['system', 'user'];
 
 /**
- * EnvVarMeta 契约上不存在 `value` 字段 —— 明文只能经 reveal_env_var 获取，
- * 因此这里刻意不校验也不读取 `value`。
+ * EnvVarMeta 契约上不存在 `value` 字段 —— 明文只能经 reveal_env_var 获取。
+ *
+ * 运行时校验是安全边界的第二道闸（第一道在 Rust）：
+ * 1. 显式拒绝携带 `value` 自有属性的返回值 —— 一旦 Rust 序列化回归或
+ *    mock 配错把明文带进列表，在此拦截而不是流入 Zustand / React DevTools；
+ * 2. 白名单复制 8 个契约字段 —— 上游多余字段不会进入前端状态。
  */
-function isEnvVarMeta(value: unknown): value is EnvVarMeta {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.name === 'string' &&
-    ENV_VALUE_KINDS.includes(value.kind as EnvValueKind) &&
-    ENV_HIVES.includes(value.hive as EnvHive) &&
-    typeof value.canEdit === 'boolean' &&
-    typeof value.canDelete === 'boolean' &&
-    typeof value.sensitive === 'boolean' &&
-    (value.preview === null || typeof value.preview === 'string') &&
-    typeof value.revision === 'string'
-  );
+function parseEnvVarMeta(value: unknown, label: string): EnvVarMeta {
+  if (!isRecord(value)) {
+    throw new Error(`${label} 返回了无效的 EnvVarMeta 契约`);
+  }
+  if ('value' in value) {
+    throw new Error(`${label} 携带了禁止的 value 字段（列表契约不得包含敏感明文）`);
+  }
+  if (typeof value.name !== 'string' || value.name.trim().length === 0) {
+    throw new Error(`${label} 的 name 必须是非空字符串`);
+  }
+  if (typeof value.kind !== 'string' || !ENV_VALUE_KINDS.includes(value.kind as EnvValueKind)) {
+    throw new Error(`${label} 的 kind 无效`);
+  }
+  if (typeof value.hive !== 'string' || !ENV_HIVES.includes(value.hive as EnvHive)) {
+    throw new Error(`${label} 的 hive 无效`);
+  }
+  if (
+    typeof value.canEdit !== 'boolean' ||
+    typeof value.canDelete !== 'boolean' ||
+    typeof value.sensitive !== 'boolean'
+  ) {
+    throw new Error(`${label} 的 canEdit/canDelete/sensitive 必须是布尔值`);
+  }
+  if (value.preview !== null && typeof value.preview !== 'string') {
+    throw new Error(`${label} 的 preview 必须是 string 或 null`);
+  }
+  if (typeof value.revision !== 'string' || value.revision.length === 0) {
+    throw new Error(`${label} 的 revision 必须是非空字符串`);
+  }
+  // 白名单构造：显式枚举，绝不透传上游对象的其余字段
+  return {
+    name: value.name,
+    kind: value.kind as EnvValueKind,
+    hive: value.hive as EnvHive,
+    canEdit: value.canEdit,
+    canDelete: value.canDelete,
+    sensitive: value.sensitive,
+    preview: value.preview,
+    revision: value.revision,
+  };
 }
 
-function parseEnvVarMetas(value: unknown, label: string): EnvVarMeta[] {
-  if (!Array.isArray(value) || !value.every(isEnvVarMeta)) {
+function parseEnvVarMetas(values: unknown, label: string): EnvVarMeta[] {
+  if (!Array.isArray(values)) {
     throw new Error(`${label} 返回了无效的 EnvVarMeta[] 契约`);
   }
-  return value;
+  return values.map((item) => parseEnvVarMeta(item, label));
 }
 
 function parseEnvVarSnapshot(value: unknown): EnvVarSnapshot {

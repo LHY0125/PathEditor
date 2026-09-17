@@ -2,8 +2,6 @@ import { useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEnvStore } from '@/store/env-store';
-import { canWriteTarget, useAppStore } from '@/store/app-store';
-import { TargetType } from '@/core/undo-redo';
 import { displayValue, envVarKey, filterEnvVars } from '@/core/env-var';
 import type { EnvVarMeta } from '@/core/env-var';
 
@@ -38,8 +36,6 @@ export function EnvVarTable({
   const revealed = useEnvStore((s) => s.revealed);
   const reveal = useEnvStore((s) => s.reveal);
   const hide = useEnvStore((s) => s.hide);
-  const isAdmin = useAppStore((s) => s.isAdmin);
-  const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Path 由 Rust 侧过滤；此处防御性再滤一次，避免契约被破坏时泄漏到 UI。
@@ -84,11 +80,6 @@ export function EnvVarTable({
             const meta = rows[item.index];
             const key = envVarKey(meta);
             const revealedValue = revealed.get(key) ?? null;
-            const hiveWritable = canWriteTarget(
-              isAdmin,
-              pathCapabilities,
-              meta.hive === 'system' ? TargetType.SYSTEM : TargetType.USER,
-            );
             return (
               <div
                 key={key}
@@ -135,7 +126,7 @@ export function EnvVarTable({
                   <button
                     className="text-xs"
                     disabled={!meta.canEdit || (meta.sensitive && revealedValue === null)}
-                    title={editHint(meta, revealedValue === null, hiveWritable, t)}
+                    title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.edit')} ${meta.name}`}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -147,7 +138,7 @@ export function EnvVarTable({
                   <button
                     className="text-xs"
                     disabled={!meta.canDelete}
-                    title={editHint(meta, revealedValue === null, hiveWritable, t)}
+                    title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.delete')} ${meta.name}`}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -167,20 +158,13 @@ export function EnvVarTable({
 }
 
 /**
- * 禁用原因提示；权限已由 Rust 算好，此处只做映射：
- * hive 本身不可写 → 权限提示；hive 可写但变量不可编辑 → 内置保护提示；
- * 敏感变量打码 → 要求先「显示」。
+ * 禁用原因提示。权限判定单一实现在 Rust（canEdit 已折算 hive 写能力），
+ * 前端只做文案映射 —— 不区分「保护变量」与「无写权限」，统一 protectedHint
+ * （计划 Task 7 的明确取舍，c1）。
  */
-function editHint(
-  meta: EnvVarMeta,
-  masked: boolean,
-  hiveWritable: boolean,
-  t: (key: string) => string,
-): string {
+function editHint(meta: EnvVarMeta, masked: boolean, t: (key: string) => string): string {
   if (meta.kind === 'unsupported') return t('envVar.typeUnsupported');
-  if (!meta.canEdit) {
-    return hiveWritable ? t('envVar.protectedHint') : t('envVar.readonlyHint');
-  }
+  if (!meta.canEdit) return t('envVar.protectedHint');
   if (masked && meta.sensitive) return t('envVar.revealFirstHint');
   return '';
 }

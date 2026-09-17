@@ -82,13 +82,44 @@ describe('load', () => {
 describe('reveal / hide', () => {
   it('reveal 存入明文，hide 清除', async () => {
     mockBackend.revealEnvVar.mockResolvedValue('real-secret');
-    const target = meta({ name: 'MY_TOKEN', sensitive: true, preview: null });
+    const target = meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-1' });
+    useEnvStore.setState({ snapshot });
 
     await useEnvStore.getState().reveal(target);
     expect(useEnvStore.getState().revealed.get('user:MY_TOKEN')).toBe('real-secret');
     expect(mockBackend.revealEnvVar).toHaveBeenCalledWith('user', 'MY_TOKEN');
 
     useEnvStore.getState().hide(target);
+    expect(useEnvStore.getState().revealed.has('user:MY_TOKEN')).toBe(false);
+  });
+
+  it('reveal 期间快照换代：旧明文不得写入新快照（F-03 竞态防护）', async () => {
+    let resolveReveal!: (v: string) => void;
+    mockBackend.revealEnvVar.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveReveal = resolve;
+      }),
+    );
+    const oldMeta = meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-old' });
+    useEnvStore.setState({
+      snapshot: {
+        system: [],
+        user: [meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-old' })],
+      },
+    });
+
+    const pending = useEnvStore.getState().reveal(oldMeta);
+    // 快照在 reveal 返回前换代（外部进程修改 → revision 变化）
+    useEnvStore.setState({
+      snapshot: {
+        system: [],
+        user: [meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-new' })],
+      },
+    });
+    resolveReveal('stale-plaintext');
+    await pending;
+
+    // 旧明文被丢弃，绝不绑定到新 revision
     expect(useEnvStore.getState().revealed.has('user:MY_TOKEN')).toBe(false);
   });
 
@@ -101,6 +132,28 @@ describe('reveal / hide', () => {
 
     expect(useEnvStore.getState().revealed.has('user:MY_TOKEN')).toBe(false);
     expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
+  });
+});
+
+describe('load 竞态防护（F-03）', () => {
+  it('晚到的旧 load 响应不得覆盖新响应', async () => {
+    let resolveFirst!: (v: typeof snapshot) => void;
+    mockBackend.listAllEnvVars.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    mockBackend.listAllEnvVars.mockResolvedValueOnce(snapshot);
+
+    const first = useEnvStore.getState().load();
+    const second = useEnvStore.getState().load();
+    // 第二次请求先返回；旧的第一响应晚到
+    await second;
+    resolveFirst({ system: [], user: [] });
+    await first;
+
+    expect(useEnvStore.getState().snapshot).toEqual(snapshot);
+    expect(useEnvStore.getState().isLoading).toBe(false);
   });
 });
 
@@ -123,7 +176,10 @@ describe('save', () => {
   });
 
   it('revision 冲突时不重试、提示并刷新', async () => {
-    mockBackend.updateEnvVar.mockRejectedValue(new Error('变量已被其他进程修改，请重新加载'));
+    // 冲突契约：Rust 侧统一携带 [E_CONFLICT] 前缀（前端匹配前缀而非中文文案）
+    mockBackend.updateEnvVar.mockRejectedValue(
+      new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'),
+    );
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -135,6 +191,18 @@ describe('save', () => {
     expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
     // 草稿保留，避免用户输入丢失
     expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
+  });
+
+  it('非冲突错误不触发刷新', async () => {
+    mockBackend.updateEnvVar.mockRejectedValue(new Error('普通错误'));
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await useEnvStore.getState().save(target);
+
+    expect(useEnvStore.getState().statusMessage).toContain('普通错误');
+    expect(mockBackend.listAllEnvVars).not.toHaveBeenCalled();
   });
 });
 

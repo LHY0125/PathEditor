@@ -20,7 +20,7 @@ import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { useEnvStore } from '@/store/env-store';
-import { envVarKey, type EnvVarMeta } from '@/core/env-var';
+import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
 
 /** Tauri's File object includes the native filesystem path */
 interface TauriFile extends File {
@@ -53,17 +53,17 @@ export function AppShell() {
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
   const [newVarOpen, setNewVarOpen] = useState(false);
-  // 选中只存键；具体 meta 从快照派生（ revision 始终最新，刷新/删除后自动失效）。
+  // 选中与编辑都只存稳定键；meta 一律从快照派生 —— 冲突刷新后重试自动
+  // 携带新 revision（F-02），快照换代后悬空引用自动失效。
   const [selectedVarKey, setSelectedVarKey] = useState<string | null>(null);
-  const [editVar, setEditVar] = useState<EnvVarMeta | null>(null);
+  const [editVarKey, setEditVarKey] = useState<string | null>(null);
   const [envSearch, setEnvSearch] = useState('');
   const envSnapshot = useEnvStore((s) => s.snapshot);
   const loadEnvVars = useEnvStore((s) => s.load);
 
   const selectedVar = useMemo<EnvVarMeta | null>(() => {
     if (selectedVarKey === null || envSnapshot === null) return null;
-    const all = [...envSnapshot.system, ...envSnapshot.user];
-    return all.find((m) => envVarKey(m) === selectedVarKey) ?? null;
+    return findMetaByKey(envSnapshot, selectedVarKey);
   }, [selectedVarKey, envSnapshot]);
 
   // 进入「全部变量」时刷新列表与 revision；工具栏「刷新」共用同一入口。
@@ -71,6 +71,34 @@ export function AppShell() {
   useEffect(() => {
     if (activeTab === 'allVars') void loadEnvVars();
   }, [activeTab, loadEnvVars]);
+
+  // Tauri 原生关窗确认（F-04）：X / Alt+F4 与工具栏「取消」走同一套检查 ——
+  // PATH 有未保存修改或环境变量草稿未提交时先确认。草稿包含编辑弹窗中
+  // 正在输入的实时内容（弹窗 onChange 镜像进 store）。非 Tauri 环境
+  // （E2E mock、jsdom）没有原生窗口事件，静默跳过。
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const handler = await getCurrentWindow().onCloseRequested((event) => {
+          const pending = useAppStore.getState().isModified || useEnvStore.getState().hasDrafts();
+          if (pending && !window.confirm(i18n.t('dialog.unsavedConfirm'))) {
+            event.preventDefault();
+          }
+        });
+        if (disposed) handler();
+        else unlisten = handler;
+      } catch {
+        // 非 Tauri 运行环境（测试 / 浏览器预览），无原生关窗事件
+      }
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const actions = useAppActions(activeTab, {
     editDialog,
@@ -127,7 +155,7 @@ export function AppShell() {
           <EnvVarToolbar
             onCreate={() => setNewVarOpen(true)}
             onEdit={() => {
-              if (selectedVar) setEditVar(selectedVar);
+              if (selectedVar) setEditVarKey(selectedVarKey);
             }}
             onDelete={() => {
               if (selectedVar) confirmRemoveVar(selectedVar);
@@ -199,7 +227,7 @@ export function AppShell() {
             onSelect={(meta) => setSelectedVarKey(envVarKey(meta))}
             onEdit={(meta) => {
               setSelectedVarKey(envVarKey(meta));
-              setEditVar(meta);
+              setEditVarKey(envVarKey(meta));
             }}
             onDelete={(meta) => {
               setSelectedVarKey(envVarKey(meta));
@@ -246,6 +274,7 @@ export function AppShell() {
       {newVarOpen && (
         <NewEnvVarDialog
           canWriteSystem={canWriteSystem}
+          canWriteUser={canWriteUser}
           onCancel={() => setNewVarOpen(false)}
           onConfirm={async (hive, name, value, kind) => {
             // Rust 是重复变量与权限的最终裁判；失败时弹窗保留并显示错误。
@@ -255,21 +284,19 @@ export function AppShell() {
           }}
         />
       )}
-      {editVar && (
+      {editVarKey && (
         <EditEnvVarDialog
-          meta={editVar}
-          onCancel={() => setEditVar(null)}
+          varKey={editVarKey}
+          onCancel={() => setEditVarKey(null)}
           onConfirm={async (value) => {
             const store = useEnvStore.getState();
-            store.setDraft(editVar, value);
-            const ok = await store.save(editVar);
-            if (ok) {
-              setEditVar(null);
-            } else {
-              // 失败即清草稿：输入仍留在弹窗本地状态中，重试会重写草稿。
-              // 否则残留草稿会反复触发关窗确认。
-              store.clearDraft(editVar);
-            }
+            // 从最新快照派生 meta：冲突刷新后重试自动携带新 revision（F-02）
+            const meta = store.snapshot ? findMetaByKey(store.snapshot, editVarKey) : null;
+            if (!meta) return false;
+            store.setDraft(meta, value);
+            const ok = await store.save(meta);
+            if (ok) setEditVarKey(null);
+            // 失败不清草稿（c2 统一策略）：草稿镜像输入，供重试与关窗确认。
             return ok;
           }}
         />

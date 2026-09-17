@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 
 // 异步工厂 + vi.mocked(backend)：与 Task 5 的 env-store.test.ts 保持一致。
 vi.mock('@/services/backend', async () => {
@@ -15,39 +15,21 @@ vi.mock('@/services/backend', async () => {
   };
 });
 
-// i18n mock：部分 mock，保留 initReactI18next 等真实导出（src/i18n 在模块加载时会用），
-// 只覆盖 useTranslation，使断言可基于可见文案而非 i18n key。
-const TRANSLATIONS: Record<string, string> = {
-  'envVar.pathGuide': 'Path 请在「系统 PATH」/「用户 PATH」中编辑',
-  'envVar.show': '显示',
-  'envVar.hide': '隐藏',
-  'envVar.name': '变量名',
-  'envVar.value': '值',
-  'envVar.type': '类型',
-  'envVar.source': '来源',
-  'envVar.actions': '操作',
-  'envVar.typeString': 'String',
-  'envVar.typeExpand': 'ExpandString',
-  'envVar.typeUnsupported': '不支持的类型',
-  'envVar.unsupportedValue': '(不支持的注册表类型)',
-  'envVar.protectedHint': '系统内置变量，修改可能导致系统异常',
-  'envVar.readonlyHint': '没有写入该 hive 的权限',
-  'envVar.revealFirstHint': '请先点「显示」查看当前值后再编辑',
-  'envVar.pathGuideAction': '前往',
-  'button.edit': '编辑',
-  'button.delete': '删除',
-  'merge.system': '系统',
-  'merge.user': '用户',
-};
-
+// i18n mock：**部分 mock**，保留 initReactI18next 等真实导出（src/i18n 在模块加载时要用），
+// 只覆盖 useTranslation，并以真实 zh-CN.json 词条取值 —— 与 app-shell-env-vars.test.tsx
+// 同一策略，避免手写文案副本与真实词条漂移（S6）。
 vi.mock('react-i18next', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-i18next')>();
-  return {
-    ...actual,
-    useTranslation: () => ({
-      t: (key: string) => TRANSLATIONS[key] ?? key,
-    }),
+  const zh = ((await import('@/i18n/locales/zh-CN.json')).default ?? {}) as Record<string, unknown>;
+  const t = (key: string): string => {
+    let node: unknown = zh;
+    for (const part of key.split('.')) {
+      if (node === null || typeof node !== 'object') return key;
+      node = (node as Record<string, unknown>)[part];
+    }
+    return typeof node === 'string' ? node : key;
   };
+  return { ...actual, useTranslation: () => ({ t }) };
 });
 
 // jsdom 下容器高度为 0，真实虚拟滚动不会渲染任何行；
@@ -117,6 +99,13 @@ beforeEach(() => {
     isSaving: false,
     statusMessage: '',
   });
+});
+
+// 本仓库未开启 vitest globals，RTL 的自动 cleanup 不会生效（S6）：
+// 不显式清理会让 screen（绑定 document.body）跨用例累积多个组件树。
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
 });
 
 describe('EnvVarTable', () => {

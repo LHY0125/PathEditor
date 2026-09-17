@@ -99,7 +99,7 @@ PathEditor/
 | `list_all_env_vars`                                                                     | `() -> Result<EnvVarSnapshot, String>`     | 一次读取两个 hive 的全部环境变量元数据（不含敏感明文） |
 | `reveal_env_var`                                                                        | `(hive, name) -> Result<String, String>`   | 按需读取单个变量明文；`Unsupported` 类型返回错误       |
 | `update_env_var`                                                                        | `(hive, name, value, expectedRevision)`    | 写入已有变量；类型从注册表读取，revision 不匹配则拒绝  |
-| `create_env_var`                                                                        | `(hive, name, value, kind)`                | 新建变量；Rust 内原子检查名称不存在                    |
+| `create_env_var`                                                                        | `(hive, name, value, kind)`                | 新建变量；写入前检查名称是否存在（检查与写入是两步操作，存在竞态窗口；重复创建由 Rust 拒绝） |
 | `delete_env_var`                                                                        | `(hive, name, expectedRevision)`           | 删除变量；revision 不匹配则拒绝                        |
 
 ## CLI 命令
