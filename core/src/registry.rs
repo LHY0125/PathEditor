@@ -17,6 +17,11 @@ const PATH_VALUE: &str = "Path";
 /// 中文正文仅供人工阅读，修改时必须保留前缀原样。
 pub(crate) const ERR_CONFLICT: &str = "[E_CONFLICT] 变量已被其他进程修改，请重新加载";
 
+/// 冲突错误的完整文本。CLI / GUI 凭此前缀判定冲突，避免二次硬编码文案。
+pub fn conflict_message() -> String {
+    ERR_CONFLICT.to_string()
+}
+
 pub(crate) fn load_paths(
     root: winreg::HKEY,
     sub_path: &str,

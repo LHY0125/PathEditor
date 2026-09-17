@@ -5,6 +5,24 @@ pub(crate) fn exit_err(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// 冲突错误的结构化前缀。与 core 的 `ERR_CONFLICT` 常量对齐 ——
+/// 中文正文仅供人工阅读，判定只看前缀。
+pub(crate) const CONFLICT_PREFIX: &str = "[E_CONFLICT]";
+
+/// 消息是否表示 revision 冲突（可按前缀重试恢复）。
+pub(crate) fn is_conflict(msg: &str) -> bool {
+    msg.starts_with(CONFLICT_PREFIX)
+}
+
+/// 冲突退出：stderr 输出 core 原文，退出码 3。
+///
+/// 与 `exit_err`（退出码 1）分开，使脚本能区分「重新 list 取 revision 后可恢复」
+/// 与致命错误，无需 grep 中文文案。
+pub(crate) fn exit_conflict(msg: &str) -> ! {
+    eprintln!("错误: {msg}");
+    std::process::exit(3);
+}
+
 pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
     if system && user {
         exit_err("不能同时指定 --system 和 --user");
@@ -110,4 +128,36 @@ pub(crate) fn persist_snapshot(
     user: Option<Vec<core::PathEntry>>,
 ) {
     core::disabled::save_path_snapshot(system, user).unwrap_or_else(|e| exit_err(&e));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conflict_prefix_is_detected() {
+        // core 的 ERR_CONFLICT 原文（前缀 + 中文正文）必须判为冲突
+        assert!(is_conflict("[E_CONFLICT] 变量已被其他进程修改，请重新加载"));
+        assert!(is_conflict("[E_CONFLICT]"));
+    }
+
+    #[test]
+    fn non_conflict_messages_are_not_detected() {
+        assert!(!is_conflict("错误: 索引 3 超出范围"));
+        assert!(!is_conflict("变量已被其他进程修改，请重新加载"));
+        // 前缀必须在开头，中段出现不算
+        assert!(!is_conflict("前置文本 [E_CONFLICT] 变量已被其他进程修改"));
+        assert!(!is_conflict(""));
+    }
+
+    #[test]
+    fn conflict_prefix_matches_core_constant() {
+        // 契约：core 常量必须以该前缀开头，否则 CLI 退出码 3 永不触发
+        use path_editor_core as core;
+        let msg = core::registry::conflict_message();
+        assert!(
+            is_conflict(&msg),
+            "core 冲突消息必须以 [E_CONFLICT] 开头，实际: {msg}"
+        );
+    }
 }
