@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-PathEditor v5.1.2 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
+PathEditor v5.1.3 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -121,9 +121,16 @@ patheditor conflicts     [--json]
 patheditor scan          [--query <NAME>] [--json]
 patheditor check-admin   [--json]
 patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|delete <NAME>|rename --old <OLD> --new <NEW>}
+patheditor env list      [--system|--user] [--json]
+patheditor env get       <NAME> [--system]
+patheditor env set       <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force)
+patheditor env add       <NAME> [<VALUE>] [--kind string|expand] [--system]
+patheditor env remove    <NAME> (--revision <R>|--force)
 ```
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
+
+`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；revision 冲突时退出码为 3，其余错误为 1。
 
 ## 数据、保存与事务
 
@@ -142,6 +149,7 @@ patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|del
 - Tauri CSP 不允许设置为 `null`；不要放松 `gui/tauri.conf.json` 的安全配置。
 - 所有 `unsafe` 块必须有 `// SAFETY:` 注释。PATH 写入前检查 null 字节和 32767 字符上限。
 - E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果。
+- CLI 退出码：0 成功、1 一般错误、3 revision 冲突（仅 `env set`/`env remove`；PATH 命令恒为 1）。冲突判定按 core 的 `[E_CONFLICT]` 前缀，不匹配中文正文。
 
 ## 测试与质量门
 
@@ -153,7 +161,7 @@ patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|del
 
 ## 版本号升级清单
 
-当前版本为 `5.1.2`。升级时至少检查：
+当前版本为 `5.1.3`。升级时至少检查：
 
 | 文件                  | 字段                          |
 | --------------------- | ----------------------------- |
