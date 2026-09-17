@@ -57,7 +57,7 @@ graph TB
     end
 
     subgraph CLI["CLI 命令行"]
-        Clap[clap 参数解析<br/>23 条命令]
+        Clap[clap 参数解析<br/>19 条命令]
         Atomic[原子性保护<br/>verify_and_save]
     end
 
@@ -203,7 +203,7 @@ patheditor env remove   <NAME> (--revision <R>|--force)
 
 CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove`；PATH 命令恒为 `1`）。
 
-完整 23 条命令：`patheditor --help`
+完整 19 条命令：`patheditor --help`
 
 ## 功能
 
@@ -306,7 +306,7 @@ npx tauri build
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
 | 前端测试  | Vitest + Playwright (213 + 23)    |
-| Rust 测试 | cargo test (97 个测试)            |
+| Rust 测试 | cargo test (138 个测试)           |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
 
