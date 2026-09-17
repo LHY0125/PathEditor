@@ -6,7 +6,6 @@
 use crate::runtime::{exit_conflict, exit_err, is_conflict};
 use path_editor_core as core;
 use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
-use serde_json::json;
 
 /// 值的输入通道。三选一，互斥。
 pub(crate) enum ValueSource {
@@ -191,6 +190,31 @@ pub(crate) fn render_table(metas: &[EnvVarMeta]) -> String {
         ));
     }
     out.trim_end().to_string()
+}
+
+/// 按 hive 过滤构造 JSON 输出对象。
+///
+/// 该字段直接来自 core 的 `EnvVarSnapshot` 契约（camelCase、无 `value`），
+/// 不做任何字段重组，避免出现第二套契约。
+pub(crate) fn snapshot_json(
+    snapshot: &EnvVarSnapshot,
+    system: bool,
+    user: bool,
+) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    if system || !user {
+        map.insert(
+            "system".to_string(),
+            serde_json::to_value(&snapshot.system).unwrap_or(serde_json::Value::Null),
+        );
+    }
+    if user || !system {
+        map.insert(
+            "user".to_string(),
+            serde_json::to_value(&snapshot.user).unwrap_or(serde_json::Value::Null),
+        );
+    }
+    serde_json::Value::Object(map)
 }
 
 #[cfg(test)]
@@ -408,5 +432,70 @@ mod tests {
     #[test]
     fn empty_table_reports_none() {
         assert_eq!(render_table(&[]), "（无变量）");
+    }
+
+    // ── JSON 输出 ──
+
+    fn sample_snapshot() -> EnvVarSnapshot {
+        EnvVarSnapshot {
+            system: vec![meta(
+                "windir",
+                EnvValueKind::String,
+                Some("C:\\Windows"),
+                false,
+                false,
+            )],
+            user: vec![meta(
+                "JAVA_HOME",
+                EnvValueKind::String,
+                Some("C:\\Java"),
+                true,
+                false,
+            )],
+        }
+    }
+
+    #[test]
+    fn json_both_hives_included_by_default() {
+        let value = snapshot_json(&sample_snapshot(), false, false);
+        assert!(value.get("system").is_some());
+        assert!(value.get("user").is_some());
+    }
+
+    #[test]
+    fn json_system_only_filters_user() {
+        let value = snapshot_json(&sample_snapshot(), true, false);
+        assert!(value.get("system").is_some());
+        assert!(value.get("user").is_none(), "单 hive 模式不得输出另一 hive");
+    }
+
+    #[test]
+    fn json_user_only_filters_system() {
+        let value = snapshot_json(&sample_snapshot(), false, true);
+        assert!(value.get("user").is_some());
+        assert!(value.get("system").is_none());
+    }
+
+    #[test]
+    fn json_uses_camel_case_contract() {
+        let value = snapshot_json(&sample_snapshot(), false, true);
+        let first = &value["user"][0];
+        assert!(first.get("canEdit").is_some(), "契约字段必须是 camelCase");
+        assert!(first.get("canDelete").is_some());
+        assert!(first.get("name").is_some());
+        assert!(first.get("revision").is_some());
+        assert!(
+            first.get("value").is_none(),
+            "契约上不得出现 value 字段（明文只经 env get 输出）"
+        );
+        assert!(first.get("can_edit").is_none(), "不得混入 snake_case");
+    }
+
+    #[test]
+    fn json_empty_hive_is_empty_array() {
+        let empty = EnvVarSnapshot::default();
+        let value = snapshot_json(&empty, false, false);
+        assert_eq!(value["system"].as_array().map(Vec::len), Some(0));
+        assert_eq!(value["user"].as_array().map(Vec::len), Some(0));
     }
 }
