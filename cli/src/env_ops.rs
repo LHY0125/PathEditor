@@ -366,7 +366,7 @@ pub(crate) fn cmd_env_set(
     apply_concurrency(core::registry::update_env_var(
         hive, &name, &new_value, &expected,
     ));
-    core::system::broadcast_env_change();
+    // 环境变更广播由 core 的写入口负责（写入成功后立即发送），此处不重复广播
     println!("已更新{}变量: {name}", hive_label(hive));
 }
 
@@ -385,7 +385,7 @@ pub(crate) fn cmd_env_add(
     let kind = parse_kind(&kind);
     // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
     core::registry::create_env_var(hive, &name, &new_value, kind).unwrap_or_else(|e| exit_err(&e));
-    core::system::broadcast_env_change();
+    // 广播由 core 负责，此处不重复
     println!("已新建{}变量: {name}", hive_label(hive));
 }
 
@@ -395,7 +395,7 @@ pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool
     let mode = resolve_concurrency(revision, force);
     let expected = expected_revision(hive, &name, &mode);
     apply_concurrency(core::registry::delete_env_var(hive, &name, &expected));
-    core::system::broadcast_env_change();
+    // 广播由 core 负责，此处不重复
     println!("已删除{}变量: {name}", hive_label(hive));
 }
 
