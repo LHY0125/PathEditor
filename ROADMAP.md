@@ -25,7 +25,7 @@ PathEditor 的未来发展方向。
 
 ## 已交付
 
-### v5.0.0
+### v5.0
 
 - ✅ Cargo workspace 三层架构 (core + gui + cli)
 - ✅ CLI 命令行工具 (18 条命令)
@@ -35,7 +35,7 @@ PathEditor 的未来发展方向。
 - ✅ 中英双语界面
 - ✅ CI/CD 自动化
 
-### v4.x 系列
+### v4.x
 
 - ✅ Tauri 2.x 重写
 - ✅ 路径验证 (红色/橙色标记)
