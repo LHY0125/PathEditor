@@ -42,6 +42,11 @@ pub fn run() {
             commands::profiles::load_profile,
             commands::profiles::delete_profile,
             commands::profiles::rename_profile,
+            commands::env_var::list_all_env_vars,
+            commands::env_var::reveal_env_var,
+            commands::env_var::update_env_var,
+            commands::env_var::create_env_var,
+            commands::env_var::delete_env_var,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

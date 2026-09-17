@@ -10,6 +10,8 @@ import {
   flattenImportResult,
 } from '../../src/core/import-export';
 import type { PathEntry } from '../../src/core/path-entry';
+// 版本号随 package.json 演进，断言动态读取而非硬编码（避免每次升版改测试）
+import { version as appVersion } from '../../package.json';
 
 function pe(s: string, enabled: boolean = true): PathEntry {
   return { path: s, enabled };
@@ -24,7 +26,7 @@ describe('exportToJson', () => {
   it('导出结构化 JSON', () => {
     const json = exportToJson(sampleData);
     const parsed = JSON.parse(json);
-    expect(parsed.version).toBe('5.1.2');
+    expect(parsed.version).toBe(appVersion);
     expect(parsed.timestamp).toBeDefined();
     expect(parsed.system.map((e: { path: string }) => e.path)).toEqual(
       sampleData.system.map((e) => e.path),

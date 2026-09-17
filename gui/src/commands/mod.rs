@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod disabled;
+pub mod env_var;
 pub mod fs;
 pub mod profiles;
 pub mod registry;

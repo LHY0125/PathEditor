@@ -4,13 +4,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.2-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.3-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-195%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-213%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -201,6 +201,14 @@ patheditor profile apply "Python开发"
 - 合并预览（系统 + 用户路径并列显示）
 - 文件夹拖拽添加
 
+### 全环境变量管理
+
+- 查看和管理系统 / 用户环境变量项下的**所有变量**（不止 PATH）
+- 显示变量的真实注册表类型（`REG_SZ` / `REG_EXPAND_SZ`），不支持的类型只读展示
+- 敏感变量（名称含 TOKEN / KEY / SECRET / 密码 / API）默认打码，需显式点击才显示明文
+- 系统内置关键变量（`windir`、`ComSpec`、`PATHEXT` 等）硬锁定为只读，防止改坏系统
+- `Path` 仍由专用 PATH 视图管理，保证启用/禁用状态与顺序不被绕过
+
 ### 路径验证
 
 - **红色**标记：路径在文件系统中不存在
@@ -236,7 +244,7 @@ patheditor profile apply "Python开发"
 
 ## 安装
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.2_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.3_x64-setup.exe` 安装。
 
 或从源码构建：
 
@@ -282,8 +290,8 @@ npx tauri build
 | 国际化    | i18next                           |
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
-| 前端测试  | Vitest + Playwright (124 + 13)    |
-| Rust 测试 | cargo test (58 个测试)            |
+| 前端测试  | Vitest + Playwright (213 + 23)    |
+| Rust 测试 | cargo test (97 个测试)            |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
 

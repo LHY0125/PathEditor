@@ -9,12 +9,80 @@ const pathCapabilities = JSON.parse(
   canWriteUser: boolean;
 };
 
+/**
+ * list_all_env_vars 的 mock 快照。
+ *
+ * 契约：Path 已被 Rust 侧过滤，绝不会出现在返回值中 —— 因此这里故意不含 Path，
+ * 前端若把 Path 泄漏进「全部变量」列表，E2E 用例会直接失败。
+ * 用 const + JSON.stringify 注入，避免在模板字符串里手写 Windows 反斜杠转义。
+ */
+const allEnvVarsFixture = {
+  system: [
+    {
+      name: 'windir',
+      kind: 'string',
+      hive: 'system',
+      canEdit: false,
+      canDelete: false,
+      sensitive: false,
+      preview: 'C:\\WINDOWS',
+      revision: 'sys-windir',
+    },
+    {
+      name: 'SYS_BINARY',
+      kind: 'unsupported',
+      hive: 'system',
+      canEdit: false,
+      canDelete: false,
+      sensitive: false,
+      preview: null,
+      revision: 'sys-bin',
+    },
+    {
+      name: 'ADMIN_ONLY',
+      kind: 'string',
+      hive: 'system',
+      canEdit: false,
+      canDelete: false,
+      sensitive: false,
+      preview: 'x',
+      revision: 'sys-ro',
+    },
+  ],
+  user: [
+    {
+      name: 'JAVA_HOME',
+      kind: 'string',
+      hive: 'user',
+      canEdit: true,
+      canDelete: true,
+      sensitive: false,
+      preview: 'C:\\Java',
+      revision: 'usr-java',
+    },
+    {
+      name: 'MY_TOKEN',
+      kind: 'string',
+      hive: 'user',
+      canEdit: true,
+      canDelete: true,
+      sensitive: true,
+      preview: null,
+      revision: 'usr-token',
+    },
+  ],
+};
+
 export type IpcOverrides = Partial<Record<string, unknown>>;
 
 export function createIpcMock(overrides: IpcOverrides = {}) {
   return `
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd, args) => {
+        // E2E 调用捕获：供断言 expectedRevision 等参数使用
+        window.__capturedCalls = window.__capturedCalls || [];
+        window.__capturedCalls.push({ cmd, args });
+
         const overrides = ${JSON.stringify(overrides)};
         if (cmd in overrides) return overrides[cmd];
         switch (cmd) {
@@ -51,6 +119,16 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'load_profile': return null;
           case 'delete_profile': return undefined;
           case 'rename_profile': return undefined;
+          case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
+          case 'reveal_env_var': return 'plaintext-secret-value';
+          case 'update_env_var':
+            // 冲突契约：与 Rust 侧一致，携带 [E_CONFLICT] 前缀（前端按前缀匹配）
+            if (window.__conflictOverride) {
+              throw new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载');
+            }
+            return undefined;
+          case 'create_env_var': return undefined;
+          case 'delete_env_var': return undefined;
           default: throw new Error('Unexpected invoke: ' + cmd);
         }
       }

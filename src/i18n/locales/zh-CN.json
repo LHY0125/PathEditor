@@ -5,9 +5,40 @@
     "errorTitle": "应用出错"
   },
   "tab": {
-    "system": "系统变量",
-    "user": "用户变量",
+    "system": "系统 PATH",
+    "user": "用户 PATH",
+    "allVars": "全部变量",
     "merged": "合并预览"
+  },
+  "envVar": {
+    "name": "变量名",
+    "value": "值",
+    "type": "类型",
+    "source": "来源",
+    "actions": "操作",
+    "search": "搜索变量名",
+    "newVar": "新建变量",
+    "refresh": "刷新",
+    "show": "显示",
+    "hide": "隐藏",
+    "all": "全部",
+    "sourceSystem": "系统",
+    "sourceUser": "用户",
+    "typeString": "String",
+    "typeExpand": "ExpandString",
+    "typeUnsupported": "不支持的类型",
+    "unsupportedValue": "(不支持的注册表类型)",
+    "protectedHint": "系统内置变量，修改可能导致系统异常",
+    "pathGuide": "Path 请在「系统 PATH」/「用户 PATH」中编辑",
+    "pathGuideAction": "前往",
+    "newVarTitle": "新建环境变量",
+    "editVarTitle": "编辑环境变量",
+    "deleteConfirm": "确定删除变量 {{name}} 吗？此操作不可撤销。",
+    "varGone": "该变量已不存在（可能被其他进程删除），请刷新列表",
+    "newVarName": "变量名",
+    "newVarValue": "变量值",
+    "newVarKind": "值类型",
+    "revealFirstHint": "请先点「显示」查看当前值后再编辑"
   },
   "table": {
     "path": "路径"

@@ -5,9 +5,40 @@
     "errorTitle": "Application Error"
   },
   "tab": {
-    "system": "System Variables",
-    "user": "User Variables",
+    "system": "System PATH",
+    "user": "User PATH",
+    "allVars": "All Variables",
     "merged": "Merge Preview"
+  },
+  "envVar": {
+    "name": "Name",
+    "value": "Value",
+    "type": "Type",
+    "source": "Source",
+    "actions": "Actions",
+    "search": "Search variable name",
+    "newVar": "New Variable",
+    "refresh": "Refresh",
+    "show": "Show",
+    "hide": "Hide",
+    "all": "All",
+    "sourceSystem": "System",
+    "sourceUser": "User",
+    "typeString": "String",
+    "typeExpand": "ExpandString",
+    "typeUnsupported": "Unsupported type",
+    "unsupportedValue": "(Unsupported registry type)",
+    "protectedHint": "Built-in system variable, modifying it may cause system instability",
+    "pathGuide": "Edit Path under \"System PATH\" / \"User PATH\"",
+    "pathGuideAction": "Go",
+    "newVarTitle": "New Environment Variable",
+    "editVarTitle": "Edit Environment Variable",
+    "deleteConfirm": "Delete variable {{name}}? This cannot be undone.",
+    "varGone": "This variable no longer exists (possibly deleted by another process). Refresh the list.",
+    "newVarName": "Variable name",
+    "newVarValue": "Variable value",
+    "newVarKind": "Value type",
+    "revealFirstHint": "Click \"Show\" to view the current value before editing"
   },
   "table": {
     "path": "Path"

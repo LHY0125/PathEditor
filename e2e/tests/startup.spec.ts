@@ -11,7 +11,7 @@ test('启动后加载系统 PATH 和用户 PATH', async ({ page }) => {
   await expect(page.getByTestId('path-row')).toHaveCount(2);
 
   // 切换到用户 tab
-  await page.click('text=用户变量');
+  await page.click('text=用户 PATH');
   await page.waitForTimeout(300);
   await expect(page.getByTestId('path-row')).toHaveCount(1);
 });
@@ -30,6 +30,6 @@ test('普通用户可编辑用户 PATH，系统 tab 保持只读', async ({ page
   await page.goto('/');
 
   await expect(page.getByRole('button', { name: '新建' })).toBeDisabled();
-  await page.getByRole('button', { name: '用户变量' }).click();
+  await page.getByRole('button', { name: '用户 PATH' }).click();
   await expect(page.getByRole('button', { name: '新建' })).toBeEnabled();
 });
