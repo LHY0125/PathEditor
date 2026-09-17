@@ -273,6 +273,40 @@ mod tests {
     }
 
     #[test]
+    fn revision_is_immune_to_separator_injection() {
+        // \u{1} 分隔符注入：值内嵌分隔符不得与「名称拼接变体」产生同一 revision。
+        // 注意 revision_of 会把名称转小写，拼接候选必须按小写形式构造，
+        // 否则断言的是大小写差异而非分隔符歧义。
+        assert_ne!(
+            revision_of("A", REG_SZ, "B\u{1}C"),
+            revision_of("A\u{1}B", REG_SZ, "C")
+        );
+        assert_ne!(
+            revision_of("A", REG_SZ, "B\u{1}C"),
+            revision_of("a\u{1}b", REG_SZ, "C")
+        );
+        // `|` 不是分隔符，含 | 的名称/值不得与拼接变体相撞
+        assert_ne!(
+            revision_of("A|B", REG_SZ, "C"),
+            revision_of("A", REG_SZ, "B|C")
+        );
+        assert_ne!(
+            revision_of("A|B", REG_SZ, "C"),
+            revision_of("a|b", REG_SZ, "c")
+        );
+        // \u{1} 与 | 混合出现
+        assert_ne!(
+            revision_of("A", REG_SZ, "B|C\u{1}D"),
+            revision_of("A\u{1}B|C", REG_SZ, "D")
+        );
+        // 分隔符候选与普通值之间也不得相撞
+        assert_ne!(
+            revision_of("A", REG_SZ, "B\u{1}C"),
+            revision_of("A", REG_SZ, "BC")
+        );
+    }
+
+    #[test]
     fn sanitize_preview_truncates_and_strips_control_chars() {
         assert_eq!(sanitize_preview("C:\\Java"), Some("C:\\Java".to_string()));
         assert_eq!(
