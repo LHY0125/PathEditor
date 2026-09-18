@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # PathEditor 开发指南
 
 > 本文件是开发窗口的仓库说明；更新后同步复制为根目录 `AGENTS.md`，两份文件应保持一致。
@@ -27,7 +31,8 @@ npm run lint                        # ESLint
 npm run format:check                # Prettier 检查
 cargo fmt --check                   # Rust 格式检查
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace              # Rust 全量测试
+cargo test -p patheditor-cli --bins # CLI 单测（该 crate 无 lib target）
 npm run verify                      # 前端 + Rust 全量质量门
 npm run verify:all                  # verify + Playwright E2E
 ```
@@ -50,33 +55,39 @@ PathEditor/
 │   ├── fs.rs                    # 受限文件读取、导入导出
 │   └── backup.rs                # 注册表备份
 ├── gui/src/commands/            # #[tauri::command] 薄包装，调用 core
-├── cli/src/                     # Clap 定义 + 命令分派
+├── cli/src/                     # Clap 定义 + 命令分派（bin-only crate，无 lib target）
 │   ├── runtime.rs               # 注册表安全保存、错误退出、快照提交
+│   ├── env_ops.rs               # env 子命令：值通道/并发选项/表格与 JSON 渲染
 │   ├── import_export.rs         # 导入导出命令
 │   ├── profile_ops.rs           # profile 子命令
 │   └── scan_ops.rs              # 冲突、扫描、权限检查
 ├── src/                         # React 前端
-│   ├── core/                    # 纯逻辑，零 React/Tauri 依赖
+│   ├── core/                    # 纯逻辑，零 React/Tauri 依赖（path-manager、env-var、undo-redo…）
 │   ├── services/backend.ts      # 唯一 IPC 适配入口 + 运行时形状校验
 │   ├── services/path-session.ts # 加载、保存计划、部分成功、禁用快照
-│   ├── store/                   # Zustand 状态、CRUD、撤销重做、action 编排
-│   ├── components/              # layout / path-list / toolbar / env-list / dialogs / ui
+│   ├── store/                   # Zustand：app-store / env-store / theme-store
+│   ├── components/              # layout / path-list / env-list / toolbar / dialogs / ui
 │   ├── hooks/                   # useAppActions、useKeyboard、usePathValidation
 │   └── i18n/                    # zh-CN / en
 ├── tests/unit/                  # Vitest 测试
 ├── tests/fixtures/              # 跨 Rust/TS 契约夹具
 ├── e2e/tests/                   # Playwright 测试（mock IPC）
+├── docs/superpowers/specs/      # 特性设计文档（YYYY-MM-DD-*-design.md）
+├── docs/superpowers/plans/      # 实施计划（YYYY-MM-DD-*-implementation.md）
 └── docs/审核和开发/YYYY.MM.DD/  # 审核与开发记录
 ```
 
 关键约束：
 
 - `src/core/` 保持纯函数和零框架依赖；组件和 Store 不得直接调用 `invoke`，统一走 `src/services/backend.ts`。
-- `gui` 和 `cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `core`。
+- `gui` 和 `cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `core`。CLI 侧**零安全判定逻辑**：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 core 判定，CLI 仅透传错误文本。新增 CLI 命令时不要复制任何判定规则。
+- `patheditor-cli` 是 **bin-only crate**（`[[bin]] name = "patheditor"`，无 `[lib]`）。对 CLI 跑单测必须用 `cargo test -p patheditor-cli --bins`，`--lib` 会报 `no library targets found`。
 - `PathCapabilities` 使用 camelCase 序列化；共享契约见 `tests/fixtures/path-capabilities.json`。
 - 正式 PATH 解析以 Rust `registry::split_path` 为准；TS 的 `split_path` 仅保留为兼容/测试夹具。
 - `PathEntry { path, enabled }` 是跨层契约；导入、配置、注册表和撤销重做都必须保留 `enabled`。
 - 通用环境变量通路（`EnvVar`）与 PATH 通路（`PathEntry`）并存：`Path` 列入 `RESERVED_NAMES`，`list_all_env_vars` 过滤掉它，Rust 写入口拒绝 —— **PATH 只能经专用通路编辑**，否则会绕过 `disabled.json` 与快照事务。`EnvVarMeta` 契约上不含 `value` 字段，命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
+- 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`（FNV-1a 散列 `name+type+value`），在**同一 core 调用内**完成「读→算→比对→校验→写」。GUI 与 CLI 共用该契约，前端与 CLI 都**不得**自行实现并发校验。冲突错误统一以 `[E_CONFLICT]` 前缀开头（`core::registry::conflict_message()` 是唯一文案源），判定只认前缀、不认中文正文。
+- Windows 注册表无 CAS，读-比-写是两次独立注册表调用，仍有毫秒级竞态窗口。revision 校验缩小影响，不能完全消除 TOCTOU —— 文档与注释须如实措辞，不要宣称原子性。
 - `.codegraph/` 存在时，优先使用 CodeGraph 理解符号和调用路径，再决定是否读取文件。
 
 ## Tauri IPC 接口
@@ -98,7 +109,7 @@ PathEditor/
 | `list_profiles` / `save_profile` / `load_profile` / `delete_profile` / `rename_profile` | 配置 CRUD                                  | 配置保存 `PathEntry[]`                                                                       |
 | `list_all_env_vars`                                                                     | `() -> Result<EnvVarSnapshot, String>`     | 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）                                       |
 | `reveal_env_var`                                                                        | `(hive, name) -> Result<String, String>`   | 按需读取单个变量明文；`Unsupported` 类型返回错误                                             |
-| `update_env_var`                                                                        | `(hive, name, value, expectedRevision)`    | 写入已有变量；类型从注册表读取，revision 不匹配则拒绝                                        |
+| `update_env_var`                                                                        | `(hive, name, value, expectedRevision)`    | 写入已有变量；类型从注册表读取，revision 不匹配则拒绝（返回 `[E_CONFLICT]` 前缀错误）        |
 | `create_env_var`                                                                        | `(hive, name, value, kind)`                | 新建变量；写入前检查名称是否存在（检查与写入是两步操作，存在竞态窗口；重复创建由 Rust 拒绝） |
 | `delete_env_var`                                                                        | `(hive, name, expectedRevision)`           | 删除变量；revision 不匹配则拒绝                                                              |
 
@@ -130,7 +141,7 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
 
-`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；revision 冲突时退出码为 3，其余错误为 1。
+`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；revision 冲突时退出码为 3，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
 
 ## 数据、保存与事务
 
@@ -148,16 +159,19 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 - 导入文件读取限制在用户目录、临时目录或当前工作目录，并继续校验扩展名。
 - Tauri CSP 不允许设置为 `null`；不要放松 `gui/tauri.conf.json` 的安全配置。
 - 所有 `unsafe` 块必须有 `// SAFETY:` 注释。PATH 写入前检查 null 字节和 32767 字符上限。
-- E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果。
-- CLI 退出码：0 成功、1 一般错误、3 revision 冲突（仅 `env set`/`env remove`；PATH 命令恒为 1）。冲突判定按 core 的 `[E_CONFLICT]` 前缀，不匹配中文正文。
+- 所有 `pub fn` 必须有 `///` 文档注释；`pub(crate)` 同样补注释（CONTRIBUTING.md 硬性要求）。
+- 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
+- E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果（样本见 `docs/审核和开发/2026.09.18/`）。
+- CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove`；PATH 命令恒为 1）。冲突判定按 core 的 `[E_CONFLICT]` 前缀，不匹配中文正文。
 
 ## 测试与质量门
 
-- TypeScript 使用 Vitest + jsdom，测试放在 `tests/unit/*.test.ts` 或 `*.test.tsx`；行为变化必须有回归测试。
+- TypeScript 使用 Vitest + jsdom，测试放在 `tests/unit/*.test.ts` 或 `*.test.tsx`；行为变化必须有回归测试。跑单个文件：`npx vitest run tests/unit/<file>.test.ts`；按名字过滤：`npx vitest run -t "<name>"`。
 - Playwright 测试放在 `e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程，不等同于真实 Tauri 集成验证。
-- Rust 测试放在模块内或 workspace test target，运行 `cargo test --workspace`。
+- Rust 测试放在模块内或 workspace test target，运行 `cargo test --workspace`。CLI 单测需 `--bins`（见上），跑单个测试：`cargo test -p <crate> <name>`。
 - 覆盖率门槛为 80% 行覆盖；`npm run verify` 依次执行 Prettier、ESLint、构建、覆盖率、`cargo fmt`、Clippy 和 Rust 测试。提交前优先运行 `npm run verify:all`。
 - 代码风格：UTF-8、CRLF；TS 2 空格，Rust/TOML 4 空格；Prettier 使用单引号、尾逗号和 100 列。
+- 从仓库根目录跑 `npm test` 时，`vitest.config.ts` 的 `exclude` 必须包含 `.claude/**`——否则会扫到 `.claude/worktrees/` 下嵌套 worktree 的 e2e 文件并大面积假失败。
 
 ## 版本号升级清单
 
@@ -176,4 +190,4 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 
 使用 Conventional Commits：`<type>: <description>`，允许 `feat`、`fix`、`refactor`、`docs`、`test`、`chore`、`perf`、`ci`、`style`、`revert`。Husky + lint-staged 会在提交前运行 Prettier/ESLint；不要绕过失败的质量门。
 
-审查或开发大改动前先看 `docs/审核和开发/` 的历史记录，说明风险、验证证据和未覆盖项。未经明确要求不要提交、推送、升级版本或执行真实注册表写入。
+审查或开发大改动前先看 `docs/审核和开发/` 的历史记录，说明风险、验证证据和未覆盖项。特性开发先写 `docs/superpowers/specs/` 下的设计文档、再写 `docs/superpowers/plans/` 下的实施计划，然后按任务逐步实施。未经明确要求不要提交、推送、升级版本或执行真实注册表写入。
