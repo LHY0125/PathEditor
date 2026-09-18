@@ -129,6 +129,21 @@ jobs:
           }
           Copy-Item -LiteralPath $cli -Destination (Join-Path $assetDir "patheditor-cli_${env:VERSION}_x64.exe")
 
+          # 免安装 zip：GUI 本体只有 exe + WebView2Loader.dll 两个文件。
+          # Tauri 的 --bundles 只支持 msi/nsis，不产出 zip，因此在此手工打包。
+          # 供 scoop 等包管理器直接解压即用（NSIS 安装器不便解包）。
+          $portableStage = Join-Path $env:RUNNER_TEMP "patheditor-portable"
+          New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
+          Copy-Item -LiteralPath 'target\release\patheditor.exe' -Destination $portableStage
+          Copy-Item -LiteralPath 'gui\WebView2Loader.dll' -Destination $portableStage
+
+          $zip = Join-Path $assetDir "PathEditor_${env:VERSION}_x64-portable.zip"
+          Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $zip -Force
+
+          if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
+            throw "未生成免安装 zip: $zip"
+          }
+
       - name: 生成发布日志
         if: steps.check.outputs.exists == 'false'
         shell: pwsh
