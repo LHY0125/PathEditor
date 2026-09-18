@@ -168,6 +168,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 幂等保护：检查步骤发生在构建之前，构建耗时数分钟，期间可能有
+          # 其他来源（手动发布、重跑、并发 workflow）创建了同一 tag 的
+          # Release。此处再确认一次，已存在则跳过而不是报错。
+          $existing = gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0 -and $existing) {
+            Write-Host "Release $env:RELEASE_TAG 已存在，跳过创建。"
+            exit 0
+          }
+
           $assets = Get-ChildItem -LiteralPath 'release-assets' -File |
             ForEach-Object { $_.FullName }
 
