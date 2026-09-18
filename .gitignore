@@ -36,7 +36,8 @@ playwright-report/
 *.sw?
 
 # AI assistant
-.claude/
+.claude/*
+!.claude/skills/
 .codegraph/
 CLAUDE.md
 
