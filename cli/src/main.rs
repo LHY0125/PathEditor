@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use path_editor_core as core;
 use serde_json::json;
 
+mod env_ops;
 mod import_export;
 mod profile_ops;
 mod runtime;
@@ -131,6 +132,9 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// 管理通用环境变量（Path 除外，请使用 PATH 专用命令）
+    #[command(subcommand)]
+    Env(EnvCmd),
     /// 管理配置文件
     #[command(subcommand)]
     Profile(ProfileCmd),
@@ -157,6 +161,72 @@ enum ProfileCmd {
         old: String,
         #[arg(long)]
         new: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum EnvCmd {
+    /// 列出环境变量元数据（不含明文）
+    List {
+        #[arg(short, long)]
+        system: bool,
+        #[arg(short, long, conflicts_with = "system")]
+        user: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// 读取单个变量的明文
+    Get {
+        name: String,
+        #[arg(short, long)]
+        system: bool,
+    },
+    /// 修改已有变量的值（类型不变）
+    Set {
+        name: String,
+        /// 值（敏感值建议改用 --stdin 或 --value-file，避免进 shell 历史）
+        #[arg(long)]
+        value: Option<String>,
+        /// 从标准输入读取值（读到 EOF）
+        #[arg(long, conflicts_with_all = ["value", "value_file"])]
+        stdin: bool,
+        /// 从文件读取值
+        #[arg(long, conflicts_with_all = ["value", "stdin"])]
+        value_file: Option<String>,
+        /// 并发校验摘要（来自 `env list --json` 的 revision 字段）
+        #[arg(long, conflicts_with = "force")]
+        revision: Option<String>,
+        /// 跳过并发校验直接覆盖
+        #[arg(long)]
+        force: bool,
+        #[arg(short, long)]
+        system: bool,
+    },
+    /// 新建变量
+    Add {
+        name: String,
+        /// 值（敏感值建议改用 --stdin 或 --value-file）
+        value: Option<String>,
+        #[arg(long, conflicts_with_all = ["value", "value_file"])]
+        stdin: bool,
+        #[arg(long, conflicts_with_all = ["value", "stdin"])]
+        value_file: Option<String>,
+        /// 注册表类型：string (REG_SZ) 或 expand (REG_EXPAND_SZ)
+        #[arg(long, default_value = "string", value_parser = ["string", "expand"])]
+        kind: String,
+        #[arg(short, long)]
+        system: bool,
+    },
+    /// 删除变量
+    Remove {
+        name: String,
+        #[arg(long, conflicts_with = "force")]
+        revision: Option<String>,
+        /// 跳过并发校验直接删除
+        #[arg(long)]
+        force: bool,
+        #[arg(short, long)]
+        system: bool,
     },
 }
 
@@ -435,6 +505,33 @@ fn main() {
         Command::Conflicts { json } => cmd_conflicts(json),
         Command::Scan { query, json } => cmd_scan(query, json),
         Command::CheckAdmin { json } => cmd_check_admin(json),
+        Command::Env(cmd) => match cmd {
+            EnvCmd::List { system, user, json } => env_ops::cmd_env_list(system, user, json),
+            EnvCmd::Get { name, system } => env_ops::cmd_env_get(name, system),
+            EnvCmd::Set {
+                name,
+                value,
+                stdin,
+                value_file,
+                revision,
+                force,
+                system,
+            } => env_ops::cmd_env_set(name, value, stdin, value_file, revision, force, system),
+            EnvCmd::Add {
+                name,
+                value,
+                stdin,
+                value_file,
+                kind,
+                system,
+            } => env_ops::cmd_env_add(name, value, stdin, value_file, kind, system),
+            EnvCmd::Remove {
+                name,
+                revision,
+                force,
+                system,
+            } => env_ops::cmd_env_remove(name, revision, force, system),
+        },
         Command::Profile(cmd) => match cmd {
             ProfileCmd::List { json } => profile_list(json),
             ProfileCmd::Save { name } => profile_save(name),

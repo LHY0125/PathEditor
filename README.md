@@ -57,7 +57,7 @@ graph TB
     end
 
     subgraph CLI["CLI 命令行"]
-        Clap[clap 参数解析<br/>18 条命令]
+        Clap[clap 参数解析<br/>17 条顶层命令]
         Atomic[原子性保护<br/>verify_and_save]
     end
 
@@ -186,9 +186,24 @@ patheditor conflicts
 # 配置切换
 patheditor profile save "Python开发"
 patheditor profile apply "Python开发"
+
+# 通用环境变量（Path 除外）
+patheditor env list     [--system|--user] [--json]
+patheditor env get      <NAME> [--system]
+patheditor env set      <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force)
+patheditor env add      <NAME> [<VALUE>] [--kind string|expand] [--system]
+patheditor env remove   <NAME> (--revision <R>|--force)
 ```
 
-完整 18 条命令：`patheditor --help`
+`remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
+
+`env` 子命令管理通用环境变量（`Path` 除外，请用 PATH 专用命令）。默认操作用户 hive，加 `--system` 操作系统 hive。
+
+`set` 与 `remove` 必须显式选择并发模式：`--revision <R>`（取自 `env list --json`，外部修改时拒绝写入，退出码 3）或 `--force`（跳过校验直接覆盖）。敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
+
+CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove`；PATH 命令恒为 `1`）。
+
+完整 17 条顶层命令（另有 `env` / `profile` 子命令组）：`patheditor --help`
 
 ## 功能
 
@@ -291,7 +306,7 @@ npx tauri build
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
 | 前端测试  | Vitest + Playwright (213 + 23)    |
-| Rust 测试 | cargo test (97 个测试)            |
+| Rust 测试 | cargo test (138 个测试)           |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
 
