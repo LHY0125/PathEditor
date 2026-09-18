@@ -211,11 +211,11 @@ gh release view v5.1.3
 
 ### 禁止事项（2026-09-18 事故教训）
 
-| 禁止 | 原因 |
-| ---- | ---- |
-| **推送 tag 后用 `gh release create` 手动建 Release** | 会与 CI 抢同一个 Release。CI 走到最后一步会以 `a release with the same tag name already exists` 失败，留下红色的 CI 历史，且无法通过重跑消除 |
-| **推送 tag 前手动跑 `npx tauri build` / `cargo build --release`** | CI 会做同样的事。本地构建只用于**验证能否构建通过**，产物不要用于发布 |
-| **在没读 `.github/workflows/` 的情况下规划发布** | 仓库有 tag 触发的自动发布。不了解它就会重复构建、或与它冲突 |
+| 禁止                                                              | 原因                                                                                                                                         |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **推送 tag 后用 `gh release create` 手动建 Release**              | 会与 CI 抢同一个 Release。CI 走到最后一步会以 `a release with the same tag name already exists` 失败，留下红色的 CI 历史，且无法通过重跑消除 |
+| **推送 tag 前手动跑 `npx tauri build` / `cargo build --release`** | CI 会做同样的事。本地构建只用于**验证能否构建通过**，产物不要用于发布                                                                        |
+| **在没读 `.github/workflows/` 的情况下规划发布**                  | 仓库有 tag 触发的自动发布。不了解它就会重复构建、或与它冲突                                                                                  |
 
 **若确实需要手动发布**（CI 不可用时）：先确认该 tag 的 Release 不存在，再执行 `gh release create`，然后**不要**推送 tag（或推 tag 后接受 CI 会跳过）。两者只能选其一。
 
@@ -233,21 +233,21 @@ $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)
 
 ### CI 各步骤的前置依赖
 
-| 步骤 | 依赖 |
-| ---- | ---- |
-| 校验项目版本 | `package.json`、`gui/tauri.conf.json`、`Cargo.toml` 三处版本必须与 tag 一致，否则整条流水线失败 |
-| Tauri Build | 需要 `npm ci` 与 Node 20 |
+| 步骤         | 依赖                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| 校验项目版本 | `package.json`、`gui/tauri.conf.json`、`Cargo.toml` 三处版本必须与 tag 一致，否则整条流水线失败         |
+| Tauri Build  | 需要 `npm ci` 与 Node 20                                                                                |
 | 整理发布产物 | 需要 `target\release\bundle\nsis\PathEditor_<VERSION>_x64-setup.exe` 与 `target\release\patheditor.exe` |
-| 生成发布日志 | 读 `CHANGELOG.md`（缺失则回退 git log） |
+| 生成发布日志 | 读 `CHANGELOG.md`（缺失则回退 git log）                                                                 |
 
 工作流使用 MSVC 工具链（覆盖 `rust-toolchain.toml` 的 GNU 设置），因为 GitHub Windows runner 上 MSVC 更稳定。这是刻意的，不要"修正"它。
 
 ### 产物命名
 
-| 文件 | 说明 |
-| ---- | ---- |
-| `PathEditor_<VERSION>_x64-setup.exe` | NSIS 安装包（GUI），产物目录中原始名 |
-| `patheditor-cli_<VERSION>_x64.exe` | CLI 二进制，CI 在整理产物时重命名——**本地产物名为 `patheditor.exe`，不要据此判断发布包的名称** |
+| 文件                                 | 说明                                                                                           |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `PathEditor_<VERSION>_x64-setup.exe` | NSIS 安装包（GUI），产物目录中原始名                                                           |
+| `patheditor-cli_<VERSION>_x64.exe`   | CLI 二进制，CI 在整理产物时重命名——**本地产物名为 `patheditor.exe`，不要据此判断发布包的名称** |
 
 ### Release 已存在时的行为
 
