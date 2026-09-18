@@ -1,5 +1,28 @@
 # Changelog
 
+## 5.1.3 (2026-09-18)
+
+### 新增
+
+- CLI 新增 `env` 子命令组（`list` / `get` / `set` / `add` / `remove`），脚本与自动化场景获得与 GUI 等价的通用环境变量管理能力。
+- 值输入三通道：位置参数 / `--stdin` / `--value-file`，互斥。后两者让敏感值可绕开 shell 历史与进程列表。
+- `env list --json` 输出直接序列化 core 契约（camelCase，不含 `value` 字段），供脚本消费与获取 revision。
+- `--force` 模式：跳过并发校验直接覆盖（脚本 `setx` 风格）。
+
+### 变更
+
+- CLI 写操作强制显式选择并发模式：`--revision <R>`（CAS 校验）或 `--force`（跳过校验），两者都不给报错、都给也报错。
+- CLI 新增退出码 **3** 表示 revision 冲突，使脚本可凭退出码区分「重试后可恢复」与致命错误，无需 grep 中文文案。PATH 命令保持退出码 1 不变（向后兼容）。
+- `env add` 的 `--kind` 默认 `string`（`REG_SZ`），可选 `expand`（`REG_EXPAND_SZ`）。
+
+### 说明
+
+- CLI 侧零安全判定逻辑：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 `core` 判定，CLI 仅透传错误文本。
+- `env get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好，对齐 `git config --get`）。
+- `Path` 不在通用通路内，仍只能经 PATH 专用命令编辑。
+- 真实注册表闭环测试通过（`add` / `set --force` / 退出码 3 冲突 / `remove` CAS 四项），快照对比零污染。记录见 `docs/审核和开发/2026.09.18/PathEditor-CLI环境变量闭环测试记录.md`。
+- 已知边界：Windows 注册表无 CAS，读-比-写是两次独立调用，revision 校验缩小竞态窗口但不能完全消除 TOCTOU。
+
 ## 5.1.2 (2026-09-15)
 
 ### 修复
