@@ -57,7 +57,7 @@ graph TB
     end
 
     subgraph CLI["CLI 命令行"]
-        Clap[clap 参数解析<br/>19 条命令]
+        Clap[clap 参数解析<br/>17 条顶层命令]
         Atomic[原子性保护<br/>verify_and_save]
     end
 
@@ -203,7 +203,7 @@ patheditor env remove   <NAME> (--revision <R>|--force)
 
 CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove`；PATH 命令恒为 `1`）。
 
-完整 19 条命令：`patheditor --help`
+完整 17 条顶层命令（另有 `env` / `profile` 子命令组）：`patheditor --help`
 
 ## 功能
 
