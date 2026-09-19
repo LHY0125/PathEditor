@@ -5,6 +5,7 @@ pub mod env_var;
 pub mod fs;
 pub mod path_entry;
 pub mod profiles;
+pub mod reg_store;
 pub mod registry;
 pub mod scanner;
 pub mod system;
