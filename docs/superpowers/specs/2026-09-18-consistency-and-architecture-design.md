@@ -1,6 +1,6 @@
 # PathEditor 一致性与架构收口 Design
 
-- **状态**：待评审（审核窗口起草，待开发窗口提异议）
+- **状态**：分波实施中 —— Wave 0 已实现并审核通过（2026-09-19，见 `docs/审核和开发/2026.09.19/`）；Wave 1 待开发窗口核对后放行
 - **日期**：2026-09-18
 - **来源**：`docs/审核和开发/2026.09.18/PathEditor-全项目架构与对抗性复审报告.md`（结论 Changes Requested，0×P0 / 4×P1 / 7×P2）
 - **范围**：全部 11 项（P1×4 + P2×7）
@@ -216,17 +216,20 @@ core/src/registry/
 - 定义端口 trait：
 
   ```rust
-  pub trait RegistryStore {
-      fn enum_values(&self) -> Result<Vec<(String, RegValue)>, CoreError>;
-      fn get_raw_value(&self, name: &str, view: RegistryView) -> Result<RegValue, CoreError>;
-      fn set_raw_value(&self, name: &str, value: &RegValue) -> Result<(), CoreError>;
-      fn delete_value(&self, name: &str) -> Result<(), CoreError>;
-      // 以及 hive 打开、权限探测等
+  pub trait EnvHiveStore {
+      fn writable(&self) -> bool;
+      fn enum_names(&self) -> Result<Vec<String>, String>;
+      fn get_raw(&self, name: &str) -> Result<RegValue, String>;
+      fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String>;
+      fn delete_value(&self, name: &str) -> Result<(), String>;
   }
   ```
 
-- 生产：`WinregStore` adapter（封装现有 Winreg 调用）。
-- 测试：`MemoryStore` adapter（内存实现，可注入失败）。
+- 生产：`WinregHive` adapter（封装现有 Winreg 调用）。
+- 测试：`memory::MemoryHive` adapter（内存实现，可注入失败，位于 `#[cfg(test)]`）。
+
+  > 命名勘误（2026-09-19，评审裁断 P-4）：本节草稿曾用 `RegistryStore`/`WinregStore`/`MemoryStore`，与 §3 波次表冲突。以实现采用的 `EnvHiveStore`/`WinregHive`/`MemoryHive` 为准。
+
 - **所有测试不再写真实 HKCU**；完整 `cargo test --workspace` 可在任意环境运行。
 - 该端口同时是 F-04 故障注入测试与 F-07 拆分的地基。
 
@@ -279,7 +282,7 @@ core/src/registry/
 
 Wave 0：
 
-- [ ] `RegistryStore` trait + `WinregStore` + `MemoryStore` 就位。
+- [ ] `EnvHiveStore` trait + `WinregHive` + `MemoryHive` 就位。
 - [ ] 测试不再写真实 HKCU；`cargo test --workspace` 在无注册表写入的环境下全绿。
 
 Wave 1：
