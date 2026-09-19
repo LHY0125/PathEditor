@@ -118,3 +118,185 @@ mod tests {
         let _ = store.writable();
     }
 }
+
+/// 供单元测试使用的内存实现；不触碰真实注册表。
+#[cfg(test)]
+pub(crate) mod memory {
+    use super::*;
+    use std::cell::RefCell;
+    use winreg::types::ToRegValue;
+
+    /// 复制一个 `RegValue`。
+    ///
+    /// **winreg 0.52.0 的 `RegValue` 只 derive 了 `PartialEq`，没有 `Clone`**
+    /// （`winreg-0.52.0/src/reg_value.rs:11`），因此只能按字段复制。
+    fn dup_reg_value(raw: &RegValue) -> RegValue {
+        // `RegType` 是 Clone 但不是 Copy（`winreg-0.52.0/src/enums.rs:20`，
+        // derive 只有 Debug/Clone/PartialEq），所以这里必须 `.clone()`。
+        RegValue {
+            bytes: raw.bytes.clone(),
+            vtype: raw.vtype.clone(),
+        }
+    }
+
+    /// 内存版环境变量 hive。
+    ///
+    /// 值名按 Windows 语义**大小写不敏感**。`fail_*` 字段用于故障注入，
+    /// 让 F-04 的「枚举/读取失败不得静默」可被测试。
+    pub(crate) struct MemoryHive {
+        values: RefCell<Vec<(String, RegValue)>>,
+        writable: bool,
+        /// 为 `true` 时 `enum_names` 返回 `Err`。
+        pub(crate) fail_enum: bool,
+        /// 命中的值名在 `get_raw` 时返回 `Err`。
+        pub(crate) fail_get: Option<String>,
+    }
+
+    impl MemoryHive {
+        /// 新建空 hive。`writable` 决定 `capabilities_for_with` 的写权限分支。
+        pub(crate) fn new(writable: bool) -> Self {
+            Self {
+                values: RefCell::new(Vec::new()),
+                writable,
+                fail_enum: false,
+                fail_get: None,
+            }
+        }
+
+        /// 写入一个字符串种子值。
+        pub(crate) fn seed(&self, name: &str, value: &str, vtype: RegType) {
+            let mut raw = value.to_reg_value();
+            raw.vtype = vtype;
+            self.set_raw(name, &raw).expect("内存写入不应失败");
+        }
+
+        /// 写入一个原始值（用于构造非法字节/不支持类型）。
+        // Wave 1 的 F-04 测试才会用到；当前任务仅按 brief 落地接口，避免 clippy dead_code 报错。
+        #[allow(dead_code)]
+        pub(crate) fn seed_raw(&self, name: &str, raw: RegValue) {
+            self.set_raw(name, &raw).expect("内存写入不应失败");
+        }
+
+        /// 判断是否存在某值名（大小写不敏感）。
+        pub(crate) fn contains(&self, name: &str) -> bool {
+            self.values
+                .borrow()
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case(name))
+        }
+    }
+
+    impl EnvHiveStore for MemoryHive {
+        fn writable(&self) -> bool {
+            self.writable
+        }
+
+        fn enum_names(&self) -> Result<Vec<String>, String> {
+            if self.fail_enum {
+                return Err("无法枚举环境变量: 注入的枚举失败".into());
+            }
+            Ok(self
+                .values
+                .borrow()
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect())
+        }
+
+        fn get_raw(&self, name: &str) -> Result<RegValue, String> {
+            if self
+                .fail_get
+                .as_deref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            {
+                return Err(format!("无法读取环境变量 {}: 注入的读取失败", name));
+            }
+            self.values
+                .borrow()
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .map(|(_, v)| dup_reg_value(v))
+                .ok_or_else(|| format!("无法读取环境变量 {}: 找不到", name))
+        }
+
+        fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String> {
+            let mut values = self.values.borrow_mut();
+            if let Some(slot) = values
+                .iter_mut()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            {
+                slot.1 = dup_reg_value(value);
+            } else {
+                values.push((name.to_string(), dup_reg_value(value)));
+            }
+            Ok(())
+        }
+
+        fn delete_value(&self, name: &str) -> Result<(), String> {
+            let mut values = self.values.borrow_mut();
+            let before = values.len();
+            values.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
+            if values.len() == before {
+                return Err(format!("无法删除环境变量 {}: 找不到", name));
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::memory::MemoryHive;
+    use super::*;
+    use winreg::enums::REG_SZ;
+    use winreg::types::FromRegValue;
+
+    #[test]
+    fn memory_hive_roundtrip_is_case_insensitive() {
+        let hive = MemoryHive::new(true);
+        hive.seed("JAVA_HOME", "C:\\Java", REG_SZ);
+
+        assert!(hive.contains("java_home"));
+        let raw = hive.get_raw("java_Home").expect("读取失败");
+        assert_eq!(String::from_reg_value(&raw).unwrap(), "C:\\Java");
+        assert_eq!(hive.enum_names().unwrap(), vec!["JAVA_HOME".to_string()]);
+    }
+
+    #[test]
+    fn memory_hive_overwrites_in_place_preserving_original_name() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "old", REG_SZ);
+        hive.seed("my_var", "new", REG_SZ);
+
+        assert_eq!(hive.enum_names().unwrap(), vec!["MY_VAR".to_string()]);
+        let raw = hive.get_raw("MY_VAR").unwrap();
+        assert_eq!(String::from_reg_value(&raw).unwrap(), "new");
+    }
+
+    #[test]
+    fn memory_hive_delete_reports_missing() {
+        let hive = MemoryHive::new(true);
+        assert!(hive.delete_value("NOPE").is_err());
+        hive.seed("MY_VAR", "v", REG_SZ);
+        assert!(hive.delete_value("my_var").is_ok());
+        assert!(!hive.contains("MY_VAR"));
+    }
+
+    #[test]
+    fn memory_hive_injects_failures() {
+        // brief 原文为 `let hive`，故障注入需要可变绑定，此处加 `mut`。
+        let mut hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "v", REG_SZ);
+
+        hive.fail_enum = true;
+        assert!(hive.enum_names().is_err());
+        hive.fail_enum = false;
+
+        hive.fail_get = Some("my_var".into());
+        assert!(hive.get_raw("MY_VAR").is_err());
+        assert!(hive
+            .get_raw("MY_VAR")
+            .unwrap_err()
+            .contains("注入的读取失败"));
+    }
+}
