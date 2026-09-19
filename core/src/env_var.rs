@@ -107,6 +107,17 @@ pub struct EnvVarMeta {
     pub revision: String,
 }
 
+/// 单个变量的完整明文及其读取时的 revision。
+///
+/// 编辑弹窗用 `revision` 绑定「这个值是在哪一版读到的」，避免用陈旧值
+/// 配新 revision 提交、覆盖外部更新（F-01）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevealedValue {
+    pub value: String,
+    pub revision: String,
+}
+
 /// 两个 hive 的变量元数据，来自同一次读取。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

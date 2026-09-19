@@ -1,4 +1,4 @@
-use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarSnapshot};
+use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarSnapshot, RevealedValue};
 use path_editor_core::registry;
 
 /// 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）。
@@ -11,13 +11,13 @@ pub fn list_all_env_vars() -> Result<EnvVarSnapshot, String> {
     registry::list_all_env_vars()
 }
 
-/// 按需读取单个变量的完整明文；`Unsupported` 类型返回 `Err`。
+/// 按需读取单个变量的明文及读取时的 revision；`Unsupported` 类型返回 `Err`。
 ///
 /// # Returns
-/// - `Ok(String)` — 变量完整值
+/// - `Ok(RevealedValue)` — 变量完整值与读取时的 revision
 /// - `Err(String)` — 名称非法、保留名或类型不受支持
 #[tauri::command]
-pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<String, String> {
+pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<RevealedValue, String> {
     registry::reveal_env_var(hive, &name)
 }
 

@@ -10,7 +10,7 @@ pub mod registry;
 pub mod scanner;
 pub mod system;
 
-pub use env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
+pub use env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue};
 pub use path_entry::{PathEntry, PathSnapshot};
 pub use profiles::{ProfileData, ProfileMeta, ProfilePathEntry};
 pub use scanner::{ConflictEntry, ConflictLocation, ToolGroup};

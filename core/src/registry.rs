@@ -1,6 +1,6 @@
 use crate::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
-    EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot,
+    EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
 };
 use crate::path_entry::PathEntry;
 use crate::reg_store::{EnvHiveStore, WinregHive};
@@ -372,16 +372,16 @@ pub fn list_all_env_vars() -> Result<EnvVarSnapshot, String> {
     })
 }
 
-/// 按需读取单个变量的明文（命中敏感规则的变量的唯一取值入口）。
+/// 按需读取单个变量的明文及读取时的 revision。
 ///
 /// `Unsupported` 类型返回 `Err`，不尝试转字符串。
-pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<String, String> {
+pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<RevealedValue, String> {
     let store = WinregHive::open(hive, false)?;
     reveal_env_var_in_store(&store, name)
 }
 
-/// `reveal_env_var` 的核心逻辑，存储可注入（测试用内存实现）。
-fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<String, String> {
+/// `reveal_env_var` 的核心逻辑，存储可注入。
+fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<RevealedValue, String> {
     validate_env_name(name)?;
     if is_reserved(name) {
         return Err(format!(
@@ -389,8 +389,9 @@ fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<Strin
             name
         ));
     }
-    let (_vtype, value) = read_env_var(store, name)?;
-    Ok(value)
+    let (vtype, value) = read_env_var(store, name)?;
+    let revision = revision_of(name, vtype, &value);
+    Ok(RevealedValue { value, revision })
 }
 
 /// 写入已有变量。类型从注册表读取，不由前端决定。
@@ -1019,13 +1020,38 @@ mod env_var_tests {
     }
 
     #[test]
+    fn reveal_returns_value_with_matching_revision() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "hello", REG_SZ);
+
+        let revealed = reveal_env_var_in_store(&hive, "MY_VAR").expect("reveal 失败");
+        assert_eq!(revealed.value, "hello");
+
+        let raw = hive.get_raw("MY_VAR").unwrap();
+        let expected = revision_of("MY_VAR", raw.vtype, "hello");
+        assert_eq!(revealed.revision, expected, "revision 必须与列表项一致");
+    }
+
+    #[test]
+    fn reveal_revision_changes_after_external_edit() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "one", REG_SZ);
+        let first = reveal_env_var_in_store(&hive, "MY_VAR").unwrap().revision;
+
+        hive.seed("MY_VAR", "two", REG_SZ);
+        let second = reveal_env_var_in_store(&hive, "MY_VAR").unwrap().revision;
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
     fn reveal_env_var_returns_plaintext_and_sensitive_preview_is_none() {
         let hive = MemoryHive::new(true);
         hive.seed("MY_PLAIN", "C:\\plain value", REG_SZ);
         hive.seed("MY_API_TOKEN", "super-secret-plaintext", REG_SZ);
 
         let revealed = reveal_env_var_in_store(&hive, "MY_API_TOKEN").expect("reveal 失败");
-        assert_eq!(revealed, "super-secret-plaintext");
+        assert_eq!(revealed.value, "super-secret-plaintext");
 
         let metas = list_env_vars_in_store(EnvHive::User, &hive).expect("列表失败");
         let token_meta = metas

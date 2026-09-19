@@ -271,7 +271,7 @@ pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
 pub(crate) fn cmd_env_get(name: String, system: bool) {
     let hive = select_hive(system, false);
     match core::registry::reveal_env_var(hive, &name) {
-        Ok(value) => print!("{}", format_get_output(&value)),
+        Ok(revealed) => print!("{}", format_get_output(&revealed.value)),
         Err(msg) => {
             // 仅只读路径提供「变量存在于另一 hive」的提示，帮助用户加 --system。
             // 写操作不做此兜底 —— 见设计文档「hive 选择」。
