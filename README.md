@@ -199,9 +199,9 @@ patheditor env remove   <NAME> (--revision <R>|--force)
 
 `env` 子命令管理通用环境变量（`Path` 除外，请用 PATH 专用命令）。默认操作用户 hive，加 `--system` 操作系统 hive。
 
-`set` 与 `remove` 必须显式选择并发模式：`--revision <R>`（取自 `env list --json`，外部修改时拒绝写入，退出码 3）或 `--force`（跳过校验直接覆盖）。敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
+`set` 与 `remove` 必须显式选择并发模式：`--revision <R>`（取自 `env list --json`，外部修改时拒绝写入，退出码 3）或 `--force`（跳过 revision 校验直接覆盖，最后写入者胜，仍受保护名单/类型/权限约束）。敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
 
-CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove`；PATH 命令恒为 `1`）。
+CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）。`--force` 不携带 revision，不会因并发冲突产生退出码 3。
 
 完整 17 条顶层命令（另有 `env` / `profile` 子命令组）：`patheditor --help`
 

@@ -141,7 +141,7 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
 
-`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；revision 冲突时退出码为 3，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
+`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；`--force` 跳过 revision 校验直接覆盖（最后写入者胜，仍受保护名单/类型/权限约束），不会因并发冲突产生退出码 3；退出码 3 仅在 `--revision` 不匹配时出现，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
 
 ## 数据、保存与事务
 
@@ -162,7 +162,7 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 - 所有 `pub fn` 必须有 `///` 文档注释；`pub(crate)` 同样补注释（CONTRIBUTING.md 硬性要求）。
 - 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
 - E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果（样本见 `docs/审核和开发/2026.09.18/`）。
-- CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove`；PATH 命令恒为 1）。冲突判定按 core 的 `[E_CONFLICT]` 前缀，不匹配中文正文。
+- CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove` 且使用 `--revision` 时；`--force` 不会因并发冲突产生退出码 3；PATH 命令恒为 1）。冲突判定按 core 的 `[E_CONFLICT]` 前缀，不匹配中文正文。
 
 ## 测试与质量门
 

@@ -23,14 +23,14 @@
 
 ## 已确认的决策
 
-| #   | 决策点     | 结论                                                                                      |
-| --- | ---------- | ----------------------------------------------------------------------------------------- |
-| 1   | 命令形态   | `env` 子命令组（对齐 `profile` 先例），不用扁平 `env-xxx` 命名                            |
-| 2   | 并发语义   | 双模式强制显式选择：`--revision`（CAS）或 `--force`（跳过校验），两者都不给报错、都给报错 |
-| 3   | 值输入通道 | argv + `--stdin` + `--value-file` 三通道（敏感值可绕开 shell 历史与进程列表）             |
-| 4   | hive 选择  | 默认 user，`--system` 切换；写操作绝不跨 hive 兜底                                        |
-| 5   | 冲突退出码 | 新增退出码 3 表示 revision 冲突（仅 env 命令，PATH 命令不动）                             |
-| 6   | 敏感值读取 | `env get` 直接打印明文（显式 get 即授权，不加 `--reveal` 确认标志）                       |
+| #   | 决策点     | 结论                                                                                                              |
+| --- | ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | 命令形态   | `env` 子命令组（对齐 `profile` 先例），不用扁平 `env-xxx` 命名                                                    |
+| 2   | 并发语义   | 双模式强制显式选择：`--revision`（CAS）或 `--force`（跳过 revision 校验，最后写入者胜），两者都不给报错、都给报错 |
+| 3   | 值输入通道 | argv + `--stdin` + `--value-file` 三通道（敏感值可绕开 shell 历史与进程列表）                                     |
+| 4   | hive 选择  | 默认 user，`--system` 切换；写操作绝不跨 hive 兜底                                                                |
+| 5   | 冲突退出码 | 新增退出码 3 表示 revision 冲突（仅 env 命令，PATH 命令不动）                                                     |
+| 6   | 敏感值读取 | `env get` 直接打印明文（显式 get 即授权，不加 `--reveal` 确认标志）                                               |
 
 ## 命令规格
 
@@ -60,7 +60,7 @@ patheditor env remove <NAME> (--revision <R>|--force)
 - 更新**已存在**变量，调用 `update_env_var`；类型跟随注册表现状，不可更改（与 GUI 一致）
 - 值三通道互斥：`--value` / `--stdin` / `--value-file` 同时给出多个则报错
 - `--revision <R>`：CAS 校验（从 `env list --json` 的 `revision` 字段获取），与 GUI 同强度
-- `--force`：跳过校验直接覆盖（脚本 setx 风格）
+- `--force`：跳过 revision 校验直接覆盖（最后写入者胜；仍受保留名 / 保护名单 / 类型 / 权限判定）
 
 ### `env add`
 
@@ -104,7 +104,7 @@ patheditor env remove <NAME> (--revision <R>|--force)
 | revision 冲突（core 返回 `[E_CONFLICT]` 前缀）                      | **3**  | stderr，保留 `[E_CONFLICT]` 前缀原文 |
 
 - 退出码 3 的动机：脚本可凭退出码区分「重试后可恢复」（重新 list 取 revision）与致命错误，不必 grep 中文文案。**仅 env 命令引入，PATH 命令保持退出码 1 不动**（向后兼容）。
-- `--force` 模式下不会产生退出码 3（无校验即无冲突）。
+- `--force` 不携带 revision，**不会**因并发冲突产生退出码 3；退出码 3 仅在 `--revision` 不匹配时出现。
 
 ## 实现布局
 
@@ -143,7 +143,7 @@ cli/src/
 ## 验收标准
 
 1. 5 个子命令按规格工作，默认 user hive、`--system` 切换正确；`env add --kind` 合法值为 `string`（默认）/ `expand`，非法值由 clap `value_parser` 拒绝
-2. `--revision` 与 `--force` 互斥、皆缺报错；冲突时退出码 3 且 stderr 含 `[E_CONFLICT]`
+2. `--revision` 与 `--force` 互斥、皆缺报错；revision 冲突时（仅 `--revision` 模式）退出码 3 且 stderr 含 `[E_CONFLICT]`
 3. `--stdin` / `--value-file` 读值正确并剥离末尾换行；三通道互斥报错
 4. `env get` 输出裸值；`env list --json` 序列化 core 契约（camelCase）
 5. 保留名 / 保护名 / Unsupported / 权限不足的错误透传自 core，CLI 无重复判定代码
