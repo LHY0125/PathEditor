@@ -1000,7 +1000,7 @@ mod env_var_tests {
     // 被截断后 lossy 解码为空串。因此「解码失败」分支对字符串类型当前不可达，
     // 本测试的构造（奇数字节 REG_SZ）无法让 list 报错。保留测试体作为休眠
     // 用例：若未来 winreg 改为严格解码，F-04 的 map_err 分支会生效，此测试
-    // 随之通过。详见 task-3456-report 的偏离记录。
+    // 随之通过。详见 winreg-0.52.0/src/types.rs:38（`String::from_reg_value` 的 lossy 解码）。
     #[ignore = "winreg 0.52 对字符串类型 lossy 解码，解码失败分支当前不可达"]
     fn list_fails_when_decode_fails() {
         let hive = MemoryHive::new(true);

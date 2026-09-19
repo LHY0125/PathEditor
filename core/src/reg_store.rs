@@ -171,8 +171,6 @@ pub(crate) mod memory {
         }
 
         /// 写入一个原始值（用于构造非法字节/不支持类型）。
-        // Wave 1 的 F-04 测试才会用到；当前任务仅按 brief 落地接口，避免 clippy dead_code 报错。
-        #[allow(dead_code)]
         pub(crate) fn seed_raw(&self, name: &str, raw: RegValue) {
             self.set_raw(name, &raw).expect("内存写入不应失败");
         }
