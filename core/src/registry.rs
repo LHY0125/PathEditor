@@ -224,6 +224,7 @@ fn env_key(root: winreg::HKEY, sub_path: &str, label: &str, write: bool) -> Resu
         .map_err(|e| format!("无法打开{}环境变量注册表项: {}", label, e))
 }
 
+/// 返回指定 hive 的 (根键, 子路径, 显示标签)。
 pub(crate) fn hive_location(hive: EnvHive) -> (winreg::HKEY, &'static str, &'static str) {
     match hive {
         EnvHive::System => (HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统"),
