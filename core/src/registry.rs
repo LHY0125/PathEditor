@@ -3,6 +3,7 @@ use crate::env_var::{
     EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot,
 };
 use crate::path_entry::PathEntry;
+use crate::reg_store::{EnvHiveStore, WinregHive};
 use std::path::Path;
 use winreg::enums::*;
 use winreg::types::{FromRegValue, ToRegValue};
@@ -213,17 +214,6 @@ pub fn clean_paths(paths: Vec<String>) -> (Vec<String>, Vec<String>) {
 
 // ── 通用环境变量读写 ──
 
-fn env_key(root: winreg::HKEY, sub_path: &str, label: &str, write: bool) -> Result<RegKey, String> {
-    let flags = if write {
-        KEY_READ | KEY_WRITE
-    } else {
-        KEY_READ
-    };
-    let key = RegKey::predef(root);
-    key.open_subkey_with_flags(sub_path, flags)
-        .map_err(|e| format!("无法打开{}环境变量注册表项: {}", label, e))
-}
-
 /// 返回指定 hive 的 (根键, 子路径, 显示标签)。
 pub(crate) fn hive_location(hive: EnvHive) -> (winreg::HKEY, &'static str, &'static str) {
     match hive {
@@ -234,15 +224,15 @@ pub(crate) fn hive_location(hive: EnvHive) -> (winreg::HKEY, &'static str, &'sta
 
 /// 读取单个值，返回 (vtype, value)。仅用于字符串类型。
 ///
-/// `vtype` 是 winreg 的 `RegType`（即 `RegValue::vtype` 的真实类型），
-/// 不是 `u32` —— 类型判定与 revision 计算都基于它。
-///
-/// 先判定类型再做字符串解码：`REG_DWORD` 等不支持类型必须返回
-/// 「类型不受支持」错误，而不是解码失败的误导性错误。
-fn read_env_var(key: &RegKey, name: &str) -> Result<(RegType, String), String> {
-    let raw = key
-        .get_raw_value(name)
-        .map_err(|e| format!("无法读取环境变量 {}: {}", name, e))?;
+/// `vtype` 是 winreg 的 `RegType`，不是 `u32` —— 类型判定与 revision
+/// 计算都基于它。先判定类型再做字符串解码：`REG_DWORD` 等不支持类型
+/// 必须返回「类型不受支持」，而不是误导性的解码失败。
+fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String), String> {
+    let raw = store.get_raw(name)?;
+    // `RegType` 非 Copy（`winreg-0.52.0/src/enums.rs:20`），必须先
+    // `.clone()` 取值再借用 `&raw`，否则 `from_reg_type(raw.vtype)` 会部分
+    // 移出 `raw`，后面 `&raw` 与 `Ok((raw.vtype, …))` 都会编译失败。
+    // 原实现此处即 `raw.vtype.clone()`（`registry.rs:245`）。
     if !EnvValueKind::from_reg_type(raw.vtype.clone()).is_writable() {
         return Err(format!("环境变量 {} 的注册表类型不受支持", name));
     }
@@ -251,12 +241,16 @@ fn read_env_var(key: &RegKey, name: &str) -> Result<(RegType, String), String> {
     Ok((raw.vtype, value))
 }
 
-/// 写入单个值，保持调用方给定的注册表类型。
-fn write_env_var(key: &RegKey, name: &str, value: &str, vtype: RegType) -> Result<(), String> {
+/// 写入单个值，保持调用方给定的注册表类型。错误由端口层格式化。
+fn write_env_var(
+    store: &dyn EnvHiveStore,
+    name: &str,
+    value: &str,
+    vtype: RegType,
+) -> Result<(), String> {
     let mut raw = value.to_reg_value();
     raw.vtype = vtype;
-    key.set_raw_value(name, &raw)
-        .map_err(|e| format!("无法写入环境变量 {}: {}", name, e))
+    store.set_raw(name, &raw)
 }
 
 /// 通用环境变量名校验。
@@ -293,47 +287,38 @@ pub fn validate_env_value(value: &str, label: &str) -> Result<(), String> {
 
 /// 读取单个 hive 的所有环境变量元数据。`Path` 在此被过滤。
 fn list_hive_env_vars(hive: EnvHive) -> Result<Vec<EnvVarMeta>, String> {
-    let (root, sub_path, label) = hive_location(hive);
-    let key = env_key(root, sub_path, label, false)?;
-    list_env_vars_in_key(hive, &key)
+    let store = WinregHive::open(hive, false)?;
+    list_env_vars_in_store(hive, &store)
 }
 
-/// `list_hive_env_vars` 的核心逻辑，注册表键可注入（测试用隔离键替代真实 hive）。
-fn list_env_vars_in_key(hive: EnvHive, key: &RegKey) -> Result<Vec<EnvVarMeta>, String> {
+/// `list_hive_env_vars` 的核心逻辑，存储可注入（测试用内存实现）。
+///
+/// F-04：同一 hive 内任一枚举 / 读取 / 解码失败即返回 `Err`。
+/// 「成功但不完整」的列表是错误的成功语义，用户无法区分「变量不存在」
+/// 与「枚举/读取失败」。
+fn list_env_vars_in_store(
+    hive: EnvHive,
+    store: &dyn EnvHiveStore,
+) -> Result<Vec<EnvVarMeta>, String> {
     let mut metas = Vec::new();
 
-    // 写权限探测按 hive 只做一次（探测会真实打开注册表键，
-    // 逐变量探测会让列表开销随变量数线性放大）。
-    let writable = match hive {
-        EnvHive::System => crate::system::check_admin(),
-        EnvHive::User => can_write_user(),
-    };
+    // 写权限探测按 hive 只做一次（端口在 open 时已探测，避免逐变量重复探测）。
+    let writable = store.writable();
 
-    for name in key.enum_values().flatten().map(|(n, _)| n) {
+    for name in store.enum_names()? {
         // 保留变量（Path）由专用通路拥有，通用通路完全不展示
         if is_reserved(&name) {
             continue;
         }
 
-        let raw = match key.get_raw_value(&name) {
-            Ok(raw) => raw,
-            Err(e) => {
-                log::warn!("跳过无法读取的环境变量 {}: {}", name, e);
-                continue;
-            }
-        };
+        let raw = store.get_raw(&name)?;
         let kind = EnvValueKind::from_reg_type(raw.vtype.clone());
         let sensitive = is_sensitive(&name);
 
         let value = match kind {
             EnvValueKind::Unsupported => String::new(),
-            _ => match String::from_reg_value(&raw) {
-                Ok(v) => v,
-                Err(e) => {
-                    log::warn!("跳过无法解码的环境变量 {}: {}", name, e);
-                    continue;
-                }
-            },
+            _ => String::from_reg_value(&raw)
+                .map_err(|e| format!("无法解码环境变量 {}: {}", name, e))?,
         };
 
         let preview = if sensitive || !kind.is_writable() {
@@ -361,8 +346,9 @@ fn list_env_vars_in_key(hive: EnvHive, key: &RegKey) -> Result<Vec<EnvVarMeta>, 
 
 /// 一次读取两个 hive 的变量元数据（列表唯一入口）。
 ///
-/// 单次调用内读两个 hive，保证快照一致 —— 若分两次调用，两次读取之间
-/// 注册表可能变化，合并视图会出现 hive 来自不同时刻的不一致。
+/// 两个 hive 是**先后两次独立读取**，没有跨键事务，因此返回的是
+/// 「两个接近时刻的快照」，不是原子一致快照。外部进程可能在两次读取
+/// 之间修改任一侧。若需强一致，应在单 hive 维度用 revision 做提交检查。
 pub fn list_all_env_vars() -> Result<EnvVarSnapshot, String> {
     Ok(EnvVarSnapshot {
         system: list_hive_env_vars(EnvHive::System)?,
@@ -374,13 +360,12 @@ pub fn list_all_env_vars() -> Result<EnvVarSnapshot, String> {
 ///
 /// `Unsupported` 类型返回 `Err`，不尝试转字符串。
 pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<String, String> {
-    let (root, sub_path, label) = hive_location(hive);
-    let key = env_key(root, sub_path, label, false)?;
-    reveal_env_var_in_key(&key, name)
+    let store = WinregHive::open(hive, false)?;
+    reveal_env_var_in_store(&store, name)
 }
 
-/// `reveal_env_var` 的核心逻辑，注册表键可注入（测试用隔离键替代真实 hive）。
-fn reveal_env_var_in_key(key: &RegKey, name: &str) -> Result<String, String> {
+/// `reveal_env_var` 的核心逻辑，存储可注入（测试用内存实现）。
+fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<String, String> {
     validate_env_name(name)?;
     if is_reserved(name) {
         return Err(format!(
@@ -388,30 +373,30 @@ fn reveal_env_var_in_key(key: &RegKey, name: &str) -> Result<String, String> {
             name
         ));
     }
-    let (_vtype, value) = read_env_var(key, name)?;
+    let (_vtype, value) = read_env_var(store, name)?;
     Ok(value)
 }
 
 /// 写入已有变量。类型从注册表读取，不由前端决定。
-///
-/// 在同一调用内完成「读 → 算 revision → 比对 → 校验 → 写」。
-/// 注意：读与写是独立的注册表调用，存在竞态窗口；revision 校验用于
-/// 缩小影响，不能完全消除 TOCTOU。
 pub fn update_env_var(
     hive: EnvHive,
     name: &str,
     value: &str,
     expected_revision: &str,
 ) -> Result<(), String> {
-    let (root, sub_path, label) = hive_location(hive);
-    update_env_var_in_key(root, sub_path, label, name, value, expected_revision)
+    let store = WinregHive::open(hive, true)?;
+    update_env_var_in_store(&store, name, value, expected_revision)?;
+    crate::system::broadcast_env_change();
+    Ok(())
 }
 
-/// `update_env_var` 的核心逻辑，键位置可注入（测试用隔离键替代真实 hive）。
-fn update_env_var_in_key(
-    root: winreg::HKEY,
-    sub_path: &str,
-    label: &str,
+/// `update_env_var` 的核心逻辑，存储可注入。
+///
+/// 在同一调用内完成「读 → 算 revision → 比对 → 校验 → 写」。
+/// 读与写是两次独立存储调用，仍有竞态窗口；revision 校验缩小影响，
+/// 不能完全消除 TOCTOU。
+fn update_env_var_in_store(
+    store: &dyn EnvHiveStore,
     name: &str,
     value: &str,
     expected_revision: &str,
@@ -427,9 +412,7 @@ fn update_env_var_in_key(
         return Err(format!("{} 是系统内置变量，不允许修改", name));
     }
 
-    let key = env_key(root, sub_path, label, true)?;
-
-    let (vtype, current) = read_env_var(&key, name)?;
+    let (vtype, current) = read_env_var(store, name)?;
 
     // 并发校验：revision 不匹配时拒绝写入，交给前端提示重新加载
     let current_revision = revision_of(name, vtype.clone(), &current);
@@ -448,31 +431,35 @@ fn update_env_var_in_key(
     validate_env_value(value, name)?;
 
     // 写入，类型原样保留
-    write_env_var(&key, name, value, vtype)?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    write_env_var(store, name, value, vtype)
 }
 
 /// 新建变量。`kind` 仅在此决定。
-///
-/// 写入前先确认同名变量不存在（忽略大小写），不会覆盖已有变量。
-/// 注意：枚举检查与写入是独立的注册表调用，存在竞态窗口；
-/// 并发创建同名的极端场景可能后写覆盖，当前未做原子 CAS。
 pub fn create_env_var(
     hive: EnvHive,
     name: &str,
     value: &str,
     kind: EnvValueKind,
 ) -> Result<(), String> {
-    let (root, sub_path, label) = hive_location(hive);
-    create_env_var_in_key(root, sub_path, label, name, value, kind)
+    let store = WinregHive::open(hive, true)?;
+    create_env_var_in_store(&store, name, value, kind)?;
+    crate::system::broadcast_env_change();
+    Ok(())
 }
 
-/// `create_env_var` 的核心逻辑，键位置可注入（测试用隔离键替代真实 hive）。
-fn create_env_var_in_key(
-    root: winreg::HKEY,
-    sub_path: &str,
-    label: &str,
+/// `create_env_var` 的核心逻辑，存储可注入。
+///
+/// 写入前先确认同名变量不存在（忽略大小写），不覆盖已有变量。
+/// 枚举检查与写入是两次独立调用，存在竞态窗口，当前未做原子 CAS。
+///
+/// **有意的语义变更（评审裁断 O-2）**：查重用的 `store.enum_names()?` 会传播
+/// 枚举错误。原 `create_env_var_in_key` 用 `enum_values().flatten()` 吞掉枚举
+/// 错误 —— 枚举失败会被当作「同名不存在」而继续写入，有冒险覆盖的隐患。
+/// 新行为是「失败响亮优于冒险覆盖」，与 F-04 同源，但**超出 F-04 只针对
+/// list 的字面范围**。若不愿引入该变更，改 `store.enum_names().unwrap_or_default()`
+/// 即可完全保持现状。
+fn create_env_var_in_store(
+    store: &dyn EnvHiveStore,
     name: &str,
     value: &str,
     kind: EnvValueKind,
@@ -492,13 +479,11 @@ fn create_env_var_in_key(
     }
     validate_env_value(value, name)?;
 
-    let key = env_key(root, sub_path, label, true)?;
-
     // 写入前检查：忽略大小写地确认该名不存在（非原子，见函数文档）
-    let existing = key
-        .enum_values()
-        .flatten()
-        .any(|(n, _)| n.eq_ignore_ascii_case(name));
+    let existing = store
+        .enum_names()?
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name));
     if existing {
         return Err(format!("变量 {} 已存在，请使用编辑功能", name));
     }
@@ -507,25 +492,22 @@ fn create_env_var_in_key(
         EnvValueKind::String => REG_SZ,
         _ => REG_EXPAND_SZ,
     };
-    write_env_var(&key, name, value, vtype)?;
+    write_env_var(store, name, value, vtype)
+}
+
+/// 删除变量。在同一调用内完成 revision 比对与删除。
+pub fn delete_env_var(hive: EnvHive, name: &str, expected_revision: &str) -> Result<(), String> {
+    let store = WinregHive::open(hive, true)?;
+    delete_env_var_in_store(&store, name, expected_revision)?;
     crate::system::broadcast_env_change();
     Ok(())
 }
 
-/// 删除变量。在同一调用内完成 revision 比对与删除。
+/// `delete_env_var` 的核心逻辑，存储可注入。
 ///
-/// 注意：读与删除是独立的注册表调用，revision 校验用于缩小竞态影响，
-/// 不能完全消除 TOCTOU。
-pub fn delete_env_var(hive: EnvHive, name: &str, expected_revision: &str) -> Result<(), String> {
-    let (root, sub_path, label) = hive_location(hive);
-    delete_env_var_in_key(root, sub_path, label, name, expected_revision)
-}
-
-/// `delete_env_var` 的核心逻辑，键位置可注入（测试用隔离键替代真实 hive）。
-fn delete_env_var_in_key(
-    root: winreg::HKEY,
-    sub_path: &str,
-    label: &str,
+/// 读与删除是两次独立调用，revision 校验缩小竞态影响，不能完全消除 TOCTOU。
+fn delete_env_var_in_store(
+    store: &dyn EnvHiveStore,
     name: &str,
     expected_revision: &str,
 ) -> Result<(), String> {
@@ -540,22 +522,20 @@ fn delete_env_var_in_key(
         return Err(format!("{} 是系统内置变量，不允许删除", name));
     }
 
-    let key = env_key(root, sub_path, label, true)?;
-
-    let (vtype, current) = read_env_var(&key, name)?;
+    let (vtype, current) = read_env_var(store, name)?;
     let current_revision = revision_of(name, vtype.clone(), &current);
     if current_revision != expected_revision {
         return Err(ERR_CONFLICT.into());
     }
 
     if EnvValueKind::from_reg_type(vtype) == EnvValueKind::Unsupported {
+        // 防御性、当前不可达（评审裁断 O-3）：`read_env_var` 已对 Unsupported
+        // 类型提前返回 Err，上面的 `?` 会先短路。保留以显式表达删除的前置条件，
+        // 行为与现状一致。
         return Err(format!("{} 的注册表类型不受支持，无法删除", name));
     }
 
-    key.delete_value(name)
-        .map_err(|e| format!("无法删除环境变量 {}: {}", name, e))?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    store.delete_value(name)
 }
 
 #[cfg(test)]
@@ -732,90 +712,40 @@ mod issue26_tests {
 mod env_var_tests {
     use super::*;
     use crate::env_var::{EnvHive, EnvValueKind};
-    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD, REG_EXPAND_SZ, REG_SZ};
+    use crate::reg_store::memory::MemoryHive;
+    use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
     use winreg::types::FromRegValue;
-
-    /// RAII 隔离测试键：Drop 时递归删除，绝不触碰真实环境变量键。
-    struct TempRegistryKey {
-        root: winreg::HKEY,
-        path: String,
-    }
-
-    impl TempRegistryKey {
-        fn new(label: &str) -> Self {
-            let parent = TEST_PATH_SUBKEY;
-            let unique = format!(
-                "{}\\{}-{}-{}",
-                parent,
-                label,
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .expect("系统时间早于 UNIX_EPOCH")
-                    .as_nanos()
-            );
-            let root = RegKey::predef(HKEY_CURRENT_USER);
-            root.create_subkey(parent).expect("创建隔离测试父键失败");
-            root.create_subkey(&unique).expect("创建隔离测试键失败");
-            TempRegistryKey {
-                root: HKEY_CURRENT_USER,
-                path: unique,
-            }
-        }
-
-        fn key(&self) -> RegKey {
-            let root = RegKey::predef(self.root);
-            root.open_subkey_with_flags(&self.path, KEY_READ | KEY_WRITE)
-                .expect("打开隔离测试键失败")
-        }
-    }
-
-    impl Drop for TempRegistryKey {
-        fn drop(&mut self) {
-            let root = RegKey::predef(self.root);
-            let _ = root.delete_subkey_all(&self.path);
-        }
-    }
-
-    fn seed(key: &RegKey, name: &str, value: &str, vtype: RegType) {
-        let mut raw = value.to_reg_value();
-        raw.vtype = vtype;
-        key.set_raw_value(name, &raw).expect("写入种子值失败");
-    }
 
     #[test]
     fn read_env_var_returns_real_type_and_value() {
-        let temp = TempRegistryKey::new("read");
-        let key = temp.key();
-        seed(&key, "JAVA_HOME", "C:\\Java", REG_EXPAND_SZ);
+        let hive = MemoryHive::new(true);
+        hive.seed("JAVA_HOME", "C:\\Java", REG_EXPAND_SZ);
 
-        let (vtype, value) = read_env_var(&key, "JAVA_HOME").expect("读取失败");
+        let (vtype, value) = read_env_var(&hive, "JAVA_HOME").expect("读取失败");
         assert_eq!(vtype, REG_EXPAND_SZ);
         assert_eq!(value, "C:\\Java");
     }
 
     #[test]
     fn write_env_var_preserves_expand_sz_type() {
-        let temp = TempRegistryKey::new("preserve-expand");
-        let key = temp.key();
-        seed(&key, "GOPATH", "C:\\Old", REG_EXPAND_SZ);
+        let hive = MemoryHive::new(true);
+        hive.seed("GOPATH", "C:\\Old", REG_EXPAND_SZ);
 
-        write_env_var(&key, "GOPATH", "C:\\New", REG_EXPAND_SZ).expect("写入失败");
+        write_env_var(&hive, "GOPATH", "C:\\New", REG_EXPAND_SZ).expect("写入失败");
 
-        let raw = key.get_raw_value("GOPATH").expect("读取失败");
+        let raw = hive.get_raw("GOPATH").expect("读取失败");
         assert_eq!(raw.vtype, REG_EXPAND_SZ);
         assert_eq!(String::from_reg_value(&raw).unwrap(), "C:\\New");
     }
 
     #[test]
     fn write_env_var_preserves_sz_type() {
-        let temp = TempRegistryKey::new("preserve-sz");
-        let key = temp.key();
-        seed(&key, "JAVA_HOME", "C:\\Old", REG_SZ);
+        let hive = MemoryHive::new(true);
+        hive.seed("JAVA_HOME", "C:\\Old", REG_SZ);
 
-        write_env_var(&key, "JAVA_HOME", "C:\\New", REG_SZ).expect("写入失败");
+        write_env_var(&hive, "JAVA_HOME", "C:\\New", REG_SZ).expect("写入失败");
 
-        let raw = key.get_raw_value("JAVA_HOME").expect("读取失败");
+        let raw = hive.get_raw("JAVA_HOME").expect("读取失败");
         assert_eq!(raw.vtype, REG_SZ);
     }
 
@@ -837,50 +767,41 @@ mod env_var_tests {
 
     #[test]
     fn reserved_names_are_never_writable_through_generic_path() {
-        // Path 走专用通路，通用通路的写入口必须拒绝
         assert!(is_reserved("Path"));
         assert!(is_reserved("path"));
-        let temp = TempRegistryKey::new("reserved");
-        let key = temp.key();
-        seed(&key, "Path", "C:\\Windows", REG_EXPAND_SZ);
-        // 值仍在，但通用通路不展示它
-        assert!(read_env_var(&key, "Path").is_ok());
+        let hive = MemoryHive::new(true);
+        hive.seed("Path", "C:\\Windows", REG_EXPAND_SZ);
+        assert!(read_env_var(&hive, "Path").is_ok());
     }
 
     #[test]
     fn revision_detects_external_change() {
-        let temp = TempRegistryKey::new("revision");
-        let key = temp.key();
-        seed(&key, "MY_VAR", "original", REG_SZ);
-        let (vtype, value) = read_env_var(&key, "MY_VAR").expect("读取失败");
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
         let revision = crate::env_var::revision_of("MY_VAR", vtype, &value);
 
-        // 模拟外部进程修改
-        seed(&key, "MY_VAR", "changed-by-other-process", REG_SZ);
+        hive.seed("MY_VAR", "changed-by-other-process", REG_SZ);
 
-        let (vtype2, value2) = read_env_var(&key, "MY_VAR").expect("读取失败");
+        let (vtype2, value2) = read_env_var(&hive, "MY_VAR").expect("读取失败");
         let current = crate::env_var::revision_of("MY_VAR", vtype2, &value2);
         assert_ne!(revision, current, "外部修改后 revision 必须不同");
     }
 
     #[test]
     fn unsupported_type_is_not_writable() {
-        let temp = TempRegistryKey::new("dword");
-        let key = temp.key();
-        // REG_DWORD 需要 4 字节小端数据
-        let raw = RegValue {
-            bytes: vec![1, 0, 0, 0],
-            vtype: REG_DWORD,
-        };
-        key.set_raw_value("MY_DWORD", &raw)
-            .expect("写入 DWORD 失败");
+        let hive = MemoryHive::new(true);
+        hive.seed_raw(
+            "MY_DWORD",
+            winreg::RegValue {
+                bytes: vec![1, 0, 0, 0],
+                vtype: REG_DWORD,
+            },
+        );
 
-        // 不经字符串解码：直接取原始类型验证映射与可写性。
-        // read_env_var 对不支持类型会直接返回「类型不受支持」错误
-        // （先判型后解码），此处验证该行为。
-        assert!(read_env_var(&key, "MY_DWORD").is_err());
+        assert!(read_env_var(&hive, "MY_DWORD").is_err());
 
-        let stored = key.get_raw_value("MY_DWORD").expect("读取原始值失败");
+        let stored = hive.get_raw("MY_DWORD").expect("读取原始值失败");
         let kind = EnvValueKind::from_reg_type(stored.vtype);
         assert_eq!(kind, EnvValueKind::Unsupported);
         assert!(!kind.is_writable());
@@ -895,33 +816,25 @@ mod env_var_tests {
     }
 
     // ── 公开 API 行为测试（a1）──
-    // 复用 TempRegistryKey 隔离键 + *_in_key 注入核心，绝不触碰真实环境变量键。
+    // 复用 MemoryHive 内存存储 + *_in_store 注入核心，绝不触碰真实注册表。
 
-    const TEST_PATH_SUBKEY: &str = "Software\\PathEditor\\EnvVarTests";
-
-    /// 模拟 list 通路：把隔离键当作某个 hive 的环境变量键枚举。
-    /// `Path` 值会被过滤，其余变量保留原始大小写。
     #[test]
     fn list_path_is_filtered_and_name_case_preserved() {
-        let temp = TempRegistryKey::new("list");
-        let key = temp.key();
-        seed(&key, "Path", "C:\\Windows", REG_EXPAND_SZ);
-        seed(&key, "path", "C:\\ShouldNotAppear", REG_EXPAND_SZ);
-        seed(&key, "MyApp_Home", "C:\\MyApp", REG_SZ);
-        seed(&key, "another_var", "C:\\another", REG_EXPAND_SZ);
+        let hive = MemoryHive::new(true);
+        hive.seed("Path", "C:\\Windows", REG_EXPAND_SZ);
+        hive.seed("path", "C:\\ShouldNotAppear", REG_EXPAND_SZ);
+        hive.seed("MyApp_Home", "C:\\MyApp", REG_SZ);
+        hive.seed("another_var", "C:\\another", REG_EXPAND_SZ);
 
-        let metas = list_env_vars_in_key(EnvHive::User, &key).expect("列表失败");
+        let metas = list_env_vars_in_store(EnvHive::User, &hive).expect("列表失败");
 
         let names: Vec<&str> = metas.iter().map(|m| m.name.as_str()).collect();
         assert!(
             !names.iter().any(|n| n.eq_ignore_ascii_case("path")),
-            "Path 必须从通用列表中过滤: {:?}",
-            names
+            "Path 必须被过滤"
         );
-        // 原始大小写保留
         assert!(names.contains(&"MyApp_Home"));
         assert!(names.contains(&"another_var"));
-        // Path 值内容不得泄漏到任何 preview
         assert!(metas.iter().all(|m| !m
             .preview
             .as_deref()
@@ -931,166 +844,180 @@ mod env_var_tests {
 
     #[test]
     fn update_env_var_rejects_revision_mismatch_and_keeps_value() {
-        let temp = TempRegistryKey::new("update-conflict");
-        let key = temp.key();
-        seed(&key, "MY_VAR", "original", REG_SZ);
-        let (vtype, value) = read_env_var(&key, "MY_VAR").expect("读取失败");
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
         let stale_revision = revision_of("MY_VAR", vtype, &value);
 
-        // 模拟其他进程先一步修改，调用方仍持旧 revision
-        seed(&key, "MY_VAR", "changed-by-other", REG_SZ);
+        hive.seed("MY_VAR", "changed-by-other", REG_SZ);
 
-        let result = update_env_var_in_key(
-            HKEY_CURRENT_USER,
-            &temp.path,
-            "测试",
-            "MY_VAR",
-            "mine",
-            &stale_revision,
-        );
+        let result = update_env_var_in_store(&hive, "MY_VAR", "mine", &stale_revision);
         assert!(result.is_err(), "revision 不匹配必须 Err");
-        assert_eq!(
-            result.unwrap_err(),
-            ERR_CONFLICT,
-            "冲突错误必须是统一错误码格式"
-        );
+        assert_eq!(result.unwrap_err(), ERR_CONFLICT);
 
-        // 存储值必须未被本次调用改动
-        let raw = key.get_raw_value("MY_VAR").expect("读取失败");
+        let raw = hive.get_raw("MY_VAR").expect("读取失败");
         assert_eq!(String::from_reg_value(&raw).unwrap(), "changed-by-other");
     }
 
     #[test]
     fn update_env_var_rejects_dword_and_keeps_value() {
-        let temp = TempRegistryKey::new("update-dword");
-        let key = temp.key();
-        let raw = RegValue {
-            bytes: vec![7, 0, 0, 0],
-            vtype: REG_DWORD,
-        };
-        key.set_raw_value("MY_DWORD", &raw)
-            .expect("写入 DWORD 失败");
-
-        // revision 用原始类型计算（DWORD 值无法经 read_env_var 读取）
-        let stored = key.get_raw_value("MY_DWORD").expect("读取失败");
+        let hive = MemoryHive::new(true);
+        hive.seed_raw(
+            "MY_DWORD",
+            winreg::RegValue {
+                bytes: vec![7, 0, 0, 0],
+                vtype: REG_DWORD,
+            },
+        );
+        let stored = hive.get_raw("MY_DWORD").expect("读取失败");
         let revision = revision_of("MY_DWORD", stored.vtype, "");
 
-        let result = update_env_var_in_key(
-            HKEY_CURRENT_USER,
-            &temp.path,
-            "测试",
-            "MY_DWORD",
-            "1",
-            &revision,
-        );
+        let result = update_env_var_in_store(&hive, "MY_DWORD", "1", &revision);
         assert!(result.is_err(), "REG_DWORD 不可通过通用通路修改");
         assert!(
             result.unwrap_err().contains("类型不受支持"),
             "应报「类型不受支持」而非解码错误"
         );
 
-        // 值未被改动
-        let after = key.get_raw_value("MY_DWORD").expect("读取失败");
+        let after = hive.get_raw("MY_DWORD").expect("读取失败");
         assert_eq!(after.vtype, REG_DWORD);
         assert_eq!(after.bytes, vec![7, 0, 0, 0]);
     }
 
     #[test]
-    fn create_env_var_rejects_protected_and_duplicate() {
-        let temp = TempRegistryKey::new("create-dup");
-        let key = temp.key();
-        seed(&key, "Existing", "already-here", REG_SZ);
+    fn update_env_var_succeeds_when_revision_matches() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
+        let revision = revision_of("MY_VAR", vtype, &value);
 
-        // 保护名单：不允许覆盖
-        let protected = create_env_var_in_key(
-            HKEY_CURRENT_USER,
-            &temp.path,
-            "测试",
-            "windir",
-            "C:\\evil",
-            EnvValueKind::String,
-        );
+        update_env_var_in_store(&hive, "MY_VAR", "updated", &revision)
+            .expect("revision 匹配必须成功");
+
+        let raw = hive.get_raw("MY_VAR").expect("读取失败");
+        assert_eq!(String::from_reg_value(&raw).unwrap(), "updated");
+        assert_eq!(raw.vtype, REG_SZ, "成功写入也必须保持原类型");
+    }
+
+    #[test]
+    fn delete_env_var_succeeds_when_revision_matches() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
+        let revision = revision_of("MY_VAR", vtype, &value);
+
+        delete_env_var_in_store(&hive, "MY_VAR", &revision).expect("revision 匹配必须成功");
+
+        assert!(!hive.contains("MY_VAR"), "成功删除后变量必须消失");
+    }
+
+    #[test]
+    fn create_env_var_rejects_protected_and_duplicate() {
+        let hive = MemoryHive::new(true);
+        hive.seed("Existing", "already-here", REG_SZ);
+
+        let protected = create_env_var_in_store(&hive, "windir", "C:\\evil", EnvValueKind::String);
         assert!(protected.is_err(), "保护名单变量不允许创建");
         assert!(protected.unwrap_err().contains("系统内置"));
 
-        // 同名（忽略大小写）：不允许重复创建
-        let duplicate = create_env_var_in_key(
-            HKEY_CURRENT_USER,
-            &temp.path,
-            "测试",
-            "EXISTING",
-            "dup",
-            EnvValueKind::String,
-        );
+        let duplicate = create_env_var_in_store(&hive, "EXISTING", "dup", EnvValueKind::String);
         assert!(duplicate.is_err(), "同名变量不允许重复创建");
         assert!(duplicate.unwrap_err().contains("已存在"));
 
-        // 原值未被破坏
-        let raw = key.get_raw_value("Existing").expect("读取失败");
+        let raw = hive.get_raw("Existing").expect("读取失败");
         assert_eq!(String::from_reg_value(&raw).unwrap(), "already-here");
     }
 
     #[test]
     fn reveal_env_var_returns_plaintext_and_sensitive_preview_is_none() {
-        let temp = TempRegistryKey::new("reveal");
-        let key = temp.key();
-        seed(&key, "MY_PLAIN", "C:\\plain value", REG_SZ);
-        seed(&key, "MY_API_TOKEN", "super-secret-plaintext", REG_SZ);
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_PLAIN", "C:\\plain value", REG_SZ);
+        hive.seed("MY_API_TOKEN", "super-secret-plaintext", REG_SZ);
 
-        // reveal 返回完整明文
-        let revealed = reveal_env_var_in_key(&key, "MY_API_TOKEN").expect("reveal 失败");
+        let revealed = reveal_env_var_in_store(&hive, "MY_API_TOKEN").expect("reveal 失败");
         assert_eq!(revealed, "super-secret-plaintext");
 
-        // 列表结果：敏感变量 preview 必须为 None，明文不得出现
-        let metas = list_env_vars_in_key(EnvHive::User, &key).expect("列表失败");
+        let metas = list_env_vars_in_store(EnvHive::User, &hive).expect("列表失败");
         let token_meta = metas
             .iter()
             .find(|m| m.name == "MY_API_TOKEN")
-            .expect("敏感变量应出现在列表元数据中");
-        assert!(token_meta.sensitive, "名称含 API_TOKEN 应命中敏感判定");
-        assert_eq!(token_meta.preview, None, "敏感变量列表不得携带 preview");
+            .expect("敏感变量应在列表");
+        assert!(token_meta.sensitive);
+        assert_eq!(token_meta.preview, None);
 
         let plain_meta = metas
             .iter()
             .find(|m| m.name == "MY_PLAIN")
-            .expect("普通变量应出现在列表元数据中");
-        assert_eq!(
-            plain_meta.preview.as_deref(),
-            Some("C:\\plain value"),
-            "非敏感变量的 preview 应保留"
-        );
+            .expect("普通变量应在列表");
+        assert_eq!(plain_meta.preview.as_deref(), Some("C:\\plain value"));
     }
 
     #[test]
     fn delete_env_var_rejects_revision_mismatch_and_keeps_var() {
-        let temp = TempRegistryKey::new("delete-conflict");
-        let key = temp.key();
-        seed(&key, "MY_VAR", "original", REG_SZ);
-        let (vtype, value) = read_env_var(&key, "MY_VAR").expect("读取失败");
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
         let stale_revision = revision_of("MY_VAR", vtype, &value);
 
-        // 模拟其他进程先一步修改
-        seed(&key, "MY_VAR", "changed-by-other", REG_SZ);
+        hive.seed("MY_VAR", "changed-by-other", REG_SZ);
 
-        let result = delete_env_var_in_key(
-            HKEY_CURRENT_USER,
-            &temp.path,
-            "测试",
-            "MY_VAR",
-            &stale_revision,
-        );
+        let result = delete_env_var_in_store(&hive, "MY_VAR", &stale_revision);
         assert!(result.is_err(), "revision 不匹配必须 Err");
         assert_eq!(result.unwrap_err(), ERR_CONFLICT);
-
-        // 变量必须仍存在
-        assert!(key.get_raw_value("MY_VAR").is_ok(), "冲突时不得删除变量");
+        assert!(hive.contains("MY_VAR"), "冲突时不得删除变量");
     }
 
-    // 防御性回归：list 的测试键路径与隔离父键保持一致，避免未来改动静默
-    // 把测试指向真实环境变量键。
+    // ── F-04：列表失败语义 —— 任一失败让整个 hive 报错 ──
+
     #[test]
-    fn list_test_helper_uses_isolated_prefix() {
-        assert!(TEST_PATH_SUBKEY.starts_with("Software\\PathEditor\\"));
+    fn list_fails_when_enum_fails() {
+        let mut hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "v", REG_SZ);
+        hive.fail_enum = true;
+
+        assert!(
+            list_env_vars_in_store(EnvHive::User, &hive).is_err(),
+            "枚举失败必须让整个 hive 报错"
+        );
+    }
+
+    #[test]
+    fn list_fails_when_single_read_fails() {
+        let mut hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "v", REG_SZ);
+        hive.seed("BAD_VAR", "v", REG_SZ);
+        hive.fail_get = Some("BAD_VAR".into());
+
+        assert!(
+            list_env_vars_in_store(EnvHive::User, &hive).is_err(),
+            "单值读取失败必须让整个 hive 报错"
+        );
+    }
+
+    #[test]
+    // winreg 0.52 的 `String::from_reg_value` 对 REG_SZ/REG_EXPAND_SZ 使用
+    // `from_utf16_lossy`：非法 UTF-16 被替换为 U+FFFD 而不返回 Err，奇数字节
+    // 被截断后 lossy 解码为空串。因此「解码失败」分支对字符串类型当前不可达，
+    // 本测试的构造（奇数字节 REG_SZ）无法让 list 报错。保留测试体作为休眠
+    // 用例：若未来 winreg 改为严格解码，F-04 的 map_err 分支会生效，此测试
+    // 随之通过。详见 task-3456-report 的偏离记录。
+    #[ignore = "winreg 0.52 对字符串类型 lossy 解码，解码失败分支当前不可达"]
+    fn list_fails_when_decode_fails() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "v", REG_SZ);
+        // 奇数字节不是合法 UTF-16，解码必然失败
+        hive.seed_raw(
+            "BAD_STR",
+            winreg::RegValue {
+                bytes: vec![0x41],
+                vtype: REG_SZ,
+            },
+        );
+
+        assert!(
+            list_env_vars_in_store(EnvHive::User, &hive).is_err(),
+            "解码失败必须让整个 hive 报错"
+        );
     }
 
     #[test]
