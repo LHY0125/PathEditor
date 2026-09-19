@@ -79,11 +79,17 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
     const store = useEnvStore.getState();
     const current = store.snapshot ? findMetaByKey(store.snapshot, varKey) : null;
     if (current && readRevision !== null && current.revision !== readRevision) {
-      const fresh = await store.fetchFullValue(current.hive, current.name);
-      setValue(fresh.value);
-      setReadRevision(fresh.revision);
-      setDraftByKey(varKey, fresh.value);
-      setError(t('envVar.staleReloaded'));
+      // 重取是异步 IPC，可能被拒绝（变量被外部删除/类型转 Unsupported）；
+      // 必须容错，否则 rejection 会让 setSubmitting 永不执行，按钮永久禁用。
+      try {
+        const fresh = await store.fetchFullValue(current.hive, current.name);
+        setValue(fresh.value);
+        setReadRevision(fresh.revision);
+        setDraftByKey(varKey, fresh.value);
+        setError(t('envVar.staleReloaded'));
+      } catch (err: unknown) {
+        setError(String(err));
+      }
       setSubmitting(false);
       return;
     }

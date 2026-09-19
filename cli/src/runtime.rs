@@ -169,6 +169,17 @@ pub(crate) fn persist_snapshot(
             )),
         }
     }
+
+    // 防御性清理：本次快照已成功落盘，任何陈旧 pending 都已过时（其内容已被本快照
+    // 取代或覆盖），必须清除，否则下次 flush 会用陈旧内容覆盖本次写入。
+    // 磁盘此时已证明可写，clear 失败的概率极低；即便失败，下次 flush 也只是
+    // 幂等重放已被取代的旧状态——但为守住「成功写入后 pending 必须不存在」的
+    // 不变量，失败时打警告。
+    if core::disabled::has_pending_path_snapshot() {
+        if let Err(e) = core::disabled::clear_pending_path_snapshot() {
+            eprintln!("警告: 清除待补写快照状态失败: {e}");
+        }
+    }
 }
 
 /// 若存在上次未落盘的快照，先补写；成功即清除待补写状态。
@@ -180,8 +191,8 @@ pub(crate) fn persist_snapshot(
 /// **所有 PATH 写命令入口都必须先调用本函数**，否则陈旧 pending 会在后续任一
 /// flush 时把刚写入的注册表与 sidecar 双双覆盖回旧状态。现有调用点：
 /// `load_and_save` / `load_operate_save`（runtime.rs）、`cmd_import`
-/// （import_export.rs）、`profile_apply`（profile_ops.rs）。新增 PATH 写命令时
-/// 必须同样在开头先调用本函数。
+/// （import_export.rs）、`profile_apply`（profile_ops.rs）、`cmd_toggle`
+/// （main.rs）。新增 PATH 写命令时必须同样在开头先调用本函数。
 pub(crate) fn flush_pending_snapshot() {
     let pending = match core::disabled::load_pending_path_snapshot() {
         Ok(Some(p)) => p,
