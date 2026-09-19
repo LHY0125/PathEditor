@@ -300,25 +300,41 @@ fn list_env_vars_in_store(
     hive: EnvHive,
     store: &dyn EnvHiveStore,
 ) -> Result<Vec<EnvVarMeta>, String> {
+    // F-04：错误必须携带 hive 标识，与 open 错误（自带标签）保持一致。
+    let (_, _, label) = hive_location(hive);
     let mut metas = Vec::new();
 
     // 写权限探测按 hive 只做一次（端口在 open 时已探测，避免逐变量重复探测）。
     let writable = store.writable();
 
-    for name in store.enum_names()? {
+    let names = store.enum_names().map_err(|e| {
+        // spec F-04：warning 日志保留，但不再是唯一反馈；Err 继续向上传播。
+        log::warn!("{}环境变量列表读取失败: {}", label, e);
+        format!("读取{}环境变量列表失败: {}", label, e)
+    })?;
+
+    for name in names {
         // 保留变量（Path）由专用通路拥有，通用通路完全不展示
         if is_reserved(&name) {
             continue;
         }
 
-        let raw = store.get_raw(&name)?;
+        let raw = store.get_raw(&name).map_err(|e| {
+            log::warn!("{}环境变量列表读取失败: {}", label, e);
+            format!("读取{}环境变量列表失败: {}", label, e)
+        })?;
         let kind = EnvValueKind::from_reg_type(raw.vtype.clone());
         let sensitive = is_sensitive(&name);
 
         let value = match kind {
             EnvValueKind::Unsupported => String::new(),
-            _ => String::from_reg_value(&raw)
-                .map_err(|e| format!("无法解码环境变量 {}: {}", name, e))?,
+            _ => String::from_reg_value(&raw).map_err(|e| {
+                log::warn!("{}环境变量列表读取失败: {}", label, e);
+                format!(
+                    "读取{}环境变量列表失败: 无法解码环境变量 {}: {}",
+                    label, name, e
+                )
+            })?,
         };
 
         let preview = if sensitive || !kind.is_writable() {
