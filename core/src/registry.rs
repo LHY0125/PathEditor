@@ -366,9 +366,15 @@ fn list_env_vars_in_store(
 /// 「两个接近时刻的快照」，不是原子一致快照。外部进程可能在两次读取
 /// 之间修改任一侧。若需强一致，应在单 hive 维度用 revision 做提交检查。
 pub fn list_all_env_vars() -> Result<EnvVarSnapshot, String> {
+    // clock 异常（系统时间早于 Unix 纪元）时回退 0，不阻塞列表读取。
+    let captured_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
     Ok(EnvVarSnapshot {
         system: list_hive_env_vars(EnvHive::System)?,
         user: list_hive_env_vars(EnvHive::User)?,
+        captured_at,
     })
 }
 

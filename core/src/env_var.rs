@@ -118,7 +118,10 @@ pub struct RevealedValue {
     pub revision: String,
 }
 
-/// 两个 hive 的变量元数据，来自同一次读取。
+/// 两个 hive 的变量元数据。
+///
+/// 两个 hive 是**先后两次独立读取**，没有跨键事务，因此这不是原子一致
+/// 快照；`captured_at` 记录采集时刻（Unix 毫秒），让调用方知道「接近哪个时刻」。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvVarSnapshot {
@@ -126,6 +129,9 @@ pub struct EnvVarSnapshot {
     pub system: Vec<EnvVarMeta>,
     #[serde(default)]
     pub user: Vec<EnvVarMeta>,
+    /// 快照采集时刻（Unix 毫秒）。clock 异常或旧数据缺失时为 0。
+    #[serde(default)]
+    pub captured_at: u64,
 }
 
 fn matches_any(name: &str, candidates: &[&str]) -> bool {
@@ -380,6 +386,7 @@ mod tests {
                 preview: Some("C:\\Java".into()),
                 revision: "abc".into(),
             }],
+            captured_at: 0,
         };
         let value = serde_json::to_value(&snapshot).expect("序列化失败");
         assert!(value.get("user").is_some());

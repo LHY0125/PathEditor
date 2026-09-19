@@ -174,9 +174,12 @@ function parseEnvVarSnapshot(value: unknown): EnvVarSnapshot {
   if (!isRecord(value)) {
     throw new Error('list_all_env_vars 返回了无效的 EnvVarSnapshot 契约');
   }
+  // 旧版后端可能不返回 capturedAt；缺失或类型不符时回退 0，保持向后兼容。
+  const capturedAt = typeof value.capturedAt === 'number' ? value.capturedAt : 0;
   return {
     system: parseEnvVarMetas(value.system, 'list_all_env_vars.system'),
     user: parseEnvVarMetas(value.user, 'list_all_env_vars.user'),
+    capturedAt,
   };
 }
 

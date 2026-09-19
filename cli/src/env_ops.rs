@@ -616,6 +616,7 @@ mod tests {
                 true,
                 false,
             )],
+            captured_at: 0,
         }
     }
 

@@ -94,7 +94,7 @@ function dropFolder(zone: Element, path: string): void {
 beforeEach(() => {
   // resetAllMocks 而非 clearAllMocks：后者保留 mock 实现，会导致跨用例残留。
   vi.resetAllMocks();
-  mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [] });
+  mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
   mockBackend.loadPathSnapshot.mockResolvedValue({ system: [], user: [] });
   mockBackend.getPathCapabilities.mockResolvedValue({
     canReadSystem: true,
@@ -118,7 +118,7 @@ beforeEach(() => {
       canWriteUser: false,
     },
   });
-  useEnvStore.setState({ draft: new Map(), snapshot: { system: [], user: [] } });
+  useEnvStore.setState({ draft: new Map(), snapshot: { system: [], user: [], capturedAt: 0 } });
 });
 
 // 本仓库未开启 vitest globals，RTL 的自动 cleanup 不会生效：不显式清理会让
@@ -161,6 +161,7 @@ describe('AppShell Tab 结构', () => {
     mockBackend.listAllEnvVars.mockResolvedValue({
       system: [meta({ name: 'windir', hive: 'system' })],
       user: [meta({ name: 'JAVA_HOME', hive: 'user' })],
+      capturedAt: 0,
     });
     const { container } = render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
@@ -310,7 +311,7 @@ describe('新建环境变量弹窗', () => {
 
 describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   async function openEditDialog(): Promise<void> {
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()], capturedAt: 0 });
     // 弹窗打开时经 fetchFullValue（revealEnvVar）取完整原值作为编辑数据源（F-01）；
     // 返回值携带读取时 revision，供保存点陈旧判定。
     mockBackend.revealEnvVar.mockResolvedValue({ value: 'C:\\Java', revision: 'rev-1' });
@@ -338,7 +339,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   it('打开弹窗时加载完整原值而非截断 preview（F-01）', async () => {
     // 快照 preview 是 256 字符截断摘要；reveal 返回完整值
     const longFull = 'x'.repeat(300);
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()], capturedAt: 0 });
     mockBackend.revealEnvVar.mockResolvedValue({ value: longFull, revision: 'rev-1' });
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
@@ -376,7 +377,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   it('revision 冲突后刷新，重取+再次提交携带新 revision 并成功（F-02）', async () => {
     const oldMeta = meta({ revision: 'rev-1' });
     const newMeta = meta({ revision: 'rev-2' });
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta], capturedAt: 0 });
     // reveal 返回的 revision 跟随当前快照：模拟后端按注册表现状下发读取时版本
     mockBackend.revealEnvVar.mockImplementation(async () => ({
       value: 'C:\\Java',
@@ -389,8 +390,8 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
       .mockRejectedValueOnce(new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'))
       .mockResolvedValueOnce(undefined);
     mockBackend.listAllEnvVars
-      .mockResolvedValueOnce({ system: [], user: [oldMeta] })
-      .mockResolvedValue({ system: [], user: [newMeta] });
+      .mockResolvedValueOnce({ system: [], user: [oldMeta], capturedAt: 0 })
+      .mockResolvedValue({ system: [], user: [newMeta], capturedAt: 0 });
 
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
@@ -430,7 +431,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   it('快照刷新后提交旧值：重取最新值且不调用 updateEnvVar（F-01）', async () => {
     const oldMeta = meta({ revision: 'rev-1' });
     const newMeta = meta({ revision: 'rev-2' });
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta], capturedAt: 0 });
     // 第一次取值绑定 rev-1；陈旧重取时返回绑定 rev-2 的最新值
     mockBackend.revealEnvVar
       .mockResolvedValueOnce({ value: 'C:\\Java', revision: 'rev-1' })
@@ -448,7 +449,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     expect(valueInput.value).toBe('C:\\Java');
 
     // 弹窗打开期间快照换代（外部进程修改 → 刷新后 revision 变化）
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [newMeta] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [newMeta], capturedAt: 0 });
     fireEvent.click(screen.getByRole('button', { name: '刷新' }));
     await waitFor(() => expect(useEnvStore.getState().snapshot?.user[0]?.revision).toBe('rev-2'));
 
@@ -512,9 +513,9 @@ describe('删除与选中管理', () => {
 
   it('删除需要确认；确认后调用 deleteEnvVar 并清除选中', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()] });
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
     mockBackend.deleteEnvVar.mockResolvedValue(undefined);
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
 
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
@@ -534,9 +535,9 @@ describe('删除与选中管理', () => {
 
   it('取消删除时不调用 deleteEnvVar', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false);
-    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()] });
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
     mockBackend.deleteEnvVar.mockResolvedValue(undefined);
-    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [] });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
 
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
@@ -551,8 +552,8 @@ describe('删除与选中管理', () => {
   });
 
   it('刷新后清除指向已不存在变量的选中', async () => {
-    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()] });
-    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [] });
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [], capturedAt: 0 });
 
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));

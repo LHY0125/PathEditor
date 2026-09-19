@@ -39,6 +39,7 @@ const snapshot = {
     meta({ name: 'JAVA_HOME', hive: 'user' }),
     meta({ name: 'MY_TOKEN', hive: 'user', sensitive: true, preview: null }),
   ],
+  capturedAt: 0,
 };
 
 beforeEach(() => {
@@ -105,6 +106,7 @@ describe('reveal / hide', () => {
       snapshot: {
         system: [],
         user: [meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-old' })],
+        capturedAt: 0,
       },
     });
 
@@ -114,6 +116,7 @@ describe('reveal / hide', () => {
       snapshot: {
         system: [],
         user: [meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-new' })],
+        capturedAt: 0,
       },
     });
     resolveReveal({ value: 'stale-plaintext', revision: 'rev-old' });
@@ -149,7 +152,7 @@ describe('load 竞态防护（F-03）', () => {
     const second = useEnvStore.getState().load();
     // 第二次请求先返回；旧的第一响应晚到
     await second;
-    resolveFirst({ system: [], user: [] });
+    resolveFirst({ system: [], user: [], capturedAt: 0 });
     await first;
 
     expect(useEnvStore.getState().snapshot).toEqual(snapshot);

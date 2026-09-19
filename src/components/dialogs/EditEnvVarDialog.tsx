@@ -41,8 +41,10 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
   const [submitting, setSubmitting] = useState(false);
   const [name] = useState(
     () =>
-      findMetaByKey(useEnvStore.getState().snapshot ?? { system: [], user: [] }, varKey)?.name ??
-      varKey,
+      findMetaByKey(
+        useEnvStore.getState().snapshot ?? { system: [], user: [], capturedAt: 0 },
+        varKey,
+      )?.name ?? varKey,
   );
 
   // 打开时取完整原值；仅在打开/换键时取一次。

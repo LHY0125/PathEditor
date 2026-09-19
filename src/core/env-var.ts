@@ -23,6 +23,8 @@ export interface EnvVarMeta {
 export interface EnvVarSnapshot {
   system: EnvVarMeta[];
   user: EnvVarMeta[];
+  /** 快照采集时刻（Unix 毫秒）。两个 hive 是先后两次读取，不是原子快照；缺失时为 0。 */
+  capturedAt: number;
 }
 
 /** 完整明文及其读取时的 revision（与 Rust `RevealedValue` 契约一致）。 */
