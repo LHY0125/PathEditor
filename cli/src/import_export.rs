@@ -2,6 +2,7 @@ use crate::runtime::{enabled_paths, exit_err, persist_snapshot, verify_and_save}
 use path_editor_core as core;
 
 pub(crate) fn cmd_import(file: String, target: String) {
+    super::runtime::flush_pending_snapshot();
     let content = core::fs::read_text_file(&file).unwrap_or_else(|e| exit_err(&e));
     let (sys_entries, usr_entries) =
         core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_err(&e));

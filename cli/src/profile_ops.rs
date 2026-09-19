@@ -43,6 +43,7 @@ pub(crate) fn profile_load(name: String) {
 }
 
 pub(crate) fn profile_apply(name: String) {
+    super::runtime::flush_pending_snapshot();
     let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
     let new_sys: Vec<String> = data
         .sys

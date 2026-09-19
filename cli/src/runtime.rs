@@ -176,7 +176,13 @@ pub(crate) fn persist_snapshot(
 /// 补写是 best-effort：失败不阻断当前命令，只打印警告。
 /// pending 是覆盖式整份快照（两个 hive 均为 `Some`），直接整份传回
 /// `save_path_snapshot` 即为正确形态。
-fn flush_pending_snapshot() {
+///
+/// **所有 PATH 写命令入口都必须先调用本函数**，否则陈旧 pending 会在后续任一
+/// flush 时把刚写入的注册表与 sidecar 双双覆盖回旧状态。现有调用点：
+/// `load_and_save` / `load_operate_save`（runtime.rs）、`cmd_import`
+/// （import_export.rs）、`profile_apply`（profile_ops.rs）。新增 PATH 写命令时
+/// 必须同样在开头先调用本函数。
+pub(crate) fn flush_pending_snapshot() {
     let pending = match core::disabled::load_pending_path_snapshot() {
         Ok(Some(p)) => p,
         Ok(None) => return,
