@@ -311,8 +311,9 @@ describe('新建环境变量弹窗', () => {
 describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   async function openEditDialog(): Promise<void> {
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
-    // 弹窗打开时经 fetchFullValue（revealEnvVar）取完整原值作为编辑数据源（F-01）
-    mockBackend.revealEnvVar.mockResolvedValue('C:\\Java');
+    // 弹窗打开时经 fetchFullValue（revealEnvVar）取完整原值作为编辑数据源（F-01）；
+    // 返回值携带读取时 revision，供保存点陈旧判定。
+    mockBackend.revealEnvVar.mockResolvedValue({ value: 'C:\\Java', revision: 'rev-1' });
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
 
@@ -338,7 +339,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     // 快照 preview 是 256 字符截断摘要；reveal 返回完整值
     const longFull = 'x'.repeat(300);
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()] });
-    mockBackend.revealEnvVar.mockResolvedValue(longFull);
+    mockBackend.revealEnvVar.mockResolvedValue({ value: longFull, revision: 'rev-1' });
     render(<AppShell />);
     fireEvent.click(screen.getByText('全部变量'));
     await waitFor(() =>
@@ -372,12 +373,18 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     );
   });
 
-  it('revision 冲突后刷新，第二次提交携带新 revision 并成功（F-02）', async () => {
+  it('revision 冲突后刷新，重取+再次提交携带新 revision 并成功（F-02）', async () => {
     const oldMeta = meta({ revision: 'rev-1' });
     const newMeta = meta({ revision: 'rev-2' });
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta] });
-    mockBackend.revealEnvVar.mockResolvedValue('C:\\Java');
-    // 第一次提交冲突，之后刷新返回新 revision；第二次提交成功
+    // reveal 返回的 revision 跟随当前快照：模拟后端按注册表现状下发读取时版本
+    mockBackend.revealEnvVar.mockImplementation(async () => ({
+      value: 'C:\\Java',
+      revision:
+        useEnvStore.getState().snapshot?.user.find((m) => m.name === 'JAVA_HOME')?.revision ??
+        'rev-1',
+    }));
+    // 第一次提交冲突，之后刷新返回新 revision；重取后再提交成功
     mockBackend.updateEnvVar
       .mockRejectedValueOnce(new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'))
       .mockResolvedValueOnce(undefined);
@@ -401,7 +408,14 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     await waitFor(() => expect(screen.getAllByText(/已被其他进程修改/).length).toBeGreaterThan(0));
     expect(screen.getByLabelText('变量值')).not.toBeNull();
 
-    // 第二次提交：弹窗未关，直接再点确定 → 自动携带刷新后的 rev-2
+    // 第二次提交：弹窗读值绑定 rev-1 而快照已是 rev-2 → 陈旧重取，本次不保存
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+    await waitFor(() => expect(screen.getAllByText(/已被外部修改/).length).toBeGreaterThan(0));
+    expect(mockBackend.updateEnvVar).toHaveBeenCalledTimes(1);
+    // 输入框已被重取的最新原值替换；用户重新输入后再提交
+    fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'C:\\NewJava' } });
+
+    // 第三次提交：读值 revision 已随重取换代 → 携带 rev-2 成功
     fireEvent.click(screen.getByRole('button', { name: '确定' }));
     await waitFor(() =>
       expect(mockBackend.updateEnvVar).toHaveBeenLastCalledWith(
@@ -411,6 +425,39 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
         'rev-2',
       ),
     );
+  });
+
+  it('快照刷新后提交旧值：重取最新值且不调用 updateEnvVar（F-01）', async () => {
+    const oldMeta = meta({ revision: 'rev-1' });
+    const newMeta = meta({ revision: 'rev-2' });
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta] });
+    // 第一次取值绑定 rev-1；陈旧重取时返回绑定 rev-2 的最新值
+    mockBackend.revealEnvVar
+      .mockResolvedValueOnce({ value: 'C:\\Java', revision: 'rev-1' })
+      .mockResolvedValue({ value: 'C:\\JavaFresh', revision: 'rev-2' });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')).not.toBeNull(),
+    );
+    fireEvent.click(document.querySelector('[data-env-var-key="user:JAVA_HOME"]')!);
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }));
+    const valueInput = screen.getByLabelText('变量值') as HTMLInputElement;
+    await waitFor(() => expect(valueInput.disabled).toBe(false));
+    expect(valueInput.value).toBe('C:\\Java');
+
+    // 弹窗打开期间快照换代（外部进程修改 → 刷新后 revision 变化）
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [newMeta] });
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(useEnvStore.getState().snapshot?.user[0]?.revision).toBe('rev-2'));
+
+    // 提交旧值 → 弹窗检测读取版本已陈旧：重取最新值，本次不保存
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+    await waitFor(() => expect(screen.getAllByText(/已被外部修改/).length).toBeGreaterThan(0));
+    expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
+    // 输入框已被重取的最新值替换，用户确认后可再次提交
+    expect((screen.getByLabelText('变量值') as HTMLInputElement).value).toBe('C:\\JavaFresh');
   });
 
   it('非冲突保存失败时弹窗保留并显示错误', async () => {

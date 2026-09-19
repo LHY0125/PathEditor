@@ -11,8 +11,11 @@ interface EditEnvVarDialogProps {
    */
   varKey: string;
   onCancel: () => void;
-  /** 返回是否保存成功；失败时弹窗保留并显示 store 的错误消息。 */
-  onConfirm: (value: string) => Promise<boolean>;
+  /**
+   * 返回是否保存成功；失败时弹窗保留并显示 store 的错误消息。
+   * readRevision 是弹窗读取原值时的 revision，供保存点陈旧判定（F-01）。
+   */
+  onConfirm: (value: string, readRevision: string | null) => Promise<boolean>;
 }
 
 /**
@@ -32,6 +35,8 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
   const meta = useEnvStore((s) => (s.snapshot ? findMetaByKey(s.snapshot, varKey) : null));
   const gone = meta === null;
   const [value, setValue] = useState<string | null>(null); // null = 加载完整原值中
+  // 读取原值时的 revision（F-01）：提交时与最新快照比对，判断值是否已陈旧。
+  const [readRevision, setReadRevision] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [name] = useState(
@@ -49,7 +54,9 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
     store
       .fetchFullValue(current.hive, current.name)
       .then((full) => {
-        if (!cancelled) setValue(full);
+        if (cancelled) return;
+        setValue(full.value);
+        setReadRevision(full.revision);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -65,7 +72,20 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
   const submit = async () => {
     if (value === null) return;
     setSubmitting(true);
-    const ok = await onConfirm(value);
+    // F-01：提交前若快照 revision 已变（外部修改），先重取最新完整值，
+    // 本次不保存；用户看到新值后可再次确认。
+    const store = useEnvStore.getState();
+    const current = store.snapshot ? findMetaByKey(store.snapshot, varKey) : null;
+    if (current && readRevision !== null && current.revision !== readRevision) {
+      const fresh = await store.fetchFullValue(current.hive, current.name);
+      setValue(fresh.value);
+      setReadRevision(fresh.revision);
+      setDraftByKey(varKey, fresh.value);
+      setError(t('envVar.staleReloaded'));
+      setSubmitting(false);
+      return;
+    }
+    const ok = await onConfirm(value, readRevision);
     setSubmitting(false);
     if (!ok) setError(useEnvStore.getState().statusMessage);
     // 失败不清草稿（c2 统一策略）：草稿镜像输入，供重试与关窗确认。

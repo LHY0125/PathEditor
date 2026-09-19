@@ -8,6 +8,7 @@ import {
   type EnvVarMeta,
   type EnvVarSnapshot,
   type HiveFilter,
+  type RevealedValue,
 } from '@/core/env-var';
 import { backend } from '@/services/backend';
 
@@ -36,10 +37,10 @@ interface EnvState {
   setDraftByKey: (key: string, value: string) => void;
   clearDraft: (meta: EnvVarMeta) => void;
   clearDraftByKey: (key: string) => void;
-  /** 取单个变量的完整明文（编辑弹窗数据源）。不进入 revealed，不影响表格打码状态。 */
-  fetchFullValue: (hive: EnvHive, name: string) => Promise<string>;
-  /** 返回是否写入成功；弹窗据此决定关闭还是保留并显示错误。 */
-  save: (meta: EnvVarMeta) => Promise<boolean>;
+  /** 取单个变量的完整明文及其读取时的 revision（编辑弹窗数据源）。不进入 revealed，不影响表格打码状态。 */
+  fetchFullValue: (hive: EnvHive, name: string) => Promise<RevealedValue>;
+  /** 返回是否写入成功；弹窗据此决定关闭还是保留并显示错误。readRevision 是弹窗读取原值时的 revision，用于保存点陈旧判定（F-01）。 */
+  save: (meta: EnvVarMeta, readRevision: string | null) => Promise<boolean>;
   create: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
   remove: (meta: EnvVarMeta) => Promise<boolean>;
   reveal: (meta: EnvVarMeta) => Promise<void>;
@@ -111,12 +112,19 @@ export const useEnvStore = create<EnvState>((set, get) => {
     },
 
     fetchFullValue: async (hive, name) => {
-      // 编辑数据源专用：完整明文直接返回给调用方，绝不写入 revealed ——
-      // preview 是截断/净化后的展示摘要，严禁作为编辑初始值（F-01）。
+      // 编辑数据源专用：完整明文 + 读取时 revision 直接返回给调用方，绝不写入
+      // revealed —— preview 是截断/净化后的展示摘要，严禁作为编辑初始值（F-01）。
+      // revision 用于提交时校验值是否已陈旧。
       return backend.revealEnvVar(hive, name);
     },
 
-    save: async (meta) => {
+    save: async (meta, readRevision) => {
+      // F-01：编辑值的读取版本与将写入的 revision 不一致 → 值已陈旧，
+      // 拒绝提交，刷新快照让弹窗重取，避免用旧值覆盖外部新值。
+      if (readRevision !== null && readRevision !== meta.revision) {
+        await refreshAfterError(i18n.t('envVar.staleReloaded'));
+        return false;
+      }
       const value = get().draft.get(envVarKey(meta));
       if (value === undefined) return false;
       set({ isSaving: true });
@@ -178,7 +186,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
     reveal: async (meta) => {
       const requestedRevision = meta.revision;
       try {
-        const value = await backend.revealEnvVar(meta.hive, meta.name);
+        const { value } = await backend.revealEnvVar(meta.hive, meta.name);
         // 竞态防护：请求期间快照若已换代（revision 变化或条目消失），
         // 旧明文绑定不到当前状态，直接丢弃 —— 避免旧值经新 revision 覆盖外部更新。
         const snap = get().snapshot;

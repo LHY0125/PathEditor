@@ -25,6 +25,12 @@ export interface EnvVarSnapshot {
   user: EnvVarMeta[];
 }
 
+/** 完整明文及其读取时的 revision（与 Rust `RevealedValue` 契约一致）。 */
+export type RevealedValue = {
+  value: string;
+  revision: string;
+};
+
 const MASK_PLACEHOLDER = '••••••••';
 const UNSUPPORTED_PLACEHOLDER = '(不支持的注册表类型)';
 

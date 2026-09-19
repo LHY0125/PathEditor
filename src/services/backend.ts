@@ -1,7 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { PathEntry, PathSnapshot } from '@/core/path-entry';
 import type { PathCapabilities } from '@/core/path-capabilities';
-import type { EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot } from '@/core/env-var';
+import type {
+  EnvHive,
+  EnvValueKind,
+  EnvVarMeta,
+  EnvVarSnapshot,
+  RevealedValue,
+} from '@/core/env-var';
 
 export type { PathCapabilities } from '@/core/path-capabilities';
 
@@ -141,6 +147,22 @@ function parseEnvVarMeta(value: unknown, label: string): EnvVarMeta {
   };
 }
 
+/**
+ * RevealedValue 契约校验：reveal_env_var 必须同时返回完整明文与读取时的
+ * revision（F-01 编辑陈旧判定依赖后者）。白名单构造，绝不透传上游多余字段。
+ */
+function parseRevealedValue(value: unknown, label: string): RevealedValue {
+  if (
+    !isRecord(value) ||
+    typeof value.value !== 'string' ||
+    typeof value.revision !== 'string' ||
+    value.revision.length === 0
+  ) {
+    throw new Error(`${label} 返回了无效的 RevealedValue 契约`);
+  }
+  return { value: value.value, revision: value.revision };
+}
+
 function parseEnvVarMetas(values: unknown, label: string): EnvVarMeta[] {
   if (!Array.isArray(values)) {
     throw new Error(`${label} 返回了无效的 EnvVarMeta[] 契约`);
@@ -206,7 +228,8 @@ export const backend = {
   renameProfile: (oldName: string, newName: string) =>
     invoke<void>('rename_profile', { oldName, newName }),
   listAllEnvVars: async () => parseEnvVarSnapshot(await invoke<unknown>('list_all_env_vars')),
-  revealEnvVar: (hive: EnvHive, name: string) => invoke<string>('reveal_env_var', { hive, name }),
+  revealEnvVar: async (hive: EnvHive, name: string) =>
+    parseRevealedValue(await invoke<unknown>('reveal_env_var', { hive, name }), 'reveal_env_var'),
   updateEnvVar: (hive: EnvHive, name: string, value: string, expectedRevision: string) =>
     invoke<void>('update_env_var', { hive, name, value, expectedRevision }),
   createEnvVar: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) =>

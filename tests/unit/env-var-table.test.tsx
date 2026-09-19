@@ -130,7 +130,7 @@ describe('EnvVarTable', () => {
   });
 
   it('点击「显示」后触发 reveal 并渲染明文', async () => {
-    mockBackend.revealEnvVar.mockResolvedValue('real-secret');
+    mockBackend.revealEnvVar.mockResolvedValue({ value: 'real-secret', revision: 'rev-1' });
     const { container } = render(<EnvVarTable />);
 
     const showButtons = screen.getAllByRole('button', { name: '显示' });

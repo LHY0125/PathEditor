@@ -288,13 +288,13 @@ export function AppShell() {
         <EditEnvVarDialog
           varKey={editVarKey}
           onCancel={() => setEditVarKey(null)}
-          onConfirm={async (value) => {
+          onConfirm={async (value, readRevision) => {
             const store = useEnvStore.getState();
             // 从最新快照派生 meta：冲突刷新后重试自动携带新 revision（F-02）
             const meta = store.snapshot ? findMetaByKey(store.snapshot, editVarKey) : null;
             if (!meta) return false;
             store.setDraft(meta, value);
-            const ok = await store.save(meta);
+            const ok = await store.save(meta, readRevision);
             if (ok) setEditVarKey(null);
             // 失败不清草稿（c2 统一策略）：草稿镜像输入，供重试与关窗确认。
             return ok;

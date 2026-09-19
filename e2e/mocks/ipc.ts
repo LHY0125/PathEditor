@@ -75,6 +75,17 @@ const allEnvVarsFixture = {
 
 export type IpcOverrides = Partial<Record<string, unknown>>;
 
+/**
+ * reveal_env_var 的 mock 返回值（F-01 新契约）：按变量名索引
+ * `{ value, revision }`，revision 与 allEnvVarsFixture 快照一致。
+ */
+const revealedFixture: Record<string, { value: string; revision: string }> = {
+  JAVA_HOME: { value: 'C:\\Java', revision: 'usr-java' },
+  MY_TOKEN: { value: 'plaintext-secret-value', revision: 'usr-token' },
+  windir: { value: 'C:\\WINDOWS', revision: 'sys-windir' },
+  ADMIN_ONLY: { value: 'x', revision: 'sys-ro' },
+};
+
 export function createIpcMock(overrides: IpcOverrides = {}) {
   return `
     window.__TAURI_INTERNALS__ = {
@@ -120,7 +131,9 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'delete_profile': return undefined;
           case 'rename_profile': return undefined;
           case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
-          case 'reveal_env_var': return 'plaintext-secret-value';
+          case 'reveal_env_var':
+            // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）
+            return ${JSON.stringify(revealedFixture)}[args?.name] ?? null;
           case 'update_env_var':
             // 冲突契约：与 Rust 侧一致，携带 [E_CONFLICT] 前缀（前端按前缀匹配）
             if (window.__conflictOverride) {
