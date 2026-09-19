@@ -34,6 +34,7 @@ describe('findMetaByKey', () => {
   const snapshot: EnvVarSnapshot = {
     system: [meta({ name: 'windir', hive: 'system' })],
     user: [meta()],
+    capturedAt: 0,
   };
 
   it('按键命中两个 hive 中的条目', () => {
@@ -109,6 +110,7 @@ describe('filterEnvVars', () => {
       meta({ name: 'MY_KEY', hive: 'system', sensitive: true, preview: null }),
     ],
     user: [meta({ name: 'JAVA_HOME', hive: 'user' })],
+    capturedAt: 0,
   };
 
   it('filter=all 返回两个 hive', () => {

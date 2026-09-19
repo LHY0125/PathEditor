@@ -58,18 +58,19 @@ pub(crate) fn load_and_save(
     f: impl FnOnce(Vec<core::PathEntry>) -> Vec<core::PathEntry>,
 ) {
     let target = ensure_single_target(system, false);
+    flush_pending_snapshot();
     let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
 
     if target == "system" {
         let original = enabled_paths(&snapshot.system);
         let entries = f(snapshot.system);
         verify_and_save(target, &original, enabled_paths(&entries));
-        core::disabled::save_path_snapshot(Some(entries), None).unwrap_or_else(|e| exit_err(&e));
+        persist_snapshot(Some(entries), None);
     } else {
         let original = enabled_paths(&snapshot.user);
         let entries = f(snapshot.user);
         verify_and_save(target, &original, enabled_paths(&entries));
-        core::disabled::save_path_snapshot(None, Some(entries)).unwrap_or_else(|e| exit_err(&e));
+        persist_snapshot(None, Some(entries));
     }
 }
 
@@ -80,6 +81,7 @@ pub(crate) fn load_operate_save(
     operate: impl FnOnce(Vec<core::PathEntry>, usize) -> (Vec<core::PathEntry>, String),
 ) {
     let target = ensure_single_target(system, false);
+    flush_pending_snapshot();
     let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
     let entries = if target == "system" {
         snapshot.system
@@ -94,11 +96,9 @@ pub(crate) fn load_operate_save(
     let (new_entries, message) = operate(entries, index);
     verify_and_save(target, &original, enabled_paths(&new_entries));
     if target == "system" {
-        core::disabled::save_path_snapshot(Some(new_entries), None)
-            .unwrap_or_else(|e| exit_err(&e));
+        persist_snapshot(Some(new_entries), None);
     } else {
-        core::disabled::save_path_snapshot(None, Some(new_entries))
-            .unwrap_or_else(|e| exit_err(&e));
+        persist_snapshot(None, Some(new_entries));
     }
 
     println!("{message}");
@@ -122,12 +122,92 @@ pub(crate) fn disabled_paths(entries: &[core::PathEntry]) -> Vec<String> {
         .collect()
 }
 
-/// 注册表写入成功后再提交完整有序快照，保持两个存储的一致性边界。
+/// 构造 sidecar 快照保存失败时的错误文案（纯函数，便于测试）。
+///
+/// 两个分支都必须包含「注册表已写入」，让用户/脚本明确知道注册表侧已经生效、
+/// 只有侧车快照未落盘，避免误判为整个操作失败。
+pub(crate) fn sidecar_failure_message(err: &str, pending_ok: bool) -> String {
+    if pending_ok {
+        format!(
+            "注册表已写入，但快照保存失败: {err}\n已记录待补写状态，下次运行 PATH 命令会自动补写"
+        )
+    } else {
+        format!(
+            "注册表已写入，但快照保存失败: {err}\n且待补写状态记录失败，注册表与快照可能不一致，请手工核对"
+        )
+    }
+}
+
+/// 注册表写入成功后提交完整有序快照，保持两个存储的一致性边界。
+///
+/// 失败时不丢状态：把待补写内容落到 pending 文件，退出码 1 并在 stderr
+/// 明确说明「注册表已写入、快照未落、已记录待补写」，供下次运行自动补写。
 pub(crate) fn persist_snapshot(
     system: Option<Vec<core::PathEntry>>,
     user: Option<Vec<core::PathEntry>>,
 ) {
-    core::disabled::save_path_snapshot(system, user).unwrap_or_else(|e| exit_err(&e));
+    if let Err(e) = core::disabled::save_path_snapshot(system.clone(), user.clone()) {
+        // pending 快照是覆盖式整份落盘，`save_pending_path_snapshot` 的 None 语义
+        // 是「空数组」而非「保留该 hive」（与 `save_path_snapshot` 不同）。
+        // 若把 None 原样落 pending，补写时会把未操作的 hive 清成空。
+        // 因此先用当前快照把 None 侧填充为现有内容，保证补写是无损的整份覆盖。
+        let pending = match core::disabled::load_path_snapshot() {
+            Ok(snap) => {
+                let sys = system.unwrap_or_else(|| snap.system.clone());
+                let usr = user.unwrap_or_else(|| snap.user.clone());
+                core::disabled::save_pending_path_snapshot(Some(sys), Some(usr))
+            }
+            // 当前快照读取失败时无法安全构造无损 pending，跳过落盘；
+            // 错误文案仍说明注册表已写入，提示手工核对。
+            Err(pe) => Err(pe),
+        };
+        match pending {
+            Ok(()) => exit_err(&sidecar_failure_message(&e, true)),
+            Err(pe) => exit_err(&format!(
+                "{}\n（待补写状态记录失败: {pe}）",
+                sidecar_failure_message(&e, false)
+            )),
+        }
+    }
+
+    // 防御性清理：本次快照已成功落盘，任何陈旧 pending 都已过时（其内容已被本快照
+    // 取代或覆盖），必须清除，否则下次 flush 会用陈旧内容覆盖本次写入。
+    // 磁盘此时已证明可写，clear 失败的概率极低；即便失败，下次 flush 也只是
+    // 幂等重放已被取代的旧状态——但为守住「成功写入后 pending 必须不存在」的
+    // 不变量，失败时打警告。
+    if core::disabled::has_pending_path_snapshot() {
+        if let Err(e) = core::disabled::clear_pending_path_snapshot() {
+            eprintln!("警告: 清除待补写快照状态失败: {e}");
+        }
+    }
+}
+
+/// 若存在上次未落盘的快照，先补写；成功即清除待补写状态。
+///
+/// 补写是 best-effort：失败不阻断当前命令，只打印警告。
+/// pending 是覆盖式整份快照（两个 hive 均为 `Some`），直接整份传回
+/// `save_path_snapshot` 即为正确形态。
+///
+/// **所有 PATH 写命令入口都必须先调用本函数**，否则陈旧 pending 会在后续任一
+/// flush 时把刚写入的注册表与 sidecar 双双覆盖回旧状态。现有调用点：
+/// `load_and_save` / `load_operate_save`（runtime.rs）、`cmd_import`
+/// （import_export.rs）、`profile_apply`（profile_ops.rs）、`cmd_toggle`
+/// （main.rs）。新增 PATH 写命令时必须同样在开头先调用本函数。
+pub(crate) fn flush_pending_snapshot() {
+    let pending = match core::disabled::load_pending_path_snapshot() {
+        Ok(Some(p)) => p,
+        Ok(None) => return,
+        Err(e) => {
+            eprintln!("警告: 无法读取待补写快照状态: {e}");
+            return;
+        }
+    };
+    match core::disabled::save_path_snapshot(Some(pending.system), Some(pending.user)) {
+        Ok(()) => {
+            let _ = core::disabled::clear_pending_path_snapshot();
+        }
+        Err(e) => eprintln!("警告: 待补写快照仍未能落盘: {e}"),
+    }
 }
 
 #[cfg(test)]
@@ -159,5 +239,27 @@ mod tests {
             is_conflict(&msg),
             "core 冲突消息必须以 [E_CONFLICT] 开头，实际: {msg}"
         );
+    }
+
+    #[test]
+    fn sidecar_failure_message_pending_ok_mentions_registry_written_and_pending() {
+        let msg = sidecar_failure_message("磁盘已满", true);
+        assert!(
+            msg.contains("注册表已写入"),
+            "必须包含「注册表已写入」: {msg}"
+        );
+        assert!(msg.contains("待补写"), "必须包含「待补写」: {msg}");
+        assert!(msg.contains("磁盘已满"), "必须透传原始错误: {msg}");
+    }
+
+    #[test]
+    fn sidecar_failure_message_pending_failed_mentions_registry_written_and_manual_check() {
+        let msg = sidecar_failure_message("磁盘已满", false);
+        assert!(
+            msg.contains("注册表已写入"),
+            "必须包含「注册表已写入」: {msg}"
+        );
+        assert!(msg.contains("手工核对"), "必须提示手工核对: {msg}");
+        assert!(msg.contains("磁盘已满"), "必须透传原始错误: {msg}");
     }
 }

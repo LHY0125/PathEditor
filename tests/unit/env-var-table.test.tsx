@@ -85,6 +85,7 @@ const snapshot = {
     meta({ name: 'JAVA_HOME', hive: 'user' }),
     meta({ name: 'MY_TOKEN', hive: 'user', sensitive: true, preview: null }),
   ],
+  capturedAt: 0,
 };
 
 beforeEach(() => {
@@ -117,7 +118,7 @@ describe('EnvVarTable', () => {
 
   it('不渲染 Path（Rust 侧已过滤，此处防御性验证）', () => {
     useEnvStore.setState({
-      snapshot: { system: [meta({ name: 'Path', hive: 'system' })], user: [] },
+      snapshot: { system: [meta({ name: 'Path', hive: 'system' })], user: [], capturedAt: 0 },
     });
     render(<EnvVarTable />);
     expect(screen.queryByText('Path')).toBeNull();
@@ -130,7 +131,7 @@ describe('EnvVarTable', () => {
   });
 
   it('点击「显示」后触发 reveal 并渲染明文', async () => {
-    mockBackend.revealEnvVar.mockResolvedValue('real-secret');
+    mockBackend.revealEnvVar.mockResolvedValue({ value: 'real-secret', revision: 'rev-1' });
     const { container } = render(<EnvVarTable />);
 
     const showButtons = screen.getAllByRole('button', { name: '显示' });
@@ -224,6 +225,7 @@ describe('data-env-var-key 行定位属性（Task 8 E2E 契约）', () => {
       snapshot: {
         system: [meta({ name: 'JAVA_HOME', hive: 'system' })],
         user: [meta({ name: 'JAVA_HOME', hive: 'user' })],
+        capturedAt: 0,
       },
     });
     const { container } = render(<EnvVarTable />);

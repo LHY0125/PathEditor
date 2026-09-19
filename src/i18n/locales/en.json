@@ -35,6 +35,7 @@
     "editVarTitle": "Edit Environment Variable",
     "deleteConfirm": "Delete variable {{name}}? This cannot be undone.",
     "varGone": "This variable no longer exists (possibly deleted by another process). Refresh the list.",
+    "staleReloaded": "The variable was modified externally. The latest value has been reloaded; please review before saving.",
     "newVarName": "Variable name",
     "newVarValue": "Variable value",
     "newVarKind": "Value type",

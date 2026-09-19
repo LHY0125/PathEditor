@@ -35,6 +35,7 @@
     "editVarTitle": "编辑环境变量",
     "deleteConfirm": "确定删除变量 {{name}} 吗？此操作不可撤销。",
     "varGone": "该变量已不存在（可能被其他进程删除），请刷新列表",
+    "staleReloaded": "变量已被外部修改，已重新加载最新值，请确认后再保存",
     "newVarName": "变量名",
     "newVarValue": "变量值",
     "newVarKind": "值类型",

@@ -1,6 +1,6 @@
 use crate::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
-    EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot,
+    EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
 };
 use crate::path_entry::PathEntry;
 use crate::reg_store::{EnvHiveStore, WinregHive};
@@ -366,22 +366,28 @@ fn list_env_vars_in_store(
 /// 「两个接近时刻的快照」，不是原子一致快照。外部进程可能在两次读取
 /// 之间修改任一侧。若需强一致，应在单 hive 维度用 revision 做提交检查。
 pub fn list_all_env_vars() -> Result<EnvVarSnapshot, String> {
+    // clock 异常（系统时间早于 Unix 纪元）时回退 0，不阻塞列表读取。
+    let captured_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
     Ok(EnvVarSnapshot {
         system: list_hive_env_vars(EnvHive::System)?,
         user: list_hive_env_vars(EnvHive::User)?,
+        captured_at,
     })
 }
 
-/// 按需读取单个变量的明文（命中敏感规则的变量的唯一取值入口）。
+/// 按需读取单个变量的明文及读取时的 revision。
 ///
 /// `Unsupported` 类型返回 `Err`，不尝试转字符串。
-pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<String, String> {
+pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<RevealedValue, String> {
     let store = WinregHive::open(hive, false)?;
     reveal_env_var_in_store(&store, name)
 }
 
-/// `reveal_env_var` 的核心逻辑，存储可注入（测试用内存实现）。
-fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<String, String> {
+/// `reveal_env_var` 的核心逻辑，存储可注入。
+fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<RevealedValue, String> {
     validate_env_name(name)?;
     if is_reserved(name) {
         return Err(format!(
@@ -389,8 +395,9 @@ fn reveal_env_var_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<Strin
             name
         ));
     }
-    let (_vtype, value) = read_env_var(store, name)?;
-    Ok(value)
+    let (vtype, value) = read_env_var(store, name)?;
+    let revision = revision_of(name, vtype, &value);
+    Ok(RevealedValue { value, revision })
 }
 
 /// 写入已有变量。类型从注册表读取，不由前端决定。
@@ -548,6 +555,80 @@ fn delete_env_var_in_store(
         // 防御性、当前不可达（评审裁断 O-3）：`read_env_var` 已对 Unsupported
         // 类型提前返回 Err，上面的 `?` 会先短路。保留以显式表达删除的前置条件，
         // 行为与现状一致。
+        return Err(format!("{} 的注册表类型不受支持，无法删除", name));
+    }
+
+    store.delete_value(name)
+}
+
+/// 强制写入已有变量（**最后写入者胜**）。不做 revision 比对。
+///
+/// 仅供 CLI `--force` 使用；GUI 一律走 [`update_env_var`] 的 CAS 语义。
+/// force 只豁免并发校验，**不豁免**保留名 / 保护名单 / 类型 / 权限判定。
+/// 这不是原子操作：读类型与写入仍是两次独立调用。
+pub fn update_env_var_force(hive: EnvHive, name: &str, value: &str) -> Result<(), String> {
+    let store = WinregHive::open(hive, true)?;
+    update_env_var_force_in_store(&store, name, value)?;
+    crate::system::broadcast_env_change();
+    Ok(())
+}
+
+/// `update_env_var_force` 的核心逻辑，存储可注入。
+fn update_env_var_force_in_store(
+    store: &dyn EnvHiveStore,
+    name: &str,
+    value: &str,
+) -> Result<(), String> {
+    validate_env_name(name)?;
+    if is_reserved(name) {
+        return Err(format!(
+            "{} 由专用 PATH 通路管理，请使用 PATH 视图编辑",
+            name
+        ));
+    }
+    if is_protected(name) {
+        return Err(format!("{} 是系统内置变量，不允许修改", name));
+    }
+
+    // 读现有类型以便原样保留；**不比对** revision
+    let (vtype, _current) = read_env_var(store, name)?;
+    let kind = EnvValueKind::from_reg_type(vtype.clone());
+    if !kind.is_writable() {
+        return Err(format!(
+            "{} 的注册表类型不受支持，无法修改（仅可查看）",
+            name
+        ));
+    }
+    validate_env_value(value, name)?;
+
+    write_env_var(store, name, value, vtype)
+}
+
+/// 强制删除变量（**最后写入者胜**）。不做 revision 比对，其余校验照旧。
+pub fn delete_env_var_force(hive: EnvHive, name: &str) -> Result<(), String> {
+    let store = WinregHive::open(hive, true)?;
+    delete_env_var_force_in_store(&store, name)?;
+    crate::system::broadcast_env_change();
+    Ok(())
+}
+
+/// `delete_env_var_force` 的核心逻辑，存储可注入。
+fn delete_env_var_force_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<(), String> {
+    validate_env_name(name)?;
+    if is_reserved(name) {
+        return Err(format!(
+            "{} 由专用 PATH 通路管理，请使用 PATH 视图编辑",
+            name
+        ));
+    }
+    if is_protected(name) {
+        return Err(format!("{} 是系统内置变量，不允许删除", name));
+    }
+
+    let (vtype, _current) = read_env_var(store, name)?;
+    if EnvValueKind::from_reg_type(vtype) == EnvValueKind::Unsupported {
+        // 防御性、当前不可达：`read_env_var` 已对 Unsupported 类型提前返回 Err，
+        // 上面的 `?` 会先短路。保留以显式表达删除的前置条件，行为与现状一致。
         return Err(format!("{} 的注册表类型不受支持，无法删除", name));
     }
 
@@ -945,13 +1026,38 @@ mod env_var_tests {
     }
 
     #[test]
+    fn reveal_returns_value_with_matching_revision() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "hello", REG_SZ);
+
+        let revealed = reveal_env_var_in_store(&hive, "MY_VAR").expect("reveal 失败");
+        assert_eq!(revealed.value, "hello");
+
+        let raw = hive.get_raw("MY_VAR").unwrap();
+        let expected = revision_of("MY_VAR", raw.vtype, "hello");
+        assert_eq!(revealed.revision, expected, "revision 必须与列表项一致");
+    }
+
+    #[test]
+    fn reveal_revision_changes_after_external_edit() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "one", REG_SZ);
+        let first = reveal_env_var_in_store(&hive, "MY_VAR").unwrap().revision;
+
+        hive.seed("MY_VAR", "two", REG_SZ);
+        let second = reveal_env_var_in_store(&hive, "MY_VAR").unwrap().revision;
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
     fn reveal_env_var_returns_plaintext_and_sensitive_preview_is_none() {
         let hive = MemoryHive::new(true);
         hive.seed("MY_PLAIN", "C:\\plain value", REG_SZ);
         hive.seed("MY_API_TOKEN", "super-secret-plaintext", REG_SZ);
 
         let revealed = reveal_env_var_in_store(&hive, "MY_API_TOKEN").expect("reveal 失败");
-        assert_eq!(revealed, "super-secret-plaintext");
+        assert_eq!(revealed.value, "super-secret-plaintext");
 
         let metas = list_env_vars_in_store(EnvHive::User, &hive).expect("列表失败");
         let token_meta = metas
@@ -1041,5 +1147,57 @@ mod env_var_tests {
         // 前端按 [E_CONFLICT] 前缀匹配；正文改动不应破坏契约
         assert!(ERR_CONFLICT.starts_with("[E_CONFLICT] "));
         assert!(ERR_CONFLICT.contains("已被其他进程修改"));
+    }
+
+    // ── F-02：force API —— 只豁免 revision 校验，安全校验照旧 ──
+
+    #[test]
+    fn update_env_var_force_overwrites_after_external_change() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+
+        // 模拟：用户读到 revision 后，另一进程改了值
+        hive.seed("MY_VAR", "changed-by-other", REG_SZ);
+
+        // force 不比对 revision，必须成功覆盖
+        update_env_var_force_in_store(&hive, "MY_VAR", "mine").expect("force 写入必须成功");
+
+        let raw = hive.get_raw("MY_VAR").expect("读取失败");
+        assert_eq!(String::from_reg_value(&raw).unwrap(), "mine");
+    }
+
+    #[test]
+    fn update_env_var_force_preserves_registry_type() {
+        let hive = MemoryHive::new(true);
+        hive.seed("GOPATH", "C:\\Old", REG_EXPAND_SZ);
+
+        update_env_var_force_in_store(&hive, "GOPATH", "C:\\New").expect("force 写入失败");
+
+        assert_eq!(hive.get_raw("GOPATH").unwrap().vtype, REG_EXPAND_SZ);
+    }
+
+    #[test]
+    fn update_env_var_force_still_rejects_protected_and_reserved() {
+        let hive = MemoryHive::new(true);
+        hive.seed("windir", "C:\\Windows", REG_EXPAND_SZ);
+
+        assert!(
+            update_env_var_force_in_store(&hive, "windir", "x").is_err(),
+            "保护名单必须拒绝"
+        );
+        assert!(
+            update_env_var_force_in_store(&hive, "Path", "x").is_err(),
+            "保留名必须拒绝"
+        );
+    }
+
+    #[test]
+    fn delete_env_var_force_removes_after_external_change() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        hive.seed("MY_VAR", "changed-by-other", REG_SZ);
+
+        delete_env_var_force_in_store(&hive, "MY_VAR").expect("force 删除必须成功");
+        assert!(!hive.contains("MY_VAR"));
     }
 }

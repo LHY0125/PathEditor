@@ -15,7 +15,7 @@ vi.mock('@/services/backend', async () => {
 
 import { useEnvStore } from '@/store/env-store';
 import { backend } from '@/services/backend';
-import type { EnvVarMeta } from '@/core/env-var';
+import type { EnvVarMeta, RevealedValue } from '@/core/env-var';
 
 const mockBackend = vi.mocked(backend);
 
@@ -39,6 +39,7 @@ const snapshot = {
     meta({ name: 'JAVA_HOME', hive: 'user' }),
     meta({ name: 'MY_TOKEN', hive: 'user', sensitive: true, preview: null }),
   ],
+  capturedAt: 0,
 };
 
 beforeEach(() => {
@@ -81,7 +82,7 @@ describe('load', () => {
 
 describe('reveal / hide', () => {
   it('reveal 存入明文，hide 清除', async () => {
-    mockBackend.revealEnvVar.mockResolvedValue('real-secret');
+    mockBackend.revealEnvVar.mockResolvedValue({ value: 'real-secret', revision: 'rev-1' });
     const target = meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-1' });
     useEnvStore.setState({ snapshot });
 
@@ -94,9 +95,9 @@ describe('reveal / hide', () => {
   });
 
   it('reveal 期间快照换代：旧明文不得写入新快照（F-03 竞态防护）', async () => {
-    let resolveReveal!: (v: string) => void;
+    let resolveReveal!: (v: RevealedValue) => void;
     mockBackend.revealEnvVar.mockReturnValue(
-      new Promise<string>((resolve) => {
+      new Promise<RevealedValue>((resolve) => {
         resolveReveal = resolve;
       }),
     );
@@ -105,6 +106,7 @@ describe('reveal / hide', () => {
       snapshot: {
         system: [],
         user: [meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-old' })],
+        capturedAt: 0,
       },
     });
 
@@ -114,9 +116,10 @@ describe('reveal / hide', () => {
       snapshot: {
         system: [],
         user: [meta({ name: 'MY_TOKEN', sensitive: true, preview: null, revision: 'rev-new' })],
+        capturedAt: 0,
       },
     });
-    resolveReveal('stale-plaintext');
+    resolveReveal({ value: 'stale-plaintext', revision: 'rev-old' });
     await pending;
 
     // 旧明文被丢弃，绝不绑定到新 revision
@@ -149,7 +152,7 @@ describe('load 竞态防护（F-03）', () => {
     const second = useEnvStore.getState().load();
     // 第二次请求先返回；旧的第一响应晚到
     await second;
-    resolveFirst({ system: [], user: [] });
+    resolveFirst({ system: [], user: [], capturedAt: 0 });
     await first;
 
     expect(useEnvStore.getState().snapshot).toEqual(snapshot);
@@ -164,7 +167,7 @@ describe('save', () => {
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
 
-    await useEnvStore.getState().save(target);
+    await useEnvStore.getState().save(target, null);
 
     expect(mockBackend.updateEnvVar).toHaveBeenCalledWith(
       'user',
@@ -173,6 +176,34 @@ describe('save', () => {
       'rev-1',
     );
     expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(false);
+  });
+
+  it('readRevision 与 meta.revision 不一致时拒绝保存、不调 IPC 且触发刷新（F-01）', async () => {
+    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    // 弹窗读取原值时的 revision 是 rev-0，但当前快照已换代为 rev-1
+    await useEnvStore.getState().save(target, 'rev-0');
+
+    expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
+    // i18n 语言随检测环境（zh/en）变化，断言双语词条的关键片段
+    expect(useEnvStore.getState().statusMessage).toMatch(/已被外部修改|modified externally/);
+    expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
+    // 草稿保留（c2 统一策略）：用户重取新值后可再次提交
+    expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
+  });
+
+  it('readRevision 与 meta.revision 一致时正常保存', async () => {
+    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await useEnvStore.getState().save(target, 'rev-1');
+
+    expect(mockBackend.updateEnvVar).toHaveBeenCalledTimes(1);
   });
 
   it('revision 冲突时不重试、提示并刷新', async () => {
@@ -184,7 +215,7 @@ describe('save', () => {
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
 
-    await useEnvStore.getState().save(target);
+    await useEnvStore.getState().save(target, null);
 
     expect(mockBackend.updateEnvVar).toHaveBeenCalledTimes(1);
     expect(useEnvStore.getState().statusMessage).toContain('已被其他进程修改');
@@ -199,7 +230,7 @@ describe('save', () => {
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
 
-    await useEnvStore.getState().save(target);
+    await useEnvStore.getState().save(target, null);
 
     expect(useEnvStore.getState().statusMessage).toContain('普通错误');
     expect(mockBackend.listAllEnvVars).not.toHaveBeenCalled();
@@ -250,11 +281,11 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
     mockBackend.updateEnvVar.mockResolvedValue(undefined);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
-    await expect(useEnvStore.getState().save(target)).resolves.toBe(true);
+    await expect(useEnvStore.getState().save(target, null)).resolves.toBe(true);
 
     mockBackend.updateEnvVar.mockRejectedValue(new Error('boom'));
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
-    await expect(useEnvStore.getState().save(target)).resolves.toBe(false);
+    await expect(useEnvStore.getState().save(target, null)).resolves.toBe(false);
   });
 
   it('create 成功返回 true，失败返回 false', async () => {
@@ -278,7 +309,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   });
 
   it('无草稿时 save 直接返回 false', async () => {
-    await expect(useEnvStore.getState().save(meta())).resolves.toBe(false);
+    await expect(useEnvStore.getState().save(meta(), null)).resolves.toBe(false);
     expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
   });
 });

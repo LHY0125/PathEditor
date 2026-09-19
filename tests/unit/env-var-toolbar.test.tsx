@@ -63,7 +63,7 @@ beforeEach(() => {
   // resetAllMocks 而非 clearAllMocks：后者保留 mock 实现，会导致跨用例残留。
   vi.resetAllMocks();
   useEnvStore.setState({
-    snapshot: { system: [], user: [] },
+    snapshot: { system: [], user: [], capturedAt: 0 },
     revealed: new Map(),
     draft: new Map(),
     hiveFilter: 'all',

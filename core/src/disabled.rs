@@ -19,6 +19,19 @@ fn disabled_file_path() -> PathBuf {
     std::env::temp_dir().join("patheditor_test_disabled.json")
 }
 
+#[cfg(not(test))]
+fn pending_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".patheditor")
+        .join("pending_path_snapshot.json")
+}
+
+#[cfg(test)]
+fn pending_path() -> PathBuf {
+    std::env::temp_dir().join("patheditor_test_pending_snapshot.json")
+}
+
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 struct DisabledState {
     #[serde(default)]
@@ -172,6 +185,62 @@ pub fn load_path_snapshot() -> Result<PathSnapshot, String> {
     })
 }
 
+/// 记录「注册表已写成功、sidecar 快照未落盘」的待补写状态，供下次运行补写。
+///
+/// 只保留最后一次待补写内容（覆盖式）：每次调用都会整体覆盖旧文件，
+/// 避免堆积多个互相矛盾的待补写版本。
+pub fn save_pending_path_snapshot(
+    system: Option<Vec<PathEntry>>,
+    user: Option<Vec<PathEntry>>,
+) -> Result<(), String> {
+    let path = pending_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("无法创建配置目录: {}", e))?;
+    }
+
+    let snapshot = PathSnapshot {
+        system: system.unwrap_or_default(),
+        user: user.unwrap_or_default(),
+    };
+    let json =
+        serde_json::to_string_pretty(&snapshot).map_err(|e| format!("JSON 序列化失败: {}", e))?;
+    atomic_write(&path, &json).map_err(|e| format!("无法写入待补写快照: {}", e))?;
+    log::info!("已记录待补写快照到: {}", path.display());
+    Ok(())
+}
+
+/// 读取待补写状态；文件不存在时返回 `Ok(None)`。
+pub fn load_pending_path_snapshot() -> Result<Option<PathSnapshot>, String> {
+    let path = pending_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&path).map_err(|e| format!("无法读取待补写快照: {}", e))?;
+    if content.trim().is_empty() {
+        return Ok(None);
+    }
+
+    serde_json::from_str(&content)
+        .map(Some)
+        .map_err(|e| format!("待补写快照 JSON 解析失败: {}", e))
+}
+
+/// 清除待补写状态（补写成功后调用）；文件不存在时同样返回 `Ok(())`。
+pub fn clear_pending_path_snapshot() -> Result<(), String> {
+    let path = pending_path();
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("无法删除待补写快照: {}", e)),
+    }
+}
+
+/// 是否存在待补写状态。
+pub fn has_pending_path_snapshot() -> bool {
+    pending_path().exists()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +313,34 @@ mod tests {
         let merged = merge_hive(vec!["C:\\A".into()], vec!["C:\\Old".into()], vec![]);
 
         assert_eq!(merged, vec![entry("C:\\A", true), entry("C:\\Old", false)]);
+    }
+
+    // pending 快照原语按控制者裁决 R3 合并为一个生命周期测试：
+    // 测试共享固定临时路径（std::env::temp_dir()），拆成多个测试会有并行竞态。
+    #[test]
+    fn pending_snapshot_roundtrip_lifecycle() {
+        // 上次运行可能残留文件（此前崩溃遗留），先清掉再断言 missing 前置。
+        let _ = clear_pending_path_snapshot();
+        assert!(!has_pending_path_snapshot());
+        assert!(load_pending_path_snapshot().unwrap().is_none());
+
+        // save → load 得到同一内容（system/user 各造不同条目，含禁用项以验证 enabled 保留）
+        let sys = vec![
+            entry("C:\\pending_sys1", true),
+            entry("C:\\pending_sys2", false),
+        ];
+        let usr = vec![entry("D:\\pending_usr1", false)];
+        save_pending_path_snapshot(Some(sys.clone()), Some(usr.clone())).unwrap();
+        assert!(has_pending_path_snapshot());
+        let loaded = load_pending_path_snapshot()
+            .unwrap()
+            .expect("应有待补写快照");
+        assert_eq!(loaded.system, sys);
+        assert_eq!(loaded.user, usr);
+
+        // clear → has=false → load 再回 Ok(None)
+        clear_pending_path_snapshot().unwrap();
+        assert!(!has_pending_path_snapshot());
+        assert!(load_pending_path_snapshot().unwrap().is_none());
     }
 }

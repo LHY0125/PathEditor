@@ -152,3 +152,69 @@ test('revision 冲突时显示错误并刷新，不静默覆盖', async ({ page 
   // 弹窗保留（不静默关闭假装成功）
   await expect(page.getByRole('heading', { name: '编辑环境变量' })).toBeVisible();
 });
+
+test('弹窗读值陈旧时提交被拦截：不调用 update_env_var 并重取最新值（F-01）', async ({ page }) => {
+  // 注入快照换代：JAVA_HOME 的 revision 升级为 usr-java-v2，
+  // 而 reveal_env_var 默认 mock 仍返回绑定 usr-java 的原值 → 弹窗读值即陈旧
+  const staleSnapshot = {
+    system: [
+      {
+        name: 'windir',
+        kind: 'string',
+        hive: 'system',
+        canEdit: false,
+        canDelete: false,
+        sensitive: false,
+        preview: 'C:\\WINDOWS',
+        revision: 'sys-windir',
+      },
+    ],
+    user: [
+      {
+        name: 'JAVA_HOME',
+        kind: 'string',
+        hive: 'user',
+        canEdit: true,
+        canDelete: true,
+        sensitive: false,
+        preview: 'C:\\Java',
+        revision: 'usr-java-v2',
+      },
+      {
+        name: 'MY_TOKEN',
+        kind: 'string',
+        hive: 'user',
+        canEdit: true,
+        canDelete: true,
+        sensitive: true,
+        preview: null,
+        revision: 'usr-token',
+      },
+    ],
+  };
+  await page.addInitScript(createIpcMock({ list_all_env_vars: staleSnapshot }));
+  await page.goto('/');
+  await page.getByRole('button', { name: '全部变量' }).click();
+  const row = page.locator('[data-env-var-key="user:JAVA_HOME"]');
+  await expect(row).toBeVisible();
+
+  await row.click();
+  await row.getByRole('button', { name: '编辑 JAVA_HOME' }).click();
+  await expect(page.getByRole('heading', { name: '编辑环境变量' })).toBeVisible();
+  // 等完整原值加载完成
+  await expect(page.getByLabel('变量值')).toHaveValue('C:\\Java');
+
+  // 提交：读取版本 usr-java ≠ 当前快照 usr-java-v2 → 拦截并重取
+  await page.getByRole('button', { name: '确定' }).click();
+
+  // 界面提示已重新加载最新值
+  await expect(page.getByText(/已被外部修改/).first()).toBeVisible();
+  // 断言：update_env_var 从未被调用（陈旧值不得覆盖外部更新）
+  const calls = await page.evaluate(
+    () => (window as unknown as { __capturedCalls?: CapturedCall[] }).__capturedCalls ?? [],
+  );
+  expect(calls.some((c) => c.cmd === 'update_env_var')).toBe(false);
+  // 弹窗保留，输入框已被重取的最新原值替换
+  await expect(page.getByRole('heading', { name: '编辑环境变量' })).toBeVisible();
+  await expect(page.getByLabel('变量值')).toHaveValue('C:\\Java');
+});
