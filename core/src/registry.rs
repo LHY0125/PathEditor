@@ -554,6 +554,80 @@ fn delete_env_var_in_store(
     store.delete_value(name)
 }
 
+/// 强制写入已有变量（**最后写入者胜**）。不做 revision 比对。
+///
+/// 仅供 CLI `--force` 使用；GUI 一律走 [`update_env_var`] 的 CAS 语义。
+/// force 只豁免并发校验，**不豁免**保留名 / 保护名单 / 类型 / 权限判定。
+/// 这不是原子操作：读类型与写入仍是两次独立调用。
+pub fn update_env_var_force(hive: EnvHive, name: &str, value: &str) -> Result<(), String> {
+    let store = WinregHive::open(hive, true)?;
+    update_env_var_force_in_store(&store, name, value)?;
+    crate::system::broadcast_env_change();
+    Ok(())
+}
+
+/// `update_env_var_force` 的核心逻辑，存储可注入。
+fn update_env_var_force_in_store(
+    store: &dyn EnvHiveStore,
+    name: &str,
+    value: &str,
+) -> Result<(), String> {
+    validate_env_name(name)?;
+    if is_reserved(name) {
+        return Err(format!(
+            "{} 由专用 PATH 通路管理，请使用 PATH 视图编辑",
+            name
+        ));
+    }
+    if is_protected(name) {
+        return Err(format!("{} 是系统内置变量，不允许修改", name));
+    }
+
+    // 读现有类型以便原样保留；**不比对** revision
+    let (vtype, _current) = read_env_var(store, name)?;
+    let kind = EnvValueKind::from_reg_type(vtype.clone());
+    if !kind.is_writable() {
+        return Err(format!(
+            "{} 的注册表类型不受支持，无法修改（仅可查看）",
+            name
+        ));
+    }
+    validate_env_value(value, name)?;
+
+    write_env_var(store, name, value, vtype)
+}
+
+/// 强制删除变量（**最后写入者胜**）。不做 revision 比对，其余校验照旧。
+pub fn delete_env_var_force(hive: EnvHive, name: &str) -> Result<(), String> {
+    let store = WinregHive::open(hive, true)?;
+    delete_env_var_force_in_store(&store, name)?;
+    crate::system::broadcast_env_change();
+    Ok(())
+}
+
+/// `delete_env_var_force` 的核心逻辑，存储可注入。
+fn delete_env_var_force_in_store(store: &dyn EnvHiveStore, name: &str) -> Result<(), String> {
+    validate_env_name(name)?;
+    if is_reserved(name) {
+        return Err(format!(
+            "{} 由专用 PATH 通路管理，请使用 PATH 视图编辑",
+            name
+        ));
+    }
+    if is_protected(name) {
+        return Err(format!("{} 是系统内置变量，不允许删除", name));
+    }
+
+    let (vtype, _current) = read_env_var(store, name)?;
+    if EnvValueKind::from_reg_type(vtype) == EnvValueKind::Unsupported {
+        // 防御性、当前不可达：`read_env_var` 已对 Unsupported 类型提前返回 Err，
+        // 上面的 `?` 会先短路。保留以显式表达删除的前置条件，行为与现状一致。
+        return Err(format!("{} 的注册表类型不受支持，无法删除", name));
+    }
+
+    store.delete_value(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1041,5 +1115,57 @@ mod env_var_tests {
         // 前端按 [E_CONFLICT] 前缀匹配；正文改动不应破坏契约
         assert!(ERR_CONFLICT.starts_with("[E_CONFLICT] "));
         assert!(ERR_CONFLICT.contains("已被其他进程修改"));
+    }
+
+    // ── F-02：force API —— 只豁免 revision 校验，安全校验照旧 ──
+
+    #[test]
+    fn update_env_var_force_overwrites_after_external_change() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+
+        // 模拟：用户读到 revision 后，另一进程改了值
+        hive.seed("MY_VAR", "changed-by-other", REG_SZ);
+
+        // force 不比对 revision，必须成功覆盖
+        update_env_var_force_in_store(&hive, "MY_VAR", "mine").expect("force 写入必须成功");
+
+        let raw = hive.get_raw("MY_VAR").expect("读取失败");
+        assert_eq!(String::from_reg_value(&raw).unwrap(), "mine");
+    }
+
+    #[test]
+    fn update_env_var_force_preserves_registry_type() {
+        let hive = MemoryHive::new(true);
+        hive.seed("GOPATH", "C:\\Old", REG_EXPAND_SZ);
+
+        update_env_var_force_in_store(&hive, "GOPATH", "C:\\New").expect("force 写入失败");
+
+        assert_eq!(hive.get_raw("GOPATH").unwrap().vtype, REG_EXPAND_SZ);
+    }
+
+    #[test]
+    fn update_env_var_force_still_rejects_protected_and_reserved() {
+        let hive = MemoryHive::new(true);
+        hive.seed("windir", "C:\\Windows", REG_EXPAND_SZ);
+
+        assert!(
+            update_env_var_force_in_store(&hive, "windir", "x").is_err(),
+            "保护名单必须拒绝"
+        );
+        assert!(
+            update_env_var_force_in_store(&hive, "Path", "x").is_err(),
+            "保留名必须拒绝"
+        );
+    }
+
+    #[test]
+    fn delete_env_var_force_removes_after_external_change() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        hive.seed("MY_VAR", "changed-by-other", REG_SZ);
+
+        delete_env_var_force_in_store(&hive, "MY_VAR").expect("force 删除必须成功");
+        assert!(!hive.contains("MY_VAR"));
     }
 }
