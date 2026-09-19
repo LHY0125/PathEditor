@@ -87,7 +87,7 @@ pub(crate) fn read_value(src: &ValueSource) -> String {
 pub(crate) enum Concurrency {
     /// `--revision <R>`：CAS 校验，与 GUI 同强度
     Revision(String),
-    /// `--force`：跳过校验直接覆盖（脚本 setx 风格）
+    /// `--force`：跳过 revision 校验直接覆盖（最后写入者胜，脚本 setx 风格）
     Force,
 }
 
@@ -316,39 +316,10 @@ pub(crate) fn parse_kind(raw: &str) -> EnvValueKind {
     }
 }
 
-/// 从元数据中按名（忽略大小写）查找 revision。
-///
-/// 用于 `--force` 模式：core 的写入口签名恒要求 `expected_revision`，
-/// 跳过校验的语义由「立即重新读取当前 revision 并传入」表达。
-pub(crate) fn find_revision(metas: &[EnvVarMeta], name: &str) -> Option<String> {
-    // 优先精确大小写匹配，保证写回时使用注册表中的原始名对应的 revision
-    metas
-        .iter()
-        .find(|m| m.name == name)
-        .or_else(|| metas.iter().find(|m| m.name.eq_ignore_ascii_case(name)))
-        .map(|m| m.revision.clone())
-}
-
-/// 按 hive 取当前 revision（`--force` 模式用）。
-fn current_revision(hive: EnvHive, name: &str) -> String {
-    let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_err(&e));
-    let metas = match hive {
-        EnvHive::System => &snapshot.system,
-        EnvHive::User => &snapshot.user,
-    };
-    find_revision(metas, name)
-        .unwrap_or_else(|| exit_err(&format!("{} hive 中未找到变量 {name}", hive_label(hive))))
-}
-
-/// 把并发模式转换成 core 需要的 `expected_revision`。
-fn expected_revision(hive: EnvHive, name: &str, mode: &Concurrency) -> String {
-    match mode {
-        Concurrency::Revision(r) => r.clone(),
-        Concurrency::Force => current_revision(hive, name),
-    }
-}
-
 /// `env set` —— 修改已有变量的值。类型跟随注册表现状，不可更改。
+///
+/// `--revision` 走 CAS（冲突退出码 3）；`--force` 走真正的覆盖写
+/// （最后写入者胜，**不会**产生退出码 3）。
 pub(crate) fn cmd_env_set(
     name: String,
     value: Option<String>,
@@ -362,11 +333,15 @@ pub(crate) fn cmd_env_set(
     let mode = resolve_concurrency(revision, force);
     let src = resolve_value(value, stdin, value_file, true);
     let new_value = read_value(&src);
-    let expected = expected_revision(hive, &name, &mode);
-    apply_concurrency(core::registry::update_env_var(
-        hive, &name, &new_value, &expected,
-    ));
-    // 环境变更广播由 core 的写入口负责（写入成功后立即发送），此处不重复广播
+    match mode {
+        Concurrency::Revision(r) => {
+            apply_concurrency(core::registry::update_env_var(hive, &name, &new_value, &r));
+        }
+        Concurrency::Force => {
+            core::registry::update_env_var_force(hive, &name, &new_value)
+                .unwrap_or_else(|e| exit_err(&e));
+        }
+    }
     println!("已更新{}变量: {name}", hive_label(hive));
 }
 
@@ -390,12 +365,19 @@ pub(crate) fn cmd_env_add(
 }
 
 /// `env remove` —— 删除变量。
+///
+/// `--revision` 走 CAS；`--force` 直接删除（最后写入者胜，不产生退出码 3）。
 pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool, system: bool) {
     let hive = select_hive(system, false);
     let mode = resolve_concurrency(revision, force);
-    let expected = expected_revision(hive, &name, &mode);
-    apply_concurrency(core::registry::delete_env_var(hive, &name, &expected));
-    // 广播由 core 负责，此处不重复
+    match mode {
+        Concurrency::Revision(r) => {
+            apply_concurrency(core::registry::delete_env_var(hive, &name, &r));
+        }
+        Concurrency::Force => {
+            core::registry::delete_env_var_force(hive, &name).unwrap_or_else(|e| exit_err(&e));
+        }
+    }
     println!("已删除{}变量: {name}", hive_label(hive));
 }
 
@@ -505,9 +487,9 @@ mod tests {
     }
 
     #[test]
-    fn force_mode_skips_revision_check() {
-        // Force 模式不携带 revision；写入时不传 expected_revision 的路径由 cmd 层负责。
-        // 此处断言模式本身：Force 不产生 revision 字符串。
+    fn force_mode_never_carries_a_revision() {
+        // Force 分支不产生 revision 字符串，也不调用 current_revision ——
+        // 由 cmd 层直接调用 core 的 update_env_var_force。
         let mode = resolve_concurrency(None, true);
         assert!(matches!(mode, Concurrency::Force));
     }
@@ -732,33 +714,5 @@ mod tests {
     fn parse_kind_is_case_insensitive() {
         assert_eq!(parse_kind("STRING"), EnvValueKind::String);
         assert_eq!(parse_kind("Expand"), EnvValueKind::ExpandString);
-    }
-
-    // ── force 模式的 revision 获取 ──
-
-    #[test]
-    fn force_revision_source_is_documented() {
-        // Force 模式仍需向 core 传 expected_revision；取当前值的方式是
-        // 从 list_all_env_vars 的元数据里找同名项。此处断言匹配规则：
-        // 注册表名大小写不敏感，匹配必须忽略大小写。
-        let metas = vec![meta(
-            "Java_Home",
-            EnvValueKind::String,
-            Some("C:\\Java"),
-            true,
-            false,
-        )];
-        assert_eq!(
-            find_revision(&metas, "JAVA_HOME").as_deref(),
-            Some("0000000000000000")
-        );
-        assert_eq!(find_revision(&metas, "GOPATH"), None);
-    }
-
-    #[test]
-    fn find_revision_prefers_exact_case_then_falls_back() {
-        // 同名不同大小写（注册表允许）时，优先精确匹配以保留原始大小写
-        let metas = vec![meta("JAVA_HOME", EnvValueKind::String, None, true, false)];
-        assert!(find_revision(&metas, "java_home").is_some());
     }
 }
