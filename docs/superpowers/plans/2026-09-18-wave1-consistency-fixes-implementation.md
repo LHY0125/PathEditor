@@ -980,4 +980,12 @@ Task 7/8 中 pending 的文件路径与序列化细节以伪代码块给出（`/
 
 ## Execution Notes
 
-（留给开发窗口回填：一行一项，「计划原文 / 实际 / 处理」。）
+> 一行一项，格式：**计划原文 / 实际 / 处理**。
+
+- **R1 行号漂移** / 计划按行号定位 `registry.rs` 修改点，实际开发时行号已漂移 / 全部改按符号定位，未按行号硬套。
+- **R2 capturedAt 夹具** / brief 预估 TS 侧 capturedAt 修复面很小，实际涉及 4 个测试文件 + `EditEnvVarDialog` + 约 15 处 mocks / 按实际范围完成类型化夹具修复。
+- **R3 pending 隔离** / brief 假设 `disabled.rs` 已有测试隔离机制，实际不存在 / 按 `disabled.rs` 既有 `cfg(test)` 固定临时路径样式实现；原计划两个 pending 测试合并为单生命周期测试。
+- **R4 基线计数** / 计划写测试基线 103 / 实际以 106/2 为准；最终 workspace 152 passed / 2 ignored（0 failed）。
+- **R5 delete force 的 Unsupported 检查** / 可达性存疑 / 保留该不可达检查并加注释说明，不删除。
+- **Task 8 裁决（fix round 1，commit `346e86d`）** / 发现 pending 的 None→空数组语义陷阱：`save_pending_path_snapshot` 的 None 语义是「空数组」而非「保留该 hive」，若把 None 原样落 pending，补写时会把未操作的 hive 清空 / `persist_snapshot` 落盘前先用当前快照把 None 侧填充为现有内容；flush 覆盖面按 spec 补齐 `import` 与 `profile apply` 两个入口。
+- **Task 5 偏离** / 单测环境 i18n 检测为 en，断言不能只匹配中文文案 / 错误提示断言改用双语正则；mock revision 改为动态跟随快照，避免硬编码失效。
