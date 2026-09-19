@@ -29,12 +29,12 @@
 
 ### 2.2 备份与快照
 
-| 准备项           | 结果                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| 注册表备份       | `C:\Users\33644\.patheditor\backups\path_backup_20260919_180215_566.txt`（退出码 0）  |
-| 操作前快照       | `.tmp-wave1/before-all.json`（user 29 项 + system 23 项，`env list --json` 全量导出） |
-| 临时变量冲突检查 | 两个 hive 均无 `PATHEDITOR_W1_*`，临时名可用                                          |
-| pending 文件预检 | `~/.patheditor/pending_path_snapshot.json` 不存在                                     |
+| 准备项           | 结果                                                                                                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 注册表备份       | `C:\Users\33644\.patheditor\backups\path_backup_20260919_180215_566.txt`（退出码 0）                                                                                                                                |
+| 操作前快照       | `.tmp-wave1/before-all.json`（user 29 项 + system 23 项，`env list --json` 全量导出）⚠️ 该目录为**临时工件**（未入库，会话收尾即清理）；持久证据是第 4 节的零差异比对结果与 `~/.patheditor/backups/` 下的注册表备份 |
+| 临时变量冲突检查 | 两个 hive 均无 `PATHEDITOR_W1_*`，临时名可用                                                                                                                                                                        |
+| pending 文件预检 | `~/.patheditor/pending_path_snapshot.json` 不存在                                                                                                                                                                   |
 
 **测试范围限定**：只用自建临时变量 `PATHEDITOR_W1_TEST`、`PATHEDITOR_W1_RV` 与临时 PATH 条目 `C:\nonexistent-verify-dir-0x7f`，不触碰任何既有变量。
 
@@ -105,7 +105,7 @@ pending 文件：仍不存在 ✅
 > 顺序偏离注册表实际顺序（外部修改历史遗留，快照缺 2 条外部新增条目），`verify_and_save`
 > 的读-比-写防护按设计拒绝写入。修复方式：先备份 `disabled.json`，再用与 `merge_hive`
 > 相同的合并语义（注册表为启用路径真相来源、快照缺失条目按 enabled=true 追加）把
-> `userSnapshot` 对齐注册表顺序——全程未触碰注册表。备份留存于 `.tmp-wave1/disabled.json.bak`。
+> `userSnapshot` 对齐注册表顺序——全程未触碰注册表。备份留存于 `.tmp-wave1/disabled.json.bak`（**临时工件，清理后不可用**；但该备份仅覆盖 sidecar 重排前的状态，重排是幂等语义对齐，无需回滚）。
 > 修复后 add/remove 一次通过。这一插曲恰好实证了 F-01/乐观并发防护对外部漂移的真实拦截能力。
 
 ### 3.3 验证 3 —— 编辑陈旧拦截的 core 契约（F-01）
@@ -162,8 +162,8 @@ pending 文件：~/.patheditor/pending_path_snapshot.json 不存在 ✅
 | 资源               | 位置                                                                     |
 | ------------------ | ------------------------------------------------------------------------ |
 | 注册表备份         | `C:\Users\33644\.patheditor\backups\path_backup_20260919_180215_566.txt` |
-| 操作前快照         | `.tmp-wave1/before-all.json`（user 29 + system 23）                      |
-| PATH 前快照        | `.tmp-wave1/path-before-final.json`                                      |
-| disabled.json 备份 | `.tmp-wave1/disabled.json.bak`（快照重排前）                             |
+| 操作前快照         | `.tmp-wave1/before-all.json`（user 29 + system 23）⚠️ 临时工件，已清理   |
+| PATH 前快照        | `.tmp-wave1/path-before-final.json` ⚠️ 临时工件，已清理                  |
+| disabled.json 备份 | `.tmp-wave1/disabled.json.bak`（快照重排前）⚠️ 临时工件，已清理          |
 
 **回滚手段声明**：若需回滚，可用注册表备份文件恢复两个 hive 的 PATH 值，或按操作前快照用 `patheditor env add` / `save_path_snapshot` 重建；本轮终态快照 diff 为零，回滚预期不会被触发。
