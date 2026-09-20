@@ -1,0 +1,7 @@
+{
+  "name": "make_path_value_reg_sz_stays_plain_sz",
+  "input": { "value": "C:\\Windows", "vtype": "REG_SZ" },
+  "op": "make_path_value",
+  "expect": { "vtype": "REG_SZ", "decoded": "C:\\Windows" },
+  "note": "REG_SZ 值同样经 UTF-16LE + NUL 编码，类型不被暗中改写"
+}

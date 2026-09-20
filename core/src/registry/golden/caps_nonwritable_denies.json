@@ -1,0 +1,7 @@
+{
+  "name": "capabilities_nonwritable_hive_denies_edit_and_delete",
+  "input": { "writable": false, "name": "MY_APP_HOME", "kind": "ExpandString" },
+  "op": "capabilities_for_with",
+  "expect": { "can_edit": false, "can_delete": false },
+  "note": "hive 不可写（如 MemoryHive::new(false) 模拟的无权限环境）：编辑/删除均拒绝；查看（列表/明文）不受影响"
+}

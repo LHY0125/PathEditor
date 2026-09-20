@@ -1,0 +1,7 @@
+{
+  "name": "join_trims_and_drops_empty_roundtrips_split",
+  "input": { "paths": [" C:\\Windows ", "", "  ", "D:\\Projects"] },
+  "op": "join_path",
+  "expect": "C:\\Windows;D:\\Projects",
+  "note": "join 逐段 trim 后丢弃空白段；split(join(x)) 是往返稳定操作"
+}

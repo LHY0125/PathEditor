@@ -309,6 +309,12 @@ pub fn has_pending_path_snapshot() -> bool {
     pending_path().exists()
 }
 
+// merge_hive 的 golden 用例（F-10 第 5 类禁用项兼容性）。
+// merge_hive 是本文件私有 fn，只有子模块可访问。
+#[cfg(test)]
+#[path = "registry/golden/merge_golden_tests.rs"]
+mod merge_golden_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;

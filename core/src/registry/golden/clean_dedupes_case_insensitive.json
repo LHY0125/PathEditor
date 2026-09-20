@@ -1,0 +1,20 @@
+{
+  "name": "clean_entries_dedupes_case_insensitive_keeps_first_and_preserves_enabled",
+  "input": {
+    "entries": [
+      { "path": "%GoldenDedupe%\\tools", "enabled": true },
+      { "path": "%goldendedupe%\\tools", "enabled": false },
+      { "path": "  ", "enabled": true },
+      { "path": "%GoldenKeepDisabled%\\dir", "enabled": false }
+    ]
+  },
+  "op": "clean_path_entries",
+  "expect": {
+    "kept": [
+      { "path": "%GoldenDedupe%\\tools", "enabled": true },
+      { "path": "%GoldenKeepDisabled%\\dir", "enabled": false }
+    ],
+    "removed_paths": ["%goldendedupe%\\tools", "  "]
+  },
+  "note": "去重键是小写化整条路径，保留首次出现（含其 enabled 状态）；空/纯空白项移除；enabled 标志在清理后原样保留；含 % 的条目视为无法静态判定而保留（用 % 路径使断言不依赖本机真实目录）"
+}

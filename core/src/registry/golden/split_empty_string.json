@@ -1,0 +1,7 @@
+{
+  "name": "split_empty_string_yields_no_entries",
+  "input": { "raw": "" },
+  "op": "split_path",
+  "expect": [],
+  "note": "空 PATH 值（注册表值存在但为空）解析为空列表，不是单元素 ['']"
+}

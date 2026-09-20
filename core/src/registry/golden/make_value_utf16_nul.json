@@ -1,0 +1,12 @@
+{
+  "name": "make_path_value_preserves_type_text_and_utf16_nul",
+  "input": { "value": "%SystemRoot%\\system32", "vtype": "REG_EXPAND_SZ" },
+  "op": "make_path_value",
+  "expect": {
+    "vtype": "REG_EXPAND_SZ",
+    "decoded": "%SystemRoot%\\system32",
+    "even_byte_len": true,
+    "ends_with_utf16_nul": true
+  },
+  "note": "值文本逐字节保留（% 不展开），类型按参数设定，编码为 UTF-16LE 且以 NUL 终止（winreg 默认编码 + 类型覆盖）"
+}

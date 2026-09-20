@@ -1,0 +1,14 @@
+{
+  "name": "merge_hive_legacy_disabled_marking_applies_to_registry_paths",
+  "input": {
+    "registry": ["C:\\On", "C:\\DisabledByLegacy"],
+    "legacy_disabled": ["c:\\disabledbylegacy"],
+    "snapshot": []
+  },
+  "op": "merge_hive",
+  "expect": [
+    { "path": "C:\\On", "enabled": true },
+    { "path": "C:\\DisabledByLegacy", "enabled": false }
+  ],
+  "note": "legacy 禁用字符串按小写化键匹配注册表路径（大小写不敏感），命中者以 enabled=false 呈现且保留注册表原始大小写"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "split_trims_whitespace_and_drops_empty_segments",
+  "input": { "raw": " C:\\Windows ; ; D:\\Projects " },
+  "op": "split_path",
+  "expect": ["C:\\Windows", "D:\\Projects"],
+  "note": "逐段 trim，空段（含纯空白段）丢弃；与 TS split_path 夹具语义一致"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "legacy_profile_without_schema_version_loads_as_v1",
+  "input": {
+    "profile_json": {
+      "name": "__golden_legacy_profile",
+      "sys": [{ "path": "C:\\old_sys", "enabled": true }],
+      "user": [{ "path": "D:\\old_usr", "enabled": false }],
+      "created": "2025-01-01T00:00:00",
+      "modified": "2025-01-01T00:00:00"
+    }
+  },
+  "op": "load_profile_legacy_v1",
+  "expect": {
+    "name": "__golden_legacy_profile",
+    "sys": [{ "path": "C:\\old_sys", "enabled": true }],
+    "user": [{ "path": "D:\\old_usr", "enabled": false }]
+  },
+  "note": "无 schemaVersion 头的旧版配置文件按 v1 读取；enabled 标志完整往返；写入端再补 schemaVersion=1"
+}

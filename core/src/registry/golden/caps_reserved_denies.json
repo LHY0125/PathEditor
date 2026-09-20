@@ -1,0 +1,7 @@
+{
+  "name": "capabilities_reserved_path_denies_even_on_writable_hive",
+  "input": { "writable": true, "name": "Path", "kind": "ExpandString" },
+  "op": "capabilities_for_with",
+  "expect": { "can_edit": false, "can_delete": false },
+  "note": "保留名 Path 由专用 PATH 通路拥有，通用通路一律拒绝编辑/删除（无论 hive 是否可写）"
+}

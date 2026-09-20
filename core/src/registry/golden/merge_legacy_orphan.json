@@ -1,0 +1,14 @@
+{
+  "name": "merge_hive_legacy_orphan_disabled_restored_from_strings_only",
+  "input": {
+    "registry": ["C:\\A"],
+    "legacy_disabled": ["C:\\Old"],
+    "snapshot": []
+  },
+  "op": "merge_hive",
+  "expect": [
+    { "path": "C:\\A", "enabled": true },
+    { "path": "C:\\Old", "enabled": false }
+  ],
+  "note": "旧版 disabled.json（只有禁用字符串、无完整快照）升级：孤儿禁用项按 enabled=false 恢复到列表末尾，不丢失"
+}

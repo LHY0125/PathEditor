@@ -1,0 +1,7 @@
+{
+  "name": "select_type_defaults_to_expand_sz_for_missing_or_non_string",
+  "input": { "existing": "REG_DWORD" },
+  "op": "select_path_value_type",
+  "expect": "REG_EXPAND_SZ",
+  "note": "值不存在或类型不是 REG_SZ（DWORD/BINARY/EXPAND_SZ 之外任意）时默认 REG_EXPAND_SZ；本用例固定非字符串类型的回退分支"
+}

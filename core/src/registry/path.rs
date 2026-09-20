@@ -192,6 +192,14 @@ pub fn clean_paths(paths: Vec<String>) -> (Vec<String>, Vec<String>) {
     )
 }
 
+// C→Rust 行为等价 golden 基线（F-10）。挂在 path.rs 下而非 registry.rs 根：
+// split_path / join_path / validate_and_join_paths / select_path_value_type /
+// make_path_value 是本文件私有 fn，只有子模块可访问（文件本身位于
+// core/src/registry/golden_tests.rs，与裁决路径一致）。
+#[cfg(test)]
+#[path = "golden_tests.rs"]
+mod golden_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;

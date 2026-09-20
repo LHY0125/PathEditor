@@ -1,0 +1,16 @@
+{
+  "name": "backup_format_sections_list_entries_line_by_line",
+  "input": {
+    "system": ["C:\\Windows", "C:\\Tools"],
+    "user": ["D:\\MyApps"]
+  },
+  "op": "backup_format_contract",
+  "expect": {
+    "header_prefix": "PathEditor Backup - ",
+    "sections": ["\n[System PATH]\n", "\n[User PATH]\n"],
+    "system_lines": ["C:\\Windows", "C:\\Tools"],
+    "user_lines": ["D:\\MyApps"],
+    "filename_pattern": "path_backup_YYYYMMDD_HHMMSS_mmm.txt"
+  },
+  "note": "备份格式契约（backup.rs）：固定头 'PathEditor Backup - <时间>'、'[System PATH]'/'[User PATH]' 两个 section、条目逐行排列。backup_registry 本体读写真实注册表，无法在纯函数级端到端验证，本用例固定其输出文本格式；迁移自 C 版同构格式"
+}
