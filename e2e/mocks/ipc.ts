@@ -135,9 +135,18 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
             // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）
             return ${JSON.stringify(revealedFixture)}[args?.name] ?? null;
           case 'update_env_var':
-            // 冲突契约：与 Rust 侧一致，携带 [E_CONFLICT] 前缀（前端按前缀匹配）
+            // 冲突契约（F-06）：与 Rust CoreError 序列化一致，对象形状携带
+            // code 字段（前端按 code 判定，不再匹配 [E_CONFLICT] 文本前缀）。
+            // message 保留前缀仅为与真实 core 文案对齐的展示文本。
             if (window.__conflictOverride) {
-              throw new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载');
+              throw {
+                code: 'conflict',
+                operation: 'update_env_var',
+                hive: 'user',
+                name: args?.name ?? null,
+                retryable: true,
+                message: '[E_CONFLICT] 变量已被其他进程修改，请重新加载',
+              };
             }
             return undefined;
           case 'create_env_var': return undefined;

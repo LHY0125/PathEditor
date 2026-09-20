@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import { invoke } from '@tauri-apps/api/core';
 import { backend } from '@/services/backend';
-import type { EnvVarMeta } from '@/core/env-var';
+import type { CoreError, EnvVarMeta } from '@/core/env-var';
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -79,5 +79,66 @@ describe('listAllEnvVars 运行时契约校验（F-05）', () => {
     mockInvoke.mockResolvedValue({ system: [validMeta({ preview: 42 })], user: [] });
 
     await expect(backend.listAllEnvVars()).rejects.toThrow(/preview/);
+  });
+});
+
+describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
+  it('结构化 CoreError 对象（合法 code）原样结构化透传', async () => {
+    const rejection = {
+      code: 'conflict',
+      operation: 'update_env_var',
+      hive: 'user',
+      name: 'JAVA_HOME',
+      retryable: true,
+      message: '[E_CONFLICT] 变量已被其他进程修改，请重新加载',
+    };
+    mockInvoke.mockRejectedValue(rejection);
+
+    await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.toMatchObject({
+      code: 'conflict',
+      message: rejection.message,
+    });
+  });
+
+  it('纯字符串 rejection（PATH 通路）兜底为 internal + 原文', async () => {
+    mockInvoke.mockRejectedValue('无法写入系统注册表（需要管理员权限）');
+
+    const err = await backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1').catch((e) => e);
+
+    const core = err as CoreError;
+    expect(core.code).toBe('internal');
+    expect(core.message).toBe('无法写入系统注册表（需要管理员权限）');
+  });
+
+  it('Error 对象 rejection 兜底为 internal，message 取 String(error)', async () => {
+    mockInvoke.mockRejectedValue(new Error('boom'));
+
+    const err = await backend.deleteEnvVar('user', 'X', 'rev').catch((e) => e);
+
+    expect((err as CoreError).code).toBe('internal');
+    expect((err as CoreError).message).toContain('boom');
+  });
+
+  it('对象 rejection 但 code 非法时降级为 internal，不透传来路不明字段', async () => {
+    mockInvoke.mockRejectedValue({ code: 'hacker', message: '伪造', extra: 'payload' });
+
+    const err = await backend.updateEnvVar('user', 'X', 'v', 'rev').catch((e) => e);
+
+    expect((err as CoreError).code).toBe('internal');
+    expect(Object.keys(err as object).sort()).toEqual(['code', 'message']);
+  });
+
+  it('对象 rejection 缺 message 时降级为 internal', async () => {
+    mockInvoke.mockRejectedValue({ code: 'conflict' });
+
+    const err = await backend.updateEnvVar('user', 'X', 'v', 'rev').catch((e) => e);
+
+    expect((err as CoreError).code).toBe('internal');
+  });
+
+  it('成功时原样返回，不包裹', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+
+    await expect(backend.updateEnvVar('user', 'X', 'v', 'rev')).resolves.toBeUndefined();
   });
 });

@@ -5,28 +5,20 @@ pub(crate) fn exit_err(msg: &str) -> ! {
     std::process::exit(1);
 }
 
-/// 冲突错误的结构化前缀。与 core 的 `ERR_CONFLICT` 常量对齐 ——
-/// 中文正文仅供人工阅读，判定只看前缀。
+/// 按结构化错误决定退出码与输出（F-06）。
 ///
-/// F-06（Wave 2 Task 2）：env 写通路已改用 `CoreError.code` 判定冲突，
-/// 本函数与前缀仅保留给测试及尚未迁移的文本通路；Task 3 接手后由
-/// `CoreError::exit_code()` 全面取代。
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) const CONFLICT_PREFIX: &str = "[E_CONFLICT]";
-
-/// 消息是否表示 revision 冲突（可按前缀重试恢复）。
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn is_conflict(msg: &str) -> bool {
-    msg.starts_with(CONFLICT_PREFIX)
+/// 退出码由 `CoreError::exit_code()` 统一映射（冲突 3，其余 1），
+/// 不再匹配 `[E_CONFLICT]` 文本前缀 —— 判定只看 `code`。
+pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
+    eprintln!("错误: {}", err.message);
+    std::process::exit(err.exit_code());
 }
 
-/// 冲突退出：stderr 输出 core 原文，退出码 3。
-///
-/// 与 `exit_err`（退出码 1）分开，使脚本能区分「重新 list 取 revision 后可恢复」
-/// 与致命错误，无需 grep 中文文案。
-pub(crate) fn exit_conflict(msg: &str) -> ! {
-    eprintln!("错误: {msg}");
-    std::process::exit(3);
+/// 统一处理写操作结果：冲突 3，其余 1（由 CoreError 决定）。
+pub(crate) fn apply_core_result(result: Result<(), core::CoreError>) {
+    if let Err(e) = result {
+        exit_core_error(&e);
+    }
 }
 
 pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
@@ -221,30 +213,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn conflict_prefix_is_detected() {
-        // core 的 ERR_CONFLICT 原文（前缀 + 中文正文）必须判为冲突
-        assert!(is_conflict("[E_CONFLICT] 变量已被其他进程修改，请重新加载"));
-        assert!(is_conflict("[E_CONFLICT]"));
-    }
-
-    #[test]
-    fn non_conflict_messages_are_not_detected() {
-        assert!(!is_conflict("错误: 索引 3 超出范围"));
-        assert!(!is_conflict("变量已被其他进程修改，请重新加载"));
-        // 前缀必须在开头，中段出现不算
-        assert!(!is_conflict("前置文本 [E_CONFLICT] 变量已被其他进程修改"));
-        assert!(!is_conflict(""));
-    }
-
-    #[test]
     fn conflict_prefix_matches_core_constant() {
-        // 契约：core 常量必须以该前缀开头，否则 CLI 退出码 3 永不触发
+        // 契约（F-06 重定位）：`[E_CONFLICT]` 前缀仍是前端过渡期判定依据与
+        // core 消息的稳定标识，测试改为直接断言 core 常量本身；CLI 退出码
+        // 已由 `CoreError.exit_code()` 驱动，不再依赖文本前缀。
         use path_editor_core as core;
         let msg = core::registry::conflict_message();
         assert!(
-            is_conflict(&msg),
+            msg.starts_with("[E_CONFLICT]"),
             "core 冲突消息必须以 [E_CONFLICT] 开头，实际: {msg}"
         );
+    }
+
+    #[test]
+    fn core_conflict_maps_to_exit_code_3() {
+        // 契约：冲突退出码 3 由 CoreError.exit_code() 决定
+        let e = core::CoreError::new(
+            core::ErrorCode::Conflict,
+            "update_env_var",
+            core::registry::conflict_message(),
+        );
+        assert_eq!(e.exit_code(), 3);
+    }
+
+    #[test]
+    fn core_other_errors_map_to_exit_code_1() {
+        let e = core::CoreError::new(core::ErrorCode::Protected, "op", "保护");
+        assert_eq!(e.exit_code(), 1);
     }
 
     #[test]

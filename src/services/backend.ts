@@ -2,10 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import type { PathEntry, PathSnapshot } from '@/core/path-entry';
 import type { PathCapabilities } from '@/core/path-capabilities';
 import type {
+  CoreError,
   EnvHive,
   EnvValueKind,
   EnvVarMeta,
   EnvVarSnapshot,
+  ErrorCode,
   RevealedValue,
 } from '@/core/env-var';
 
@@ -96,6 +98,59 @@ function parsePathCapabilities(value: unknown): PathCapabilities {
 
 const ENV_VALUE_KINDS: readonly EnvValueKind[] = ['string', 'expandString', 'unsupported'];
 const ENV_HIVES: readonly EnvHive[] = ['system', 'user'];
+
+/** 合法 ErrorCode 字符串白名单（与 Rust `ErrorCode` serde camelCase 一致）。 */
+const ERROR_CODES: readonly ErrorCode[] = [
+  'conflict',
+  'reservedName',
+  'protected',
+  'unsupportedType',
+  'permissionDenied',
+  'notFound',
+  'nameExists',
+  'invalidName',
+  'invalidValue',
+  'io',
+  'parse',
+  'internal',
+];
+
+/**
+ * rejection 的保证形状：`code` 与 `message` 恒存在且为 string。
+ * 完整 CoreError 的其余字段（operation/hive/name/retryable）属透传信息，
+ * 不在解析层保证 —— 判定与展示只依赖这两个字段。
+ */
+type RejectionPayload = Pick<CoreError, 'code' | 'message'>;
+
+/**
+ * 把 Tauri invocation 的 rejection 解析为结构化 `CoreError`（F-06）。
+ *
+ * 双形状兼容（过渡期，Wave 2 收口时复核是否收紧）：
+ * - env 命令的 Rust 错误已迁移为 `CoreError`，Tauri rejection 是
+ *   `{code, message, ...}` 对象 → 白名单校验 `code` 后结构化透传；
+ * - PATH 命令仍返回纯文本 `String`（后续波次迁移）→ 兜底为
+ *   `{code:'internal', message: 原文}`。
+ *
+ * 白名单构造：对象但 `code` 不是合法 ErrorCode、或 `message` 缺失时，
+ * 一律降级为 `internal`，绝不透传来路不明的字段。
+ */
+export async function parseCoreError(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    return await promise;
+  } catch (error: unknown) {
+    if (
+      isRecord(error) &&
+      typeof error.code === 'string' &&
+      ERROR_CODES.includes(error.code as ErrorCode) &&
+      typeof error.message === 'string'
+    ) {
+      const payload: RejectionPayload = { code: error.code as ErrorCode, message: error.message };
+      throw payload;
+    }
+    const fallback: RejectionPayload = { code: 'internal', message: String(error) };
+    throw fallback;
+  }
+}
 
 /**
  * EnvVarMeta 契约上不存在 `value` 字段 —— 明文只能经 reveal_env_var 获取。
@@ -232,11 +287,14 @@ export const backend = {
     invoke<void>('rename_profile', { oldName, newName }),
   listAllEnvVars: async () => parseEnvVarSnapshot(await invoke<unknown>('list_all_env_vars')),
   revealEnvVar: async (hive: EnvHive, name: string) =>
-    parseRevealedValue(await invoke<unknown>('reveal_env_var', { hive, name }), 'reveal_env_var'),
+    parseRevealedValue(
+      await parseCoreError(invoke<unknown>('reveal_env_var', { hive, name })),
+      'reveal_env_var',
+    ),
   updateEnvVar: (hive: EnvHive, name: string, value: string, expectedRevision: string) =>
-    invoke<void>('update_env_var', { hive, name, value, expectedRevision }),
+    parseCoreError(invoke<void>('update_env_var', { hive, name, value, expectedRevision })),
   createEnvVar: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) =>
-    invoke<void>('create_env_var', { hive, name, value, kind }),
+    parseCoreError(invoke<void>('create_env_var', { hive, name, value, kind })),
   deleteEnvVar: (hive: EnvHive, name: string, expectedRevision: string) =>
-    invoke<void>('delete_env_var', { hive, name, expectedRevision }),
+    parseCoreError(invoke<void>('delete_env_var', { hive, name, expectedRevision })),
 };

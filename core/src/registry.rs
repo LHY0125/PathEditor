@@ -449,8 +449,9 @@ fn reveal_env_var_in_store(
     hive: EnvHive,
     name: &str,
 ) -> Result<RevealedValue, CoreError> {
-    validate_env_name(name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidName, "reveal_env_var", m))?;
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, "reveal_env_var", m).with_target(hive, name)
+    })?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
@@ -490,8 +491,9 @@ fn update_env_var_in_store(
     value: &str,
     expected_revision: &str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidName, "update_env_var", m))?;
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, "update_env_var", m).with_target(hive, name)
+    })?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
@@ -528,8 +530,9 @@ fn update_env_var_in_store(
         )
         .with_target(hive, name));
     }
-    validate_env_value(value, name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidValue, "update_env_var", m))?;
+    validate_env_value(value, name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidValue, "update_env_var", m).with_target(hive, name)
+    })?;
 
     // 写入，类型原样保留
     write_env_var(store, name, value, vtype).map_err(|e| e.with_target(hive, name))
@@ -566,8 +569,9 @@ fn create_env_var_in_store(
     value: &str,
     kind: EnvValueKind,
 ) -> Result<(), CoreError> {
-    validate_env_name(name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidName, "create_env_var", m))?;
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, "create_env_var", m).with_target(hive, name)
+    })?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
@@ -592,8 +596,9 @@ fn create_env_var_in_store(
         )
         .with_target(hive, name));
     }
-    validate_env_value(value, name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidValue, "create_env_var", m))?;
+    validate_env_value(value, name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidValue, "create_env_var", m).with_target(hive, name)
+    })?;
 
     // 写入前检查：忽略大小写地确认该名不存在（非原子，见函数文档）
     let existing = store
@@ -634,8 +639,9 @@ fn delete_env_var_in_store(
     name: &str,
     expected_revision: &str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidName, "delete_env_var", m))?;
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, "delete_env_var", m).with_target(hive, name)
+    })?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
@@ -696,8 +702,9 @@ fn update_env_var_force_in_store(
     name: &str,
     value: &str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidName, "update_env_var_force", m))?;
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, "update_env_var_force", m).with_target(hive, name)
+    })?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
@@ -727,8 +734,9 @@ fn update_env_var_force_in_store(
         )
         .with_target(hive, name));
     }
-    validate_env_value(value, name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidValue, "update_env_var_force", m))?;
+    validate_env_value(value, name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidValue, "update_env_var_force", m).with_target(hive, name)
+    })?;
 
     write_env_var(store, name, value, vtype).map_err(|e| e.with_target(hive, name))
 }
@@ -747,8 +755,9 @@ fn delete_env_var_force_in_store(
     hive: EnvHive,
     name: &str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name)
-        .map_err(|m| CoreError::new(ErrorCode::InvalidName, "delete_env_var_force", m))?;
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, "delete_env_var_force", m).with_target(hive, name)
+    })?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,

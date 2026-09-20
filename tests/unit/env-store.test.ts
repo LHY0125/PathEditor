@@ -207,26 +207,8 @@ describe('save', () => {
   });
 
   it('revision 冲突时不重试、提示并刷新', async () => {
-    // 冲突契约：Rust 侧统一携带 [E_CONFLICT] 前缀（前端匹配前缀而非中文文案）
-    mockBackend.updateEnvVar.mockRejectedValue(
-      new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'),
-    );
-    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
-    const target = meta();
-    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
-
-    await useEnvStore.getState().save(target, null);
-
-    expect(mockBackend.updateEnvVar).toHaveBeenCalledTimes(1);
-    expect(useEnvStore.getState().statusMessage).toContain('已被其他进程修改');
-    expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
-    // 草稿保留，避免用户输入丢失
-    expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
-  });
-
-  it('结构化 CoreError 形状（code=conflict）也判定为冲突', async () => {
-    // 过渡期双形状：env 通路的 Rust 错误已迁移为 CoreError（Tauri 序列化为
-    // {code:'conflict', message, ...} 对象），必须与 [E_CONFLICT] 字符串兼容。
+    // 冲突契约（F-06）：backend 解析层把 CoreError rejection 原样抛出，
+    // 判定只看 code==='conflict'，message 仅为展示文本
     mockBackend.updateEnvVar.mockRejectedValue({
       code: 'conflict',
       operation: 'update_env_var',
@@ -241,8 +223,53 @@ describe('save', () => {
 
     await useEnvStore.getState().save(target, null);
 
+    expect(mockBackend.updateEnvVar).toHaveBeenCalledTimes(1);
+    expect(useEnvStore.getState().statusMessage).toContain('已被其他进程修改');
+    expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
+    // 草稿保留，避免用户输入丢失
+    expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
+  });
+
+  it('结构化 CoreError 形状（code=conflict）也判定为冲突', async () => {
+    // Task 3 起唯一冲突形状：backend 把 Tauri rejection 解析为 CoreError 对象。
+    // message 不带 [E_CONFLICT] 前缀也必须按 code 判定为冲突（不匹配文本）。
+    mockBackend.updateEnvVar.mockRejectedValue({
+      code: 'conflict',
+      operation: 'update_env_var',
+      hive: 'user',
+      name: 'JAVA_HOME',
+      retryable: true,
+      message: '变量已被其他进程修改，请重新加载',
+    });
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await useEnvStore.getState().save(target, null);
+
     expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
     expect(useEnvStore.getState().statusMessage).toContain('已被其他进程修改');
+    expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
+  });
+
+  it('message 为空时按 code 兜底本地化', async () => {
+    mockBackend.updateEnvVar.mockRejectedValue({
+      code: 'conflict',
+      operation: 'update_env_var',
+      hive: 'user',
+      name: 'JAVA_HOME',
+      retryable: true,
+      message: '',
+    });
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await useEnvStore.getState().save(target, null);
+
+    // 冲突按冲突路径处理（刷新 + 草稿保留），文案兜底到 error.code.conflict
+    expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
+    expect(useEnvStore.getState().statusMessage).not.toBe('');
     expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
   });
 

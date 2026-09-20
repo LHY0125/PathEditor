@@ -9,6 +9,37 @@ export type EnvValueKind = 'string' | 'expandString' | 'unsupported';
 export type EnvHive = 'system' | 'user';
 export type HiveFilter = 'system' | 'user' | 'all';
 
+/**
+ * Rust `ErrorCode` 的镜像（serde camelCase 序列化）。
+ *
+ * F-06：错误判定只看 `code`，不匹配 `message` 文本 —— 措辞变化不会静默
+ * 破坏冲突检测等分支。未知 code 由 backend 解析层兜底为 `internal`。
+ */
+export type ErrorCode =
+  | 'conflict'
+  | 'reservedName'
+  | 'protected'
+  | 'unsupportedType'
+  | 'permissionDenied'
+  | 'notFound'
+  | 'nameExists'
+  | 'invalidName'
+  | 'invalidValue'
+  | 'io'
+  | 'parse'
+  | 'internal';
+
+/** Rust `CoreError` 的前端契约（Tauri rejection 序列化形状）。 */
+export interface CoreError {
+  code: ErrorCode;
+  operation: string;
+  hive: EnvHive | null;
+  name: string | null;
+  retryable: boolean;
+  /** 面向用户的中文完整句；判定不得匹配此字段。 */
+  message: string;
+}
+
 export interface EnvVarMeta {
   name: string;
   kind: EnvValueKind;

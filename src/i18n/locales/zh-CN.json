@@ -72,6 +72,23 @@
     "user": "用户",
     "source": "来源"
   },
+  "error": {
+    "code": {
+      "_comment": "按 CoreError code 本地化的兜底文案。定位：仅当 message 缺失/为空时展示（正常路径优先展示 message 原文——它是面向用户的中文完整句），并作为未来按 code 分支扩展（如冲突引导、权限申请）的锚点。程序判定一律看 code，不得匹配本表文案。",
+      "conflict": "变量已被其他进程修改，请刷新后重试",
+      "protected": "系统内置变量，不允许修改或删除",
+      "reservedName": "该名称由 PATH 专用通路管理，请在 PATH 视图中编辑",
+      "unsupportedType": "注册表类型不受支持，仅可查看",
+      "permissionDenied": "没有执行该操作的权限",
+      "nameExists": "同名变量已存在，请使用编辑功能",
+      "invalidName": "变量名不合法",
+      "invalidValue": "变量值不合法",
+      "notFound": "目标变量不存在，请刷新列表",
+      "io": "读取或写入失败",
+      "parse": "数据解析失败",
+      "internal": "发生内部错误"
+    }
+  },
   "status": {
     "normal": "就绪",
     "readonly": "只读模式 — 需要管理员权限才能编辑",

@@ -3,7 +3,7 @@
 //! 本模块**不实现任何安全判定**（保留 / 保护 / 敏感 / 权限 / revision 校验），
 //! 全部由 `path_editor_core` 负责，此处仅透传错误文本。
 
-use crate::runtime::{exit_conflict, exit_err};
+use crate::runtime::{apply_core_result, exit_core_error, exit_err};
 use path_editor_core as core;
 use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
 use path_editor_core::error::CoreError;
@@ -115,16 +115,10 @@ pub(crate) fn resolve_concurrency(revision: Option<String>, force: bool) -> Conc
 
 /// 统一处理写操作结果：冲突走退出码 3，其他错误走退出码 1。
 ///
-/// F-06（Wave 2 Task 2）：冲突判定改为结构化 `code == ErrorCode::Conflict`，
-/// 不再匹配 `[E_CONFLICT]` 文本前缀（Task 3 之外提前落地的部分）。
+/// F-06（Wave 2 Task 3）：退出码全部由 `CoreError::exit_code()` 驱动，
+/// CLI 侧零判定逻辑 —— 只把结果交给 `apply_core_result` 结构化出口。
 pub(crate) fn apply_concurrency(result: Result<(), CoreError>) {
-    match result {
-        Ok(()) => {}
-        Err(e) if e.code == core::error::ErrorCode::Conflict => {
-            exit_conflict(&e.message);
-        }
-        Err(e) => exit_err(&e.message),
-    }
+    apply_core_result(result);
 }
 
 /// 注册表类型的人类可读标签。
@@ -255,7 +249,7 @@ pub(crate) fn format_get_output(value: &str) -> String {
 
 /// `env list` —— 列出变量元数据（不含明文）。
 pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
-    let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_err(&e.message));
+    let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         let value = snapshot_json(&snapshot, system, user);
         println!("{}", serde_json::to_string_pretty(&value).unwrap());
@@ -279,13 +273,13 @@ pub(crate) fn cmd_env_get(name: String, system: bool) {
     match core::registry::reveal_env_var(hive, &name) {
         Ok(revealed) => print!("{}", format_get_output(&revealed.value)),
         Err(e) => {
-            let msg = e.message;
+            let msg = e.message.clone();
             // 仅只读路径提供「变量存在于另一 hive」的提示，帮助用户加 --system。
             // 写操作不做此兜底 —— 见设计文档「hive 选择」。
             if let Some(other) = other_hive_hint(&name, hive) {
                 exit_err(&format!("{msg}\n{other}"));
             }
-            exit_err(&msg)
+            exit_core_error(&e)
         }
     }
 }
@@ -346,7 +340,7 @@ pub(crate) fn cmd_env_set(
         }
         Concurrency::Force => {
             core::registry::update_env_var_force(hive, &name, &new_value)
-                .unwrap_or_else(|e| exit_err(&e.message));
+                .unwrap_or_else(|e| exit_core_error(&e));
         }
     }
     println!("已更新{}变量: {name}", hive_label(hive));
@@ -367,7 +361,7 @@ pub(crate) fn cmd_env_add(
     let kind = parse_kind(&kind);
     // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
     core::registry::create_env_var(hive, &name, &new_value, kind)
-        .unwrap_or_else(|e| exit_err(&e.message));
+        .unwrap_or_else(|e| exit_core_error(&e));
     // 广播由 core 负责，此处不重复
     println!("已新建{}变量: {name}", hive_label(hive));
 }
@@ -384,7 +378,7 @@ pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool
         }
         Concurrency::Force => {
             core::registry::delete_env_var_force(hive, &name)
-                .unwrap_or_else(|e| exit_err(&e.message));
+                .unwrap_or_else(|e| exit_core_error(&e));
         }
     }
     println!("已删除{}变量: {name}", hive_label(hive));
@@ -393,7 +387,6 @@ pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::is_conflict;
 
     // ── 值通道互斥 ──
 
@@ -491,9 +484,13 @@ mod tests {
 
     #[test]
     fn conflict_result_maps_to_exit_3() {
-        let core_msg = core::registry::conflict_message();
-        assert!(is_conflict(&core_msg), "core 冲突消息必须被判为冲突");
-        assert!(!is_conflict("变量不存在"));
+        // F-06：退出码由 CoreError.exit_code() 决定，冲突码必须映射到 3
+        let e = core::CoreError::new(core::ErrorCode::Conflict, "update_env_var", "冲突");
+        assert_eq!(e.exit_code(), 3);
+        assert_eq!(
+            core::CoreError::new(core::ErrorCode::NotFound, "op", "不存在").exit_code(),
+            1
+        );
     }
 
     #[test]
