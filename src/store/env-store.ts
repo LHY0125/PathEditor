@@ -15,11 +15,31 @@ import { backend } from '@/services/backend';
 /**
  * 冲突错误的稳定前缀（Rust 侧所有 revision 冲突统一携带）。
  * 匹配前缀而非中文文案 —— Rust 错误措辞变化不会静默破坏冲突检测。
+ *
+ * 过渡期双形状（Wave 2 Task 2）：env 通路的 Rust 错误已迁移为结构化
+ * `CoreError`（Tauri 序列化为 `{code:'conflict', message, ...}` 对象），
+ * PATH 通路仍是字符串。判定同时兼容两种形状；Task 3 统一为按 `code` 判定。
  */
 const CONFLICT_PREFIX = '[E_CONFLICT]';
 
-function isConflictError(message: string): boolean {
-  return message.includes(CONFLICT_PREFIX);
+/** 判断值是否为带 `code` 字段的结构化错误对象（Rust CoreError 序列化形状）。 */
+function isStructuredError(error: unknown): error is { code?: unknown; message?: unknown } {
+  return typeof error === 'object' && error !== null && 'code' in error;
+}
+
+function isConflictError(error: unknown): boolean {
+  if (isStructuredError(error)) {
+    return error.code === 'conflict';
+  }
+  return String(error).includes(CONFLICT_PREFIX);
+}
+
+/** 过渡期错误文案提取：结构化对象取 `message`，其余按字符串降级。 */
+function errorMessage(error: unknown): string {
+  if (isStructuredError(error) && typeof error.message === 'string') {
+    return error.message;
+  }
+  return String(error);
 }
 
 interface EnvState {
@@ -136,11 +156,12 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await get().load();
         return true;
       } catch (error) {
-        const message = String(error);
-        if (isConflictError(message)) {
+        if (isConflictError(error)) {
           // 冲突：Rust 已拒绝写入，刷新拿最新 revision；草稿保留（输入不丢）
+          const message = errorMessage(error);
           await refreshAfterError(message);
         } else {
+          const message = errorMessage(error);
           set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
         }
         return false;
@@ -160,7 +181,10 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await get().load();
         return true;
       } catch (error) {
-        set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${String(error)}` });
+        set({
+          isSaving: false,
+          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+        });
         return false;
       }
     },
@@ -173,11 +197,13 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await get().load();
         return true;
       } catch (error) {
-        const message = String(error);
-        if (isConflictError(message)) {
-          await refreshAfterError(message);
+        if (isConflictError(error)) {
+          await refreshAfterError(errorMessage(error));
         } else {
-          set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
+          set({
+            isSaving: false,
+            statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+          });
         }
         return false;
       }

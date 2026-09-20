@@ -7,9 +7,15 @@ pub(crate) fn exit_err(msg: &str) -> ! {
 
 /// 冲突错误的结构化前缀。与 core 的 `ERR_CONFLICT` 常量对齐 ——
 /// 中文正文仅供人工阅读，判定只看前缀。
+///
+/// F-06（Wave 2 Task 2）：env 写通路已改用 `CoreError.code` 判定冲突，
+/// 本函数与前缀仅保留给测试及尚未迁移的文本通路；Task 3 接手后由
+/// `CoreError::exit_code()` 全面取代。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const CONFLICT_PREFIX: &str = "[E_CONFLICT]";
 
 /// 消息是否表示 revision 冲突（可按前缀重试恢复）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn is_conflict(msg: &str) -> bool {
     msg.starts_with(CONFLICT_PREFIX)
 }

@@ -224,6 +224,45 @@ describe('save', () => {
     expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
   });
 
+  it('结构化 CoreError 形状（code=conflict）也判定为冲突', async () => {
+    // 过渡期双形状：env 通路的 Rust 错误已迁移为 CoreError（Tauri 序列化为
+    // {code:'conflict', message, ...} 对象），必须与 [E_CONFLICT] 字符串兼容。
+    mockBackend.updateEnvVar.mockRejectedValue({
+      code: 'conflict',
+      operation: 'update_env_var',
+      hive: 'user',
+      name: 'JAVA_HOME',
+      retryable: true,
+      message: '[E_CONFLICT] 变量已被其他进程修改，请重新加载',
+    });
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await useEnvStore.getState().save(target, null);
+
+    expect(mockBackend.listAllEnvVars).toHaveBeenCalled();
+    expect(useEnvStore.getState().statusMessage).toContain('已被其他进程修改');
+    expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(true);
+  });
+
+  it('结构化 CoreError 的 message 透传到状态栏', async () => {
+    mockBackend.createEnvVar.mockRejectedValue({
+      code: 'nameExists',
+      operation: 'create_env_var',
+      hive: 'user',
+      name: 'JAVA_HOME',
+      retryable: false,
+      message: '变量 JAVA_HOME 已存在，请使用编辑功能',
+    });
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+
+    await useEnvStore.getState().create('user', 'JAVA_HOME', 'v', 'string');
+
+    expect(useEnvStore.getState().statusMessage).toContain('已存在');
+    expect(mockBackend.listAllEnvVars).not.toHaveBeenCalled();
+  });
+
   it('非冲突错误不触发刷新', async () => {
     mockBackend.updateEnvVar.mockRejectedValue(new Error('普通错误'));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);

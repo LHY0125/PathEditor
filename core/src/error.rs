@@ -69,6 +69,12 @@ impl CoreError {
         self
     }
 
+    /// 仅附加 hive 上下文（无单一目标名，如列表/打开键级别的错误）。
+    pub fn with_hive(mut self, hive: EnvHive) -> Self {
+        self.hive = Some(hive);
+        self
+    }
+
     /// CLI 退出码映射：冲突 3，其余 1。
     pub fn exit_code(&self) -> i32 {
         if self.code == ErrorCode::Conflict {
