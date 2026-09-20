@@ -115,6 +115,10 @@ fn write_hive_registry(hive: EnvHive, entries: &[PathEntry]) -> HiveOutcome {
 /// - 快照保存成功 → 防御性清除任何陈旧 pending（其内容已被本快照取代）。
 fn commit_sidecar(system: Option<Vec<PathEntry>>, user: Option<Vec<PathEntry>>) -> SidecarOutcome {
     if let Err(e) = disabled::save_path_snapshot(system.clone(), user.clone()) {
+        // 「legacy」哨兵分支：为兼容旧错误形状保留的哨兵（operation == "legacy"
+        // 表示 disabled.rs 旧通路产生的自由文本错误），Task 6 全面迁移后已是死代码，
+        // 保留原因见 docs/审核和开发/2026.09.20/PathEditor-Wave2架构收口开发回执.md
+        // 第 2 节 Task 6 表（「legacy 哨兵分支已死」条目）。
         let sidecar_err = if matches!(e.code, ErrorCode::Internal) && e.operation == "legacy" {
             core_err(ErrorCode::Io, "commit_sidecar", e.message)
         } else {
@@ -130,12 +134,16 @@ fn commit_sidecar(system: Option<Vec<PathEntry>>, user: Option<Vec<PathEntry>>) 
                 disabled::save_pending_path_snapshot(Some(sys), Some(usr))
             }
             // 当前快照读取失败时无法安全构造无损 pending，跳过落盘；
-            // 调用方按 Failed 语义提示手工核对。
-            Err(_pe) => Err(CoreError::new(
-                ErrorCode::Internal,
-                "commit_sidecar",
-                String::new(),
-            )),
+            // 调用方按 Failed 语义提示手工核对。失败详情不能只落在被吞掉的
+            // `_pe` 上，必须记日志留存（终审 M-2）。
+            Err(pe) => {
+                log::error!("落 pending 前读取当前快照失败，跳过待补写记录: {pe}");
+                Err(CoreError::new(
+                    ErrorCode::Internal,
+                    "commit_sidecar",
+                    format!("待补写状态构造失败（读取当前快照出错）: {pe}"),
+                ))
+            }
         };
         return match pending {
             Ok(()) => SidecarOutcome::Pending(sidecar_err),

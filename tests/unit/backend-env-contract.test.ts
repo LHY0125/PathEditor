@@ -136,6 +136,16 @@ describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
     expect((err as CoreError).code).toBe('internal');
   });
 
+  it('未知 code 对象但带非空 message 时兜底为 internal 且保留原文', async () => {
+    // 兜底不得丢 message：String(error) 会变成 "[object Object]"（终审 M-1）
+    mockInvoke.mockRejectedValue({ code: 'unknown_kind', message: '未知错误详情' });
+
+    const err = await backend.updateEnvVar('user', 'X', 'v', 'rev').catch((e) => e);
+
+    expect((err as CoreError).code).toBe('internal');
+    expect((err as CoreError).message).toBe('未知错误详情');
+  });
+
   it('成功时原样返回，不包裹', async () => {
     mockInvoke.mockResolvedValue(undefined);
 

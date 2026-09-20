@@ -126,6 +126,7 @@
 - sidecar 写失败的注入式 E2E（磁盘故障注入，由 Task 5 故障注入单测覆盖逻辑）
 - `--stdin` / `--value-file` 值通道端到端读数
 - GUI 经 Tauri IPC 的真实注册表写入（与 CLI 共用 core 通路，CLI 已验证）
+- path-session.ts 未切换到 service 层（保守方案，GUI/CLI 事务编排分叉仅在 CLI 侧消除；4 个 service IPC 命令前端暂无调用点）
 
 ## 6. 质量门终态数字
 

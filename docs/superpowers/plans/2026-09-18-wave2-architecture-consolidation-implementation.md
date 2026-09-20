@@ -514,7 +514,7 @@ git commit -m "refactor(core): registry.rs 拆分为 registry/ 目录（纯搬�
 
 ### Task 5: 共享应用服务层（F-08）
 
-- Task 5 — 已完成，提交 `d7d049b`。SidecarOutcome::Pending 增加 CoreError payload，超出简报（有依据的超集，见开发回执）。
+- Task 5 — 已完成，提交 `d7d049b`。SidecarOutcome::Pending 增加 CoreError payload，超出简报（有依据的超集，见开发回执）。path-session.ts 未切换到 service 层（保守方案，GUI/CLI 事务编排分叉仅在 CLI 侧消除；4 个 service IPC 命令前端暂无调用点）。
   **Files:**
 
 - Create: `core/src/service.rs`

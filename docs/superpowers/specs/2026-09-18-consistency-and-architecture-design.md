@@ -207,6 +207,8 @@ core/src/registry/
 - 多 hive apply 必须明确 **atomic / best-effort / partial** 三种语义之一，并在输出与退出码中表达。
 - GUI/CLI 只负责输入转换、权限展示、输出渲染；任何改变注册表与 sidecar 顺序/补偿/广播的逻辑都在同一处 Rust service。
 
+**实施备注（Wave 2）**：GUI 侧接线延后（`path-session.ts` 仍走旧编排，保守方案，见开发回执未覆盖项）；4 个 service IPC 命令已在 `gui/src/commands/service.rs` 注册，前端暂无调用点。
+
 ### F-09 注册表端口（Wave 0，前置）
 
 **现状**：`registry.rs:737-775` 测试通过 `HKEY_CURRENT_USER\Software\PathEditor\Tests\...` 建隔离键，Drop 时删除。不碰真实环境变量键，但仍写当前用户真实注册表；完整 `cargo test --workspace` 因此不能在审查/受限环境执行。

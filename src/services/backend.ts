@@ -147,7 +147,13 @@ export async function parseCoreError(promise: Promise<unknown>): Promise<unknown
       const payload: RejectionPayload = { code: error.code as ErrorCode, message: error.message };
       throw payload;
     }
-    const fallback: RejectionPayload = { code: 'internal', message: String(error) };
+    // 未知形状兜底：对象且带非空 message 时保留原文（String(error) 会丢成
+    // "[object Object]"），否则退回字符串化结果。
+    const fallbackMessage =
+      isRecord(error) && typeof error.message === 'string' && error.message.length > 0
+        ? error.message
+        : String(error);
+    const fallback: RejectionPayload = { code: 'internal', message: fallbackMessage };
     throw fallback;
   }
 }

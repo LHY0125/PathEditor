@@ -946,7 +946,8 @@ mod env_var_tests {
 
     #[test]
     fn conflict_message_matches_frontend_contract() {
-        // 前端按 [E_CONFLICT] 前缀匹配；正文改动不应破坏契约
+        // 判定按 CoreError.code（conflict）进行；[E_CONFLICT] 前缀仅是过渡期展示文本，
+        // 断言保留前缀是为旧文本路径兼容，正文改动不应破坏它
         assert!(ERR_CONFLICT.starts_with("[E_CONFLICT] "));
         assert!(ERR_CONFLICT.contains("已被其他进程修改"));
     }
