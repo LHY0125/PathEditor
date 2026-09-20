@@ -1,4 +1,6 @@
-use crate::runtime::{enabled_paths, exit_err, persist_snapshot, verify_and_save};
+use crate::runtime::{
+    enabled_paths, exit_err, exit_persist_error, persist_snapshot, verify_and_save,
+};
 use path_editor_core as core;
 
 pub(crate) fn cmd_import(file: String, target: String) {
@@ -39,7 +41,7 @@ pub(crate) fn cmd_import(file: String, target: String) {
 }
 
 pub(crate) fn cmd_export(format: String, output: Option<String>) {
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     let content = core::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
         .unwrap_or_else(|e| exit_err(&e));
     if let Some(path) = output {

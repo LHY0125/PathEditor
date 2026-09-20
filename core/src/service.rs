@@ -115,7 +115,11 @@ fn write_hive_registry(hive: EnvHive, entries: &[PathEntry]) -> HiveOutcome {
 /// - 快照保存成功 → 防御性清除任何陈旧 pending（其内容已被本快照取代）。
 fn commit_sidecar(system: Option<Vec<PathEntry>>, user: Option<Vec<PathEntry>>) -> SidecarOutcome {
     if let Err(e) = disabled::save_path_snapshot(system.clone(), user.clone()) {
-        let sidecar_err = core_err(ErrorCode::Io, "commit_sidecar", e);
+        let sidecar_err = if matches!(e.code, ErrorCode::Internal) && e.operation == "legacy" {
+            core_err(ErrorCode::Io, "commit_sidecar", e.message)
+        } else {
+            e
+        };
         // pending 快照是覆盖式整份落盘，`save_pending_path_snapshot` 的 None 语义
         // 是「空数组」而非「保留该 hive」。若把 None 原样落 pending，补写时会把
         // 未操作的 hive 清空。因此先用当前快照把 None 侧填充为现有内容。
@@ -127,7 +131,11 @@ fn commit_sidecar(system: Option<Vec<PathEntry>>, user: Option<Vec<PathEntry>>) 
             }
             // 当前快照读取失败时无法安全构造无损 pending，跳过落盘；
             // 调用方按 Failed 语义提示手工核对。
-            Err(_pe) => Err(String::new()),
+            Err(_pe) => Err(CoreError::new(
+                ErrorCode::Internal,
+                "commit_sidecar",
+                String::new(),
+            )),
         };
         return match pending {
             Ok(()) => SidecarOutcome::Pending(sidecar_err),
@@ -225,7 +233,7 @@ pub fn save_path_with_sidecar(
 /// 警告、不阻断当前命令。
 pub fn retry_pending_path_state() -> Result<ApplyOutcome, CoreError> {
     let pending = disabled::load_pending_path_snapshot()
-        .map_err(|e| core_err(ErrorCode::Io, "retry_pending_path_state", e))?;
+        .map_err(|e| core_err(e.code, "retry_pending_path_state", e.message))?;
     let Some(pending) = pending else {
         return Ok(ApplyOutcome {
             system: HiveOutcome::Skipped,
@@ -235,7 +243,7 @@ pub fn retry_pending_path_state() -> Result<ApplyOutcome, CoreError> {
     };
 
     disabled::save_path_snapshot(Some(pending.system), Some(pending.user))
-        .map_err(|e| core_err(ErrorCode::Io, "retry_pending_path_state", e))?;
+        .map_err(|e| core_err(e.code, "retry_pending_path_state", e.message))?;
     // 清除失败不阻断：pending 是幂等整份快照，下次补写重放同样内容（Wave 1 语义）。
     let _ = disabled::clear_pending_path_snapshot();
 
@@ -269,8 +277,8 @@ pub fn commit_sidecar_snapshot(
 /// 内部完成：best-effort 补写 pending → 读取配置 → 写注册表 → 广播 →
 /// 落 sidecar。配置不存在或名称非法返回 `Err`（诚实报告）。
 pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError> {
-    let data = profiles::load_profile(name)
-        .map_err(|e| core_err(ErrorCode::Internal, "apply_profile", e))?;
+    let data =
+        profiles::load_profile(name).map_err(|e| core_err(e.code, "apply_profile", e.message))?;
     save_path_with_sidecar(Some(data.sys), Some(data.user))
 }
 
@@ -288,8 +296,8 @@ mod tests {
     }
 
     /// pending / disabled.json 在测试下共享固定 temp 路径（Wave 1 约定），
-    /// 与 disabled.rs 的生命周期测试存在理论上的并行竞态窗口（微秒级）；
-    /// 断言已设计为对「pending 被并行测试取走」的分支同样成立。
+    /// 与 disabled.rs 的生命周期测试存在并行竞态窗口（F-11 起由
+    /// `persist::test_persist_lock` 序列化，见 persist.rs）。
     #[test]
     fn apply_outcome_serializes_camel_case() {
         let outcome = ApplyOutcome {
@@ -337,6 +345,7 @@ mod tests {
     // 断言：HiveOutcome::Failed、无 pending 产生、sidecar 未被触及。
     #[test]
     fn registry_stage_failure_reports_failed_without_pending() {
+        let _guard = crate::persist::test_persist_lock();
         let _ = disabled::clear_pending_path_snapshot();
         let entries = vec![entry("C:\\ok", true), entry("C:\0bad", true)];
         let outcome = save_path_with_sidecar(Some(entries), None).unwrap();
@@ -353,6 +362,7 @@ mod tests {
     // （system Skipped / user Failed，W2-B1 可表达性）。
     #[test]
     fn oversized_user_entry_yields_partial_outcome_without_pending() {
+        let _guard = crate::persist::test_persist_lock();
         let _ = disabled::clear_pending_path_snapshot();
         let long = format!("D:\\{}", "a".repeat(32767));
         let outcome = save_path_with_sidecar(None, Some(vec![entry(&long, true)])).unwrap();
@@ -365,6 +375,7 @@ mod tests {
     // 不触碰注册表：system/user 恒为 Skipped（W2-B2 裁断）。
     #[test]
     fn retry_replays_pending_sidecar_only_and_clears_it() {
+        let _guard = crate::persist::test_persist_lock();
         let _ = disabled::clear_pending_path_snapshot();
         let sys = vec![
             entry("C:\\svc_test_sys", true),

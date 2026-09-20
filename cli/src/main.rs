@@ -13,8 +13,8 @@ use profile_ops::{
     profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
 };
 use runtime::{
-    ensure_single_target, exit_err, flush_pending_snapshot, load_and_save, load_operate_save,
-    persist_snapshot, verify_and_save,
+    ensure_single_target, exit_err, exit_persist_error, flush_pending_snapshot, load_and_save,
+    load_operate_save, persist_snapshot, verify_and_save,
 };
 use scan_ops::{cmd_check_admin, cmd_conflicts, cmd_scan};
 
@@ -233,7 +233,7 @@ enum EnvCmd {
 // ── 命令实现 ──
 
 fn cmd_list(system: bool, user: bool, json_out: bool) {
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     let mut sys = Vec::new();
     let mut usr = Vec::new();
     if system || !user {
@@ -423,7 +423,8 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
 fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
     let target = ensure_single_target(system, user);
     flush_pending_snapshot();
-    let mut snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let mut snapshot =
+        core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     let entries = if target == "system" {
         &mut snapshot.system
     } else {
