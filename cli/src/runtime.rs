@@ -34,6 +34,11 @@ pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
 
 type SaveFn = fn(Vec<String>) -> Result<(), String>;
 
+/// 乐观并发校验（读-比-写）+ 注册表写入（保守方案：保留在 CLI 层）。
+///
+/// F-08 的完整终态是把读-比-写下沉到 `core::service::apply_path_snapshot`
+/// 内部；本任务为避免大重构，先让服务层提供编排原语（注册表写入、广播、
+/// sidecar/pending 事务），校验留在 CLI。语义合并延后到 Wave 2 收口。
 pub(crate) fn verify_and_save(target: &str, original: &[String], new_list: Vec<String>) {
     let reload = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
@@ -138,53 +143,37 @@ pub(crate) fn sidecar_failure_message(err: &str, pending_ok: bool) -> String {
 
 /// 注册表写入成功后提交完整有序快照，保持两个存储的一致性边界。
 ///
-/// 失败时不丢状态：把待补写内容落到 pending 文件，退出码 1 并在 stderr
-/// 明确说明「注册表已写入、快照未落、已记录待补写」，供下次运行自动补写。
+/// **保留同名同签名，函数体转调 `core::service::commit_sidecar_snapshot`**
+/// （W2-N3 推荐做法：6 个外部调用点 + 4 个内部调用点零改动）。
+/// pending 落盘、防御性清除等事务语义全部由服务层承担（F-08 迁移）。
+///
+/// 失败时不丢状态：服务层把待补写内容落到 pending 文件并按
+/// `SidecarOutcome::Pending` / `Failed` 诚实报告；本函数据此映射退出码 1
+/// 与 stderr 文案（策略层）。
 pub(crate) fn persist_snapshot(
     system: Option<Vec<core::PathEntry>>,
     user: Option<Vec<core::PathEntry>>,
 ) {
-    if let Err(e) = core::disabled::save_path_snapshot(system.clone(), user.clone()) {
-        // pending 快照是覆盖式整份落盘，`save_pending_path_snapshot` 的 None 语义
-        // 是「空数组」而非「保留该 hive」（与 `save_path_snapshot` 不同）。
-        // 若把 None 原样落 pending，补写时会把未操作的 hive 清成空。
-        // 因此先用当前快照把 None 侧填充为现有内容，保证补写是无损的整份覆盖。
-        let pending = match core::disabled::load_path_snapshot() {
-            Ok(snap) => {
-                let sys = system.unwrap_or_else(|| snap.system.clone());
-                let usr = user.unwrap_or_else(|| snap.user.clone());
-                core::disabled::save_pending_path_snapshot(Some(sys), Some(usr))
+    match core::service::commit_sidecar_snapshot(system, user) {
+        Ok(outcome) => match outcome.sidecar {
+            core::service::SidecarOutcome::Saved => {}
+            core::service::SidecarOutcome::Pending(e) => {
+                exit_err(&sidecar_failure_message(&e.message, true))
             }
-            // 当前快照读取失败时无法安全构造无损 pending，跳过落盘；
-            // 错误文案仍说明注册表已写入，提示手工核对。
-            Err(pe) => Err(pe),
-        };
-        match pending {
-            Ok(()) => exit_err(&sidecar_failure_message(&e, true)),
-            Err(pe) => exit_err(&format!(
-                "{}\n（待补写状态记录失败: {pe}）",
-                sidecar_failure_message(&e, false)
+            core::service::SidecarOutcome::Failed(e) => exit_err(&format!(
+                "{}\n（待补写状态记录失败，请手工核对）",
+                sidecar_failure_message(&e.message, false)
             )),
-        }
-    }
-
-    // 防御性清理：本次快照已成功落盘，任何陈旧 pending 都已过时（其内容已被本快照
-    // 取代或覆盖），必须清除，否则下次 flush 会用陈旧内容覆盖本次写入。
-    // 磁盘此时已证明可写，clear 失败的概率极低；即便失败，下次 flush 也只是
-    // 幂等重放已被取代的旧状态——但为守住「成功写入后 pending 必须不存在」的
-    // 不变量，失败时打警告。
-    if core::disabled::has_pending_path_snapshot() {
-        if let Err(e) = core::disabled::clear_pending_path_snapshot() {
-            eprintln!("警告: 清除待补写快照状态失败: {e}");
-        }
+        },
+        Err(e) => exit_err(&e.message),
     }
 }
 
 /// 若存在上次未落盘的快照，先补写；成功即清除待补写状态。
 ///
-/// 补写是 best-effort：失败不阻断当前命令，只打印警告。
-/// pending 是覆盖式整份快照（两个 hive 均为 `Some`），直接整份传回
-/// `save_path_snapshot` 即为正确形态。
+/// **补写事务已下沉到 `core::service::retry_pending_path_state`（sidecar-only，
+/// 不触碰注册表）**；本函数只保留 CLI 策略层语义（W2-N1）：把服务的 `Err`
+/// 映射为 `eprintln!` 警告、不阻断当前命令——best-effort 行为与 Wave 1 一致。
 ///
 /// **所有 PATH 写命令入口都必须先调用本函数**，否则陈旧 pending 会在后续任一
 /// flush 时把刚写入的注册表与 sidecar 双双覆盖回旧状态。现有调用点：
@@ -192,19 +181,8 @@ pub(crate) fn persist_snapshot(
 /// （import_export.rs）、`profile_apply`（profile_ops.rs）、`cmd_toggle`
 /// （main.rs）。新增 PATH 写命令时必须同样在开头先调用本函数。
 pub(crate) fn flush_pending_snapshot() {
-    let pending = match core::disabled::load_pending_path_snapshot() {
-        Ok(Some(p)) => p,
-        Ok(None) => return,
-        Err(e) => {
-            eprintln!("警告: 无法读取待补写快照状态: {e}");
-            return;
-        }
-    };
-    match core::disabled::save_path_snapshot(Some(pending.system), Some(pending.user)) {
-        Ok(()) => {
-            let _ = core::disabled::clear_pending_path_snapshot();
-        }
-        Err(e) => eprintln!("警告: 待补写快照仍未能落盘: {e}"),
+    if let Err(e) = core::service::retry_pending_path_state() {
+        eprintln!("警告: 待补写快照仍未能落盘: {}", e.message);
     }
 }
 

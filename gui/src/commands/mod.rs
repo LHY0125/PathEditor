@@ -5,4 +5,5 @@ pub mod fs;
 pub mod profiles;
 pub mod registry;
 pub mod scanner;
+pub mod service;
 pub mod system;

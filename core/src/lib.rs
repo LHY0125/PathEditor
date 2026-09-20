@@ -9,6 +9,7 @@ pub mod profiles;
 pub mod reg_store;
 pub mod registry;
 pub mod scanner;
+pub mod service;
 pub mod system;
 
 pub use env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue};
