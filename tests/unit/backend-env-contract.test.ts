@@ -142,3 +142,73 @@ describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
     await expect(backend.updateEnvVar('user', 'X', 'v', 'rev')).resolves.toBeUndefined();
   });
 });
+
+describe('revealEnvVar 的 RevealedValue 契约校验（F-01）', () => {
+  it('合法返回值（value + revision 均为非空 string）通过并白名单构造', async () => {
+    mockInvoke.mockResolvedValue({ value: 'C:\\Java\\bin', revision: 'rev-9' });
+
+    const revealed = await backend.revealEnvVar('user', 'JAVA_HOME');
+
+    expect(revealed).toEqual({ value: 'C:\\Java\\bin', revision: 'rev-9' });
+    // 白名单构造：结果对象上没有多余字段
+    expect(Object.keys(revealed).sort()).toEqual(['revision', 'value']);
+  });
+
+  it('返回值不是 record 时拒绝', async () => {
+    mockInvoke.mockResolvedValue('plain-string');
+
+    await expect(backend.revealEnvVar('user', 'JAVA_HOME')).rejects.toThrow(/RevealedValue/);
+  });
+
+  it('value 为非 string 时拒绝', async () => {
+    mockInvoke.mockResolvedValue({ value: 42, revision: 'rev-9' });
+
+    await expect(backend.revealEnvVar('user', 'JAVA_HOME')).rejects.toThrow(/RevealedValue/);
+  });
+
+  it('revision 为非 string 时拒绝', async () => {
+    mockInvoke.mockResolvedValue({ value: 'C:\\Java\\bin', revision: 123 });
+
+    await expect(backend.revealEnvVar('user', 'JAVA_HOME')).rejects.toThrow(/RevealedValue/);
+  });
+
+  it('revision 为空字符串时拒绝', async () => {
+    mockInvoke.mockResolvedValue({ value: 'C:\\Java\\bin', revision: '' });
+
+    await expect(backend.revealEnvVar('user', 'JAVA_HOME')).rejects.toThrow(/RevealedValue/);
+  });
+
+  it('携带多余字段（如 hive）时白名单丢弃，不透传', async () => {
+    mockInvoke.mockResolvedValue({ value: 'v', revision: 'r', hive: 'user', sensitive: true });
+
+    const revealed = await backend.revealEnvVar('user', 'JAVA_HOME');
+
+    expect(revealed).toEqual({ value: 'v', revision: 'r' });
+  });
+});
+
+describe('parseEnvVarSnapshot 的 capturedAt 兼容回退（F-05 向后兼容）', () => {
+  it('capturedAt 缺失时回退为 0', async () => {
+    mockInvoke.mockResolvedValue({ system: [validMeta()], user: [] });
+
+    const snapshot = await backend.listAllEnvVars();
+
+    expect(snapshot.capturedAt).toBe(0);
+  });
+
+  it('capturedAt 为非 number（如 string）时回退为 0', async () => {
+    mockInvoke.mockResolvedValue({ system: [], user: [], capturedAt: 'not-a-number' });
+
+    const snapshot = await backend.listAllEnvVars();
+
+    expect(snapshot.capturedAt).toBe(0);
+  });
+
+  it('capturedAt 为合法 number 时原样保留', async () => {
+    mockInvoke.mockResolvedValue({ system: [], user: [], capturedAt: 1726900000000 });
+
+    const snapshot = await backend.listAllEnvVars();
+
+    expect(snapshot.capturedAt).toBe(1726900000000);
+  });
+});

@@ -248,7 +248,12 @@ fn run_case(case: &GoldenCase) {
                 ),
             ] {
                 if case.expect[field].as_str() != Some("current_registry_entries") {
-                    continue;
+                    // 守卫：不识别的取值直接 panic，禁止静默跳过（Task 7 复审登记项）。
+                    // 新增取值时必须在此显式扩展处理分支。
+                    panic!(
+                        "golden 用例 {name}: 不识别的 {field} 取值 {:?}，请在 golden_tests.rs 显式处理",
+                        case.expect[field]
+                    );
                 }
                 let section_start = content
                     .find(section_header)
@@ -271,6 +276,18 @@ fn run_case(case: &GoldenCase) {
                 .to_string_lossy()
                 .into_owned();
             if case.expect["filename_pattern"].is_string() {
+                // 守卫：filename_pattern 目前只支持描述 path_backup_*.txt 形态的
+                // 描述串（见 golden/backup_format_contract.json 的
+                // "path_backup_YYYYMMDD_HHMMSS_mmm.txt"）；不识别的取值直接
+                // panic，禁止静默跳过（Task 7 复审登记项）。
+                if case.expect["filename_pattern"].as_str()
+                    != Some("path_backup_YYYYMMDD_HHMMSS_mmm.txt")
+                {
+                    panic!(
+                        "golden 用例 {name}: 不识别的 filename_pattern 取值 {:?}，请在 golden_tests.rs 显式处理",
+                        case.expect["filename_pattern"]
+                    );
+                }
                 let stem = filename
                     .strip_prefix("path_backup_")
                     .and_then(|s| s.strip_suffix(".txt"))

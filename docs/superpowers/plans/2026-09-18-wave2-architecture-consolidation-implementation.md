@@ -42,7 +42,8 @@
 
 ### Task 1: 定义 `CoreError` 与 `ErrorCode`（F-06）
 
-**Files:**
+- Task 1 — 已完成，提交 `65b30b2`。无偏离。
+  **Files:**
 
 - Create: `core/src/error.rs`
 - Modify: `core/src/lib.rs`（`pub mod error;` + 重导出）
@@ -56,7 +57,7 @@
   - `impl From<String> for CoreError`（过渡期：旧自由文本降级为 `Internal`，`message` 原样）
   - `impl CoreError { pub fn exit_code(&self) -> i32 }`（`Conflict → 3`，其余 `→ 1`）
 
-- [ ] **Step 1: 写 `error.rs`**
+- [x] **Step 1: 写 `error.rs`**
 
 ```rust
 //! 结构化错误契约。
@@ -155,11 +156,11 @@ impl From<String> for CoreError {
 }
 ```
 
-- [ ] **Step 2: 注册并重导出**
+- [x] **Step 2: 注册并重导出**
 
 `lib.rs` 加 `pub mod error;`，并 `pub use error::{CoreError, ErrorCode};`。
 
-- [ ] **Step 3: 单测**
+- [x] **Step 3: 单测**
 
 ```rust
 #[cfg(test)]
@@ -190,7 +191,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test -p path-editor-core error
@@ -202,7 +203,8 @@ git commit -m "feat(core): 新增结构化错误契约 CoreError/ErrorCode"
 
 ### Task 2: 把环境变量通路的错误迁移到 `CoreError`（F-06）
 
-**Files:**
+- Task 2 — 已完成，提交 `99cf9e4`。⚠️ 该提交误含 package-lock.json 5.1.2→5.1.3（复核追认 ACCEPTED，偏离 lockfile 归发版流程先例，见开发回执）。
+  **Files:**
 
 - Modify: `core/src/registry.rs` 的环境变量函数与 `list` 通路
 - Modify: `core/src/reg_store.rs`（仅 `WinregHive::open` 构造函数，见 Step 1，W2-N2）
@@ -233,11 +235,11 @@ git commit -m "feat(core): 新增结构化错误契约 CoreError/ErrorCode"
 | 无法读取/写入/删除/枚举（winreg 错误）    | `Io`               |
 | 无法解码                                  | `Parse`            |
 
-- [ ] **Step 1: 端口层保留 `String`，在 `registry.rs` 边界转 `CoreError`**
+- [x] **Step 1: 端口层保留 `String`，在 `registry.rs` 边界转 `CoreError`**
 
 `EnvHiveStore` 仍返回 `Result<_, String>`（Wave 0 定义，避免大改端口）；`registry.rs` 在各写入口读取处 `.map_err(|m| CoreError::new(ErrorCode::Io, "update_env_var", m).with_target(hive, name))?`。
 
-- [ ] **Step 1b: `WinregHive::open` 单独迁移返回 `CoreError`（W2-N2，2026-09-20 裁断采纳）**
+- [x] **Step 1b: `WinregHive::open` 单独迁移返回 `CoreError`（W2-N2，2026-09-20 裁断采纳）**
 
 迁移表里「无法打开…注册表项 / 需要管理员权限 → `PermissionDenied`」按文案特征分类，正是 F-06 要杀死的文本匹配。`WinregHive::open` 是 `reg_store.rs` 的固有方法、不在 `EnvHiveStore` trait 上，可以单独迁移：
 
@@ -257,7 +259,7 @@ let key = winreg::RegKey::predef(root)
 
 trait 的四个方法**保持 `String` 不动**（Wave 0 边界）。`registry.rs` 消费端把 `open` 的 `CoreError` 用 `.with_target(hive, name)` 补齐目标信息后直接透传。
 
-- [ ] **Step 1c: `read_env_var` 内部三分类（W2-B1，2026-09-20 裁断采纳）**
+- [x] **Step 1c: `read_env_var` 内部三分类（W2-B1，2026-09-20 裁断采纳）**
 
 `read_env_var`（registry.rs:230，私有 fn）产生三种性质不同的错误：读取失败（Io）、类型不支持（UnsupportedType）、解码失败（Parse）。Step 3 示例把它整体 `map_err` 成 `Io` 与本任务自己的迁移表自相矛盾，且 UnsupportedType 被 Io 掩盖后前端/CLI 无法按 code 区分「只读变量」与「读取故障」。
 
@@ -282,7 +284,7 @@ fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String
 
 调用方（update/create/reveal/force 等）不再对 `read_env_var` 的返回做 `map_err` 包裹，改为 `.with_target(hive, name)` 补目标信息后透传。Step 3 示例中 `let (vtype, current) = read_env_var(store, name).map_err(|m| …Io…)?` 一行**作废**，以本步为准。
 
-- [ ] **Step 2: `ERR_CONFLICT` 改为构造 `CoreError`**
+- [x] **Step 2: `ERR_CONFLICT` 改为构造 `CoreError`**
 
 ```rust
 /// revision 冲突错误。
@@ -298,7 +300,7 @@ pub(crate) fn conflict_error(operation: &str, hive: EnvHive, name: &str) -> Core
 
 `conflict_message()` 保留（过渡期 CLI/GUI 仍可能读），但新增的判定一律走 `code`。
 
-- [ ] **Step 3: 逐个函数改签名与错误构造**
+- [x] **Step 3: 逐个函数改签名与错误构造**
 
 以 `update_env_var_in_store` 为例：
 
@@ -340,15 +342,15 @@ fn update_env_var_in_store(
 
 其余（create/delete/reveal/list/force）按同一规则迁移。
 
-- [ ] **Step 3b: `read_env_var` 错误补 hive 标签（Wave 1 审查报告登记 3，原定 Wave 1 顺带处理）**
+- [x] **Step 3b: `read_env_var` 错误补 hive 标签（Wave 1 审查报告登记 3，原定 Wave 1 顺带处理）**
 
 `read_env_var`（registry.rs:230）的错误不带 hive 标签，跨 hive 排障时无法区分来源。**机制裁断（W2-N5，2026-09-20）**：`read_env_var` 签名无 hive 参数，不必为此改签名——W2-B1 落地后 `CoreError` 已有结构化 `hive` 字段，调用方 `.with_target(hive, name)` 即携带；`message` 文本标签在调用侧包一层（「读取系统环境变量 XXX 失败…」样式，与 F-04 列表路径一致）。审核责任说明：Wave 0 报告登记为「Wave 1 顺带」，但未写进 Wave 1 计划，移交至此。
 
-- [ ] **Step 4: 改测试断言**
+- [x] **Step 4: 改测试断言**
 
 已有测试断言 `result.unwrap_err() == ERR_CONFLICT` 的改为 `assert_eq!(result.unwrap_err().code, ErrorCode::Conflict)`；断言 `contains("类型不受支持")` 的改为断言 `code == ErrorCode::UnsupportedType`。
 
-- [ ] **Step 5: 质量门 + 提交**
+- [x] **Step 5: 质量门 + 提交**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
@@ -360,7 +362,8 @@ git commit -m "refactor(core): 环境变量通路错误迁移到 CoreError"
 
 ### Task 3: Tauri / CLI / 前端按 `code` 判定（F-06）
 
-**Files:**
+- Task 3 — 已完成，提交 `a321913`。无偏离。
+  **Files:**
 
 - Modify: `gui/src/commands/env_var.rs`（返回 `Result<_, CoreError>`）
 - Modify: `cli/src/runtime.rs`（`exit_conflict`/`is_conflict` → `exit_core_error(&CoreError)`）
@@ -369,7 +372,7 @@ git commit -m "refactor(core): 环境变量通路错误迁移到 CoreError"
 - Modify: `src/store/env-store.ts`（`isConflictError` 改看 `code`）
 - Modify: `src/i18n/locales/*.json`（`error.code.<code>` 文案）
 
-- [ ] **Step 1: CLI 退出码**
+- [x] **Step 1: CLI 退出码**
 
 ```rust
 /// 按结构化错误决定退出码与输出。
@@ -388,7 +391,7 @@ pub(crate) fn apply_core_result(result: Result<(), core::CoreError>) {
 
 删除 `CONFLICT_PREFIX` / `is_conflict` / `exit_conflict` 的文字匹配（保留 `conflict_prefix_matches_core_constant` 契约测试改为断言 `CoreError::Conflict.exit_code() == 3`）。
 
-- [ ] **Step 2: 前端**
+- [x] **Step 2: 前端**
 
 `backend.ts` 把 Tauri 的 rejection 解析为 `{ code: ErrorCode; message: string }`（形状校验，未知 code → `internal`）。**过渡期双形状兼容（W2-N4）**：Task 2/3 完成前 PATH 命令仍返回纯文本 `String`、env 命令已返回 `CoreError` 对象——解析必须两种形状都接受：对象 → 按 `code`；纯字符串 → 兜底为 `internal`、原文进 `message`。全部 PATH 命令迁移完毕后此兼容层可收紧（保留到 Wave 2 收口，届时在 Execution Notes 记录是否移除）。
 
@@ -404,11 +407,11 @@ function isConflictError(err: { code: string } | null): boolean {
 
 i18n 增加 `error.code.conflict` / `error.code.protected` 等键，两端同步。
 
-- [ ] **Step 3: 单测/E2E**
+- [x] **Step 3: 单测/E2E**
 
 更新 CLI 的退出码测试与前端 mock 的冲突注入（改为注入 `{code:'conflict', ...}`）。
 
-- [ ] **Step 4: 质量门 + 提交**
+- [x] **Step 4: 质量门 + 提交**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
@@ -422,7 +425,8 @@ git commit -m "refactor: 错误判定改为按 CoreError.code（Tauri/CLI/前端
 
 ### Task 4: 拆分 `registry.rs` 为 `registry/` 目录（F-07，纯搬家）
 
-**Files:**
+- Task 4 — 已完成，提交 `05a966f`。registry.rs 保留作模块根（W2-N6）。
+  **Files:**
 
 - Create: `core/src/registry/{mod,path,env_var,access,error,test_adapter}.rs`
 - Modify: `core/src/registry.rs`（内容搬空后**保留为模块根**，只留子模块声明——W2-N6，2026-09-20 裁断：首选方案）
@@ -446,19 +450,19 @@ core/src/registry/
 
 `EnvHiveStore` 端口仍在 `core/src/reg_store.rs`（Wave 0），`test_adapter` 只做装配。
 
-- [ ] **Step 1: 建立目录并搬 `path.rs`**
+- [x] **Step 1: 建立目录并搬 `path.rs`**
 
 把 PATH 相关函数整体移入 `path.rs`，逐个 `pub(crate)` 保持可见性；`mod.rs` 里 `pub(crate) use path::*;`。
 
-- [ ] **Step 2: 搬 `access.rs`**
+- [x] **Step 2: 搬 `access.rs`**
 
 `hive_location`、`can_write_user`、`env_key`（若仍在用）、权限探测。
 
-- [ ] **Step 3: 搬 `env_var.rs`（registry 侧）**
+- [x] **Step 3: 搬 `env_var.rs`（registry 侧）**
 
 环境变量 CRUD 与 `list` 通路。
 
-- [ ] **Step 4: 模块根重导出，保证外部路径不变**
+- [x] **Step 4: 模块根重导出，保证外部路径不变**
 
 **W2-N6 首选形态**：重导出写在保留的 `core/src/registry.rs`（模块根）里，不建 `mod.rs`：
 
@@ -492,13 +496,13 @@ mod test_adapter;
 
 > **不要留占位符号**：上面列出的符号全部真实存在。落实时逐个核对；`ERR_CONFLICT` 目前是 `pub(crate)`，只能 `pub(crate) use` 重导出，不能 `pub use`。
 
-- [ ] **Step 5: 验证零行为变化**
+- [x] **Step 5: 验证零行为变化**
 
 Run: `cargo test --workspace`
 
 Expected: 与拆分前**同样的测试数、全绿**。`git diff --stat` 只应看到文件移动，不应有语义改动（用 `git diff -M` 检查重命名检测）。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
@@ -510,7 +514,8 @@ git commit -m "refactor(core): registry.rs 拆分为 registry/ 目录（纯搬�
 
 ### Task 5: 共享应用服务层（F-08）
 
-**Files:**
+- Task 5 — 已完成，提交 `d7d049b`。SidecarOutcome::Pending 增加 CoreError payload，超出简报（有依据的超集，见开发回执）。
+  **Files:**
 
 - Create: `core/src/service.rs`
 - Modify: `core/src/lib.rs`（`pub mod service;`）
@@ -561,11 +566,11 @@ pub fn retry_pending_path_state() -> Result<ApplyOutcome, CoreError>;
 pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError>;
 ```
 
-- [ ] **Step 1: 实现 `service.rs`（把 CLI 的 `runtime.rs` 编排与 GUI 的 `path-session.ts` 语义收敛到此处）**
+- [x] **Step 1: 实现 `service.rs`（把 CLI 的 `runtime.rs` 编排与 GUI 的 `path-session.ts` 语义收敛到此处）**
 
 多 hive 语义**明确选定 best-effort**：逐 hive 尝试，失败不阻断另一 hive，结果在 `ApplyOutcome` 的 `system` / `user` 字段里分别表达，并据此决定整体退出码/提示。单 hive 的 `apply_path_snapshot(hive, …)` 把未触及的另一 hive 置为 `HiveOutcome::Skipped`。
 
-- [ ] **Step 2: CLI 改调服务**
+- [x] **Step 2: CLI 改调服务**
 
 `cli/src/runtime.rs` 的 `load_and_save` / `load_operate_save` / `persist_snapshot` 改为调用 `core::service::save_path_with_sidecar` / `apply_path_snapshot`；`profile_ops.rs` 改调 `apply_profile`。Wave 1 在 CLI 侧写的 pending 逻辑移入服务层（`save_path_with_sidecar` 内部处理失败落 pending）。
 
@@ -576,18 +581,18 @@ pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError>;
 
 **推荐做法**：保留 `persist_snapshot` 同名同签名，只把它的**函数体**改为转调 `core::service::save_path_with_sidecar`。这样上述 6 个站点无需改动。若确要换名/换签名，必须在同一提交内同步这 6 处——本 Task 请明确选择其一并写进 Execution Notes。
 
-- [ ] **Step 3: GUI 改调服务**
+- [x] **Step 3: GUI 改调服务**
 
 `src/services/path-session.ts` 的编排经 Tauri 命令转发到 `service`（新增/调整 `gui/src/commands/` 的封装）。
 
-- [ ] **Step 4: 故障注入测试**
+- [x] **Step 4: 故障注入测试**
 
 对 `save_path_with_sidecar` 注入两类故障：
 
 - 注册表成功 + sidecar 失败 → `outcome.sidecar == SidecarOutcome::Pending`，且 pending 文件存在；
 - 系统成功 + 用户失败 → `outcome.system == HiveOutcome::Applied && matches!(outcome.user, HiveOutcome::Failed(_))`（partial 现在可表达）。
 
-- [ ] **Step 4b: Wave 1 让步的第三类故障注入（Wave 1 审查报告登记 5）**
+- [x] **Step 4b: Wave 1 让步的第三类故障注入（Wave 1 审查报告登记 5）**
 
 Wave 1 只交付了 pending 生命周期单测 + 行为验证，spec F-03 要求的三类注入中「快照成功/注册表失败」路径缺测试。
 
@@ -597,7 +602,7 @@ flush 重放验证：先注入 sidecar 失败产生 pending（sidecar 失败注�
 
 **flush 语义分层（W2-N1，2026-09-20 裁断采纳）**：服务层返回 `Result<ApplyOutcome, CoreError>` 是诚实的错误报告；CLI 策略层保持 best-effort——`flush_pending_snapshot` 把 `retry_pending_path_state` 的 `Err` 映射为 `eprintln!` 警告、不阻断当前命令（Wave 1 行为不变）。即：**报告层收紧、策略层不变**，迁移后补写失败仍是警告 + 继续执行。
 
-- [ ] **Step 5: 质量门 + 提交（对应 Task 5 整体）**
+- [x] **Step 5: 质量门 + 提交（对应 Task 5 整体）**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
@@ -610,7 +615,8 @@ git commit -m "feat(core): 新增共享应用服务层，统一 PATH/profile 事
 
 ### Task 6: 持久化 schema 版本化与损坏恢复（F-11）
 
-**Files:**
+- Task 6 — 已完成，提交 `eb995ae`。CoreError 牵连 3 文件全面迁移（W2-B3）。
+  **Files:**
 
 - Modify: `core/src/disabled.rs`、`core/src/profiles.rs`
 - Modify（牵连，W2-B3 裁断 (a)）：`core/src/service.rs`（Task 5 刚建，消费 `load_path_snapshot` 等的错误类型变化）、`cli/src/runtime.rs`（`flush_pending_snapshot` 直接调 `save_path_snapshot`）、`gui/src/commands/disabled.rs`
@@ -627,24 +633,24 @@ git commit -m "feat(core): 新增共享应用服务层，统一 PATH/profile 事
 - 读取解析失败：把坏文件移到 `<file>.corrupt-<ts>` 并返回可识别错误（`ErrorCode::Parse`），**不再只返回通用 JSON 错误**。
 - `migrate(value, from_version)`：当前只支持 `1`；未知更高版本 → 返回 `ErrorCode::Parse` 并提示「文件由更新版本写入」。
 
-- [ ] **Step 1: 加 `schemaVersion` 与 `.bak`**
+- [x] **Step 1: 加 `schemaVersion` 与 `.bak`**
 
 `save_*` 时先 `atomic_write` 到 `<file>.bak`（若非首次），再写主文件。
 
-- [ ] **Step 2: quarantine**
+- [x] **Step 2: quarantine**
 
 ```rust
 /// 读取失败时把损坏文件隔离到 `<file>.corrupt-<ts>`，返回可识别错误。
 fn quarantine(path: &Path) -> Result<PathBuf, CoreError> { /* rename */ }
 ```
 
-- [ ] **Step 3: migration 测试**
+- [x] **Step 3: migration 测试**
 
 - 无 `schemaVersion` 的旧文件 → 按 v1 读取（向后兼容）。
 - 截断的 JSON → 文件被隔离、返回 `Parse`。
 - `schemaVersion: 999` → 返回 `Parse` 且提示版本过高。
 
-- [ ] **Step 4: 质量门 + 提交**
+- [x] **Step 4: 质量门 + 提交**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test -p path-editor-core
@@ -656,7 +662,8 @@ git commit -m "feat(core): 持久化文件增加 schemaVersion、.bak 与损坏�
 
 ### Task 7: C→Rust 行为等价基线（F-10）
 
-**Files:**
+- Task 7 — 已完成，提交 `28680bd` + `69e2159`。golden 统一 `core/src/registry/golden/`（W2-B4）；第 6 类 broadcast 推迟。
+  **Files:**
 
 - Create: `core/src/registry/golden_tests.rs`（声明为 `registry/mod.rs` 内的 `#[cfg(test)] mod golden_tests;`）
 - Create: `core/src/registry/golden/*.json`（输入快照 + 期望结果，用 `include_str!` 读入）
@@ -665,7 +672,7 @@ git commit -m "feat(core): 持久化文件增加 schemaVersion、.bak 与损坏�
 
 **目标**：以数据驱动的方式固定「输入注册表快照 + 操作 → 期望注册表/文件/广播结果」，覆盖复审报告列出的六类行为。
 
-- [ ] **Step 1: 定义 golden 格式**
+- [x] **Step 1: 定义 golden 格式**
 
 ```json
 {
@@ -676,7 +683,7 @@ git commit -m "feat(core): 持久化文件增加 schemaVersion、.bak 与损坏�
 }
 ```
 
-- [ ] **Step 2: 覆盖六类行为**
+- [x] **Step 2: 覆盖六类行为**
 
 1. PATH 分割、空项、空白、重复项（`split_path` / `join_path` / `clean_path_entries`）
 2. `REG_SZ` / `REG_EXPAND_SZ` 写回类型保持
@@ -685,11 +692,11 @@ git commit -m "feat(core): 持久化文件增加 schemaVersion、.bak 与损坏�
 5. profile / 导入导出 / 禁用项在升级后的兼容性
 6. `WM_SETTINGCHANGE` 广播时机（以「写入口调用点」为可断言的替身：断言成功路径会调用广播、失败/冲突路径不调用——如已抽出可注入的广播端口则直接断言）
 
-- [ ] **Step 3: 迁移记录**
+- [x] **Step 3: 迁移记录**
 
 每个与旧 C 行为**有意不同**的用例，在 `core/src/registry/golden/README.md` 标注「旧行为 / 新行为 / 改变原因」。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 cargo test --workspace
@@ -701,13 +708,14 @@ git commit -m "test(core): 新增 C→Rust 行为等价 golden 基线"
 
 ### Task 8: 收口质量门与文档收口
 
-- [ ] **Step 1: 全量质量门**
+- Task 8 — 已完成（本收口提交）。质量门全绿、契约测试补漏 9 例、文档同步、真实注册表闭环（2026-09-20 授权）。
+- [x] **Step 1: 全量质量门**
 
 ```bash
 npm run verify:all
 ```
 
-- [ ] **Step 1b: 契约测试补漏（Wave 1 审查报告登记 2）**
+- [x] **Step 1b: 契约测试补漏（Wave 1 审查报告登记 2）**
 
 `tests/unit/backend-env-contract.test.ts` 目前只覆盖 `EnvVarMeta` 契约。补三类直接用例（若 Task 3 重构了 `parseRevealedValue`，按新形态写）：
 
@@ -715,22 +723,22 @@ npm run verify:all
 - `parseEnvVarSnapshot`：`capturedAt` 缺失 / 非 number 时回退 0 的直接断言；
 - 契约测试文件补 `RevealedValue` 分组（现文件 34-78 行的 describe 只测 EnvVarMeta）。
 
-- [ ] **Step 1c: 文档收口（开发窗口自报 Minor #4/#5 + 流程固化）**
+- [x] **Step 1c: 文档收口（开发窗口自报 Minor #4/#5 + 流程固化）**
 
 1. `CLAUDE.md`/`AGENTS.md` 的 Tauri IPC 表中 `reveal_env_var` 签名仍写 `Result<String, String>`，与 Wave 1 实际（`RevealedValue`，Wave 2 起为 `Result<RevealedValue, CoreError>`）不符——同步两份文件（保持字节级一致）。
 2. `env set` / `env remove` 的 clap 帮助文本与 Wave 1 后的实际语义核对（`--force` 描述已改过一轮，本轮终态核对）。
 3. README 版本徽章/命令说明与终态核对。
 4. **流程固化**：开发窗口的开发回执必须落盘为 `docs/审核和开发/YYYY.MM.DD/PathEditor-<feature>开发回执.md`（Wave 0/Wave 1 连续两轮以聊天摘要交付，Wave 0 审查报告 Minor 3 与 Wave 1 审查报告 Minor 2 两次登记）。
 
-- [ ] **Step 2: 真实 Tauri/注册表集成**
+- [x] **Step 2: 真实 Tauri/注册表集成**
 
 **需用户显式授权与专用环境**。未授权则如实登记为未覆盖项，不得声称完成。
 
-- [ ] **Step 3: 回填各计划 Execution Notes + 更新 spec 状态**
+- [x] **Step 3: 回填各计划 Execution Notes + 更新 spec 状态**
 
 把 spec 状态从「待评审」改为「已实现（Wave 2）」，并在 `## Execution Notes` 记录偏离。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add -A
