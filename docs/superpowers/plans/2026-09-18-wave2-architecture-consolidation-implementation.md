@@ -28,7 +28,7 @@
 | 文件                                                                    | 职责                                                                                                                               | 变更     |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | `core/src/error.rs`                                                     | `CoreError` + `ErrorCode` + `Result` 别名 + 退出码映射                                                                             | **新建** |
-| `core/src/registry/`                                                    | 由 `registry.rs`（1101 行）拆分而来                                                                                                | **重组** |
+| `core/src/registry/`                                                    | 由 `registry.rs`（编写时约 1101 行，现 1203 行，W2-N3）拆分而来                                                                    | **重组** |
 | `core/src/registry/{mod,path,env_var,access,conflict,test_adapter}.rs`  | 见 F-07（用 `conflict` 而非 `error`，避免与 crate 根的 `crate::error` 混淆）                                                       | **新建** |
 | `core/src/service.rs`                                                   | 应用服务层（F-08）                                                                                                                 | **新建** |
 | `core/src/registry/golden_tests.rs` + `core/src/registry/golden/*.json` | C→Rust golden 基线（F-10）。**必须放 crate 内 `#[cfg(test)]`**：`split_path`/`join_path` 是私有 `fn`，`core/tests/` 集成测试够不到 | **新建** |
@@ -205,6 +205,7 @@ git commit -m "feat(core): 新增结构化错误契约 CoreError/ErrorCode"
 **Files:**
 
 - Modify: `core/src/registry.rs` 的环境变量函数与 `list` 通路
+- Modify: `core/src/reg_store.rs`（仅 `WinregHive::open` 构造函数，见 Step 1，W2-N2）
 
 **Interfaces:**
 
@@ -235,6 +236,51 @@ git commit -m "feat(core): 新增结构化错误契约 CoreError/ErrorCode"
 - [ ] **Step 1: 端口层保留 `String`，在 `registry.rs` 边界转 `CoreError`**
 
 `EnvHiveStore` 仍返回 `Result<_, String>`（Wave 0 定义，避免大改端口）；`registry.rs` 在各写入口读取处 `.map_err(|m| CoreError::new(ErrorCode::Io, "update_env_var", m).with_target(hive, name))?`。
+
+- [ ] **Step 1b: `WinregHive::open` 单独迁移返回 `CoreError`（W2-N2，2026-09-20 裁断采纳）**
+
+迁移表里「无法打开…注册表项 / 需要管理员权限 → `PermissionDenied`」按文案特征分类，正是 F-06 要杀死的文本匹配。`WinregHive::open` 是 `reg_store.rs` 的固有方法、不在 `EnvHiveStore` trait 上，可以单独迁移：
+
+```rust
+// core/src/reg_store.rs —— winreg 错误按 io::ErrorKind 诚实分类
+let key = winreg::RegKey::predef(root)
+    .open_subkey_with_flags(sub_path, flags)
+    .map_err(|e| {
+        let code = if e.kind() == std::io::ErrorKind::PermissionDenied {
+            crate::error::ErrorCode::PermissionDenied
+        } else {
+            crate::error::ErrorCode::Io
+        };
+        crate::error::CoreError::new(code, "open_env_key", format!("无法打开{}环境变量注册表项: {}", label, e))
+    })?;
+```
+
+trait 的四个方法**保持 `String` 不动**（Wave 0 边界）。`registry.rs` 消费端把 `open` 的 `CoreError` 用 `.with_target(hive, name)` 补齐目标信息后直接透传。
+
+- [ ] **Step 1c: `read_env_var` 内部三分类（W2-B1，2026-09-20 裁断采纳）**
+
+`read_env_var`（registry.rs:230，私有 fn）产生三种性质不同的错误：读取失败（Io）、类型不支持（UnsupportedType）、解码失败（Parse）。Step 3 示例把它整体 `map_err` 成 `Io` 与本任务自己的迁移表自相矛盾，且 UnsupportedType 被 Io 掩盖后前端/CLI 无法按 code 区分「只读变量」与「读取故障」。
+
+**裁决：`read_env_var` 随迁移改为内部返回 `Result<(RegType, String), CoreError>`，三分类在函数内完成**：
+
+```rust
+fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String), CoreError> {
+    let raw = store.get_raw(name).map_err(|m| {
+        CoreError::new(ErrorCode::Io, "read_env_var", m) /* .with_target 由调用方补 */
+    })?;
+    let kind = EnvValueKind::from_reg_type(raw.vtype.clone());
+    if !kind.is_writable() {
+        return Err(CoreError::new(ErrorCode::UnsupportedType, "read_env_var",
+            format!("环境变量 {} 的注册表类型不受支持", name)));
+    }
+    let value = String::from_reg_value(&raw).map_err(|e| {
+        CoreError::new(ErrorCode::Parse, "read_env_var", format!("无法解码环境变量 {}: {}", name, e))
+    })?;
+    Ok((raw.vtype, value))
+}
+```
+
+调用方（update/create/reveal/force 等）不再对 `read_env_var` 的返回做 `map_err` 包裹，改为 `.with_target(hive, name)` 补目标信息后透传。Step 3 示例中 `let (vtype, current) = read_env_var(store, name).map_err(|m| …Io…)?` 一行**作废**，以本步为准。
 
 - [ ] **Step 2: `ERR_CONFLICT` 改为构造 `CoreError`**
 
@@ -294,6 +340,10 @@ fn update_env_var_in_store(
 
 其余（create/delete/reveal/list/force）按同一规则迁移。
 
+- [ ] **Step 3b: `read_env_var` 错误补 hive 标签（Wave 1 审查报告登记 3，原定 Wave 1 顺带处理）**
+
+`read_env_var`（registry.rs:230）的错误不带 hive 标签，跨 hive 排障时无法区分来源。**机制裁断（W2-N5，2026-09-20）**：`read_env_var` 签名无 hive 参数，不必为此改签名——W2-B1 落地后 `CoreError` 已有结构化 `hive` 字段，调用方 `.with_target(hive, name)` 即携带；`message` 文本标签在调用侧包一层（「读取系统环境变量 XXX 失败…」样式，与 F-04 列表路径一致）。审核责任说明：Wave 0 报告登记为「Wave 1 顺带」，但未写进 Wave 1 计划，移交至此。
+
 - [ ] **Step 4: 改测试断言**
 
 已有测试断言 `result.unwrap_err() == ERR_CONFLICT` 的改为 `assert_eq!(result.unwrap_err().code, ErrorCode::Conflict)`；断言 `contains("类型不受支持")` 的改为断言 `code == ErrorCode::UnsupportedType`。
@@ -340,7 +390,9 @@ pub(crate) fn apply_core_result(result: Result<(), core::CoreError>) {
 
 - [ ] **Step 2: 前端**
 
-`backend.ts` 把 Tauri 的 rejection 解析为 `{ code: ErrorCode; message: string }`（形状校验，未知 code → `internal`）。
+`backend.ts` 把 Tauri 的 rejection 解析为 `{ code: ErrorCode; message: string }`（形状校验，未知 code → `internal`）。**过渡期双形状兼容（W2-N4）**：Task 2/3 完成前 PATH 命令仍返回纯文本 `String`、env 命令已返回 `CoreError` 对象——解析必须两种形状都接受：对象 → 按 `code`；纯字符串 → 兜底为 `internal`、原文进 `message`。全部 PATH 命令迁移完毕后此兼容层可收紧（保留到 Wave 2 收口，届时在 Execution Notes 记录是否移除）。
+
+`cli/src/env_ops.rs`：`exit_err(&e)` 收 `&str`，env 命令改用 `exit_core_error` 后，**该文件里所有**收 `Result<_, CoreError>` 的调用点都要取 `.message` 或改用 `exit_core_error`，不只 `apply_concurrency` 一处——实施时全文件排查 `unwrap_or_else(|e| exit_err(&e))` 形态。
 
 `env-store.ts`：
 
@@ -373,20 +425,24 @@ git commit -m "refactor: 错误判定改为按 CoreError.code（Tauri/CLI/前端
 **Files:**
 
 - Create: `core/src/registry/{mod,path,env_var,access,error,test_adapter}.rs`
-- Delete: `core/src/registry.rs`（内容迁移，**需用户确认删除**——若用户不同意删，改为 `registry.rs` 仅保留 `mod` 声明式内容）
+- Modify: `core/src/registry.rs`（内容搬空后**保留为模块根**，只留子模块声明——W2-N6，2026-09-20 裁断：首选方案）
 - Modify: `core/src/lib.rs`
+
+> **W2-N6 模块组织裁断（2026-09-20）**：Rust 2018 起允许 `registry.rs` 作模块根 + `registry/` 目录放子模块（两者并存合法；E0761 只在 `registry.rs` 与 `registry/mod.rs` 同时存在时触发）。**首选保留 `registry.rs` 作模块根**（仅 `mod access; mod conflict; …` 声明），完全避开文件删除授权问题；原「Delete + 需用户确认」降为备选：若实施中选定 `registry/mod.rs` 形态，才需用户确认删除 `registry.rs`。
 
 **目标结构**（内容按职责搬，**不改行为**）：
 
 ```text
 core/src/registry/
-  mod.rs          # 统一入口与 pub 重导出（保持外部路径兼容）
+  registry.rs     # 模块根（保留）：只留 mod 声明与重导出（W2-N6 首选形态）
   path.rs         # load_paths/save_paths/split_path/join_path/validate_and_join_paths/clean_*
   env_var.rs      # update/delete/create/reveal/list(_store)/force 系列/revision 辅助
   access.rs       # hive_location/can_write_user/env_key 语义/权限探测
   conflict.rs     # 注册表侧冲突：ERR_CONFLICT 常量 + conflict_error 构造
   test_adapter.rs # 测试用装配（MemoryHive 装配、测试夹具）
 ```
+
+> W2-N3（2026-09-20）：行号锚点按符号定位——`registry.rs` 现为 **1203 行**（计划基线写 1101 已漂移）；`env_key` 已在 Wave 0 删除，上文「若仍在用」措辞保留；`split_path`/`join_path` 行号以实施时 grep 为准。
 
 `EnvHiveStore` 端口仍在 `core/src/reg_store.rs`（Wave 0），`test_adapter` 只做装配。
 
@@ -402,7 +458,9 @@ core/src/registry/
 
 环境变量 CRUD 与 `list` 通路。
 
-- [ ] **Step 4: `mod.rs` 重导出，保证外部路径不变**
+- [ ] **Step 4: 模块根重导出，保证外部路径不变**
+
+**W2-N6 首选形态**：重导出写在保留的 `core/src/registry.rs`（模块根）里，不建 `mod.rs`：
 
 ```rust
 //! 注册表访问统一入口。外部（gui/cli）一律经此路径引用，拆分对调用方不可见。
@@ -464,15 +522,23 @@ git commit -m "refactor(core): registry.rs 拆分为 registry/ 目录（纯搬�
 
 ```rust
 /// 单个 hive 的应用结果。
+///
+/// 需过 Tauri IPC（W2-B3），必须可序列化。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum HiveOutcome { Applied, Skipped, Failed(CoreError) }
 
-/// sidecar（disabled.json / PATH 快照）的落盘结果。
+/// sidecar（disabled.json / PATH 快照 / pending）的落盘结果。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SidecarOutcome { Saved, Failed(CoreError), Pending }
 
 /// 一次 PATH/变量应用的整体结果。
 ///
 /// **按 hive 分字段**：多 hive 应用必须能同时表达「系统成功 / 用户失败」这种
 /// partial 结果，单个 `registry: HiveOutcome` 字段装不下（评审 W2-B1）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApplyOutcome {
     pub system: HiveOutcome,
     pub user: HiveOutcome,
@@ -503,7 +569,7 @@ pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError>;
 
 `cli/src/runtime.rs` 的 `load_and_save` / `load_operate_save` / `persist_snapshot` 改为调用 `core::service::save_path_with_sidecar` / `apply_path_snapshot`；`profile_ops.rs` 改调 `apply_profile`。Wave 1 在 CLI 侧写的 pending 逻辑移入服务层（`save_path_with_sidecar` 内部处理失败落 pending）。
 
-**`persist_snapshot` 的全部调用点（评审 W2-N3，已核实）**：
+**`persist_snapshot` 的全部调用点（评审 W2-N3，已核实；开发窗口核对补注：runtime.rs 内部另有 4 处调用——68/73/99/101，均在 `load_and_save` / `load_operate_save` 内部，本任务改造这两个函数时自然覆盖，无需单列）**：
 
 - 定义：`cli/src/runtime.rs:126`
 - 调用：`cli/src/profile_ops.rs:64`、`cli/src/main.rs:451`、`cli/src/main.rs:453`、`cli/src/import_export.rs:12`、`cli/src/import_export.rs:18`、`cli/src/import_export.rs:30`
@@ -521,7 +587,17 @@ pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError>;
 - 注册表成功 + sidecar 失败 → `outcome.sidecar == SidecarOutcome::Pending`，且 pending 文件存在；
 - 系统成功 + 用户失败 → `outcome.system == HiveOutcome::Applied && matches!(outcome.user, HiveOutcome::Failed(_))`（partial 现在可表达）。
 
-- [ ] **Step 5: 质量门 + 提交**
+- [ ] **Step 4b: Wave 1 让步的第三类故障注入（Wave 1 审查报告登记 5）**
+
+Wave 1 只交付了 pending 生命周期单测 + 行为验证，spec F-03 要求的三类注入中「快照成功/注册表失败」路径缺测试。
+
+**注入机制裁断（W2-B2，2026-09-20）**：原拟「`MemoryHive` 注入 `set_raw` 失败」不成立——`MemoryHive` 只服务环境变量通路（`fail_enum`/`fail_get`，无 `fail_set`），而 PATH 通路 Wave 0 明确不纳入端口，`save_path_with_sidecar` 走 `registry::save_paths` 真实注册表。**改用输入校验强制注册表阶段失败**：构造含 null 字节 / 超过 32767 UTF-16 长度的 PATH 条目，使 `validate_and_join_paths`（registry.rs:149，在触碰注册表前调用，`save_paths` 首行）返回 Err——与「注册表写失败」走同一段代码路径（注册表阶段失败 → 不得产生 pending 文件）。断言：`outcome` 表达注册表侧 `Failed`、`~/.patheditor/pending_path_snapshot.json` 不产生。
+
+flush 重放验证：先注入 sidecar 失败产生 pending（sidecar 失败注入方式见上类），恢复后调 `retry_pending_path_state()`，断言快照落盘且 pending 清除。**retry 保持 sidecar-only**（W2-B2 附带裁断）：`retry_pending_path_state` 经 `save_path_snapshot` 只写 sidecar、**不触碰注册表**——pending 的产生前提就是注册表已写成功，补写不得重写注册表。
+
+**flush 语义分层（W2-N1，2026-09-20 裁断采纳）**：服务层返回 `Result<ApplyOutcome, CoreError>` 是诚实的错误报告；CLI 策略层保持 best-effort——`flush_pending_snapshot` 把 `retry_pending_path_state` 的 `Err` 映射为 `eprintln!` 警告、不阻断当前命令（Wave 1 行为不变）。即：**报告层收紧、策略层不变**，迁移后补写失败仍是警告 + 继续执行。
+
+- [ ] **Step 5: 质量门 + 提交（对应 Task 5 整体）**
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
@@ -537,10 +613,16 @@ git commit -m "feat(core): 新增共享应用服务层，统一 PATH/profile 事
 **Files:**
 
 - Modify: `core/src/disabled.rs`、`core/src/profiles.rs`
+- Modify（牵连，W2-B3 裁断 (a)）：`core/src/service.rs`（Task 5 刚建，消费 `load_path_snapshot` 等的错误类型变化）、`cli/src/runtime.rs`（`flush_pending_snapshot` 直接调 `save_path_snapshot`）、`gui/src/commands/disabled.rs`
+
+**W2-B3 裁断（2026-09-20，二选一取 (a)）**：本任务对 `disabled.rs` + `profiles.rs` **全面迁移 `CoreError`**（与 F-11 的 `ErrorCode::Parse` 一致，quarantine 返回 `Result<_, CoreError>` 保持），牵连调用点随同编译修复——宁可 Files 清单诚实，不留编译期惊喜。**放弃 (b) quarantine 降级返回 `String`**：那会在 F-06 贯通四层的同一波里再留一个自由文本孤岛，下波还得拆。
 
 **Interfaces:**
 
-- `disabled.json` / `profiles/*.json` 顶层增加 `schemaVersion: u32`（当前 `1`）。
+- `disabled.json` / `profiles/*.json` / **`pending_path_snapshot.json`** 顶层增加 `schemaVersion: u32`（当前 `1`）。
+
+  > **pending 文件一并纳入（Wave 1 审查报告登记 4）**：`pending_path_snapshot.json` 是 Wave 1 新增的持久化文件，与 `disabled.json` 一样无版本头。F-11 覆盖清单若只写 `disabled.json` / `profiles`，会漏掉这个新成员。
+
 - 写入前保留上一份 `<file>.bak`（轮换）。
 - 读取解析失败：把坏文件移到 `<file>.corrupt-<ts>` 并返回可识别错误（`ErrorCode::Parse`），**不再只返回通用 JSON 错误**。
 - `migrate(value, from_version)`：当前只支持 `1`；未知更高版本 → 返回 `ErrorCode::Parse` 并提示「文件由更新版本写入」。
@@ -579,7 +661,7 @@ git commit -m "feat(core): 持久化文件增加 schemaVersion、.bak 与损坏�
 - Create: `core/src/registry/golden_tests.rs`（声明为 `registry/mod.rs` 内的 `#[cfg(test)] mod golden_tests;`）
 - Create: `core/src/registry/golden/*.json`（输入快照 + 期望结果，用 `include_str!` 读入）
 
-> **为什么不放 `core/tests/`（评审 W2-B3）**：`core/tests/` 是集成测试，只能访问 crate 的 `pub` API；而 F-10 要覆盖的 `split_path`（`registry.rs:129`）与 `join_path`（`:136`）是私有 `fn`。放进 crate 内的 `#[cfg(test)] mod` 才能 `use super::*` 够到它们。且 `core/tests/` 目录当前不存在，不必新建。若某个 golden 用例只涉及公开 API（如 `clean_paths`），放哪都行；但为统一，全部放这一个模块。
+> **为什么不放 `core/tests/`（评审 W2-B3，指第一轮评审的 golden 位置异议，与 Task 6 的 W2-B3 无关）**：`core/tests/` 是集成测试，只能访问 crate 的 `pub` API；而 F-10 要覆盖的 `split_path`/`join_path` 是私有 `fn`（行号按符号定位，W2-N3）。放进 crate 内的 `#[cfg(test)] mod` 才能 `use super::*` 够到它们。且 `core/tests/` 目录当前不存在，不必新建。若某个 golden 用例只涉及公开 API（如 `clean_paths`），放哪都行；但为统一，全部放这一个模块。
 
 **目标**：以数据驱动的方式固定「输入注册表快照 + 操作 → 期望注册表/文件/广播结果」，覆盖复审报告列出的六类行为。
 
@@ -605,25 +687,40 @@ git commit -m "feat(core): 持久化文件增加 schemaVersion、.bak 与损坏�
 
 - [ ] **Step 3: 迁移记录**
 
-每个与旧 C 行为**有意不同**的用例，在 `core/tests/golden/README.md` 标注「旧行为 / 新行为 / 改变原因」。
+每个与旧 C 行为**有意不同**的用例，在 `core/src/registry/golden/README.md` 标注「旧行为 / 新行为 / 改变原因」。
 
 - [ ] **Step 4: 提交**
 
 ```bash
 cargo test --workspace
-git add core/tests
+git add core/src/registry
 git commit -m "test(core): 新增 C→Rust 行为等价 golden 基线"
 ```
 
 ---
 
-### Task 8: 收口质量门
+### Task 8: 收口质量门与文档收口
 
 - [ ] **Step 1: 全量质量门**
 
 ```bash
 npm run verify:all
 ```
+
+- [ ] **Step 1b: 契约测试补漏（Wave 1 审查报告登记 2）**
+
+`tests/unit/backend-env-contract.test.ts` 目前只覆盖 `EnvVarMeta` 契约。补三类直接用例（若 Task 3 重构了 `parseRevealedValue`，按新形态写）：
+
+- `parseRevealedValue`：非 record 拒绝、`value`/`revision` 非 string 拒绝、空 revision 拒绝；
+- `parseEnvVarSnapshot`：`capturedAt` 缺失 / 非 number 时回退 0 的直接断言；
+- 契约测试文件补 `RevealedValue` 分组（现文件 34-78 行的 describe 只测 EnvVarMeta）。
+
+- [ ] **Step 1c: 文档收口（开发窗口自报 Minor #4/#5 + 流程固化）**
+
+1. `CLAUDE.md`/`AGENTS.md` 的 Tauri IPC 表中 `reveal_env_var` 签名仍写 `Result<String, String>`，与 Wave 1 实际（`RevealedValue`，Wave 2 起为 `Result<RevealedValue, CoreError>`）不符——同步两份文件（保持字节级一致）。
+2. `env set` / `env remove` 的 clap 帮助文本与 Wave 1 后的实际语义核对（`--force` 描述已改过一轮，本轮终态核对）。
+3. README 版本徽章/命令说明与终态核对。
+4. **流程固化**：开发窗口的开发回执必须落盘为 `docs/审核和开发/YYYY.MM.DD/PathEditor-<feature>开发回执.md`（Wave 0/Wave 1 连续两轮以聊天摘要交付，Wave 0 审查报告 Minor 3 与 Wave 1 审查报告 Minor 2 两次登记）。
 
 - [ ] **Step 2: 真实 Tauri/注册表集成**
 
@@ -654,6 +751,17 @@ git commit -m "chore: Wave 2 架构收口质量门与文档同步"
 | F-10 golden behavior matrix + 迁移记录                      | Task 7       |
 | F-11 `schemaVersion` + `.bak` + quarantine + migration 测试 | Task 6       |
 
+**Wave 1 审查报告移交的 6 项登记（2026-09-20 折入）**：
+
+| 登记项                                                       | 落点              |
+| ------------------------------------------------------------ | ----------------- |
+| 1. 开发回执落盘固化（复发项）                                | Task 8 Step 1c    |
+| 2. `parseRevealedValue` / capturedAt 直接契约测试            | Task 8 Step 1b    |
+| 3. `read_env_var` 错误 hive 标签（随 F-06）                  | Task 2 Step 3b    |
+| 4. pending 文件纳入 F-11 覆盖清单                            | Task 6 Interfaces |
+| 5. F-03 故障注入测试（注册表失败 / flush 重放，随 F-08）     | Task 5 Step 4b    |
+| 6. IPC 表 `RevealedValue` 签名 + clap 帮助文本 + README 核对 | Task 8 Step 1c    |
+
 **2. Placeholder scan**
 
 Task 4 Step 4 的 `pub use` 列表与 Task 5/6/7 的若干函数体留待实现时按真实内容补全（`/* ... */`）——这些步骤的**接口签名与验证命令已给全**，且 Task 4 明确要求「以实际搬迁结果为准，不留占位符号」。其余步骤为完整代码。
@@ -668,6 +776,25 @@ Task 4 Step 4 的 `pub use` 列表与 Task 5/6/7 的若干函数体留待实现�
 | `registry/` 六模块                                      | Task 4 | Task 5、6    | ✓    |
 | `ApplyOutcome{HiveOutcome,SidecarOutcome}`              | Task 5 | Task 5       | ✓    |
 | `schemaVersion` / quarantine                            | Task 6 | Task 6       | ✓    |
+
+## 开发窗口核对轮（2026-09-20，W2-B1~B4 / W2-N1~N6）
+
+开发窗口逐行核对，4 阻塞 + 6 非阻塞全部经审核窗口对源码核实后成立并折入：
+
+| #     | 异议                                                                   | 裁断                                                                   | 落点                                       |
+| ----- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| W2-B1 | `read_env_var` 三种错误被整体包成 `Io`，与迁移表自相矛盾               | 采纳：内部返回 `CoreError` 三分类                                      | Task 2 Step 1c                             |
+| W2-B2 | 故障注入拟用 `MemoryHive`+`fail_set`，但 PATH 通路不在端口上且无该字段 | 采纳：输入校验（null/超长）强制注册表阶段失败；retry 保持 sidecar-only | Task 5 Step 4b                             |
+| W2-B3 | Task 6 引入 `CoreError` 牵连 3 文件未列；Outcome 枚举缺 serde          | 采纳 (a) 全面迁移并列牵连文件；Outcome 补 `Serialize/Deserialize`      | Task 6 Files/Interfaces；Task 5 Interfaces |
+| W2-B4 | 迁移记录/提交写 `core/tests/golden`，与 File Structure 裁决矛盾        | 采纳：统一 `core/src/registry/golden/`                                 | Task 7 Step 3/4                            |
+| W2-N1 | flush 语义收紧疑虑                                                     | 采纳开发窗口分层方案：服务层诚实报错、CLI 策略层保持 best-effort 警告  | Task 5 Step 4b 末段                        |
+| W2-N2 | 「无法打开→PermissionDenied」按文案分类                                | 采纳：`WinregHive::open` 固有方法单独迁移，`ErrorKind` 诚实分类        | Task 2 Step 1b                             |
+| W2-N3 | 行号漂移（1203 vs 1101）、`env_key` 已删                               | 采纳：符号定位                                                         | Task 4 备注                                |
+| W2-N4 | 过渡期双错误形状兼容 + `exit_err` 收 `&str` 的调用点排查               | 采纳                                                                   | Task 3 Step 2                              |
+| W2-N5 | Step 3b 机制未指明（`read_env_var` 无 hive 参数）                      | 采纳：结构化 `hive` 字段 + 调用侧文本包装                              | Task 2 Step 3b                             |
+| W2-N6 | Step 5 标题重复；建议 `registry.rs` 保留作模块根避开删除授权           | 采纳：保留模块根为首选                                                 | Task 4 Files/Step 4；Task 5 Step 5         |
+
+另核实：`persist_snapshot` 的 4 处 runtime.rs 内部调用点（68/73/99/101）由 Task 5 改造 `load_and_save`/`load_operate_save` 自然覆盖，非缺陷。
 
 ## Execution Notes
 
