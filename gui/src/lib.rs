@@ -47,6 +47,10 @@ pub fn run() {
             commands::env_var::update_env_var,
             commands::env_var::create_env_var,
             commands::env_var::delete_env_var,
+            commands::service::save_path_with_sidecar,
+            commands::service::apply_path_snapshot,
+            commands::service::retry_pending_path_state,
+            commands::service::apply_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

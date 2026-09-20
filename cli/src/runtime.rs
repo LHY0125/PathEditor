@@ -5,22 +5,29 @@ pub(crate) fn exit_err(msg: &str) -> ! {
     std::process::exit(1);
 }
 
-/// 冲突错误的结构化前缀。与 core 的 `ERR_CONFLICT` 常量对齐 ——
-/// 中文正文仅供人工阅读，判定只看前缀。
-pub(crate) const CONFLICT_PREFIX: &str = "[E_CONFLICT]";
-
-/// 消息是否表示 revision 冲突（可按前缀重试恢复）。
-pub(crate) fn is_conflict(msg: &str) -> bool {
-    msg.starts_with(CONFLICT_PREFIX)
+/// core 侧持久化错误（`CoreError`）统一出口：透传 message，退出码由错误码映射。
+///
+/// PATH 命令的注册表错误恒为退出码 1（CLAUDE.md 契约）；sidecar/pending 等
+/// 持久化错误沿用 `CoreError::exit_code()`（冲突 3、其余 1），message 语义不变。
+pub(crate) fn exit_persist_error(err: &core::CoreError) -> ! {
+    eprintln!("错误: {}", err.message);
+    std::process::exit(err.exit_code());
 }
 
-/// 冲突退出：stderr 输出 core 原文，退出码 3。
+/// 按结构化错误决定退出码与输出（F-06）。
 ///
-/// 与 `exit_err`（退出码 1）分开，使脚本能区分「重新 list 取 revision 后可恢复」
-/// 与致命错误，无需 grep 中文文案。
-pub(crate) fn exit_conflict(msg: &str) -> ! {
-    eprintln!("错误: {msg}");
-    std::process::exit(3);
+/// 退出码由 `CoreError::exit_code()` 统一映射（冲突 3，其余 1），
+/// 不再匹配 `[E_CONFLICT]` 文本前缀 —— 判定只看 `code`。
+pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
+    eprintln!("错误: {}", err.message);
+    std::process::exit(err.exit_code());
+}
+
+/// 统一处理写操作结果：冲突 3，其余 1（由 CoreError 决定）。
+pub(crate) fn apply_core_result(result: Result<(), core::CoreError>) {
+    if let Err(e) = result {
+        exit_core_error(&e);
+    }
 }
 
 pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
@@ -36,6 +43,11 @@ pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
 
 type SaveFn = fn(Vec<String>) -> Result<(), String>;
 
+/// 乐观并发校验（读-比-写）+ 注册表写入（保守方案：保留在 CLI 层）。
+///
+/// F-08 的完整终态是把读-比-写下沉到 `core::service::apply_path_snapshot`
+/// 内部；本任务为避免大重构，先让服务层提供编排原语（注册表写入、广播、
+/// sidecar/pending 事务），校验留在 CLI。语义合并延后到 Wave 2 收口。
 pub(crate) fn verify_and_save(target: &str, original: &[String], new_list: Vec<String>) {
     let reload = if target == "system" {
         core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
@@ -59,7 +71,7 @@ pub(crate) fn load_and_save(
 ) {
     let target = ensure_single_target(system, false);
     flush_pending_snapshot();
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
 
     if target == "system" {
         let original = enabled_paths(&snapshot.system);
@@ -82,7 +94,7 @@ pub(crate) fn load_operate_save(
 ) {
     let target = ensure_single_target(system, false);
     flush_pending_snapshot();
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     let entries = if target == "system" {
         snapshot.system
     } else {
@@ -140,53 +152,37 @@ pub(crate) fn sidecar_failure_message(err: &str, pending_ok: bool) -> String {
 
 /// 注册表写入成功后提交完整有序快照，保持两个存储的一致性边界。
 ///
-/// 失败时不丢状态：把待补写内容落到 pending 文件，退出码 1 并在 stderr
-/// 明确说明「注册表已写入、快照未落、已记录待补写」，供下次运行自动补写。
+/// **保留同名同签名，函数体转调 `core::service::commit_sidecar_snapshot`**
+/// （W2-N3 推荐做法：6 个外部调用点 + 4 个内部调用点零改动）。
+/// pending 落盘、防御性清除等事务语义全部由服务层承担（F-08 迁移）。
+///
+/// 失败时不丢状态：服务层把待补写内容落到 pending 文件并按
+/// `SidecarOutcome::Pending` / `Failed` 诚实报告；本函数据此映射退出码 1
+/// 与 stderr 文案（策略层）。
 pub(crate) fn persist_snapshot(
     system: Option<Vec<core::PathEntry>>,
     user: Option<Vec<core::PathEntry>>,
 ) {
-    if let Err(e) = core::disabled::save_path_snapshot(system.clone(), user.clone()) {
-        // pending 快照是覆盖式整份落盘，`save_pending_path_snapshot` 的 None 语义
-        // 是「空数组」而非「保留该 hive」（与 `save_path_snapshot` 不同）。
-        // 若把 None 原样落 pending，补写时会把未操作的 hive 清成空。
-        // 因此先用当前快照把 None 侧填充为现有内容，保证补写是无损的整份覆盖。
-        let pending = match core::disabled::load_path_snapshot() {
-            Ok(snap) => {
-                let sys = system.unwrap_or_else(|| snap.system.clone());
-                let usr = user.unwrap_or_else(|| snap.user.clone());
-                core::disabled::save_pending_path_snapshot(Some(sys), Some(usr))
+    match core::service::commit_sidecar_snapshot(system, user) {
+        Ok(outcome) => match outcome.sidecar {
+            core::service::SidecarOutcome::Saved => {}
+            core::service::SidecarOutcome::Pending(e) => {
+                exit_err(&sidecar_failure_message(&e.message, true))
             }
-            // 当前快照读取失败时无法安全构造无损 pending，跳过落盘；
-            // 错误文案仍说明注册表已写入，提示手工核对。
-            Err(pe) => Err(pe),
-        };
-        match pending {
-            Ok(()) => exit_err(&sidecar_failure_message(&e, true)),
-            Err(pe) => exit_err(&format!(
-                "{}\n（待补写状态记录失败: {pe}）",
-                sidecar_failure_message(&e, false)
+            core::service::SidecarOutcome::Failed(e) => exit_err(&format!(
+                "{}\n（待补写状态记录失败，请手工核对）",
+                sidecar_failure_message(&e.message, false)
             )),
-        }
-    }
-
-    // 防御性清理：本次快照已成功落盘，任何陈旧 pending 都已过时（其内容已被本快照
-    // 取代或覆盖），必须清除，否则下次 flush 会用陈旧内容覆盖本次写入。
-    // 磁盘此时已证明可写，clear 失败的概率极低；即便失败，下次 flush 也只是
-    // 幂等重放已被取代的旧状态——但为守住「成功写入后 pending 必须不存在」的
-    // 不变量，失败时打警告。
-    if core::disabled::has_pending_path_snapshot() {
-        if let Err(e) = core::disabled::clear_pending_path_snapshot() {
-            eprintln!("警告: 清除待补写快照状态失败: {e}");
-        }
+        },
+        Err(e) => exit_err(&e.message),
     }
 }
 
 /// 若存在上次未落盘的快照，先补写；成功即清除待补写状态。
 ///
-/// 补写是 best-effort：失败不阻断当前命令，只打印警告。
-/// pending 是覆盖式整份快照（两个 hive 均为 `Some`），直接整份传回
-/// `save_path_snapshot` 即为正确形态。
+/// **补写事务已下沉到 `core::service::retry_pending_path_state`（sidecar-only，
+/// 不触碰注册表）**；本函数只保留 CLI 策略层语义（W2-N1）：把服务的 `Err`
+/// 映射为 `eprintln!` 警告、不阻断当前命令——best-effort 行为与 Wave 1 一致。
 ///
 /// **所有 PATH 写命令入口都必须先调用本函数**，否则陈旧 pending 会在后续任一
 /// flush 时把刚写入的注册表与 sidecar 双双覆盖回旧状态。现有调用点：
@@ -194,19 +190,8 @@ pub(crate) fn persist_snapshot(
 /// （import_export.rs）、`profile_apply`（profile_ops.rs）、`cmd_toggle`
 /// （main.rs）。新增 PATH 写命令时必须同样在开头先调用本函数。
 pub(crate) fn flush_pending_snapshot() {
-    let pending = match core::disabled::load_pending_path_snapshot() {
-        Ok(Some(p)) => p,
-        Ok(None) => return,
-        Err(e) => {
-            eprintln!("警告: 无法读取待补写快照状态: {e}");
-            return;
-        }
-    };
-    match core::disabled::save_path_snapshot(Some(pending.system), Some(pending.user)) {
-        Ok(()) => {
-            let _ = core::disabled::clear_pending_path_snapshot();
-        }
-        Err(e) => eprintln!("警告: 待补写快照仍未能落盘: {e}"),
+    if let Err(e) = core::service::retry_pending_path_state() {
+        eprintln!("警告: 待补写快照仍未能落盘: {}", e.message);
     }
 }
 
@@ -215,30 +200,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn conflict_prefix_is_detected() {
-        // core 的 ERR_CONFLICT 原文（前缀 + 中文正文）必须判为冲突
-        assert!(is_conflict("[E_CONFLICT] 变量已被其他进程修改，请重新加载"));
-        assert!(is_conflict("[E_CONFLICT]"));
-    }
-
-    #[test]
-    fn non_conflict_messages_are_not_detected() {
-        assert!(!is_conflict("错误: 索引 3 超出范围"));
-        assert!(!is_conflict("变量已被其他进程修改，请重新加载"));
-        // 前缀必须在开头，中段出现不算
-        assert!(!is_conflict("前置文本 [E_CONFLICT] 变量已被其他进程修改"));
-        assert!(!is_conflict(""));
-    }
-
-    #[test]
     fn conflict_prefix_matches_core_constant() {
-        // 契约：core 常量必须以该前缀开头，否则 CLI 退出码 3 永不触发
+        // 契约（F-06 重定位）：`[E_CONFLICT]` 前缀仍是前端过渡期判定依据与
+        // core 消息的稳定标识，测试改为直接断言 core 常量本身；CLI 退出码
+        // 已由 `CoreError.exit_code()` 驱动，不再依赖文本前缀。
         use path_editor_core as core;
         let msg = core::registry::conflict_message();
         assert!(
-            is_conflict(&msg),
+            msg.starts_with("[E_CONFLICT]"),
             "core 冲突消息必须以 [E_CONFLICT] 开头，实际: {msg}"
         );
+    }
+
+    #[test]
+    fn core_conflict_maps_to_exit_code_3() {
+        // 契约：冲突退出码 3 由 CoreError.exit_code() 决定
+        let e = core::CoreError::new(
+            core::ErrorCode::Conflict,
+            "update_env_var",
+            core::registry::conflict_message(),
+        );
+        assert_eq!(e.exit_code(), 3);
+    }
+
+    #[test]
+    fn core_other_errors_map_to_exit_code_1() {
+        let e = core::CoreError::new(core::ErrorCode::Protected, "op", "保护");
+        assert_eq!(e.exit_code(), 1);
     }
 
     #[test]

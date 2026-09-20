@@ -1,6 +1,6 @@
 # PathEditor 一致性与架构收口 Design
 
-- **状态**：分波实施中 —— Wave 0 已实现并审核通过（2026-09-19，见 `docs/审核和开发/2026.09.19/`）；Wave 1 待开发窗口核对后放行
+- **状态**：已实现（Wave 2）—— Wave 0/1 已实现并审核通过（2026-09-19，见 `docs/审核和开发/2026.09.19/`）；Wave 2 于 2026-09-20 完成实现与收口（见 `docs/审核和开发/2026.09.20/`）
 - **日期**：2026-09-18
 - **来源**：`docs/审核和开发/2026.09.18/PathEditor-全项目架构与对抗性复审报告.md`（结论 Changes Requested，0×P0 / 4×P1 / 7×P2）
 - **范围**：全部 11 项（P1×4 + P2×7）
@@ -207,6 +207,8 @@ core/src/registry/
 - 多 hive apply 必须明确 **atomic / best-effort / partial** 三种语义之一，并在输出与退出码中表达。
 - GUI/CLI 只负责输入转换、权限展示、输出渲染；任何改变注册表与 sidecar 顺序/补偿/广播的逻辑都在同一处 Rust service。
 
+**实施备注（Wave 2）**：GUI 侧接线延后（`path-session.ts` 仍走旧编排，保守方案，见开发回执未覆盖项）；4 个 service IPC 命令已在 `gui/src/commands/service.rs` 注册，前端暂无调用点。
+
 ### F-09 注册表端口（Wave 0，前置）
 
 **现状**：`registry.rs:737-775` 测试通过 `HKEY_CURRENT_USER\Software\PathEditor\Tests\...` 建隔离键，Drop 时删除。不碰真实环境变量键，但仍写当前用户真实注册表；完整 `cargo test --workspace` 因此不能在审查/受限环境执行。
@@ -397,3 +399,28 @@ F-05：`list_all_env_vars` 的文档注释自称「保证快照一致」（`363-
 - `cli/src/env_ops.rs`：`Concurrency::Force` 分支仍调用 `current_revision()`（≈333-341）重新读取 revision 并传给 core（≈366-368、397）；`apply_concurrency`（≈116-122）按 `is_conflict` 决定是否 `exit_conflict`。
 - 后果：`--force` 下读与写之间发生 TOCTOU 时，**仍会以退出码 3 失败**。
 - 与 `docs/superpowers/specs/2026-09-17-cli-env-vars-design.md:107`（自称「`--force` 模式下不会产生退出码 3」）直接矛盾；`README.md:202`、`AGENTS.md:144`、`CLAUDE.md` 同文案。
+
+## Execution Notes（Wave 2 回填，2026-09-20）
+
+Wave 2（Task 1-7 + Task 8 收口）按计划实现完毕，提交链 `65b30b2..69e2159`（Task 8 收口提交见开发回执）。逐项裁决与偏离：
+
+**审核窗口裁决（核对轮 W2-B/N）执行情况**：
+
+- W2-B1（read_env_var 三分类）：采纳，`read_env_var` 内部返回 `CoreError` 三分类（Task 2）。
+- W2-B2（故障注入方式）：采纳，输入校验（null/超长）强制注册表阶段失败；retry 保持 sidecar-only（Task 5 Step 4b）。
+- W2-B3（Task 6 牵连文件 + Outcome serde）：采纳，全面迁移并列牵连文件；Outcome 补 `Serialize/Deserialize`（Task 6）。
+- W2-B4（golden 目录）：采纳，统一 `core/src/registry/golden/`（Task 7）。
+- W2-N1（flush 语义）：采纳分层方案——服务层诚实报错、CLI 策略层保持 best-effort 警告（Task 5）。
+- W2-N2（PermissionDenied 分类）：采纳，`WinregHive::open` 固有方法单独迁移，`ErrorKind` 诚实分类（Task 2）。
+- W2-N3（行号漂移）：采纳，按符号定位（Task 4）。
+- W2-N4（双错误形状过渡 + exit_err 调用点）：采纳（Task 3）。
+- W2-N5（read_env_var hive 参数）：采纳，结构化 `hive` 字段 + 调用侧文本包装（Task 2）。
+- W2-N6（registry.rs 保留模块根）：采纳，`registry.rs` 保留作模块根（Task 4/5）。
+
+**golden README 诚实标注（第 4/6 类）**：与旧 C 行为有意不同的 golden 用例，在 `core/src/registry/golden/README.md` 逐条标注「旧行为 / 新行为 / 改变原因」，不做静默替换。
+
+**第 6 类（broadcast）推迟**：广播行为的 golden 化需要注入 WM_SETTINGCHANGE 观测点，成本高于收益；broadcast 语义未变，推迟到后续波次（Task 7 收口时确认，理由：广播是进程外副作用，无法在进程内 golden 断言中诚实验证）。
+
+**lockfile 偏离**：Task 2 提交 `99cf9e4` 误含 `package-lock.json` 5.1.2→5.1.3 变更，复核窗口追认 ACCEPTED（内容正确、摘除即空提交），但偏离「lockfile 归发版流程」先例，已记入发布流程检查清单（详见开发回执第 3 节）。
+
+**完整处置清单**：Tasks 1-7 全部 deferred-minor 的逐项处置见 `docs/审核和开发/2026.09.20/PathEditor-Wave2架构收口开发回执.md` 第 2 节。

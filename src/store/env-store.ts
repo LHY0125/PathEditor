@@ -11,15 +11,42 @@ import {
   type RevealedValue,
 } from '@/core/env-var';
 import { backend } from '@/services/backend';
+import type { CoreError } from '@/core/env-var';
 
 /**
- * 冲突错误的稳定前缀（Rust 侧所有 revision 冲突统一携带）。
- * 匹配前缀而非中文文案 —— Rust 错误措辞变化不会静默破坏冲突检测。
+ * F-06（Task 3）：错误判定完全按 `code` —— backend.ts 已把 Tauri rejection
+ * 统一解析为 `CoreError`（PATH 纯文本兜底为 `code:'internal'`），这里不再
+ * 匹配 `[E_CONFLICT]` 字符串前缀。core 的 message 仍保留该前缀，但仅作
+ * 展示层文本，程序分支一律看 code。
  */
-const CONFLICT_PREFIX = '[E_CONFLICT]';
+function isConflictError(err: unknown): boolean {
+  return isCoreError(err) && err.code === 'conflict';
+}
 
-function isConflictError(message: string): boolean {
-  return message.includes(CONFLICT_PREFIX);
+/** backend 解析层产物的形状校验（防御 mock / 上游回归）。 */
+function isCoreError(err: unknown): err is CoreError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    typeof (err as { code: unknown }).code === 'string' &&
+    'message' in err &&
+    typeof (err as { message: unknown }).message === 'string'
+  );
+}
+
+/**
+ * 错误文案：优先展示 `message` 原文（它是面向用户的中文完整句，含具体
+ * 变量名与上下文）；message 缺失时兜底到按 code 本地化的 `error.code.*`。
+ * `error.code.*` 键同时是未来按 code 分支扩展（如冲突引导重新加载）的锚点。
+ */
+function errorMessage(err: unknown): string {
+  if (isCoreError(err)) {
+    return err.message.trim().length > 0
+      ? err.message
+      : i18n.t(`error.code.${err.code}`, { defaultValue: i18n.t('error.code.internal') });
+  }
+  return String(err);
 }
 
 interface EnvState {
@@ -80,7 +107,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         if (seq !== loadSeq) return;
         set({
           isLoading: false,
-          statusMessage: `${i18n.t('status.error')}: ${String(error)}`,
+          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
         });
       }
     },
@@ -136,11 +163,12 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await get().load();
         return true;
       } catch (error) {
-        const message = String(error);
-        if (isConflictError(message)) {
+        if (isConflictError(error)) {
           // 冲突：Rust 已拒绝写入，刷新拿最新 revision；草稿保留（输入不丢）
+          const message = errorMessage(error);
           await refreshAfterError(message);
         } else {
+          const message = errorMessage(error);
           set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
         }
         return false;
@@ -160,7 +188,10 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await get().load();
         return true;
       } catch (error) {
-        set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${String(error)}` });
+        set({
+          isSaving: false,
+          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+        });
         return false;
       }
     },
@@ -173,11 +204,13 @@ export const useEnvStore = create<EnvState>((set, get) => {
         await get().load();
         return true;
       } catch (error) {
-        const message = String(error);
-        if (isConflictError(message)) {
-          await refreshAfterError(message);
+        if (isConflictError(error)) {
+          await refreshAfterError(errorMessage(error));
         } else {
-          set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
+          set({
+            isSaving: false,
+            statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+          });
         }
         return false;
       }
@@ -200,7 +233,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
       } catch (error) {
         const revealed = new Map(get().revealed);
         revealed.delete(envVarKey(meta));
-        set({ revealed, statusMessage: `${i18n.t('status.error')}: ${String(error)}` });
+        set({ revealed, statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}` });
         // 值可能已不存在或类型不受支持，刷新以同步真实状态
         await get().load();
       }

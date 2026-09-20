@@ -1,0 +1,21 @@
+{
+  "name": "merge_hive_snapshot_order_wins_and_external_deletions_do_not_revive",
+  "input": {
+    "registry": ["C:\\A", "C:\\C", "C:\\New"],
+    "legacy_disabled": ["C:\\B"],
+    "snapshot": [
+      { "path": "C:\\A", "enabled": true },
+      { "path": "C:\\B", "enabled": false },
+      { "path": "C:\\C", "enabled": true },
+      { "path": "C:\\Gone", "enabled": true }
+    ]
+  },
+  "op": "merge_hive",
+  "expect": [
+    { "path": "C:\\A", "enabled": true },
+    { "path": "C:\\B", "enabled": false },
+    { "path": "C:\\C", "enabled": true },
+    { "path": "C:\\New", "enabled": true }
+  ],
+  "note": "注册表是启用路径真相来源：快照定序，注册表新路径追加末尾；快照中启用但注册表已无的条目（C:\\Gone，外部删除）不复活；legacy 禁用字符串与快照禁用项合并不重复"
+}

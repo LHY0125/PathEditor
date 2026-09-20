@@ -1,0 +1,7 @@
+{
+  "name": "split_keeps_duplicate_segments_verbatim",
+  "input": { "raw": "C:\\Tools;C:\\Tools;C:\\Tools" },
+  "op": "split_path",
+  "expect": ["C:\\Tools", "C:\\Tools", "C:\\Tools"],
+  "note": "split_path 不去重——去重是 clean_path_entries 的职责；重复项保留首次出现位置"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "validate_and_join_rejects_null_byte_with_label",
+  "input": { "paths": ["C:\\safe", "C:\\bad\u0000path"], "label": "系统" },
+  "op": "validate_and_join_paths_error",
+  "expect": { "contains": ["null 字节", "C:\\bad"], "label_prefix": "系统" },
+  "note": "null 字节在 UTF-16 写入前拦截；错误文案携带 hive 标签与违规路径"
+}

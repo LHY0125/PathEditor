@@ -1,8 +1,8 @@
-use crate::runtime::{exit_err, persist_snapshot, verify_and_save};
+use crate::runtime::{exit_err, exit_persist_error, persist_snapshot, verify_and_save};
 use path_editor_core as core;
 
 pub(crate) fn profile_list(json_out: bool) {
-    let list = core::profiles::list_profiles().unwrap_or_else(|e| exit_err(&e));
+    let list = core::profiles::list_profiles().unwrap_or_else(|e| exit_persist_error(&e));
     if json_out {
         println!("{}", serde_json::to_string_pretty(&list).unwrap());
     } else if list.is_empty() {
@@ -16,14 +16,14 @@ pub(crate) fn profile_list(json_out: bool) {
 
 pub(crate) fn profile_save(name: String) {
     // 先合并注册表与 disabled.json，确保已禁用的孤儿条目也进入配置并保留顺序。
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_err(&e));
+    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     core::profiles::save_profile(&name, snapshot.system, snapshot.user)
-        .unwrap_or_else(|e| exit_err(&e));
+        .unwrap_or_else(|e| exit_persist_error(&e));
     println!("已保存配置: {name}");
 }
 
 pub(crate) fn profile_load(name: String) {
-    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
+    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_persist_error(&e));
     println!("═══ 系统 PATH ({} 条) ═══", data.sys.len());
     for entry in &data.sys {
         println!(
@@ -44,7 +44,7 @@ pub(crate) fn profile_load(name: String) {
 
 pub(crate) fn profile_apply(name: String) {
     super::runtime::flush_pending_snapshot();
-    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_err(&e));
+    let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_persist_error(&e));
     let new_sys: Vec<String> = data
         .sys
         .iter()
@@ -69,11 +69,11 @@ pub(crate) fn profile_apply(name: String) {
 }
 
 pub(crate) fn profile_delete(name: String) {
-    core::profiles::delete_profile(&name).unwrap_or_else(|e| exit_err(&e));
+    core::profiles::delete_profile(&name).unwrap_or_else(|e| exit_persist_error(&e));
     println!("已删除配置: {name}");
 }
 
 pub(crate) fn profile_rename(old_name: String, new_name: String) {
-    core::profiles::rename_profile(&old_name, &new_name).unwrap_or_else(|e| exit_err(&e));
+    core::profiles::rename_profile(&old_name, &new_name).unwrap_or_else(|e| exit_persist_error(&e));
     println!("已重命名: {old_name} → {new_name}");
 }

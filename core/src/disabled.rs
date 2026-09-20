@@ -1,4 +1,8 @@
+use crate::error::{CoreError, ErrorCode};
 use crate::fs::atomic_write;
+use crate::persist::{
+    migrate, parse_error_quarantined, rotate_backup, Versioned, PERSIST_SCHEMA_VERSION,
+};
 use crate::registry;
 use crate::{PathEntry, PathSnapshot};
 use serde::{Deserialize, Serialize};
@@ -45,30 +49,61 @@ struct DisabledState {
     user_snapshot: Vec<PathEntry>,
 }
 
-fn read_state() -> Result<DisabledState, String> {
+fn read_state() -> Result<DisabledState, CoreError> {
     let path = disabled_file_path();
     if !path.exists() {
         return Ok(DisabledState::default());
     }
 
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("无法读取 disabled.json: {}", e))?;
+    // 空白文件保持既有语义：按默认值处理（不算损坏，不隔离）。
+    let content = fs::read_to_string(&path).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "load_disabled_state",
+            format!("无法读取 disabled.json: {e}"),
+        )
+    })?;
     if content.trim().is_empty() {
         return Ok(DisabledState::default());
     }
 
-    serde_json::from_str(&content).map_err(|e| format!("JSON 解析失败: {}", e))
+    let versioned: Versioned<DisabledState> = serde_json::from_str(&content)
+        .map_err(|e| parse_error_quarantined(&path, "disabled.json", e))?;
+    migrate(versioned, "disabled.json")
 }
 
-fn write_state(state: &DisabledState) -> Result<(), String> {
+fn write_state(state: &DisabledState) -> Result<(), CoreError> {
     let path = disabled_file_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("无法创建配置目录: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "save_disabled_state",
+                format!("无法创建配置目录: {e}"),
+            )
+        })?;
     }
 
-    let json =
-        serde_json::to_string_pretty(state).map_err(|e| format!("JSON 序列化失败: {}", e))?;
-    atomic_write(&path, &json).map_err(|e| format!("无法写入 disabled.json: {}", e))?;
+    let json = serde_json::to_string_pretty(&Versioned {
+        schema_version: PERSIST_SCHEMA_VERSION,
+        inner: state,
+    })
+    .map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            "save_disabled_state",
+            format!("JSON 序列化失败: {e}"),
+        )
+    })?;
+    // 写入前把上一份主文件轮换为 .bak；轮换失败则中止写入（不丢回滚副本）。
+    rotate_backup(&path)?;
+    atomic_write(&path, &json).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "save_disabled_state",
+            format!("无法写入 disabled.json: {e}"),
+        )
+    })?;
     log::info!("已保存禁用状态到: {}", path.display());
     Ok(())
 }
@@ -143,7 +178,7 @@ fn merge_hive(
 }
 
 /// 保存旧的禁用字符串接口；新代码应优先使用 `save_path_snapshot` 以保持顺序。
-pub fn save_disabled_state(system: Vec<String>, user: Vec<String>) -> Result<(), String> {
+pub fn save_disabled_state(system: Vec<String>, user: Vec<String>) -> Result<(), CoreError> {
     let mut state = read_state()?;
     state.system = system;
     state.user = user;
@@ -151,7 +186,7 @@ pub fn save_disabled_state(system: Vec<String>, user: Vec<String>) -> Result<(),
 }
 
 /// 加载旧的禁用字符串接口。
-pub fn load_disabled_state() -> Result<(Vec<String>, Vec<String>), String> {
+pub fn load_disabled_state() -> Result<(Vec<String>, Vec<String>), CoreError> {
     let state = read_state()?;
     Ok((state.system, state.user))
 }
@@ -160,7 +195,7 @@ pub fn load_disabled_state() -> Result<(Vec<String>, Vec<String>), String> {
 pub fn save_path_snapshot(
     system: Option<Vec<PathEntry>>,
     user: Option<Vec<PathEntry>>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     let mut state = read_state()?;
     if let Some(entries) = system {
         state.system = disabled_lists(&entries);
@@ -174,7 +209,7 @@ pub fn save_path_snapshot(
 }
 
 /// 合并注册表当前值与持久化快照，返回包含禁用项和原始顺序的完整快照。
-pub fn load_path_snapshot() -> Result<PathSnapshot, String> {
+pub fn load_path_snapshot() -> Result<PathSnapshot, CoreError> {
     let registry_system = registry::load_system_paths()?;
     let registry_user = registry::load_user_paths()?;
     let state = read_state()?;
@@ -192,47 +227,80 @@ pub fn load_path_snapshot() -> Result<PathSnapshot, String> {
 pub fn save_pending_path_snapshot(
     system: Option<Vec<PathEntry>>,
     user: Option<Vec<PathEntry>>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     let path = pending_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("无法创建配置目录: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "save_pending_path_snapshot",
+                format!("无法创建配置目录: {e}"),
+            )
+        })?;
     }
 
     let snapshot = PathSnapshot {
         system: system.unwrap_or_default(),
         user: user.unwrap_or_default(),
     };
-    let json =
-        serde_json::to_string_pretty(&snapshot).map_err(|e| format!("JSON 序列化失败: {}", e))?;
-    atomic_write(&path, &json).map_err(|e| format!("无法写入待补写快照: {}", e))?;
+    let json = serde_json::to_string_pretty(&Versioned {
+        schema_version: PERSIST_SCHEMA_VERSION,
+        inner: &snapshot,
+    })
+    .map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            "save_pending_path_snapshot",
+            format!("JSON 序列化失败: {e}"),
+        )
+    })?;
+    rotate_backup(&path)?;
+    atomic_write(&path, &json).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "save_pending_path_snapshot",
+            format!("无法写入待补写快照: {e}"),
+        )
+    })?;
     log::info!("已记录待补写快照到: {}", path.display());
     Ok(())
 }
 
 /// 读取待补写状态；文件不存在时返回 `Ok(None)`。
-pub fn load_pending_path_snapshot() -> Result<Option<PathSnapshot>, String> {
+pub fn load_pending_path_snapshot() -> Result<Option<PathSnapshot>, CoreError> {
     let path = pending_path();
     if !path.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(&path).map_err(|e| format!("无法读取待补写快照: {}", e))?;
+    let content = fs::read_to_string(&path).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "load_pending_path_snapshot",
+            format!("无法读取待补写快照: {e}"),
+        )
+    })?;
     if content.trim().is_empty() {
         return Ok(None);
     }
 
-    serde_json::from_str(&content)
-        .map(Some)
-        .map_err(|e| format!("待补写快照 JSON 解析失败: {}", e))
+    match serde_json::from_str::<Versioned<PathSnapshot>>(&content) {
+        Ok(versioned) => migrate(versioned, "待补写快照").map(Some),
+        Err(e) => Err(parse_error_quarantined(&path, "待补写快照", e)),
+    }
 }
 
 /// 清除待补写状态（补写成功后调用）；文件不存在时同样返回 `Ok(())`。
-pub fn clear_pending_path_snapshot() -> Result<(), String> {
+pub fn clear_pending_path_snapshot() -> Result<(), CoreError> {
     let path = pending_path();
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("无法删除待补写快照: {}", e)),
+        Err(e) => Err(CoreError::new(
+            ErrorCode::Io,
+            "clear_pending_path_snapshot",
+            format!("无法删除待补写快照: {e}"),
+        )),
     }
 }
 
@@ -240,6 +308,12 @@ pub fn clear_pending_path_snapshot() -> Result<(), String> {
 pub fn has_pending_path_snapshot() -> bool {
     pending_path().exists()
 }
+
+// merge_hive 的 golden 用例（F-10 第 5 类禁用项兼容性）。
+// merge_hive 是本文件私有 fn，只有子模块可访问。
+#[cfg(test)]
+#[path = "registry/golden/merge_golden_tests.rs"]
+mod merge_golden_tests;
 
 #[cfg(test)]
 mod tests {
@@ -252,8 +326,18 @@ mod tests {
         }
     }
 
+    // disabled.json 持久化原语（roundtrip / schemaVersion / .bak / quarantine）
+    // 按 pending 快照原语的同款约定合并为一个生命周期测试：所有测试共享固定
+    // 临时路径（std::env::temp_dir()），F-11 测试还会直接写原始文件内容，
+    // 拆成多个测试会有并行竞态。
     #[test]
-    fn disabled_state() {
+    fn disabled_state_lifecycle_with_schema_backup_and_quarantine() {
+        let _guard = crate::persist::test_persist_lock();
+        let path = disabled_file_path();
+        let bak = path.with_file_name("patheditor_test_disabled.json.bak");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&bak);
+
         // roundtrip
         let sys = vec!["C:\\sys1".into(), "C:\\sys2".into()];
         let usr = vec!["D:\\usr1".into()];
@@ -261,17 +345,67 @@ mod tests {
         let (loaded_sys, loaded_usr) = load_disabled_state().unwrap();
         assert_eq!(loaded_sys, sys);
         assert_eq!(loaded_usr, usr);
+        // 写入端补上 schemaVersion=1
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(v["schemaVersion"], 1);
 
-        // overwrite
-        let new_sys = vec!["C:\\new".into()];
-        save_disabled_state(new_sys.clone(), vec![]).unwrap();
+        // overwrite：第二次保存应把上一份轮换为 .bak
+        save_disabled_state(vec!["C:\\new".into()], vec![]).unwrap();
         let (loaded, _) = load_disabled_state().unwrap();
-        assert_eq!(loaded, new_sys);
+        assert_eq!(loaded, vec!["C:\\new".to_string()]);
+        assert!(bak.exists(), "第二次保存应把上一份轮换为 .bak");
+        let bak_v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&bak).unwrap()).unwrap();
+        assert_eq!(bak_v["system"], serde_json::json!(["C:\\sys1", "C:\\sys2"]));
 
         // empty
         save_disabled_state(vec![], vec![]).unwrap();
         let result = load_disabled_state().unwrap();
         assert!(result.0.is_empty() && result.1.is_empty());
+        let _ = fs::remove_file(&bak);
+
+        // 无 schemaVersion 的旧格式文件 → 按 v1 读取（向后兼容）
+        let legacy = r#"{
+  "system": ["C:\\legacy_sys"],
+  "user": ["D:\\legacy_usr"],
+  "systemSnapshot": [{"path": "C:\\legacy_sys", "enabled": false}],
+  "userSnapshot": []
+}"#;
+        fs::write(&path, legacy).unwrap();
+        let (legacy_sys, legacy_usr) = load_disabled_state().unwrap();
+        assert_eq!(legacy_sys, vec!["C:\\legacy_sys".to_string()]);
+        assert_eq!(legacy_usr, vec!["D:\\legacy_usr".to_string()]);
+
+        // 截断 JSON → 隔离 + Parse
+        fs::write(&path, r#"{"system": ["C:\\trunc"#).unwrap();
+        let err = load_disabled_state().unwrap_err();
+        assert_eq!(err.code, ErrorCode::Parse, "实际错误: {err}");
+        assert!(!path.exists(), "坏文件应被隔离移走");
+        let parent = path.parent().unwrap();
+        let quarantined: Vec<_> = fs::read_dir(parent)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("patheditor_test_disabled.json.corrupt-"))
+            .collect();
+        assert_eq!(quarantined.len(), 1, "应恰好产生一个隔离文件");
+        let corrupt = fs::read_to_string(parent.join(&quarantined[0])).unwrap();
+        assert!(corrupt.contains("trunc"), "隔离文件应保留原损坏内容");
+        let _ = fs::remove_file(parent.join(&quarantined[0]));
+
+        // schemaVersion: 999 → Parse + 「文件由更新版本写入」提示，不隔离
+        fs::write(&path, r#"{"schemaVersion": 999, "system": [], "user": []}"#).unwrap();
+        let err = load_disabled_state().unwrap_err();
+        assert_eq!(err.code, ErrorCode::Parse);
+        assert!(
+            err.message.contains("更新版本"),
+            "错误应提示文件由更新版本写入: {err}"
+        );
+        assert!(path.exists(), "版本过高的文件不应被隔离");
+
+        // 收尾：清掉主文件，避免影响其他共享该路径的测试
+        fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -315,12 +449,16 @@ mod tests {
         assert_eq!(merged, vec![entry("C:\\A", true), entry("C:\\Old", false)]);
     }
 
-    // pending 快照原语按控制者裁决 R3 合并为一个生命周期测试：
-    // 测试共享固定临时路径（std::env::temp_dir()），拆成多个测试会有并行竞态。
+    // pending 快照原语（roundtrip / schemaVersion / .bak）按控制者裁决 R3
+    // 合并为一个生命周期测试：测试共享固定临时路径（std::env::temp_dir()），
+    // 拆成多个测试会有并行竞态。
     #[test]
     fn pending_snapshot_roundtrip_lifecycle() {
+        let _guard = crate::persist::test_persist_lock();
         // 上次运行可能残留文件（此前崩溃遗留），先清掉再断言 missing 前置。
         let _ = clear_pending_path_snapshot();
+        let bak = pending_path().with_file_name("patheditor_test_pending_snapshot.json.bak");
+        let _ = fs::remove_file(&bak);
         assert!(!has_pending_path_snapshot());
         assert!(load_pending_path_snapshot().unwrap().is_none());
 
@@ -337,10 +475,23 @@ mod tests {
             .expect("应有待补写快照");
         assert_eq!(loaded.system, sys);
         assert_eq!(loaded.user, usr);
+        // 写入端补上 schemaVersion=1；首次保存无 .bak
+        let content = fs::read_to_string(pending_path()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["schemaVersion"], 1);
+        assert!(!bak.exists(), "首次保存不应产生 .bak");
+
+        // 第二次保存：上一份轮换为 .bak
+        let sys2 = vec![entry("C:\\pending_new", true)];
+        save_pending_path_snapshot(Some(sys2.clone()), None).unwrap();
+        assert!(bak.exists(), "第二次保存应把上一份轮换为 .bak");
+        let loaded2 = load_pending_path_snapshot().unwrap().expect("应有 pending");
+        assert_eq!(loaded2.system, sys2);
 
         // clear → has=false → load 再回 Ok(None)
         clear_pending_path_snapshot().unwrap();
         assert!(!has_pending_path_snapshot());
         assert!(load_pending_path_snapshot().unwrap().is_none());
+        let _ = fs::remove_file(&bak);
     }
 }

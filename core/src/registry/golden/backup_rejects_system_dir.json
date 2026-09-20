@@ -1,0 +1,7 @@
+{
+  "name": "backup_rejects_windows_and_program_files_dirs",
+  "input": { "custom_dir": "C:\\Windows\\Temp" },
+  "op": "backup_rejects_dir",
+  "expect": { "error_contains": "不允许备份到系统目录" },
+  "note": "备份目标在 C:\\Windows\\ 或 C:\\Program Files\\ 下时拒绝（大小写不敏感、/ 与 \\ 等价），防止把注册表 PATH 备份污染到系统目录"
+}

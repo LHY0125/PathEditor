@@ -1,0 +1,7 @@
+{
+  "name": "capabilities_writable_hive_allows_edit_and_delete",
+  "input": { "writable": true, "name": "MY_APP_HOME", "kind": "String" },
+  "op": "capabilities_for_with",
+  "expect": { "can_edit": true, "can_delete": true },
+  "note": "可写 hive + 非保留非保护 + 可写类型：编辑/删除均放行"
+}

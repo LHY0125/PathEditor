@@ -1,0 +1,16 @@
+{
+  "name": "export_csv_header_and_enabled_column",
+  "input": {
+    "system": [{ "path": "C:\\Program Files, Inc\\bin", "enabled": true }],
+    "user": [{ "path": "D:\\off", "enabled": false }]
+  },
+  "op": "export_path_entries_csv",
+  "expect": {
+    "lines": [
+      "type,path,enabled",
+      "system,\"C:\\Program Files, Inc\\bin\",true",
+      "user,D:\\off,false"
+    ]
+  },
+  "note": "CSV 导出固定三列头 type,path,enabled；含逗号路径 RFC 4180 引号转义；enabled 原样保留——导入导出必须无损往返 enabled"
+}

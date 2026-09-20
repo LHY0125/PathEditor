@@ -1,0 +1,19 @@
+{
+  "name": "clean_entries_keeps_percent_paths_without_expansion_check",
+  "input": {
+    "entries": [
+      { "path": "%SystemRoot%\\system32", "enabled": true },
+      { "path": "%Undefined_Va%\\bin", "enabled": false },
+      { "path": "C:\\definitely_missing_dir_xyz", "enabled": true }
+    ]
+  },
+  "op": "clean_path_entries",
+  "expect": {
+    "kept": [
+      { "path": "%SystemRoot%\\system32", "enabled": true },
+      { "path": "%Undefined_Va%\\bin", "enabled": false }
+    ],
+    "removed_paths": ["C:\\definitely_missing_dir_xyz"]
+  },
+  "note": "含 % 的路径视为 unknown 一律保留（无法静态判定展开后是否存在），避免误删环境变量路径；不存在的实体目录移除"
+}

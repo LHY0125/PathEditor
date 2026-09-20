@@ -8,6 +8,7 @@ use winreg::enums::*;
 use winreg::RegValue;
 
 use crate::env_var::EnvHive;
+use crate::error::{CoreError, ErrorCode};
 
 /// 单个 hive 的环境变量键抽象。
 ///
@@ -40,7 +41,12 @@ impl WinregHive {
     /// 打开指定 hive 的环境变量键。
     ///
     /// `write` 为 `true` 时请求 `KEY_READ | KEY_WRITE`，否则只请求 `KEY_READ`。
-    pub fn open(hive: EnvHive, write: bool) -> Result<Self, String> {
+    ///
+    /// W2-N2（2026-09-20 裁断）：本方法是固有方法、不在 [`EnvHiveStore`] trait
+    /// 上，可单独迁移到 `CoreError`。winreg 错误按 `io::ErrorKind` 诚实分类：
+    /// `PermissionDenied` → [`ErrorCode::PermissionDenied`]，其余 → [`ErrorCode::Io`]。
+    /// trait 的其他方法保持 `Result<_, String>`（Wave 0 端口边界不动）。
+    pub fn open(hive: EnvHive, write: bool) -> Result<Self, CoreError> {
         let (root, sub_path, label) = crate::registry::hive_location(hive);
         let flags = if write {
             KEY_READ | KEY_WRITE
@@ -49,7 +55,19 @@ impl WinregHive {
         };
         let key = winreg::RegKey::predef(root)
             .open_subkey_with_flags(sub_path, flags)
-            .map_err(|e| format!("无法打开{}环境变量注册表项: {}", label, e))?;
+            .map_err(|e| {
+                let code = if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    ErrorCode::PermissionDenied
+                } else {
+                    ErrorCode::Io
+                };
+                CoreError::new(
+                    code,
+                    "open_env_key",
+                    format!("无法打开{}环境变量注册表项: {}", label, e),
+                )
+                .with_hive(hive)
+            })?;
         Ok(Self {
             key,
             writable: hive_writable(hive),

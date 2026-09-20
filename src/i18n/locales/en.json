@@ -72,6 +72,23 @@
     "user": "User",
     "source": "Source"
   },
+  "error": {
+    "code": {
+      "_comment": "Fallback copy localized by CoreError code. Purpose: shown only when message is missing/empty (the normal path prefers the raw message — a complete user-facing sentence), and serves as the anchor for future per-code branches (e.g. conflict guidance, permission requests). Programmatic branching must check code, never match this copy.",
+      "conflict": "The variable was modified by another process. Refresh and retry.",
+      "protected": "Built-in system variable; it cannot be modified or deleted.",
+      "reservedName": "This name is managed by the dedicated PATH channel; edit it in the PATH view.",
+      "unsupportedType": "Unsupported registry type; view only.",
+      "permissionDenied": "You do not have permission to perform this operation.",
+      "nameExists": "A variable with this name already exists; use the edit function.",
+      "invalidName": "Invalid variable name.",
+      "invalidValue": "Invalid variable value.",
+      "notFound": "The target variable no longer exists; refresh the list.",
+      "io": "Read or write failed.",
+      "parse": "Failed to parse data.",
+      "internal": "An internal error occurred."
+    }
+  },
   "status": {
     "normal": "Ready",
     "readonly": "Read-only mode — Administrator privileges required for editing",

@@ -387,7 +387,14 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     }));
     // 第一次提交冲突，之后刷新返回新 revision；重取后再提交成功
     mockBackend.updateEnvVar
-      .mockRejectedValueOnce(new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'))
+      .mockRejectedValueOnce({
+        code: 'conflict',
+        operation: 'update_env_var',
+        hive: 'user',
+        name: 'JAVA_HOME',
+        retryable: true,
+        message: '变量已被其他进程修改，请重新加载',
+      })
       .mockResolvedValueOnce(undefined);
     mockBackend.listAllEnvVars
       .mockResolvedValueOnce({ system: [], user: [oldMeta], capturedAt: 0 })
@@ -462,14 +469,19 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   });
 
   it('非冲突保存失败时弹窗保留并显示错误', async () => {
-    mockBackend.updateEnvVar.mockRejectedValue(
-      new Error('[E_CONFLICT] 变量已被其他进程修改，请重新加载'),
-    );
+    mockBackend.updateEnvVar.mockRejectedValue({
+      code: 'protected',
+      operation: 'update_env_var',
+      hive: 'user',
+      name: 'JAVA_HOME',
+      retryable: false,
+      message: 'JAVA_HOME 是系统内置变量，不允许修改',
+    });
     await openEditDialog();
     fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'C:\\NewJava' } });
     fireEvent.click(screen.getByRole('button', { name: '确定' }));
 
-    await waitFor(() => expect(screen.getAllByText(/已被其他进程修改/).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/不允许修改/).length).toBeGreaterThan(0));
     expect(screen.getByLabelText('变量值')).not.toBeNull();
   });
 

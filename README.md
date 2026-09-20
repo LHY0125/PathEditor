@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-213%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-234%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -304,8 +304,8 @@ npx tauri build
 | 国际化    | i18next                           |
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
-| 前端测试  | Vitest + Playwright (213 + 23)    |
-| Rust 测试 | cargo test (138 个测试)           |
+| 前端测试  | Vitest + Playwright (234 + 24)    |
+| Rust 测试 | cargo test (192 个测试)           |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
 

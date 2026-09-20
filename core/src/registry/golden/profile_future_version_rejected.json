@@ -1,0 +1,16 @@
+{
+  "name": "profile_future_schema_version_rejected_with_hint",
+  "input": {
+    "profile_json": {
+      "schemaVersion": 999,
+      "name": "__golden_future_profile",
+      "sys": [],
+      "user": [],
+      "created": "",
+      "modified": ""
+    }
+  },
+  "op": "load_profile_legacy_v1",
+  "expect": { "error_code": "parse", "message_contains": "更新版本" },
+  "note": "schemaVersion 高于当前支持版本（1）时拒绝解析并提示升级，防止旧代码误解新格式；文件保留在原地不隔离。error_code 按 CoreError serde 的 camelCase 判定，不匹配中文正文"
+}

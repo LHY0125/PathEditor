@@ -1,0 +1,7 @@
+{
+  "name": "select_type_keeps_reg_sz_when_existing_is_reg_sz",
+  "input": { "existing": "REG_SZ" },
+  "op": "select_path_value_type",
+  "expect": "REG_SZ",
+  "note": "已存在 REG_SZ 的 PATH 写回时保持 REG_SZ，不升级为 REG_EXPAND_SZ（issue #26 行为契约）"
+}

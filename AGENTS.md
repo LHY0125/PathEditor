@@ -86,32 +86,34 @@ PathEditor/
 - 正式 PATH 解析以 Rust `registry::split_path` 为准；TS 的 `split_path` 仅保留为兼容/测试夹具。
 - `PathEntry { path, enabled }` 是跨层契约；导入、配置、注册表和撤销重做都必须保留 `enabled`。
 - 通用环境变量通路（`EnvVar`）与 PATH 通路（`PathEntry`）并存：`Path` 列入 `RESERVED_NAMES`，`list_all_env_vars` 过滤掉它，Rust 写入口拒绝 —— **PATH 只能经专用通路编辑**，否则会绕过 `disabled.json` 与快照事务。`EnvVarMeta` 契约上不含 `value` 字段，命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
-- 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`（FNV-1a 散列 `name+type+value`），在**同一 core 调用内**完成「读→算→比对→校验→写」。GUI 与 CLI 共用该契约，前端与 CLI 都**不得**自行实现并发校验。冲突错误统一以 `[E_CONFLICT]` 前缀开头（`core::registry::conflict_message()` 是唯一文案源），判定只认前缀、不认中文正文。
+- 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`（FNV-1a 散列 `name+type+value`），在**同一 core 调用内**完成「读→算→比对→校验→写」。GUI 与 CLI 共用该契约，前端与 CLI 都**不得**自行实现并发校验。冲突判定**只认 `CoreError.code`（serde camelCase）**：前端判 `err.code === 'conflict'`，CLI 经 `CoreError::exit_code()` 判定；`[E_CONFLICT]` 消息前缀（`core::registry::conflict_message()`）仅为过渡期展示文本（保留给旧文本路径），不是判定机制。
 - Windows 注册表无 CAS，读-比-写是两次独立注册表调用，仍有毫秒级竞态窗口。revision 校验缩小影响，不能完全消除 TOCTOU —— 文档与注释须如实措辞，不要宣称原子性。
 - `.codegraph/` 存在时，优先使用 CodeGraph 理解符号和调用路径，再决定是否读取文件。
 
 ## Tauri IPC 接口
 
-| Command                                                                                 | 参数 / 返回值                              | 说明                                                                                         |
-| --------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `load_system_paths` / `load_user_paths`                                                 | `() -> Result<Vec<String>, String>`        | 读取注册表原始路径                                                                           |
-| `save_system_paths` / `save_user_paths`                                                 | `(paths, original?) -> Result<(), String>` | 可选乐观并发校验；外部修改时拒绝覆盖                                                         |
-| `clean_path_entries`                                                                    | `Vec<PathEntry> -> (kept, removed)`        | 统一清理语义，展开变量后检查目录                                                             |
-| `get_path_capabilities`                                                                 | `() -> PathCapabilities`                   | 按 hive 返回读写能力                                                                         |
-| `check_admin` / `validate_path` / `expand_env_vars` / `broadcast_env_change`            | 系统工具接口                               | 权限、目录验证、变量展开、环境通知                                                           |
-| `load_path_snapshot`                                                                    | `() -> Result<PathSnapshot, String>`       | 合并注册表、禁用状态和有序快照                                                               |
-| `save_path_snapshot`                                                                    | `(system?, user?) -> Result<(), String>`   | 保存完整有序快照，`None` 保留对应 hive                                                       |
-| `load_disabled_state` / `save_disabled_state`                                           | 旧版字符串接口                             | 仅用于兼容                                                                                   |
-| `import_file` / `export_path_entries`                                                   | 文件路径 / `PathEntry` + 格式              | Rust 统一导入导出                                                                            |
-| `scan_paths`                                                                            | `(paths, query) -> ScanResult`             | 一次枚举生成冲突和工具清单                                                                   |
-| `scan_conflicts` / `scan_tools`                                                         | 兼容包装                                   | 分别返回冲突或工具清单                                                                       |
-| `backup_registry` / `get_appdata_dir`                                                   | 备份和目录查询                             | 备份当前注册表值                                                                             |
-| `list_profiles` / `save_profile` / `load_profile` / `delete_profile` / `rename_profile` | 配置 CRUD                                  | 配置保存 `PathEntry[]`                                                                       |
-| `list_all_env_vars`                                                                     | `() -> Result<EnvVarSnapshot, String>`     | 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）                                       |
-| `reveal_env_var`                                                                        | `(hive, name) -> Result<String, String>`   | 按需读取单个变量明文；`Unsupported` 类型返回错误                                             |
-| `update_env_var`                                                                        | `(hive, name, value, expectedRevision)`    | 写入已有变量；类型从注册表读取，revision 不匹配则拒绝（返回 `[E_CONFLICT]` 前缀错误）        |
-| `create_env_var`                                                                        | `(hive, name, value, kind)`                | 新建变量；写入前检查名称是否存在（检查与写入是两步操作，存在竞态窗口；重复创建由 Rust 拒绝） |
-| `delete_env_var`                                                                        | `(hive, name, expectedRevision)`           | 删除变量；revision 不匹配则拒绝                                                              |
+| Command                                                                                 | 参数 / 返回值                                      | 说明                                                                                         |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `load_system_paths` / `load_user_paths`                                                 | `() -> Result<Vec<String>, String>`                | 读取注册表原始路径                                                                           |
+| `save_system_paths` / `save_user_paths`                                                 | `(paths, original?) -> Result<(), String>`         | 可选乐观并发校验；外部修改时拒绝覆盖                                                         |
+| `clean_path_entries`                                                                    | `Vec<PathEntry> -> (kept, removed)`                | 统一清理语义，展开变量后检查目录                                                             |
+| `get_path_capabilities`                                                                 | `() -> PathCapabilities`                           | 按 hive 返回读写能力                                                                         |
+| `check_admin` / `validate_path` / `expand_env_vars` / `broadcast_env_change`            | 系统工具接口                                       | 权限、目录验证、变量展开、环境通知                                                           |
+| `load_path_snapshot`                                                                    | `() -> Result<PathSnapshot, String>`               | 合并注册表、禁用状态和有序快照                                                               |
+| `save_path_snapshot`                                                                    | `(system?, user?) -> Result<(), String>`           | 保存完整有序快照，`None` 保留对应 hive                                                       |
+| `load_disabled_state` / `save_disabled_state`                                           | 旧版字符串接口                                     | 仅用于兼容                                                                                   |
+| `import_file` / `export_path_entries`                                                   | 文件路径 / `PathEntry` + 格式                      | Rust 统一导入导出                                                                            |
+| `scan_paths`                                                                            | `(paths, query) -> ScanResult`                     | 一次枚举生成冲突和工具清单                                                                   |
+| `scan_conflicts` / `scan_tools`                                                         | 兼容包装                                           | 分别返回冲突或工具清单                                                                       |
+| `backup_registry` / `get_appdata_dir`                                                   | 备份和目录查询                                     | 备份当前注册表值                                                                             |
+| `list_profiles` / `save_profile` / `load_profile` / `delete_profile` / `rename_profile` | 配置 CRUD                                          | 配置保存 `PathEntry[]`                                                                       |
+| `list_all_env_vars`                                                                     | `() -> Result<EnvVarSnapshot, CoreError>`          | 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）                                       |
+| `reveal_env_var`                                                                        | `(hive, name) -> Result<RevealedValue, CoreError>` | 按需读取单个变量明文及读取时的 revision；`Unsupported` 类型返回 `CoreError`                  |
+| `update_env_var`                                                                        | `(hive, name, value, expectedRevision)`            | 写入已有变量；类型从注册表读取，revision 不匹配则拒绝（返回 `[E_CONFLICT]` 前缀错误）        |
+| `create_env_var`                                                                        | `(hive, name, value, kind)`                        | 新建变量；写入前检查名称是否存在（检查与写入是两步操作，存在竞态窗口；重复创建由 Rust 拒绝） |
+| `delete_env_var`                                                                        | `(hive, name, expectedRevision)`                   | 删除变量；revision 不匹配则拒绝                                                              |
+
+> 服务层命令 `apply_path_snapshot` / `save_path_with_sidecar` / `retry_pending_path_state` / `apply_profile` 已在 `gui/src/commands/service.rs` 注册，供 CLI/服务层事务编排使用，**GUI 前端暂未接线**（`path-session.ts` 仍走旧编排，见开发回执未覆盖项）。
 
 ## CLI 命令
 
@@ -162,7 +164,7 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 - 所有 `pub fn` 必须有 `///` 文档注释；`pub(crate)` 同样补注释（CONTRIBUTING.md 硬性要求）。
 - 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
 - E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果（样本见 `docs/审核和开发/2026.09.18/`）。
-- CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove` 且使用 `--revision` 时；`--force` 不会因并发冲突产生退出码 3；PATH 命令恒为 1）。冲突判定按 core 的 `[E_CONFLICT]` 前缀，不匹配中文正文。
+- CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove` 且使用 `--revision` 时；`--force` 不会因并发冲突产生退出码 3；PATH 命令恒为 1）。冲突判定按 `CoreError.code`（`CoreError::exit_code()`），`[E_CONFLICT]` 前缀仅为过渡期展示文本。
 
 ## 测试与质量门
 

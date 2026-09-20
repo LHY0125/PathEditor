@@ -1,0 +1,24 @@
+{
+  "name": "import_json_sanitizes_and_preserves_enabled",
+  "input": {
+    "filename": "import.json",
+    "content": {
+      "system": [
+        { "path": "  C:\\Trimmed  ", "enabled": true },
+        { "path": "C:\\bad;path", "enabled": true },
+        { "path": "", "enabled": true },
+        { "path": "C:\\off", "enabled": false }
+      ],
+      "user": []
+    }
+  },
+  "op": "import_paths",
+  "expect": {
+    "system": [
+      { "path": "C:\\Trimmed", "enabled": true },
+      { "path": "C:\\off", "enabled": false }
+    ],
+    "user": []
+  },
+  "note": "导入统一净化：trim、去空、拒绝分号与 null 字节条目；enabled 缺省 true 且净化后原样保留"
+}
