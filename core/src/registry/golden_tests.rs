@@ -228,15 +228,66 @@ fn run_case(case: &GoldenCase) {
                     "golden 用例 {name}: 备份应包含 section `{s}`"
                 );
             }
+
+            // system_lines / user_lines = "current_registry_entries"：
+            // 逐行断言备份文件中对应 section 的条目与执行时刻注册表 PATH 一致。
+            // backup_registry 与本断言各读一次注册表（只读不写），毫秒级窗口
+            // 内外部修改会误报，测试环境可接受。
+            for (field, section_header, registry_paths) in [
+                (
+                    "system_lines",
+                    "\n[System PATH]\n",
+                    crate::registry::load_system_paths()
+                        .unwrap_or_else(|e| panic!("{name}: 读取系统 PATH 失败: {e}")),
+                ),
+                (
+                    "user_lines",
+                    "\n[User PATH]\n",
+                    crate::registry::load_user_paths()
+                        .unwrap_or_else(|e| panic!("{name}: 读取用户 PATH 失败: {e}")),
+                ),
+            ] {
+                if case.expect[field].as_str() != Some("current_registry_entries") {
+                    continue;
+                }
+                let section_start = content
+                    .find(section_header)
+                    .unwrap_or_else(|| panic!("{name}: 备份缺少 section `{section_header}`"))
+                    + section_header.len();
+                let section_body = &content[section_start..];
+                let section_lines: Vec<&str> =
+                    section_body.lines().take_while(|l| !l.is_empty()).collect();
+                let expect_lines: Vec<&str> = registry_paths.iter().map(String::as_str).collect();
+                assert_eq!(
+                    section_lines, expect_lines,
+                    "golden 用例 {name}: {field} 应逐行等于当前注册表 PATH 条目"
+                );
+            }
+
+            // filename_pattern：path_backup_ + 8 位日期 + _ + 6 位时间 + _ + 3 位毫秒 + .txt
             let filename = std::path::Path::new(&filepath)
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            assert!(
-                filename.starts_with("path_backup_") && filename.ends_with(".txt"),
-                "golden 用例 {name}: 备份文件名 `{filename}` 应为 path_backup_*.txt 形态"
-            );
+            if case.expect["filename_pattern"].is_string() {
+                let stem = filename
+                    .strip_prefix("path_backup_")
+                    .and_then(|s| s.strip_suffix(".txt"))
+                    .unwrap_or_else(|| {
+                        panic!("golden 用例 {name}: 备份文件名 `{filename}` 应为 path_backup_*.txt 形态")
+                    });
+                let groups: Vec<&str> = stem.split('_').collect();
+                assert_eq!(
+                    groups.iter().map(|g| g.len()).collect::<Vec<_>>(),
+                    vec![8, 6, 3],
+                    "golden 用例 {name}: 文件名 `{filename}` 时间戳应为 8位_6位_3位 数字组"
+                );
+                assert!(
+                    groups.iter().all(|g| g.chars().all(|c| c.is_ascii_digit())),
+                    "golden 用例 {name}: 文件名 `{filename}` 时间戳应全为数字"
+                );
+            }
             let _ = std::fs::remove_dir_all(&dir);
         }
 

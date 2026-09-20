@@ -1,16 +1,13 @@
 {
   "name": "backup_format_sections_list_entries_line_by_line",
-  "input": {
-    "system": ["C:\\Windows", "C:\\Tools"],
-    "user": ["D:\\MyApps"]
-  },
+  "input": {},
   "op": "backup_format_contract",
   "expect": {
     "header_prefix": "PathEditor Backup - ",
     "sections": ["\n[System PATH]\n", "\n[User PATH]\n"],
-    "system_lines": ["C:\\Windows", "C:\\Tools"],
-    "user_lines": ["D:\\MyApps"],
+    "system_lines": "current_registry_entries",
+    "user_lines": "current_registry_entries",
     "filename_pattern": "path_backup_YYYYMMDD_HHMMSS_mmm.txt"
   },
-  "note": "备份格式契约（backup.rs）：固定头 'PathEditor Backup - <时间>'、'[System PATH]'/'[User PATH]' 两个 section、条目逐行排列。backup_registry 本体读写真实注册表，无法在纯函数级端到端验证，本用例固定其输出文本格式；迁移自 C 版同构格式"
+  "note": "备份格式契约（backup.rs）：固定头 'PathEditor Backup - <时间>'、'[System PATH]'/'[User PATH]' 两个 section；system_lines/user_lines 取值 'current_registry_entries' 时逐行断言备份文件中该 section 的条目与执行时刻的注册表 system/user PATH 当前值一致（backup_registry 与断言各读一次注册表，毫秒级窗口内外部修改会误报，测试环境可接受；全程只读不写）；filename_pattern 校验文件名为 path_backup_+8位日期+6位时间+3位毫秒+.txt。恢复可用性由文件级集成覆盖，本用例不验证"
 }

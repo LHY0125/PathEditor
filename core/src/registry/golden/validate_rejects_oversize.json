@@ -1,7 +1,7 @@
 {
   "name": "validate_and_join_rejects_over_32767_utf16_chars",
-  "input": { "paths": ["C:\\a"], "pad_utf16_chars": 32767, "label": "用户" },
+  "input": { "pad_utf16_chars": 32767, "label": "用户" },
   "op": "validate_and_join_paths_error",
   "expect": { "contains": ["超出 Windows 限制", "32767"] },
-  "note": "长度上限按 UTF-16 码元计数（非 UTF-8 字节）：'C:\\a;' 占 5 码元，加 32767 个 ASCII 字符后为 32772，超限拒绝；边界（恰好 32767）放行"
+  "note": "输入构造：paths = ['C:\\a', 'a'.repeat(pad_utf16_chars)]（由执行器拼装）。长度上限按 UTF-16 码元计数（非 UTF-8 字节）：'C:\\a;' 占 5 码元，加 32767 个 ASCII 字符后为 32772，超限拒绝；边界（恰好 32767）放行"
 }
