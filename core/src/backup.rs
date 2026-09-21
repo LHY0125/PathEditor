@@ -661,8 +661,10 @@ fn hive_rank(hive: EnvHive) -> u8 {
 
 /// `changes` 的差异类型排序键：新增 → 修改 → 删除 → 冲突。
 ///
-/// 删除是最不可逆的部分，排在靠后位置便于人工阅读时落在末尾；
-/// 顺序本身无安全含义，只要是**确定的**即可（可复现是本函数的全部目的）。
+/// 前三者按「实际会写入的动作」排：新增最轻、删除最不可逆，故删除靠后便于阅读时
+/// 落在末尾附近。**冲突排在最后**（不是删除）—— 它是唯一可能让整次恢复中止的类别，
+/// 放在末尾便于在 `--dry-run --json` 输出里一眼扫到「为什么没写成」。
+/// 顺序本身无安全含义，只要是**确定的**即可（可复现是这些键的全部目的）。
 fn kind_rank(kind: RestoreChangeKind) -> u8 {
     match kind {
         RestoreChangeKind::Added => 0,
@@ -961,17 +963,29 @@ fn find_backup_var<'a>(
 /// 即「恢复一个空备份」等价于**删除当前全部环境变量**。
 ///
 /// **本任务裁定：不在恢复层加防护。** 理由：
-/// 1. 该能力并非多余 —— 完全可能有人要「把环境变量还原成备份时的空集」，
-///    加一道「两 hive 皆空即拒绝」会让这个合法意图变成不可表达；
-/// 2. 破坏性写入**默认模式不做**（冲突即中止），且 `--dry-run` 会在用户确认前
-///    逐条列出将要删除的变量名 —— 现有的两道可见性已经足够；
-/// 3. 与既有 `env remove` 同性质：破坏性操作靠「显式命令 + 确认/复核」把关，
-///    而不是在 core 里猜测用户意图。
+/// 1. 与既有 `env remove --force` 同构：两者都能造成同等幅度的破坏，也都靠
+///    「用户显式指定目标 + 自行复核」把关，而不是在 core 里猜测用户意图；
+/// 2. 在恢复层加「两 hive 皆空即拒绝」会引入**第二个**「什么备份算合法」的规则源，
+///    与「判定只在 core 一处」的硬约束冲突（E5 裁断同源），且没有 natural owner ——
+///    真正的疑点（文件是否被截断/损坏）无法在恢复层可靠判定。
 ///
-/// 代价是真实的：用户误把截断/损坏但**仍能解析**的文件当备份恢复，会删光变量。
-/// 因此该行为由 `restore_empty_backup_removes_all_current_variables` 与
-/// `restore_empty_backup_without_force_also_removes_all` 两个测试**钉住**，
+/// **默认模式不构成对空备份清空的保护**（勿按直觉推断）：空备份产生**零冲突**
+/// （备份侧没有任何条目，`diff_one_hive` 无从产出 `Conflict`），而下面的 K3 中止
+/// 条件恰是 `preview.conflicts > 0` —— 因此它**根本不会触发**，默认模式会照常删光。
+/// 唯一的事前可见性来自 `--dry-run`（由 CLI/GUI 展示层调用，是**选择性**的、
+/// 不是默认路径）。
+///
+/// 另一件必须说清的事：**恢复足以区分「无事可做」与「删光一切」** ——
+/// 已填充但值全同的备份产生零差异（revision 相同时 `diff_one_hive` 不 push，
+/// `seen` 又抑制了 `Removed`），于是 `changes.len() == 0`、零写入、也不广播。
+/// 所以「两 hive 皆空」不是一次寻常恢复，而是本特性**能造成的最大幅度动作**；
+/// 它有真实的误用风险（把截断但仍可解析的文件当备份恢复）。
+/// 这正是本条裁定必须被显式固定、而不是隐式存在的原因。
+///
+/// 代价因此是真实的：该行为由 `restore_empty_backup_removes_all_current_variables`
+/// 与 `restore_empty_backup_without_force_also_removes_all` 两个测试**钉住**，
 /// 且 CLI/GUI 的展示层必须把「删除」数量显著呈现（spec 验收标准 12/13）。
+/// **若将来要加防护，这两个测试会先红 —— 那是有意的，它强制语义变更被显式确认。**
 ///
 /// **本函数不产生新备份**：否则每次恢复都新增一份文件，与保留策略互相吞噬
 /// （设计文档明文要求）。恢复前的手工兜底提示由 CLI/GUI 层打印，也不自动执行。
@@ -1077,6 +1091,20 @@ fn inconsistent_change(name: &str) -> CoreError {
     )
 }
 
+/// 恢复结束后是否应广播 `WM_SETTINGCHANGE`。**门控条件只有一处**，见下。
+///
+/// 抽成具名谓词是为了让这个分支**可被测试**：真实广播走
+/// `crate::system::broadcast_env_change()`，那是一次 Win32 `SendMessageTimeoutW`
+/// 调用（生产约 4s，且无观察点），core 单测里既不该触发也无法观测。
+/// 因此本文件测的是**决策**（[`restore_noop_does_not_broadcast`]），
+/// Win32 调用本身不在 core 单测覆盖范围内 —— 这是如实登记的边界，不是遗漏。
+///
+/// 判据是 `applied > 0`：只有确实改动过注册表才需要惊动已运行的进程。
+/// 零差异（`applied == 0`）意味着什么都没变，广播纯属噪声。
+fn restore_should_broadcast(outcome: &RestoreOutcome) -> bool {
+    outcome.applied > 0
+}
+
 /// 从备份文件恢复环境变量（公开入口，供 CLI `env restore` 与 GUI 命令使用）。
 ///
 /// 先做来源校验（[`validate_backup_path`]：扩展名、目录/文件名前缀、大小上限），
@@ -1090,15 +1118,15 @@ fn inconsistent_change(name: &str) -> CoreError {
 /// # Returns
 /// - `Ok(RestoreOutcome)` — 恢复结果（含逐条失败）
 /// - `Err(CoreError)` — 路径非法（`InvalidValue`/`NotFound`）、读取或解析备份失败
-///   （`Io`/`Parse`）、打开 hive 失败（`PermissionDenied`/`Io`／差异计算失败（`Io`），
+///   （`Io`/`Parse`）、打开 hive 失败（`PermissionDenied`/`Io`）、差异计算失败（`Io`），
 ///   或默认模式下检测到冲突（`Conflict`，注册表零改动）
 pub fn restore_env_backup_from(path: &Path, force: bool) -> Result<RestoreOutcome, CoreError> {
     let verified = validate_backup_path(&path.to_string_lossy())?;
     let sys = WinregHive::open(EnvHive::System, true)?;
     let usr = WinregHive::open(EnvHive::User, true)?;
     let outcome = restore_in_stores(&sys, &usr, &verified, force)?;
-    // 广播只在确实写入过时发出：无差异的恢复不应惊动已运行的进程。
-    if outcome.applied > 0 {
+    // 广播只在确实写入过时发出：无差异的恢复不应惊动已运行的进程（判据见谓词）。
+    if restore_should_broadcast(&outcome) {
         crate::system::broadcast_env_change();
     }
     Ok(outcome)
@@ -2509,12 +2537,13 @@ mod tests {
     /// 用 `fail_enum` 注入 user 侧枚举失败（`diff_one_hive` 会返回 `Err(Io)`）。
     /// 断言的是**顺序契约**：`preview_restore_in_stores` 先算 user 再算 system、
     /// 任一失败即整体 `Err`，因此 user 侧注入失败时 system 侧的差异**根本没被算出来**，
-    /// 恢复必然零写入 —— 这正是「冲突/枚举失败必中止」在跨 hive 维度的表现
+    /// 恢复必然零写入 —— 这正是「枚举失败必中止」在跨 hive 维度的表现
     /// （不产生半个 hive 已被改动的中间状态）。
     ///
-    /// 反向那一半（user 成功、system 失败）单独覆盖：见
-    /// `restore_preview_failure_in_second_hive_leaves_first_untouched` 与
-    /// `restore_system_enum_failure_aborts_before_user_writes`。
+    /// 反向那一半（user 差异能算出、system 失败）由
+    /// `restore_preview_failure_in_second_hive_leaves_first_untouched` 覆盖；
+    /// 「单变量失败不中止整体」由
+    /// `restore_collects_per_variable_failure_without_aborting` 覆盖。
     #[test]
     fn restore_reports_hive_enumeration_failure() {
         with_temp_backup_dir(|dir| {
@@ -2657,6 +2686,97 @@ mod tests {
             assert_eq!(outcome.applied, 1);
             assert!(!hive.contains("KEEP_A"), "默认模式下空备份同样会删空");
         });
+    }
+
+    /// 无操作路径（no-op restore）：备份与注册表完全一致时必须**零写入、零失败**，
+    /// 且不触发广播门控。
+    ///
+    /// 存在的理由（复审 Minor）：`RestoreOutcome.skipped` 的恒 0 与
+    /// [`restore_should_broadcast`] 的门控原先**只靠阅读保证**，没有任何测试覆盖
+    /// `applied == 0` 这条路径。空备份测试只覆盖「全删」，覆盖不到「无事可做」。
+    ///
+    /// 构造方式：备份条目由 [`backup_var`] 生成（revision 与自身 name/type/value
+    /// 自洽），注册表里是**同样的值** → `diff_one_hive` 走「revision 相同 → 不进差异」
+    /// 分支（`core/src/backup.rs` 的 `Some((_, current_revision)) if ... == &var.revision`），
+    /// 又因备份侧 `seen` 抑制了 `Removed`，于是 `changes.len() == 0`。
+    ///
+    /// **可证伪性**：
+    /// - 把「revision 相同 → 不进差异」改错（例如恒 push `Modified`），`changes` 非空
+    ///   → `applied` 不再为 0，第一条断言失败，广播门控也随之变 true；
+    /// - 把 `restore_should_broadcast` 改成恒 `true`，最后一条断言失败。
+    #[test]
+    fn restore_noop_does_not_broadcast() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("SAME_A", "a", REG_SZ);
+            hive.seed("SAME_B", "b", REG_EXPAND_SZ);
+
+            // 两个条目都与注册表当前值/类型一致 → 零差异
+            let payload = payload_with(vec![
+                backup_var("SAME_A", "a", REG_SZ),
+                backup_var("SAME_B", "b", REG_EXPAND_SZ),
+            ]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let before = sorted_dir_names(dir);
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true)
+                .expect("零差异的恢复必须成功（不是错误）");
+
+            assert_eq!(outcome.applied, 0, "两端一致 → 不应有任何写入");
+            assert_eq!(outcome.skipped, 0, "skipped 恒 0：没有「跳过」这条路径");
+            assert!(
+                outcome.failures.is_empty(),
+                "零差异不应产生失败: {:?}",
+                outcome.failures
+            );
+            // 前置条件：确认走的是「零差异」而不是「碰巧写失败」
+            let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload)
+                .expect("预览失败");
+            assert_eq!(
+                preview.changes.len(),
+                0,
+                "前置条件：值全同的备份必须产生零差异，否则本测试测的不是 no-op 路径"
+            );
+            assert!(
+                !restore_should_broadcast(&outcome),
+                "applied == 0 时不得广播 —— 什么都没变不该惊动已运行的进程"
+            );
+            // 顺带钉住 no-op 也不产生备份（与 restore_does_not_create_new_backup 互补）
+            assert_eq!(
+                sorted_dir_names(dir),
+                before,
+                "no-op 恢复同样不得产生新备份"
+            );
+        });
+    }
+
+    /// 广播门控的正向配对：`applied > 0` 时**必须**广播。
+    ///
+    /// 与 `restore_noop_does_not_broadcast` 合起来才构成完整契约
+    /// 「有写入 → 广播，无写入 → 不广播」。只测一侧等于把恒 `true`/恒 `false`
+    /// 这两种退化实现漏掉其一。
+    #[test]
+    fn restore_should_broadcast_when_something_applied() {
+        let applied = RestoreOutcome {
+            applied: 3,
+            skipped: 0,
+            failures: vec![],
+        };
+        assert!(
+            restore_should_broadcast(&applied),
+            "有实际写入时必须广播，否则运行中的进程会持有陈旧变量"
+        );
+
+        // 失败但确有写入（partial success）同样必须广播
+        let partial = RestoreOutcome {
+            applied: 1,
+            skipped: 0,
+            failures: vec!["[用户] windir: 受保护".into()],
+        };
+        assert!(
+            restore_should_broadcast(&partial),
+            "部分成功也算改动过注册表，必须广播"
+        );
     }
 
     /// 恢复**不产生新备份**：整个恢复过程中备份目录里的文件数不变。
