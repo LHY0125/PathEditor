@@ -1,19 +1,95 @@
 use crate::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
 use crate::error::{CoreError, ErrorCode};
+use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 use crate::reg_store::{EnvHiveStore, WinregHive};
 // 经 registry 根 re-export —— 不能写 crate::registry::env_var::X（E0603）
 use crate::registry::{self, hive_location, SYS_REG_PATH, USER_REG_PATH};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use winreg::enums::*;
 use winreg::types::FromRegValue;
 
+/// env 备份默认保留份数（设计文档 D6）。
+///
+/// 全量快照单文件约几十 KB；20 份在正常使用下是几百 KB 量级。
+/// 写操作密集的用户可调大——注意 README 已提示备份含明文敏感值，
+/// 保留份数越大暴露面越大。
+pub const ENV_BACKUP_KEEP: usize = 20;
+
+/// 配置文件路径：`~/.patheditor/config.ini`。
+///
+/// 放用户目录而非 exe 同目录（设计文档 §配置文件）：CLI/GUI 是两份独立 exe，
+/// scoop 升级换目录、NSIS 装 Program Files 需提权——只有用户目录能让双 exe
+/// 共享、升级不丢、免提权。
+fn config_file_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".patheditor")
+        .join("config.ini")
+}
+
+/// 读取 env 备份保留份数；任何异常一律回落 [`ENV_BACKUP_KEEP`]。
+///
+/// 回落情形（设计文档 §解析与回落行为）：文件不存在 / 键不存在 / 值非整数 /
+/// 值为负数 / 值空 / 文件不可读。**不报错、不中止备份**，非默认值时记一次 warn。
+/// 读取**无副作用**：文件不存在时不创建。
+///
+/// 手写极简 INI 解析（`key = value`，`;` 或 `#` 起始为注释），不引入新依赖——
+/// 单键配置不值得拉一个 crate，与项目「手写 FNV-1a 而不引 sha2」的先例一致。
+fn read_env_backup_keep(path: &Path) -> usize {
+    let fallback = ENV_BACKUP_KEEP;
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return fallback; // 不存在或不可读，无副作用地回落
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "env_backup_keep" {
+            continue;
+        }
+        match value.trim().parse::<usize>() {
+            Ok(n) => return n,
+            Err(_) => {
+                log::warn!(
+                    "config.ini 的 env_backup_keep 值非法（{}），回落默认 {}",
+                    value.trim(),
+                    fallback
+                );
+                return fallback;
+            }
+        }
+    }
+    fallback
+}
+
+/// 从真实配置文件读取保留份数。
+fn env_backup_keep() -> usize {
+    read_env_backup_keep(&config_file_path())
+}
+
+/// 备份根目录。`PATHEDITOR_BACKUP_DIR` 存在时用它（测试隔离用），
+/// 否则回落 `~/.patheditor/backups/`。
 fn backup_base_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("PATHEDITOR_BACKUP_DIR") {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".patheditor")
         .join("backups")
+}
+
+/// env 备份目录的公开访问器。
+pub fn env_backup_dir() -> PathBuf {
+    backup_base_dir()
 }
 
 /// 获取备份目录路径
@@ -141,6 +217,123 @@ pub fn collect_env_backup() -> Result<EnvBackupPayload, CoreError> {
         captured_at: Local::now().timestamp_millis(),
         hives: EnvBackupHives { system, user },
     })
+}
+
+/// 把备份载荷写入目录，并在写入后执行保留策略轮换。
+///
+/// 文件名为 `env_backup_<YYYYMMDD>_<HHMMSS>_<毫秒3位>.json`，时间戳格式与
+/// PATH 备份一致，便于用户在同一目录中找到全部备份。
+///
+/// # Returns
+/// - `Ok(PathBuf)` — 写入的备份文件绝对路径
+/// - `Err(CoreError)` — 目录创建、轮换或写文件失败（code=`Io`）
+pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<PathBuf, CoreError> {
+    std::fs::create_dir_all(dir).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "backup_env_vars",
+            format!("无法创建备份目录 {}: {}", dir.display(), e),
+        )
+    })?;
+
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f");
+    let filepath = dir.join(format!("env_backup_{}.json", timestamp));
+
+    let versioned = Versioned {
+        schema_version: PERSIST_SCHEMA_VERSION,
+        inner: payload.clone(),
+    };
+    let json = serde_json::to_string_pretty(&versioned).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Internal,
+            "backup_env_vars",
+            format!("序列化备份失败: {e}"),
+        )
+    })?;
+
+    // 轮换在写新文件之前执行：新文件必然保留，不会被自己轮换掉。
+    // 保留份数来自 config.ini（缺省 ENV_BACKUP_KEEP），每次读一次不缓存。
+    rotate_env_backups(dir, env_backup_keep())?;
+
+    std::fs::write(&filepath, json).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "backup_env_vars",
+            format!("无法写入备份文件 {}: {}", filepath.display(), e),
+        )
+    })?;
+
+    log::info!("env 备份已保存到: {}", filepath.display());
+    Ok(filepath)
+}
+
+/// 保留策略轮换：只删除**本功能生成**的旧备份，保留最近 `keep` 份。
+///
+/// 授权范围（设计文档 §S1，用户 2026-09-21 明确授权的例外）：
+/// 1. 只匹配文件名 `env_backup_*.json`；
+/// 2. 只在给定目录内操作（自定义备份目录不参与轮换）；
+/// 3. 只删最旧的、超出 `keep` 之外的文件；
+/// 4. 绝不删除 `.txt` PATH 备份、`.bak`、`.corrupt-*` 及目录中任何其他文件。
+///
+/// # Returns
+/// - `Ok(Vec<PathBuf>)` — 被删除的文件路径（供测试与日志核对）
+/// - `Err(CoreError)` — 目录枚举失败（code=`Io`）；单个文件删除失败只记 warn，不影响其他
+fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    // 只收集本功能生成的备份：前缀 env_backup_ + 后缀 .json，
+    // `.bak` / `.corrupt-*` 因后缀不同天然被排除。
+    let mut candidates: Vec<(String, PathBuf)> = Vec::new();
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "rotate_env_backups",
+            format!("枚举备份目录 {} 失败: {}", dir.display(), e),
+        )
+    })?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("env_backup_") || !name.ends_with(".json") {
+            continue;
+        }
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        candidates.push((name, path));
+    }
+
+    if candidates.len() <= keep {
+        return Ok(Vec::new());
+    }
+
+    // 文件名内嵌时间戳，字典序即时间序；降序排列后丢弃最旧的。
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut removed = Vec::new();
+    for (_, path) in candidates.into_iter().skip(keep) {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                log::info!("已轮换删除旧备份: {}", path.display());
+                removed.push(path);
+            }
+            // 删除失败不中止轮换：留着旧文件无害，报错反而阻断后续写入。
+            Err(e) => log::warn!("删除旧备份 {} 失败: {}", path.display(), e),
+        }
+    }
+    Ok(removed)
+}
+
+/// 采集两个 hive 并落盘一份 env 备份（公开入口，供 CLI `env backup` 与写前自动备份使用）。
+///
+/// # Returns
+/// - `Ok(PathBuf)` — 备份文件绝对路径
+/// - `Err(CoreError)` — 采集或落盘失败
+pub fn backup_env_vars() -> Result<PathBuf, CoreError> {
+    let payload = collect_env_backup()?;
+    let dir = env_backup_dir();
+    write_env_backup_to(&dir, &payload)
 }
 
 /// 备份当前注册表中的系统 PATH 和用户 PATH
@@ -282,5 +475,239 @@ mod tests {
         let expected = revision_of("MY_VAR", REG_SZ, "value-1");
 
         assert_eq!(vars[0].revision, expected);
+    }
+
+    /// 备份目录可用环境变量重定向，供测试隔离；未设置时回落 ~/.patheditor/backups。
+    fn with_temp_backup_dir<F: FnOnce(&std::path::Path)>(f: F) {
+        // 环境变量是进程级的，与其他触碰它的测试互斥
+        let _guard = crate::persist::test_persist_lock();
+        let dir =
+            std::env::temp_dir().join(format!("patheditor_test_env_backup_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
+        f(&dir);
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `PATHEDITOR_BACKUP_DIR` 必须真正把备份目录整体重定向（否则测试隔离失效，
+    /// 所有备份测试会写到用户的真实 `~/.patheditor/backups/`）。
+    #[test]
+    fn backup_dir_is_redirected_by_env_var() {
+        with_temp_backup_dir(|dir| {
+            assert_eq!(env_backup_dir(), dir, "备份目录必须被重定向到测试临时目录");
+            assert_eq!(
+                get_appdata_dir(),
+                dir.to_string_lossy(),
+                "PATH 备份目录访问器也必须继承同一重定向"
+            );
+        });
+    }
+
+    /// 重定向变量为空时必须回落到默认目录，而不是把备份写到进程当前工作目录。
+    #[test]
+    fn backup_dir_empty_env_var_falls_back_to_default() {
+        let _guard = crate::persist::test_persist_lock();
+        let default_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".patheditor")
+            .join("backups");
+
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", "");
+        let redirected = env_backup_dir();
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+
+        assert_eq!(redirected, default_dir, "空值必须回落默认目录");
+        assert!(!redirected.as_os_str().is_empty());
+    }
+
+    fn sample_payload() -> EnvBackupPayload {
+        EnvBackupPayload {
+            captured_at: 1_758_400_000_000,
+            hives: EnvBackupHives {
+                system: vec![],
+                user: vec![EnvBackupVar {
+                    name: "JAVA_HOME".into(),
+                    kind: EnvValueKind::String,
+                    value: "C:\\jdk17".into(),
+                    revision: "a1b2c3d4e5f60718".into(),
+                }],
+            },
+        }
+    }
+
+    /// 落盘文件必须带 schemaVersion 信封，且能被读回（往返一致）。
+    #[test]
+    fn write_env_backup_round_trips_through_versioned_envelope() {
+        with_temp_backup_dir(|dir| {
+            let path = write_env_backup_to(dir, &sample_payload()).expect("写备份失败");
+            assert!(path.exists());
+            assert!(
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("env_backup_"),
+                "文件名必须以 env_backup_ 开头"
+            );
+            assert_eq!(path.extension().unwrap(), "json");
+
+            let content = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                content.contains("\"schemaVersion\""),
+                "必须带 schemaVersion 信封（复用 persist::Versioned）"
+            );
+            assert!(content.contains("JAVA_HOME"));
+
+            let back: Versioned<EnvBackupPayload> = serde_json::from_str(&content).unwrap();
+            assert_eq!(back.inner, sample_payload());
+        });
+    }
+
+    /// S1 对抗性测试：轮换只删自己生成的 env_backup_*.json，其他文件一律不动。
+    ///
+    /// **本测试必须真正发生删除**：25 份备份全部唯一，`keep=20` 时轮换必然删 5 份。
+    /// 若文件名重复导致候选数 ≤ keep，轮换会提前返回、一份不删——测试就退化成
+    /// 空断言，无法发现「误删外部文件」的 bug。故此处额外断言删除确实发生。
+    #[test]
+    fn rotate_env_backups_never_deletes_foreign_files() {
+        with_temp_backup_dir(|dir| {
+            // 25 份互不相同的正常备份（超过保留数 20），确保轮换真的删除
+            for i in 0..25 {
+                let name = format!("env_backup_202601{:02}_120000_000.json", i);
+                std::fs::write(dir.join(&name), format!("{{\"n\":{i}}}")).unwrap();
+            }
+            // 干扰文件：PATH 备份、.bak、损坏隔离、用户自放文件
+            std::fs::write(dir.join("path_backup_20260920_152446_043.txt"), "PATH").unwrap();
+            // 名字刻意排在待删区间最前（字典序最小）：若过滤条件漏掉 `.ends_with(".json")`
+            // 这一半，本文件会被当成候选删掉，断言才会真正失败。
+            std::fs::write(dir.join("env_backup_20250101_000000_000.json.bak"), "BAK").unwrap();
+            // 另一个 .bak 落在保留区间内（新于 20 份中最旧的一份），
+            // 验证「保留区间内的外部文件同样不会被删」。
+            std::fs::write(dir.join("env_backup_old.json.bak"), "BAK").unwrap();
+            std::fs::write(dir.join("disabled.json.corrupt-20260920-120000000"), "C").unwrap();
+            std::fs::write(dir.join("我的笔记.txt"), "note").unwrap();
+            std::fs::write(dir.join("env_backup_note.md"), "md").unwrap();
+
+            let removed = rotate_env_backups(dir, ENV_BACKUP_KEEP).expect("轮换失败");
+
+            // 前置条件：轮换确实删了东西，下面的「未删除」断言才有意义
+            assert_eq!(
+                removed.len(),
+                5,
+                "25 份候选 - keep 20 份 = 应删 5 份；未删除说明测试空转"
+            );
+            // 删除目标必须全部是本功能生成的备份，一个外部文件都不许碰
+            for path in &removed {
+                let name = path.file_name().unwrap().to_string_lossy();
+                assert!(
+                    name.starts_with("env_backup_") && name.ends_with(".json"),
+                    "删除了非本功能生成的文件: {name}"
+                );
+            }
+
+            assert!(
+                dir.join("path_backup_20260920_152446_043.txt").exists(),
+                "PATH 备份不得删除"
+            );
+            assert!(
+                dir.join("env_backup_20250101_000000_000.json.bak").exists(),
+                ".bak 不得删除"
+            );
+            assert!(
+                dir.join("env_backup_old.json.bak").exists(),
+                ".bak 不得删除（保留区间内）"
+            );
+            assert!(
+                dir.join("disabled.json.corrupt-20260920-120000000")
+                    .exists(),
+                "损坏隔离文件不得删除"
+            );
+            assert!(dir.join("我的笔记.txt").exists(), "无关文件不得删除");
+            assert!(
+                dir.join("env_backup_note.md").exists(),
+                "非 .json 的同前缀文件不得删除"
+            );
+        });
+    }
+
+    /// 轮换后 env_backup_*.json 恰好保留 keep 份。
+    #[test]
+    fn rotate_env_backups_keeps_exactly_keep_files() {
+        with_temp_backup_dir(|dir| {
+            for i in 0..25 {
+                std::fs::write(
+                    dir.join(format!("env_backup_202601{:02}_120000_000.json", i)),
+                    "{}",
+                )
+                .unwrap();
+            }
+            rotate_env_backups(dir, ENV_BACKUP_KEEP).expect("轮换失败");
+
+            let remaining = std::fs::read_dir(dir)
+                .unwrap()
+                .flatten()
+                .filter(|e| {
+                    let n = e.file_name().to_string_lossy().into_owned();
+                    n.starts_with("env_backup_") && n.ends_with(".json")
+                })
+                .count();
+            assert_eq!(remaining, ENV_BACKUP_KEEP);
+        });
+    }
+
+    /// 配置文件缺失 → 回落默认值，且**不创建文件**。
+    #[test]
+    fn config_missing_returns_default_and_creates_nothing() {
+        let _guard = crate::persist::test_persist_lock();
+        let dir =
+            std::env::temp_dir().join(format!("patheditor_cfg_missing_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.ini");
+
+        assert_eq!(read_env_backup_keep(&cfg), ENV_BACKUP_KEEP);
+        assert!(!cfg.exists(), "读配置不得有副作用");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 四种回落情形（键缺失 / 非整数 / 负数 / 空值）都返回默认值而不是报错。
+    #[test]
+    fn config_invalid_values_fall_back_to_default() {
+        let dir =
+            std::env::temp_dir().join(format!("patheditor_cfg_invalid_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.ini");
+
+        for body in [
+            "; 只有注释\n",            // 键缺失
+            "env_backup_keep = abc\n", // 非整数
+            "env_backup_keep = -5\n",  // 负数
+            "env_backup_keep =\n",     // 空值
+            "other_key = 1\n",         // 未知键
+        ] {
+            std::fs::write(&cfg, body).unwrap();
+            assert_eq!(
+                read_env_backup_keep(&cfg),
+                ENV_BACKUP_KEEP,
+                "回落失败: {body:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 合法值被采纳；`;` 与 `#` 注释、行内两侧空格都能正确解析。
+    #[test]
+    fn config_reads_valid_value_with_comments_and_spaces() {
+        let dir = std::env::temp_dir().join(format!("patheditor_cfg_valid_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.ini");
+
+        std::fs::write(&cfg, "; 注释行\n# 另一种注释\nenv_backup_keep   =   7   \n").unwrap();
+        assert_eq!(read_env_backup_keep(&cfg), 7);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
