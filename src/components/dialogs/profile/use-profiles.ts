@@ -44,7 +44,15 @@ export function useProfiles(open: boolean, onClose: () => void) {
 
   const handleApply = useCallback(async () => {
     if (!selected || !selectedData) return;
-    if (!window.confirm(t('profile.applyConfirm', { name: selected }))) return;
+    // 异步确认替代阻塞式 window.confirm（同关窗路径机制）。应用配置会覆盖 PATH
+    // 并写注册表，属破坏性操作：对话框 IPC 失败按「取消」处理（fail-closed）。
+    if (
+      !(await backend
+        .confirmDialog(t('profile.applyConfirm', { name: selected }))
+        .catch(() => false))
+    ) {
+      return;
+    }
 
     useAppStore.getState().replaceBothPaths(selectedData.sys, selectedData.user);
     const result = await useAppStore.getState().savePaths();
@@ -65,7 +73,11 @@ export function useProfiles(open: boolean, onClose: () => void) {
 
   const handleDelete = useCallback(
     async (name: string) => {
-      if (!window.confirm(t('profile.deleteConfirm', { name }))) return;
+      // 异步确认替代阻塞式 window.confirm；IPC 失败按「取消」处理（fail-closed），
+      // 绝不静默删除配置文件。
+      if (!(await backend.confirmDialog(t('profile.deleteConfirm', { name })).catch(() => false))) {
+        return;
+      }
       await backend.deleteProfile(name);
       if (selected === name) {
         setSelected(null);

@@ -133,8 +133,14 @@ export function AppShell() {
 
   /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
   const confirmRemoveVar = (meta: EnvVarMeta) => {
-    if (!window.confirm(t('envVar.deleteConfirm', { name: meta.name }))) return;
-    void useEnvStore.getState().remove(meta);
+    // 异步确认替代阻塞式 window.confirm（同关窗路径机制）。删除是破坏性操作，
+    // 对话框 IPC 失败时按「取消」处理（fail-closed），绝不静默删除。
+    void backend
+      .confirmDialog(t('envVar.deleteConfirm', { name: meta.name }))
+      .then((confirmed) => {
+        if (confirmed) void useEnvStore.getState().remove(meta);
+      })
+      .catch(() => {});
   };
 
   return (
