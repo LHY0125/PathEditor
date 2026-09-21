@@ -381,7 +381,7 @@ src/                          # React 前端
 ├── i18n/                     # zh-CN / en
 └── config/                   # default.json
 tests/unit/                   # 前端单元测试
-docs/审核和开发/              # 审查与开发记录
+docs/审核和开发/                # 审查与开发记录
 ```
 
 ## 快捷键
