@@ -2251,25 +2251,46 @@ mod tests {
     /// 若取值不当，测试会「通过」却根本没测到保护名单。这里用一个**独立于恢复路径**
     /// 的同名调用直接取出 `CoreError.code`，把「该输入确实命中保护名单」钉死。
     ///
+    /// **覆盖恢复会走的全部三个写函数**：保护名单判定在
+    /// `create_env_var_in_store` / `update_env_var_force_in_store` /
+    /// `delete_env_var_force_in_store` 里是**三处独立代码**。只核对一条
+    /// 会漏掉另外两条 —— 那正是「测试看似通过但测不到东西」的典型形态。
+    ///
     /// 可证伪性：把 `windir` 从 `PROTECTED_NAMES`（`core/src/env_var.rs`）删掉，
-    /// 本断言立即失败。
+    /// 三个断言全部失败。
     #[test]
     fn windir_seed_really_hits_protected_branch() {
         let hive = MemoryHive::new(true);
         hive.seed("windir", "C:\\Windows", REG_SZ);
 
-        let err = create_env_var_in_store(
+        let created = create_env_var_in_store(
             &hive,
             EnvHive::User,
             "windir",
             "C:\\evil",
             EnvValueKind::String,
         )
-        .expect_err("windir 必须被拒绝（前置条件）");
+        .expect_err("windir 必须被拒绝（create 分支的前置条件）");
         assert_eq!(
-            err.code,
+            created.code,
             ErrorCode::Protected,
-            "windir 走到的必须是保护名单分支，而不是类型/名称等其它分支；实际: {err:?}"
+            "create 分支走到的必须是保护名单，而不是类型/名称等其它分支；实际: {created:?}"
+        );
+
+        let updated = update_env_var_force_in_store(&hive, EnvHive::User, "windir", "C:\\evil")
+            .expect_err("windir 必须被拒绝（update 分支的前置条件）");
+        assert_eq!(
+            updated.code,
+            ErrorCode::Protected,
+            "update 分支走到的必须是保护名单；实际: {updated:?}"
+        );
+
+        let deleted = delete_env_var_force_in_store(&hive, EnvHive::User, "windir")
+            .expect_err("windir 必须被拒绝（delete 分支的前置条件）");
+        assert_eq!(
+            deleted.code,
+            ErrorCode::Protected,
+            "delete 分支走到的必须是保护名单；实际: {deleted:?}"
         );
     }
 
