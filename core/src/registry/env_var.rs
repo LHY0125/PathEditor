@@ -111,11 +111,32 @@ pub(crate) fn reset_write_broadcast() {
 /// 的实现，**不得删除**（见 `BROADCAST_OBSERVED` 的说明）。
 /// 广播位于公开 API 层而非 `*_in_store`，是 `golden/README.md` 第 6 类的不变量。
 ///
-/// `cargo test` 下跳过真实 Win32 调用（`WM_SETTINGCHANGE` 会向所有顶层窗口
-/// 广播、每次约 2.7s，整个 core 测试套件跑 5 个写入口要白等约 28s）。
-/// 测试要断言的是「这条路径走了广播」，不是 Win32 调用本身——后者由
-/// `system.rs` 的 `broadcast_env_change` 自行负责（其失败只记 warn）。
-/// **生产构建不含此分支**：`cfg!(test)` 对非测试构建恒为 `false`。
+/// # `cfg!(test)` 的实际语义（实证，勿按直觉复述）
+///
+/// `cfg!(test)` **不是运行时求值**，rustc 在展开期就替换成字面量。对带副作用的
+/// 被调方，实测 IR（`rustc --emit=llvm-ir`，同形最小用例）：
+///
+/// - **非测试构建**：`define void @wrapper() { tail call void @real_broadcast_side_effect() }`
+///   —— 分支**和**真实调用都在。`cargo build`、`cargo build --release`、
+///   `cargo clippy --workspace --all-targets` 的 lint 构建都属此类，
+///   **一律真实广播**。
+/// - **测试构建**：`define void @wrapper() { ret void }` —— 分支仍在源码里，
+///   只有调用被消除；被调方符号随之成为死代码。
+///
+/// 即：**测试构建跳过真实 Win32 调用，生产构建无条件执行广播。**
+/// 跳过仅省测试期开销，**不改变生产行为**（生产每次写仍付完整广播耗时）。
+///
+/// 之所以要写明这段：这个「源码一套、两种构建两套行为」的分裂**没有工具守着**。
+/// clippy 的 `cfg_not_test` lint 只覆盖 `#[cfg(not(test))]`（见 `disabled.rs`
+/// 与 `profiles.rs` 的用法），**不覆盖 `cfg!(test)`**，所以注释必须诚实。
+///
+/// 跳过真实调用的理由：真实广播每次约 **4s**（本机三次实测
+/// `3141 / 4025 / 4024 ms`，另一次复审实测 `3671 / 4021 / 4021 ms`，测量方式为
+/// 计时环绕 `crate::system::broadcast_env_change()` —— 内部即
+/// `SendMessageTimeoutW(HWND_BROADCAST, …, SMTO_ABORTIFHUNG, 5000)`），
+/// 5 个写入口的表驱动测试会让 core 套件白等约 20s。
+/// 测试要断言的是「这条路径走了广播」，不是 Win32 调用是否成功——后者由
+/// `system.rs::broadcast_env_change` 自行负责（其失败只记 warn，从不返回 Err）。
 fn broadcast_after_write() {
     BROADCAST_OBSERVED.store(true, std::sync::atomic::Ordering::SeqCst);
     if !cfg!(test) {
