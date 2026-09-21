@@ -154,21 +154,54 @@ cargo 1.96.0 (30a34c682 2026-05-25) / rustc 1.96.0 (ac68faa20 2026-05-25)。
 
 ## 8. 本波产出文件清单
 
-**T1–T8（代码与测试，`git diff --name-only 0da96a7..455c376`）**
+**T1–T8（代码与测试）**——精确清单：`git diff --name-status 0da96a7..455c376`
+= **8 added / 22 modified / 30 total**（逐项如下）。
 
-新增：`core/src/reg_store.rs`、`gui/src/commands/backup.rs`（扩展）、`src/core/env-backup.ts`、
-`src/components/dialogs/env-backup/{EnvBackupPanel.tsx,use-env-backup.ts}`、
-`tests/unit/{env-backup.test.ts,env-backup-panel.test.tsx}`、`e2e/tests/env-backup.spec.ts`。
+新增（8）：
 
-修改：`core/src/{backup.rs,env_var.rs,lib.rs,persist.rs,registry.rs,registry/env_var.rs,service.rs}`、
-`cli/src/{main.rs,env_ops.rs,runtime.rs}`、`gui/src/lib.rs`、
-`src/services/backend.ts`、`src/core/env-var.ts`、`src/store/env-store.ts`、
-`src/i18n/{zh-CN,en}.ts`、`e2e/mocks/ipc.ts`、`docs/superpowers/{specs,plans}/2026-09-21-env-backup-restore-*.md`。
+```text
+src/core/env-backup.ts
+src/components/dialogs/EnvBackupDialog.tsx
+src/components/dialogs/env-backup/EnvBackupPanel.tsx
+src/components/dialogs/env-backup/use-env-backup.ts
+tests/unit/env-backup.test.ts
+tests/unit/env-backup-panel.test.tsx
+tests/unit/env-backup-dialog.test.tsx
+e2e/tests/env-backup.spec.ts
+```
 
-（精确清单：`git diff --name-only 0da96a7..455c376`）
+修改（22）：
 
-**T9（文档收口，本提交）**
+```text
+core/src/{backup.rs,lib.rs,registry.rs,registry/env_var.rs}
+cli/src/{main.rs,env_ops.rs,runtime.rs}
+gui/src/{lib.rs,commands/backup.rs,commands/env_var.rs}
+src/services/backend.ts
+src/core/env-var.ts
+src/store/env-store.ts
+src/components/env-list/EnvVarToolbar.tsx
+src/components/layout/AppShell.tsx
+src/i18n/locales/{zh-CN.json,en.json}
+tests/unit/app-shell-env-vars.test.tsx
+tests/unit/backend-env-contract.test.ts
+tests/unit/env-store.test.ts
+tests/unit/env-var-toolbar.test.tsx
+e2e/mocks/ipc.ts
+```
+
+> **两处澄清（初稿清单有误，此处以命令输出为准）**：
+>
+> - `core/src/reg_store.rs` **不是**本波产出——它在 `ff5b4f8`（更早的波次）已存在，
+>   本波只是**使用** `EnvHiveStore` / `WinregHive`（`git log 0da96a7..455c376 -- core/src/reg_store.rs` 为空）。
+> - `core/src/persist.rs` **未改动**——本波复用既有的 `Versioned` 信封与 `parse_error_quarantined`
+>   （`git log 0da96a7..455c376 -- core/src/persist.rs` 为空）。
+> - `core/src/env_var.rs` 亦未改动；`WriteOutcome` / `backup_before_write` 落在
+>   `core/src/registry/env_var.rs`。
+> - spec / plan 两文档由审核窗口维护，不在本波代码提交内。
+
+**T9（文档收口，本提交 `5b6a43a`）**
 
 修改：`CLAUDE.md`、`AGENTS.md`（两份字节级一致，`E1AADF6B…`）、`README.md`、`CHANGELOG.md`、
 `docs/审核和开发/2026.09.19/PathEditor-备份体系未覆盖环境变量登记.md`（关闭登记）。
 新增：`docs/审核和开发/2026.09.21/PathEditor-环境变量备份恢复开发回执.md`（本文件）。
+`git show --stat 5b6a43a` = **6 files changed, 312 insertions(+), 41 deletions(-)**。
