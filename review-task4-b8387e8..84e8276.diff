@@ -1,0 +1,126 @@
+diff --git a/tests/unit/app-shell-env-vars.test.tsx b/tests/unit/app-shell-env-vars.test.tsx
+index b4a0a57..06e3b1d 100644
+--- a/tests/unit/app-shell-env-vars.test.tsx
++++ b/tests/unit/app-shell-env-vars.test.tsx
+@@ -27,6 +27,29 @@ vi.mock('@/services/backend', async () => {
+ // 关窗/删除确认走 Tauri 异步对话框（plugin-dialog），mock 掉避免 jsdom 下走真实 IPC。
+ vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn() }));
+ 
++// onCloseRequested 关窗链路（G-N1）：全局 mock @tauri-apps/api/window —— AppShell
++// 内的动态 import 同样命中 mock，关窗 effect 在 jsdom 下也能真实注册回调。
++// 工厂在首次动态 import（渲染期）才执行，引用下方外层 const 无 TDZ 风险。
++const closeRequestedHandlers: Array<(event: MockCloseEvent) => unknown> = [];
++const destroyMock = vi.fn().mockResolvedValue(undefined);
++
++/** 与 Tauri CloseRequestedEvent 对齐的最小事件形状。 */
++interface MockCloseEvent {
++  preventDefault: () => void;
++  isPreventDefault: () => boolean;
++}
++
++vi.mock('@tauri-apps/api/window', () => ({
++  getCurrentWindow: () => ({
++    onCloseRequested: (handler: (event: MockCloseEvent) => unknown) => {
++      closeRequestedHandlers.push(handler);
++      // 真实 API 返回 Promise<UnlistenFn>，effect 卸载时会调用它
++      return Promise.resolve(() => {});
++    },
++    destroy: destroyMock,
++  }),
++}));
++
+ // i18n 用**部分 mock**：保留 initReactI18next 等真实导出（src/i18n 在模块加载时要用），
+ // 只覆盖 useTranslation，并以真实 zh-CN 词条取值，断言基于可见文案而非 i18n key。
+ vi.mock('react-i18next', async (importOriginal) => {
+@@ -261,6 +284,91 @@ describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
+   });
+ });
+ 
++describe('onCloseRequested 原生关窗回调（诊断报告 §四.3 补底）', () => {
++  beforeEach(() => {
++    closeRequestedHandlers.length = 0;
++    destroyMock.mockClear();
++    // 全局 beforeEach 的 resetAllMocks 会清掉 mockResolvedValue 实现；
++    // IPC 异常用例的兜底路径要对 destroy() 返回值调 .catch，必须恢复 Promise 语义。
++    destroyMock.mockResolvedValue(undefined);
++  });
++
++  /**
++   * 模拟 Tauri 包装层触发关窗：真实实现（window.js）是
++   * `await handler(evt); if (!evt.isPreventDefault()) await this.destroy()`。
++   * 这里逐字复刻该语义 —— handler 未调用 preventDefault 时由包装层自动
++   * destroy，故下方「无 pending」用例断言 destroy 是包装层触发的真实路径。
++   */
++  async function fireClose(): Promise<void> {
++    for (const h of closeRequestedHandlers) {
++      let prevented = false;
++      const evt: MockCloseEvent = {
++        preventDefault: () => {
++          prevented = true;
++        },
++        isPreventDefault: () => prevented,
++      };
++      await h(evt);
++      if (!evt.isPreventDefault()) await destroyMock();
++    }
++  }
++
++  it('无 pending：不弹确认，直接 destroy', async () => {
++    mockDialogConfirm(false);
++    render(<AppShell />);
++    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
++    await fireClose();
++    await waitFor(() => expect(destroyMock).toHaveBeenCalled());
++    expect(dialogConfirm).not.toHaveBeenCalled();
++  });
++
++  it('有草稿 + 用户确认：destroy', async () => {
++    mockDialogConfirm(true);
++    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'x']]) });
++    render(<AppShell />);
++    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
++    await fireClose();
++    await waitFor(() => expect(destroyMock).toHaveBeenCalled());
++    expect(dialogConfirm).toHaveBeenCalled();
++  });
++
++  it('有草稿 + 用户取消：preventDefault 被调用且不 destroy（窗口保留）', async () => {
++    mockDialogConfirm(false);
++    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'x']]) });
++    render(<AppShell />);
++    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
++
++    // 记录 preventDefault 是否被同步调用（G-B2：先同步拦截再异步确认）
++    let prevented = false;
++    for (const h of closeRequestedHandlers) {
++      const evt: MockCloseEvent = {
++        preventDefault: () => {
++          prevented = true;
++        },
++        isPreventDefault: () => prevented,
++      };
++      await h(evt);
++      // handler 同步调用 preventDefault 后 isPreventDefault 必须为 true ——
++      // 包装层据此跳过自动 destroy（若 mock 复刻错误，此处会误触发 destroy）
++      expect(evt.isPreventDefault()).toBe(true);
++    }
++    expect(prevented).toBe(true);
++
++    // 确认对话框 resolve false 之外的路径都不应 destroy
++    await new Promise((r) => setTimeout(r, 50));
++    expect(destroyMock).not.toHaveBeenCalled();
++  });
++
++  it('confirmDialog IPC 异常：兜底 destroy（宁可丢草稿不锁死窗口）', async () => {
++    vi.mocked(dialogConfirm).mockRejectedValue(new Error('ipc denied'));
++    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'x']]) });
++    render(<AppShell />);
++    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
++    await fireClose();
++    await waitFor(() => expect(destroyMock).toHaveBeenCalled());
++  });
++});
++
+ describe('新建环境变量弹窗', () => {
+   it('点「新建变量」打开弹窗，确定后调用 createEnvVar', async () => {
+     render(<AppShell />);

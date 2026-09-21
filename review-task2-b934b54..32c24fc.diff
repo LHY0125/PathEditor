@@ -1,0 +1,147 @@
+diff --git a/src/components/dialogs/profile/use-profiles.ts b/src/components/dialogs/profile/use-profiles.ts
+index 8cbd877..329d4d8 100644
+--- a/src/components/dialogs/profile/use-profiles.ts
++++ b/src/components/dialogs/profile/use-profiles.ts
+@@ -44,7 +44,15 @@ export function useProfiles(open: boolean, onClose: () => void) {
+ 
+   const handleApply = useCallback(async () => {
+     if (!selected || !selectedData) return;
+-    if (!window.confirm(t('profile.applyConfirm', { name: selected }))) return;
++    // 异步确认替代阻塞式 window.confirm（同关窗路径机制）。应用配置会覆盖 PATH
++    // 并写注册表，属破坏性操作：对话框 IPC 失败按「取消」处理（fail-closed）。
++    if (
++      !(await backend
++        .confirmDialog(t('profile.applyConfirm', { name: selected }))
++        .catch(() => false))
++    ) {
++      return;
++    }
+ 
+     useAppStore.getState().replaceBothPaths(selectedData.sys, selectedData.user);
+     const result = await useAppStore.getState().savePaths();
+@@ -65,7 +73,11 @@ export function useProfiles(open: boolean, onClose: () => void) {
+ 
+   const handleDelete = useCallback(
+     async (name: string) => {
+-      if (!window.confirm(t('profile.deleteConfirm', { name }))) return;
++      // 异步确认替代阻塞式 window.confirm；IPC 失败按「取消」处理（fail-closed），
++      // 绝不静默删除配置文件。
++      if (!(await backend.confirmDialog(t('profile.deleteConfirm', { name })).catch(() => false))) {
++        return;
++      }
+       await backend.deleteProfile(name);
+       if (selected === name) {
+         setSelected(null);
+diff --git a/src/components/layout/AppShell.tsx b/src/components/layout/AppShell.tsx
+index e84819c..3b2a0f0 100644
+--- a/src/components/layout/AppShell.tsx
++++ b/src/components/layout/AppShell.tsx
+@@ -133,8 +133,14 @@ export function AppShell() {
+ 
+   /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
+   const confirmRemoveVar = (meta: EnvVarMeta) => {
+-    if (!window.confirm(t('envVar.deleteConfirm', { name: meta.name }))) return;
+-    void useEnvStore.getState().remove(meta);
++    // 异步确认替代阻塞式 window.confirm（同关窗路径机制）。删除是破坏性操作，
++    // 对话框 IPC 失败时按「取消」处理（fail-closed），绝不静默删除。
++    void backend
++      .confirmDialog(t('envVar.deleteConfirm', { name: meta.name }))
++      .then((confirmed) => {
++        if (confirmed) void useEnvStore.getState().remove(meta);
++      })
++      .catch(() => {});
+   };
+ 
+   return (
+diff --git a/tests/unit/app-shell-env-vars.test.tsx b/tests/unit/app-shell-env-vars.test.tsx
+index 451a478..b4a0a57 100644
+--- a/tests/unit/app-shell-env-vars.test.tsx
++++ b/tests/unit/app-shell-env-vars.test.tsx
+@@ -32,13 +32,18 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn() }));
+ vi.mock('react-i18next', async (importOriginal) => {
+   const actual = await importOriginal<typeof import('react-i18next')>();
+   const zh = ((await import('@/i18n/locales/zh-CN.json')).default ?? {}) as Record<string, unknown>;
+-  const t = (key: string): string => {
++  const t = (key: string, params?: Record<string, unknown>): string => {
+     let node: unknown = zh;
+     for (const part of key.split('.')) {
+       if (node === null || typeof node !== 'object') return key;
+       node = (node as Record<string, unknown>)[part];
+     }
+-    return typeof node === 'string' ? node : key;
++    if (typeof node !== 'string') return key;
++    // 简单 {{name}} 插值：confirmDialog 收到的是渲染后的完整文案。
++    if (params) {
++      return node.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(params[k] ?? `{{${k}}}`));
++    }
++    return node;
+   };
+   return { ...actual, useTranslation: () => ({ t }) };
+ });
+@@ -536,8 +541,8 @@ describe('删除与选中管理', () => {
+     );
+   }
+ 
+-  it('删除需要确认；确认后调用 deleteEnvVar 并清除选中', async () => {
+-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
++  it('删除前弹异步确认；确认后调用 deleteEnvVar 并清除选中', async () => {
++    mockDialogConfirm(true);
+     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
+     mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
+@@ -547,7 +552,9 @@ describe('删除与选中管理', () => {
+     await selectJavaHome();
+     fireEvent.click(screen.getByRole('button', { name: '删除' }));
+ 
+-    expect(confirmSpy).toHaveBeenCalled();
++    await waitFor(() =>
++      expect(dialogConfirm).toHaveBeenCalledWith('确定删除变量 JAVA_HOME 吗？此操作不可撤销。'),
++    );
+     await waitFor(() =>
+       expect(mockBackend.deleteEnvVar).toHaveBeenCalledWith('user', 'JAVA_HOME', 'rev-1'),
+     );
+@@ -559,7 +566,7 @@ describe('删除与选中管理', () => {
+   });
+ 
+   it('取消删除时不调用 deleteEnvVar', async () => {
+-    vi.spyOn(window, 'confirm').mockReturnValue(false);
++    mockDialogConfirm(false);
+     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
+     mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
+@@ -569,6 +576,9 @@ describe('删除与选中管理', () => {
+     await selectJavaHome();
+     fireEvent.click(screen.getByRole('button', { name: '删除' }));
+ 
++    await waitFor(() =>
++      expect(dialogConfirm).toHaveBeenCalledWith('确定删除变量 JAVA_HOME 吗？此操作不可撤销。'),
++    );
+     expect(mockBackend.deleteEnvVar).not.toHaveBeenCalled();
+     // 选中保留，编辑按钮仍可用
+     expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(
+@@ -576,6 +586,25 @@ describe('删除与选中管理', () => {
+     );
+   });
+ 
++  it('确认对话框 IPC 失败时不删除（破坏性操作 fail-closed，与关窗路径相反）', async () => {
++    vi.mocked(dialogConfirm).mockRejectedValue(new Error('ipc denied'));
++    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
++    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
++    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
++
++    render(<AppShell />);
++    fireEvent.click(screen.getByText('全部变量'));
++    await selectJavaHome();
++    fireEvent.click(screen.getByRole('button', { name: '删除' }));
++
++    await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
++    // IPC 失败按取消处理：绝不静默删除
++    expect(mockBackend.deleteEnvVar).not.toHaveBeenCalled();
++    expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(
++      false,
++    );
++  });
++
+   it('刷新后清除指向已不存在变量的选中', async () => {
+     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
+     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [], capturedAt: 0 });

@@ -1,0 +1,184 @@
+diff --git a/gui/capabilities/default.json b/gui/capabilities/default.json
+index 094ea09..868b20c 100644
+--- a/gui/capabilities/default.json
++++ b/gui/capabilities/default.json
+@@ -17,6 +17,7 @@
+     "dialog:default",
+     "dialog:allow-open",
+     "dialog:allow-save",
++    "dialog:allow-confirm",
+     "log:default"
+   ]
+ }
+diff --git a/src/components/layout/AppShell.tsx b/src/components/layout/AppShell.tsx
+index 72edcbe..e84819c 100644
+--- a/src/components/layout/AppShell.tsx
++++ b/src/components/layout/AppShell.tsx
+@@ -20,6 +20,7 @@ import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
+ import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
+ import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
+ import { useEnvStore } from '@/store/env-store';
++import { backend } from '@/services/backend';
+ import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
+ 
+ /** Tauri's File object includes the native filesystem path */
+@@ -84,9 +85,19 @@ export function AppShell() {
+         const { getCurrentWindow } = await import('@tauri-apps/api/window');
+         const handler = await getCurrentWindow().onCloseRequested((event) => {
+           const pending = useAppStore.getState().isModified || useEnvStore.getState().hasDrafts();
+-          if (pending && !window.confirm(i18n.t('dialog.unsavedConfirm'))) {
+-            event.preventDefault();
+-          }
++          if (!pending) return; // 无待保存内容：不拦截，包装层自动 destroy
++          event.preventDefault(); // 同步拦截默认销毁；确认后显式 destroy 收口（G-B2）
++          void (async () => {
++            try {
++              const confirmed = await backend.confirmDialog(i18n.t('dialog.unsavedConfirm'));
++              if (confirmed) await getCurrentWindow().destroy();
++            } catch {
++              // 对话框 IPC 失败时保守放行关窗：宁可丢草稿不可把窗口锁死
++              await getCurrentWindow()
++                .destroy()
++                .catch(() => {});
++            }
++          })();
+         });
+         if (disposed) handler();
+         else unlisten = handler;
+@@ -181,8 +192,16 @@ export function AppShell() {
+               const state = useAppStore.getState();
+               // 环境变量草稿尚未提交时同样需要确认，否则关窗会静默丢弃用户输入。
+               const hasPendingChanges = state.isModified || useEnvStore.getState().hasDrafts();
+-              if (hasPendingChanges && !window.confirm(t('dialog.unsavedConfirm'))) return;
+-              window.close();
++              if (!hasPendingChanges) {
++                window.close();
++                return;
++              }
++              void backend
++                .confirmDialog(t('dialog.unsavedConfirm'))
++                .then((confirmed) => {
++                  if (confirmed) window.close();
++                })
++                .catch(() => {});
+             }}
+             onHelp={() => setHelpOpen(true)}
+             onLanguage={() => {
+diff --git a/src/services/backend.ts b/src/services/backend.ts
+index 1f84d6c..3de83f1 100644
+--- a/src/services/backend.ts
++++ b/src/services/backend.ts
+@@ -1,4 +1,5 @@
+ import { invoke } from '@tauri-apps/api/core';
++import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog';
+ import type { PathEntry, PathSnapshot } from '@/core/path-entry';
+ import type { PathCapabilities } from '@/core/path-capabilities';
+ import type {
+@@ -274,6 +275,8 @@ export const backend = {
+     parsePathCapabilities(await invoke<unknown>('get_path_capabilities')),
+   validatePath: (path: string) => invoke<boolean>('validate_path', { path }),
+   expandEnvVars: (path: string) => invoke<string>('expand_env_vars', { path }),
++  /** 异步确认对话框（替代阻塞式 window.confirm）：关窗确认等路径专用，绝不阻塞 JS 线程。 */
++  confirmDialog: (message: string) => tauriConfirm(message),
+   broadcastEnvChange: () => invoke<void>('broadcast_env_change'),
+   backupRegistry: (customDir: string | null = null) =>
+     invoke<string | null>('backup_registry', { customDir }),
+diff --git a/tests/unit/app-shell-env-vars.test.tsx b/tests/unit/app-shell-env-vars.test.tsx
+index 9af0ac1..451a478 100644
+--- a/tests/unit/app-shell-env-vars.test.tsx
++++ b/tests/unit/app-shell-env-vars.test.tsx
+@@ -5,6 +5,9 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
+ // 不能在工厂外引用 mock 变量 —— vi.mock 会被提升到 import 之前，外层 const 仍处于 TDZ。
+ vi.mock('@/services/backend', async () => {
+   const { vi: viModule } = await import('vitest');
++  // confirmDialog 委托给 plugin-dialog 的 confirm mock：与真实 backend.confirmDialog
++  // 的转发关系一致，断言 dialogConfirm 即覆盖完整链路。
++  const { confirm: tauriConfirm } = await import('@tauri-apps/plugin-dialog');
+   return {
+     backend: {
+       listAllEnvVars: viModule.fn(),
+@@ -16,10 +19,14 @@ vi.mock('@/services/backend', async () => {
+       deleteEnvVar: viModule.fn(),
+       expandEnvVars: viModule.fn(),
+       validatePath: viModule.fn(),
++      confirmDialog: (message: string) => tauriConfirm(message),
+     },
+   };
+ });
+ 
++// 关窗/删除确认走 Tauri 异步对话框（plugin-dialog），mock 掉避免 jsdom 下走真实 IPC。
++vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn() }));
++
+ // i18n 用**部分 mock**：保留 initReactI18next 等真实导出（src/i18n 在模块加载时要用），
+ // 只覆盖 useTranslation，并以真实 zh-CN 词条取值，断言基于可见文案而非 i18n key。
+ vi.mock('react-i18next', async (importOriginal) => {
+@@ -54,12 +61,18 @@ vi.mock('@tanstack/react-virtual', () => ({
+ 
+ import { AppShell } from '@/components/layout/AppShell';
+ import { backend } from '@/services/backend';
++import { confirm as dialogConfirm } from '@tauri-apps/plugin-dialog';
+ import { useAppStore } from '@/store/app-store';
+ import { useEnvStore } from '@/store/env-store';
+ import type { EnvVarMeta } from '@/core/env-var';
+ 
+ const mockBackend = vi.mocked(backend);
+ 
++/** 设定异步确认对话框的返回值（关窗确认 describe 与后续用例共用）。 */
++function mockDialogConfirm(v: boolean) {
++  return vi.mocked(dialogConfirm).mockResolvedValue(v);
++}
++
+ function meta(overrides: Partial<EnvVarMeta> = {}): EnvVarMeta {
+   return {
+     name: 'JAVA_HOME',
+@@ -205,9 +218,9 @@ describe('「全部变量」拖放早退（决策 3）', () => {
+   });
+ });
+ 
+-describe('关窗确认纳入环境变量草稿（决策 4）', () => {
+-  it('仅有环境变量草稿时也会弹确认，取消则不关窗', () => {
+-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
++describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
++  it('仅有环境变量草稿时也弹异步确认，取消则不关窗', async () => {
++    mockDialogConfirm(false);
+     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+     // isModified 为 false，草稿是唯一待提交内容。
+     useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'secret']]) });
+@@ -215,30 +228,30 @@ describe('关窗确认纳入环境变量草稿（决策 4）', () => {
+     render(<AppShell />);
+     fireEvent.click(screen.getByRole('button', { name: '取消' }));
+ 
+-    expect(confirmSpy).toHaveBeenCalled();
++    await waitFor(() => expect(dialogConfirm).toHaveBeenCalledWith('有未保存的修改，确定退出吗？'));
+     expect(closeSpy).not.toHaveBeenCalled();
+   });
+ 
+-  it('确认后关窗', () => {
+-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
++  it('确认后关窗', async () => {
++    mockDialogConfirm(true);
+     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+     useAppStore.setState({ isModified: true });
+ 
+     render(<AppShell />);
+     fireEvent.click(screen.getByRole('button', { name: '取消' }));
+ 
+-    expect(confirmSpy).toHaveBeenCalled();
++    await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
+     expect(closeSpy).toHaveBeenCalled();
+   });
+ 
+-  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', () => {
+-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
++  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', async () => {
++    mockDialogConfirm(false);
+     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+ 
+     render(<AppShell />);
+     fireEvent.click(screen.getByRole('button', { name: '取消' }));
+ 
+-    expect(confirmSpy).not.toHaveBeenCalled();
++    expect(dialogConfirm).not.toHaveBeenCalled();
+     expect(closeSpy).toHaveBeenCalled();
+   });
+ });

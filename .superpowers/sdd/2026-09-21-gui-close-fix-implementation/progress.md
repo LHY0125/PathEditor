@@ -1,0 +1,52 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-09-21-gui-close-fix-implementation.md
+
+Spec: docs/审核和开发/2026.09.21/PathEditor-GUI关不掉问题诊断报告.md（修复建议 1/2/3）
+Worktree: .claude/worktrees/gui-fix (branch worktree-gui-fix), base 145b3a3 (main: Wave 0+1+2 merged + Dependabot 移除)
+Baseline: workspace 192/0（core 151+2i + CLI 41）、Vitest 235、E2E 24
+授权: local commits, no push, no version bump, no file deletion; Task 3 涉及 bucket 仓库文件改动（只改不提交 bucket git）；真实 GUI 冒烟为构建级验证（非注册表写入）
+
+## Pre-flight conflict scan
+
+锚点核实全部属实（window.confirm 5 处、dialog:default 无 confirm、lib.rs:6 插件、window.js:1632-1640 包装语义、bin 同名 cargo metadata 实证、release.yml:126/137、tauri productName PathEditor、@tauri-apps/plugin-dialog 2.7.1、i18n unsavedConfirm:135、测试 describe:208）。
+
+核对轮（2026-09-21）5 条裁断（审核窗口 5/5 采纳）：
+
+- **G-B1**: scoop `patheditor-gui.json` shortcuts 改指 PathEditor.exe（bucket 仓库只改不提交；version/hash 不动，对下一版生效；回执记「勿手动 scoop update」）。
+- **G-B2**: 关窗回调 pending 时**同步** `event.preventDefault()`，确认后显式 destroy；无 pending 不拦截交包装层（初版方案作废）。
+- **G-N1**: Task 4 全局 mock `@tauri-apps/api/window`，不搞 doMock，以全文件 PASS 为准。
+- **G-N2**: Task 5 冒烟回执必须记「本机 GNU 冒烟 ≠ CI 构建环境验证」。
+- **G-N3**: CLAUDE.md/AGENTS.md CI 依赖表补双产物语义（:242），连同版本升级清单 package-lock.json 一起闭环。
+
+## Progress
+
+Task 1: dispatched (sonnet) — 关窗确认换 Tauri 异步对话框（G-B2 修正版回调：同步 preventDefault + 显式 destroy），BASE=145b3a3
+Task 1: impl DONE (commit b934b54, 4 files +51/−15; capabilities +confirm 权限、backend.confirmDialog、AppShell 两处、测试 describe 重写 3 用例 + mockDialogConfirm 顶层助手; FAIL→PASS 证据齐全; verify:all 全绿 E2E 24; deviations: ① backend mock 工厂委托 plugin-dialog 确保断言覆盖全链路 ② 必须新增 backend import（裁断注 ③ 与实际不符） ③ Prettier 折行); state verified via git (AppShell 残留 1 处 confirm = Task 2 范围); review dispatched (package review-task1-145b3a3..b934b54.diff, 8832 bytes); reviewer returned empty first time — resumed via SendMessage, completed
+Task 1: review returned — APPROVED, 0 Critical/0 Important; G-B2 conformance verified item-by-item (7/7 ✓); re-entrancy resolved: toolbar onCancel confirm → window.close() re-fires close-requested → second dialog = PRE-EXISTING trait (original identical structure), not infinite loop (destroy doesn't re-fire), deadlock cause eliminated; 3 minors deferred:
+Task 1: minor (deferred): double-confirm on toolbar-cancel path (pre-existing) — optional optimization: destroy() directly after confirm or clear pending first
+Task 1: minor (deferred): catch-branch redundant second destroy() — add comment or leave
+Task 1: minor (deferred): describe name overstates coverage (jsdom never registers onCloseRequested — pre-existing env limitation)
+Task 1: complete (commits 145b3a3..b934b54, review clean)
+
+Task 2: dispatched (sonnet) — 其余 3 处 window.confirm 换 confirmDialog（confirmRemoveVar 必测 + profile 两处可降级为全量绿+归零 grep；确认类动作 fail-closed 与关窗 fail-open 区分），BASE=b934b54
+Task 2: impl DONE (commit 32c24fc, 3 files +57/−10; confirmRemoveVar 3 用例 RED→GREEN 含 IPC 失败用例; use-profiles 两处 await confirmDialog().catch(()=>false) fail-closed; ask 警告流保留; window.confirm src/ 归零 grep 证实仅余注释; verify:all exit 0; deviations: ① profile hook 测试走计划降级路径 ② i18n mock 补 {{name}} 插值属测试基建修正); state verified via git; review dispatched (package review-task2-b934b54..32c24fc.diff, 7230 bytes)
+Task 2: review returned — APPROVED, 0 Critical/0 Important; fail-closed verified all 3 sites (.catch placement only on confirmDialog expr, downstream outside catch); KEY QUESTION resolved: catch chain does NOT change remove()-failure behavior (env-store.remove never rejects — internally try/catch + statusMessage display, returns bool; void keeps promise out of chain — identical to old code); tests assert interpolated real locale text incl. IPC-failure fail-closed case; i18n mock interpolation bounded & safe; scope strict 3 files, Task 1 code untouched; 2 minors deferred:
+Task 2: minor (deferred): e2e/mocks/ipc.ts lacks plugin:dialog|confirm handler — add when E2E covers these flows (default true)
+Task 2: minor (deferred): confirmRemoveVar could use await-helper style — cosmetic, consistency argues keep
+Task 2: complete (commits b934b54..32c24fc, review clean)
+
+Task 3: review dispatched (package review-task3-32c24fc..2f1dc89.diff, 9593 bytes) — review must scrutinize the deviation (NTFS finding + target/cli solution) as the primary object
+Task 3: review returned — NEEDS FIXES: NTFS claim CONFIRMED by independent reproduction (fsutil case-sensitive disabled + TEMP dir experiment: second write overwrote same entry); target-dir fix SOUND (worktree artifacts verified physically separate, runner path match, no cache side effects); rename retained justified (tauri 2.x productName alignment); 1 Important + 1 Should + 2 Minors:
+Task 3: Important: CLAUDE.md/AGENTS.md:24 quick-commands comment "两者不再同名冲突" is factually WRONG (local shared target still same entry — contradicts :243/:254 accurate wording) — fix to target-dir-isolation wording, MD5 sync
+Task 3: minor (deferred→回执): scoop-release SKILL.md dual-copy (:74/:94) references old zip exe name — stale, record as未覆盖项 for next release window
+Task 3: minor (deferred): CI build time ↑ from cold target/cli (no rust cache) — acceptable; include in cache key if Swatinem added later
+Task 3: minor (observed): scoop manifest transition risk (hash pinned v5.1.3, shortcuts→PathEditor.exe) — G-B1「勿手动 scoop update」already recorded; bucket git status M = user to commit
+Task 3: fix round 1/5 dispatched (Important: CLAUDE/AGENTS:24 wording; plus Should issue 2 SKILL.md update decided to defer to回执 per review)
+Task 3: fix round 1/5 impl DONE (commit b8387e8, 4 files +36/−36: semantic ~6 lines + Prettier CJK table reflow of pre-existing drift — root cause found: .gitignore:42 ignores CLAUDE.md so Prettier silently skips it, files drift; this commit heals the drift; md5 CLAUDE=AGENTS 60ecea83, SKILL dual-copy b7d42132; 「不再同名冲突」zero hits; follow-up registered: un-ignore CLAUDE.md preferred (file already tracked, ignore line misleads tooling) over .prettierignore whitelist); state verified via git; scoped re-review dispatched (package review-task3fix-2f1dc89..b8387e8.diff, 14786 bytes)
+Task 3: re-review returned — READY: Important VERIFIED (new wording factually correct, distinguishes local-shared-target vs CI-isolated-target); SKILL dual-copy VERIFIED (same blob hash, 5 exe refs audited — 2 changed, 3 CLI-correct untouched); reflow harmless (prettier --check exit 0, content words unchanged except :24); gitignore claim VERIFIED with clarification (file already tracked — rule is git no-op, harm is tooling misdirection); scope clean 4 files; minor bookkeeping: semantic lines = 6 not 4 (no impact); Task 3 complete (commits 32c24fc..b8387e8 incl. fix round, review clean)
+Task 4: dispatched (sonnet) — onCloseRequested 4 用例补底（G-N1 全局 mock；优先让 mock fireClose 复刻真实 wrapper 语义 await handler → isPreventDefault 判定 → auto-destroy，使取消用例真实考验 preventDefault 路径），BASE=b8387e8
+Task 4: impl DONE (commit 84e8276, test file only +108; global api/window mock with faithful fireClose replicating wrapper semantics await handler → isPreventDefault → auto-destroy; 4 new cases incl. real preventDefault interception + IPC-reject fallback; 30/30 PASS 0 errors (fixed resetAllMocks clobbering destroyMock.mockResolvedValue in describe-scoped beforeEach); verify:all exit 0 E2E 24; deviation: mock enhanced beyond plan draft for fidelity — sanctioned); state verified via git incl. independent test re-run; review dispatched (package review-task4-b8387e8..84e8276.diff)
+Task 4: review returned — APPROVED, 0 Critical/0 Important; mock fidelity VERIFIED against real wrapper (window.js:1636-1639, event object mirrors CloseRequestedEvent); mutation-resistance CONFIRMED for all 4 cases (incl. double-catch of preventDefault removal in case 3); resetAllMocks restore correct+documented; TDZ reasoning sound; scope test-file-only; 3 minors deferred:
+Task 4: minor (deferred): case 3 50ms settle wait — accepted pragmatism for negative assertion, not real flake source
+Task 4: minor (deferred): case 2 lacks dialog message text assertion (one-line tightening if not covered elsewhere)
+Task 4: minor (deferred): fireClose vs case-3 inline loop ~10-line duplication (cosmetic)
+Task 4: complete (commits b8387e8..84e8276, review clean)
