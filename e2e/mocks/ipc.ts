@@ -186,21 +186,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           // BackupOutcome 是外部标签枚举 → {"created":"路径"} / "skipped" / {"failed":"原因"}。
           case 'backup_env_vars': return 'C:\\\\backups\\\\env_backup_20260922_120000_000.json';
           case 'list_env_backups': return ${JSON.stringify(envBackupsFixture)};
-          case 'preview_env_backup': {
-            if (window.__backupConflictOverride) {
-              return {
-                changes: [
-                  { hive: 'user', name: 'JAVA_HOME', kind: 'conflict' },
-                  { hive: 'user', name: 'MY_TOKEN', kind: 'added' }
-                ],
-                added: 1,
-                modified: 0,
-                removed: 0,
-                conflicts: 1
-              };
-            }
-            return ${JSON.stringify(restorePreviewFixture)};
-          }
+          case 'preview_env_backup': return ${JSON.stringify(restorePreviewFixture)};
           case 'restore_env_backup':
             // 冲突契约（与 update_env_var 同源）：对象带 code 字段，前端按 code 判定。
             if (window.__conflictOverride && !args?.force) {

@@ -25,7 +25,6 @@
     "conflictTitle": "备份后有外部修改",
     "conflictHelp": "下列变量在备份之后已被其他进程修改。默认模式下恢复会整体中止，注册表不会发生任何改动。",
     "forceConfirm": "仍然强制覆盖这些变量？被覆盖的变量不会被重新备份，当前值将丢失。",
-    "forceRestore": "强制覆盖并恢复",
     "restore": "恢复",
     "restoring": "正在恢复...",
     "restoreDone": "恢复完成：成功 {{applied}} 项，失败 {{failed}} 项",
@@ -35,16 +34,13 @@
     "deleteWarningHint": "删除不会进入回收站，且恢复过程不生成新备份。",
     "adminRequired": "恢复需要管理员权限：恢复会先以写权限打开系统变量 hive。请以管理员身份重启 PathEditor 后再试。",
     "manualFallback": "恢复不会自动生成新备份。要保留当前状态，请先在命令行手工备份：",
-    "manualBackupCmd1": "patheditor backup",
-    "manualBackupCmd2": "patheditor env backup",
     "noDiffHint": "备份与当前环境变量一致，恢复不会产生任何改动。",
     "conflictsLabel": "冲突",
     "addedLabel": "新增",
     "modifiedLabel": "修改",
     "removedLabel": "删除",
     "modifiedAlwaysZero": "「修改」恒为 0：值发生变化即视为备份过期，计入「冲突」（见设计文档 K3）。",
-    "forceUnderreport": "注意：强制覆盖模式下被冲突覆盖的变量仍计入「冲突」，因此此处的改动量是低估值。",
-    "variableCountUnavailable": "（列表不解析内容）"
+    "forceUnderreport": "注意：强制覆盖模式下被冲突覆盖的变量仍计入「冲突」，因此此处的改动量是低估值。"
   },
   "envVar": {
     "name": "变量名",

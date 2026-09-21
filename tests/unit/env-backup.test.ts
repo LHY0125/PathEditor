@@ -152,19 +152,25 @@ describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => 
     });
   });
 
-  it('缺少 backup 字段时拒绝（形状校验删除后本用例会失败）', async () => {
+  it('缺少 backup 字段时拒绝 —— 命中入口守卫本身（不只是「也会抛错」）', async () => {
     mockInvoke.mockResolvedValue({ applied: 1 });
 
+    // 断言必须能区分两个分支：入口守卫的文案不带 `.backup`，枚举层的带。
+    // 若只断言 /WriteOutcome/，删掉入口守卫后 `{applied:1}` 会落到枚举层抛出
+    // 「…WriteOutcome.backup 契约」，同样匹配 —— 该分支就成了不可证的死代码。
     await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.toThrow(
-      /WriteOutcome/,
+      /WriteOutcome 契约/,
+    );
+    await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.not.toThrow(
+      /\.backup/,
     );
   });
 
-  it('backup 为非法形状（未知键）时拒绝', async () => {
+  it('backup 为非法形状（未知键）时拒绝 —— 命中枚举层（文案带 .backup）', async () => {
     mockInvoke.mockResolvedValue({ backup: { something: 'else' } });
 
     await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.toThrow(
-      /WriteOutcome/,
+      /WriteOutcome\.backup/,
     );
   });
 
@@ -172,7 +178,7 @@ describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => 
     mockInvoke.mockResolvedValue({ backup: { created: 42 } });
 
     await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.toThrow(
-      /WriteOutcome/,
+      /WriteOutcome\.backup/,
     );
   });
 
@@ -282,12 +288,64 @@ describe('备份/恢复命令返回值的运行时形状校验', () => {
     ]);
   });
 
-  it('listEnvBackups：非数组或字段缺失时拒绝', async () => {
+  it('listEnvBackups：非数组时拒绝', async () => {
     mockInvoke.mockResolvedValue({ file: 'x' });
     await expect(backend.listEnvBackups()).rejects.toThrow(/EnvBackupInfo/);
+  });
 
-    mockInvoke.mockResolvedValue([{ file: 'x', path: 'y', timestamp: 'z' }]);
+  // 逐字段成对用例：parseEnvBackupInfo 的声明用途就是**逐字段**形状检查，
+  // 只测「全部缺失」会让任一条 `typeof value.X !== 'string'` 形同虚设。
+  // 每个用例只破坏一个字段，其余保持合法 —— 这样删掉对应那一行检查就会失败。
+  const validBackupInfo: Record<string, unknown> = {
+    file: 'env_backup_1.json',
+    path: 'C:\\b\\env_backup_1.json',
+    timestamp: '20260922_120000_000',
+    sizeBytes: 2048,
+    variableCount: 0,
+  };
+
+  it.each([['file'], ['path'], ['timestamp']])(
+    'listEnvBackups：%s 非字符串时拒绝（其余字段合法）',
+    async (field) => {
+      mockInvoke.mockResolvedValue([{ ...validBackupInfo, [field]: 42 }]);
+      await expect(backend.listEnvBackups()).rejects.toThrow(/EnvBackupInfo/);
+    },
+  );
+
+  it('listEnvBackups：sizeBytes 非数字时拒绝（其余字段合法）', async () => {
+    mockInvoke.mockResolvedValue([{ ...validBackupInfo, sizeBytes: '2048' }]);
     await expect(backend.listEnvBackups()).rejects.toThrow(/EnvBackupInfo/);
+  });
+
+  it('listEnvBackups：缺失 sizeBytes 时拒绝（其余字段合法）', async () => {
+    // 用删除而非解构赋值：解构出的占位变量会触发 no-unused-vars
+    const withoutSize: Record<string, unknown> = { ...validBackupInfo };
+    delete withoutSize.sizeBytes;
+    mockInvoke.mockResolvedValue([withoutSize]);
+    await expect(backend.listEnvBackups()).rejects.toThrow(/EnvBackupInfo/);
+  });
+
+  it('listEnvBackups：variableCount 非数字时回退 0（该字段恒为 0，缺失不致命）', async () => {
+    mockInvoke.mockResolvedValue([{ ...validBackupInfo, variableCount: 'lots' }]);
+
+    const [info] = await backend.listEnvBackups();
+
+    expect(info.variableCount).toBe(0);
+    expect(info.file).toBe('env_backup_1.json');
+  });
+
+  it('listEnvBackups：全部字段合法时逐字段保留（成对反例）', async () => {
+    mockInvoke.mockResolvedValue([validBackupInfo]);
+
+    const [info] = await backend.listEnvBackups();
+
+    expect(info).toEqual({
+      file: 'env_backup_1.json',
+      path: 'C:\\b\\env_backup_1.json',
+      timestamp: '20260922_120000_000',
+      sizeBytes: 2048,
+      variableCount: 0,
+    });
   });
 
   it('backupEnvVars：返回空字符串时拒绝（成功路径必须有路径）', async () => {

@@ -277,11 +277,16 @@ function parseBackupOutcome(value: unknown, label: string): BackupOutcome {
  * 备份失败会在状态栏误报「保存成功（备份失败）」，比不显示更糟。
  * 其余非法形状（有 `backup` 但形状不对、或连 `backup` 都没有）一律拒绝，
  * 绝不透传。
+ *
+ * 本层文案**刻意与 [`parseBackupOutcome`] 不同**（本层提「缺少 backup 字段」，
+ * 下一层提 `.backup`）：两者是两个不同缺陷，调用方与测试都要能分辨。
+ * 若两层文案互相包含，删掉本层守卫后下一层抛出的错误会「撞上」同一个断言，
+ * 该分支就变成不可证的死代码 —— 测试同样按分支分别断言。
  */
 function parseWriteOutcome(value: unknown, label: string): WriteOutcome {
   if (value === undefined) return { backup: 'skipped' };
   if (!isRecord(value) || !('backup' in value)) {
-    throw new Error(`${label} 返回了无效的 WriteOutcome 契约`);
+    throw new Error(`${label} 返回了无效的 WriteOutcome 契约（缺少 backup 字段）`);
   }
   return { backup: parseBackupOutcome(value.backup, label) };
 }

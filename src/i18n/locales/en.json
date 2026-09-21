@@ -25,7 +25,6 @@
     "conflictTitle": "Variables changed externally since the backup",
     "conflictHelp": "The variables below were modified by another process after this backup was taken. In the default mode the restore aborts as a whole and the registry is left unchanged.",
     "forceConfirm": "Overwrite these variables anyway? Overwritten variables are not backed up again and their current values will be lost.",
-    "forceRestore": "Force overwrite and restore",
     "restore": "Restore",
     "restoring": "Restoring...",
     "restoreDone": "Restore finished: {{applied}} applied, {{failed}} failed",
@@ -35,16 +34,13 @@
     "deleteWarningHint": "Deletion does not go to the Recycle Bin, and the restore process creates no new backup.",
     "adminRequired": "Restore requires administrator rights: it opens the system hive with write access first. Restart PathEditor as administrator and try again.",
     "manualFallback": "Restore never creates a new backup. To preserve the current state, back it up manually first:",
-    "manualBackupCmd1": "patheditor backup",
-    "manualBackupCmd2": "patheditor env backup",
     "noDiffHint": "The backup matches the current environment variables; restoring changes nothing.",
     "conflictsLabel": "Conflicts",
     "addedLabel": "Added",
     "modifiedLabel": "Modified",
     "removedLabel": "Removed",
     "modifiedAlwaysZero": "\"Modified\" is always 0: a changed value means the backup is stale and is counted as a conflict (design doc K3).",
-    "forceUnderreport": "Note: under force overwrite, variables replaced because of a conflict are still counted as conflicts, so the change count shown here is an underestimate.",
-    "variableCountUnavailable": "(list does not parse contents)"
+    "forceUnderreport": "Note: under force overwrite, variables replaced because of a conflict are still counted as conflicts, so the change count shown here is an underestimate."
   },
   "envVar": {
     "name": "Name",
