@@ -383,9 +383,19 @@ fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError
 pub struct EnvBackupInfo {
     /// 文件名
     pub file: String,
-    /// 绝对路径
+    /// 条目路径（`list_env_backups_in` 收的目录拼接文件名）。
+    ///
+    /// **不保证是绝对路径**：入参目录是相对路径时这里也是相对路径。
+    /// 默认目录通常绝对（`~/.patheditor/backups/`），但 `PATHEDITOR_BACKUP_DIR`
+    /// 若被设成相对路径则不是。调用方需绝对路径时须自行解析。
     pub path: String,
-    /// 文件名中的时间戳部分（`YYYYMMDD_HHMMSS_mmm`）
+    /// 文件名去掉 `env_backup_` 前缀与 `.json` 后缀后的中缀。
+    ///
+    /// 本工具自己生成的文件形如 `env_backup_<YYYYMMDD>_<HHMMSS>_<毫秒3位>.json`，
+    /// 此时中缀即时间戳；但本字段只做前后缀裁剪、**不校验格式**——对
+    /// `env_backup_x.json` 这类命名合规但非本工具产物的文件，得到的是任意中缀
+    /// （如 `"x"`）。调用方**不得**假定它一定是 `YYYYMMDD_HHMMSS_mmm`。
+    /// 排序按中缀字典序，对上面的规范命名等同于时间序。
     pub timestamp: String,
     /// 文件字节数
     pub size_bytes: u64,
@@ -406,6 +416,9 @@ const MAX_BACKUP_FILE_BYTES: u64 = 1024 * 1024;
 /// # Returns
 /// - `Ok(Vec<EnvBackupInfo>)` — 备份列表，最新在前
 /// - `Err(CoreError)` — 目录枚举失败（code=`Io`）；目录不存在时返回空列表
+///
+/// 单条 `stat` 失败的条目会被**静默跳过**（不报错、不记 warn）：列表的韧性优先，
+/// 一个读取不到的条目不应让整份列表失败。
 pub fn list_env_backups_in(dir: &Path) -> Result<Vec<EnvBackupInfo>, CoreError> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -461,7 +474,10 @@ pub fn list_env_backups() -> Result<Vec<EnvBackupInfo>, CoreError> {
 /// `env_backup_` 开头；文件必须存在且不超过 1 MiB。
 ///
 /// # Returns
-/// - `Ok(PathBuf)` — 校验通过的绝对路径
+/// - `Ok(PathBuf)` — 校验通过的路径，**原样返回**（不做 canonicalize / 绝对化）：
+///   入参是相对路径时返回值仍是相对路径。调用方若需要绝对路径须自行解析；
+///   校验与后续读取之间 cwd 变化导致的 TOCTOU 属**已知未覆盖项**
+///   （单线程 CLI 下为理论问题，本波不解决）。
 /// - `Err(CoreError)` — 路径非法（code=`InvalidValue`）或文件不存在/过大（code=`NotFound`/`InvalidValue`）
 pub fn validate_backup_path(path: &str) -> Result<PathBuf, CoreError> {
     let p = PathBuf::from(path);
