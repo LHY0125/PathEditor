@@ -29,18 +29,44 @@ fn config_file_path() -> PathBuf {
         .join("config.ini")
 }
 
+/// 判断「读配置失败」是否应当 `log::warn!` 提示，而不是静默回落。
+///
+/// 口径（设计文档 §解析与回落行为 表格把两种情形分开列）：
+/// - `NotFound` —— 文件不存在是首次使用的正常情形，**静默**回落（且不得创建文件）；
+/// - 其它（`PermissionDenied`、路径指向目录、I/O 错误等）—— 用户可修复的异常，
+///   **必须 warn**，否则配置写坏了在 CLI 下完全不可见（spec §K2 已实证 CLI 未初始化
+///   logger，core 的 warn 会被丢弃，但仍须按 GUI/服务侧能收到的口径发出）。
+fn should_warn_on_read_error(e: &std::io::Error) -> bool {
+    e.kind() != std::io::ErrorKind::NotFound
+}
+
 /// 读取 env 备份保留份数；任何异常一律回落 [`ENV_BACKUP_KEEP`]。
 ///
 /// 回落情形（设计文档 §解析与回落行为）：文件不存在 / 键不存在 / 值非整数 /
-/// 值为负数 / 值空 / 文件不可读。**不报错、不中止备份**，非默认值时记一次 warn。
+/// 值为负数 / 值空 / 文件不可读。**不报错、不中止备份**。
 /// 读取**无副作用**：文件不存在时不创建。
+///
+/// 落日志口径：值非法与文件不可读**各记一次 `log::warn!`**；
+/// 文件不存在是首次使用的正常情形，**静默回落**（见 [`should_warn_on_read_error`]）。
 ///
 /// 手写极简 INI 解析（`key = value`，`;` 或 `#` 起始为注释），不引入新依赖——
 /// 单键配置不值得拉一个 crate，与项目「手写 FNV-1a 而不引 sha2」的先例一致。
 fn read_env_backup_keep(path: &Path) -> usize {
     let fallback = ENV_BACKUP_KEEP;
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return fallback; // 不存在或不可读，无副作用地回落
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(e) => {
+            // 不存在 → 静默；不可读 → 必须可见（两种情形不得合并处理）。
+            if should_warn_on_read_error(&e) {
+                log::warn!(
+                    "config.ini 不可读（{}: {}），回落默认 {}",
+                    path.display(),
+                    e,
+                    fallback
+                );
+            }
+            return fallback;
+        }
     };
     for line in content.lines() {
         let line = line.trim();
@@ -743,6 +769,168 @@ mod tests {
         });
     }
 
+    /// 测试用日志捕获器：把 `log::warn!` 的消息收进静态缓冲，供断言。
+    ///
+    /// 存在的理由：`read_env_backup_keep` 的「不可读要 warn、不存在不 warn」这一
+    /// 要求**只能通过真实 log 输出观察**。分类函数的单测能证明分类结果正确，却
+    /// 证明不了 `read_env_backup_keep` 确实调用了它——把 warn 整段删掉，那些测试
+    /// 依然全绿。故此处按 `log` crate 的全局 logger 接口接一个最小捕获器。
+    struct CapturingLogger;
+
+    static CAPTURED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+    impl log::Log for CapturingLogger {
+        fn enabled(&self, metadata: &log::Metadata) -> bool {
+            metadata.level() <= log::Level::Warn
+        }
+        fn log(&self, record: &log::Record) {
+            if self.enabled(record.metadata()) {
+                // 捕获器是全局的，而 cargo 测试并行跑：锁被 poisoned 时取内层数据
+                // 继续，避免别的测试 panic 后本测试连锁失败（同 persist::test_persist_lock）。
+                let mut buf = match CAPTURED.lock() {
+                    Ok(g) => g,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                buf.push(record.args().to_string());
+            }
+        }
+        fn flush(&self) {}
+    }
+
+    /// 安装捕获器（全局 logger 只能设置一次，已设置则忽略错误）。
+    fn install_capture_logger() {
+        static LOGGER: CapturingLogger = CapturingLogger;
+        let _ = log::set_logger(&LOGGER);
+        log::set_max_level(log::LevelFilter::Warn);
+    }
+
+    /// 清空捕获缓冲，隔离本用例的日志。
+    fn clear_captured() {
+        let mut buf = match CAPTURED.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        buf.clear();
+    }
+
+    /// 取捕获缓冲的守卫（poisoned 时取内层数据）。
+    ///
+    /// 返回守卫而非克隆：`Vec<String>` 无共享所有权，调用方借守卫即可 filter/any，
+    /// 无拷贝；且守卫在语句末即释放，不会跨 `clear_captured()` 持锁。
+    fn captured() -> std::sync::MutexGuard<'static, Vec<String>> {
+        match CAPTURED.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    /// **「不可读要 warn、不存在不 warn」——直接断言真实 log 输出。**
+    ///
+    /// 这是对该要求在集成点上的唯一有效验证：把 `read_env_backup_keep` 里的
+    /// warn 分支删掉、或退回「NotFound 与不可读合并处理」的老写法，本测试都会
+    /// 失败（后者表现为不可读时一条 warn 都没有）。
+    ///
+    /// 断言一律**按本用例的临时路径过滤**：捕获器是全局的、cargo 测试并行跑，
+    /// 别的测试（如 `config_unreadable_path_falls_back_without_panic`）也会发出
+    /// 同样含「不可读」字样的日志。若只匹配关键字，情形 1 的「必须静默」断言会
+    /// 被邻居的日志污染成假失败。
+    #[test]
+    fn read_error_warns_only_when_unreadable() {
+        install_capture_logger();
+        // 路径含进程 id 与专用前缀，保证与其它测试的临时路径不重叠
+        let dir =
+            std::env::temp_dir().join(format!("patheditor_cfg_warn_probe_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir_marker = dir.to_string_lossy().into_owned();
+
+        // 情形 1：文件不存在 → 必须静默（首次使用的正常情形，不得刷警告）
+        let missing = dir.join("config.ini");
+        clear_captured();
+        assert_eq!(read_env_backup_keep(&missing), ENV_BACKUP_KEEP);
+        let missing_msgs: Vec<String> = captured()
+            .iter()
+            .filter(|m| m.contains("不可读") && m.contains(&dir_marker))
+            .cloned()
+            .collect();
+        assert!(
+            missing_msgs.is_empty(),
+            "文件不存在必须静默回落，不得记 warn；实测: {missing_msgs:?}"
+        );
+
+        // 情形 2：路径指向目录（不可读）→ 必须 warn，且消息含该路径
+        clear_captured();
+        assert_eq!(read_env_backup_keep(&dir), ENV_BACKUP_KEEP);
+        let all_msgs: Vec<String> = captured().clone();
+        let unreadable_msgs: Vec<&String> = all_msgs
+            .iter()
+            .filter(|m| m.contains("不可读") && m.contains(&dir_marker))
+            .collect();
+        assert!(
+            !unreadable_msgs.is_empty(),
+            "文件不可读必须记一条含该路径的 warn；实测全部日志: {all_msgs:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 读配置失败的分类（`:43` 那处曾把「不存在」与「不可读」合并处理）：
+    /// `NotFound` 静默回落，其它错误必须 warn。
+    ///
+    /// 这里直接调 `should_warn_on_read_error` 断言分类结果——这是 `read_env_backup_keep`
+    /// 中**真实执行**的那行判定，不是 mock。`read_to_string` 的错误构造依赖 OS，
+    /// 无法在测试里造出任意 `ErrorKind`，故分类逻辑本身被抽成纯函数以便断言。
+    #[test]
+    fn read_error_kind_separates_missing_from_unreadable() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(
+            !should_warn_on_read_error(&missing),
+            "文件不存在是首次使用的正常情形，必须静默回落（且不得创建文件）"
+        );
+
+        for kind in [
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::IsADirectory,
+            std::io::ErrorKind::InvalidData,
+            std::io::ErrorKind::Other,
+        ] {
+            assert!(
+                should_warn_on_read_error(&std::io::Error::from(kind)),
+                "{kind:?} 属于「不可读」，必须 warn 而非静默"
+            );
+        }
+    }
+
+    /// 「文件整体不可读」回落默认值，且**不 panic、无副作用**。
+    ///
+    /// 用**路径指向目录**构造不可读：`read_to_string` 对目录返回非 `NotFound` 的
+    /// 错误（本机实测 Windows 为 `PermissionDenied`，os error 5），从而真实走进
+    /// 非 `NotFound` 分支。不用 chmod——Windows 上语义不同且 CI 是 Windows。
+    ///
+    /// 前置断言保证本测试不空转：若某平台上目录读取竟然返回 `NotFound`，
+    /// 该断言会失败并提醒改用别的构造手段，而不是让测试悄悄退化成
+    /// 「又一次覆盖了不存在的情形」。
+    #[test]
+    fn config_unreadable_path_falls_back_without_panic() {
+        let dir =
+            std::env::temp_dir().join(format!("patheditor_cfg_unreadable_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 前置条件：指向目录必须产生非 NotFound 错误，否则下面断言的不是目标分支
+        let probe = std::fs::read_to_string(&dir).expect_err("读取目录必须失败");
+        assert_ne!(
+            probe.kind(),
+            std::io::ErrorKind::NotFound,
+            "目录读取返回 NotFound，本测试未覆盖「不可读」分支；需改用其它构造手段"
+        );
+
+        // 被测行为：不 panic、回落默认值
+        assert_eq!(read_env_backup_keep(&dir), ENV_BACKUP_KEEP);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 配置文件缺失 → 回落默认值，且**不创建文件**。
     #[test]
     fn config_missing_returns_default_and_creates_nothing() {
@@ -758,7 +946,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 四种回落情形（键缺失 / 非整数 / 负数 / 空值）都返回默认值而不是报错。
+    /// 五种回落情形（键缺失 / 非整数 / 负数 / 空值 / 未知键）都返回默认值而不是报错。
     #[test]
     fn config_invalid_values_fall_back_to_default() {
         let dir =
