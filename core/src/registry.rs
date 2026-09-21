@@ -28,8 +28,15 @@ pub use path::{
 
 // ── crate 内部共享（backup.rs / reg_store.rs / env_var.rs 等使用）──
 pub(crate) use access::hive_location;
+// 恢复执行（`backup.rs`）需要逐变量调用这三个写函数，且**保护名单 / 类型 /
+// 名称合法性判定只在它们内部实现一处**（设计文档 §S6）。必须经根模块重导出：
+// 子模块 `mod env_var;` 是私有的，`crate::registry::env_var::X` 会报
+// `error[E0603]: module env_var is private`。
+pub(crate) use env_var::{
+    create_env_var_in_store, delete_env_var_force_in_store, update_env_var_force_in_store,
+};
 pub(crate) use path::{load_paths, SYS_REG_PATH, USER_REG_PATH};
 
-// 供子模块内部互引的私有符号（`*_in_store` 系列、read/write 辅助、
+// 其余子模块内部符号（`update_env_var_in_store`、`read/write_env_var` 辅助、
 // `conflict_error`/`ERR_CONFLICT` 等）保持各子模块内定义，经
 // `super::conflict::` 等路径互引，不经根模块重导出。

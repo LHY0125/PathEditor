@@ -533,7 +533,12 @@ fn create_env_var_with_store(
 /// 新行为是「失败响亮优于冒险覆盖」，与 F-04 同源，但**超出 F-04 只针对
 /// list 的字面范围**。若不愿引入该变更，改 `store.enum_names().unwrap_or_default()`
 /// 即可完全保持现状。
-fn create_env_var_in_store(
+///
+/// `pub(crate)` 而非 `pub`：恢复执行（`core/src/backup.rs`）需要逐变量调用它
+/// （设计文档 §S6：恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::registry`
+/// 对外公开 —— 外部入口一贯带写前备份（`create_env_var`），恢复自己不产生备份。
+/// `crate::registry` 根模块为其加了 `pub(crate) use` 重导出。
+pub(crate) fn create_env_var_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
@@ -722,7 +727,11 @@ fn update_env_var_force_with_store(
 }
 
 /// `update_env_var_force` 的核心逻辑，存储可注入。
-fn update_env_var_force_in_store(
+///
+/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它（设计文档 §S6）。
+/// **只豁免 revision 校验，保护名单 / 保留名 / 类型 / 名值合法性判定照旧** ——
+/// 这正是恢复 `--force` 需要的语义（不允许在恢复层自行实现「跳过校验」）。
+pub(crate) fn update_env_var_force_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
@@ -799,7 +808,10 @@ fn delete_env_var_force_with_store(
 }
 
 /// `delete_env_var_force` 的核心逻辑，存储可注入。
-fn delete_env_var_force_in_store(
+///
+/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它（设计文档 §S6）。
+/// 同 [`update_env_var_force_in_store`]：只豁免 revision 校验，保护名单判定照旧。
+pub(crate) fn delete_env_var_force_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,

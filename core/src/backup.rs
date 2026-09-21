@@ -2,8 +2,13 @@ use crate::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
 use crate::error::{CoreError, ErrorCode};
 use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 use crate::reg_store::{EnvHiveStore, WinregHive};
-// 经 registry 根 re-export —— 不能写 crate::registry::env_var::X（E0603）
-use crate::registry::{self, hive_location, SYS_REG_PATH, USER_REG_PATH};
+// 经 registry 根 re-export —— 不能写 crate::registry::env_var::X（E0603）。
+// 三个 `*_in_store` 是恢复执行的写入口：保护名单 / 类型 / 名称合法性判定
+// 只在它们内部实现一处（设计文档 §S6），恢复层不得复制判定规则。
+use crate::registry::{
+    self, create_env_var_in_store, delete_env_var_force_in_store, hive_location,
+    update_env_var_force_in_store, SYS_REG_PATH, USER_REG_PATH,
+};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -613,7 +618,10 @@ pub struct RestoreChange {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RestorePreview {
-    /// 全部差异，user hive 在前、system hive 在后
+    /// 全部差异。**已排序**，顺序固定为：先 user hive、后 system hive；
+    /// 同一 hive 内按 `added → modified → removed → conflict`，再按变量名
+    /// （忽略大小写）升序。等价输入必须产出等价顺序 —— 这是
+    /// `--dry-run --json` 可复现的前提，排序规则见 [`sort_changes`]。
     pub changes: Vec<RestoreChange>,
     /// 新增数量
     pub added: usize,
@@ -639,10 +647,68 @@ pub fn read_env_backup(path: &Path) -> Result<EnvBackupPayload, CoreError> {
     crate::persist::migrate(versioned, "env 备份")
 }
 
+/// `changes` 的 hive 排序键：**user 在前、system 在后**，与
+/// [`RestorePreview::changes`] 声明的顺序一致。
+///
+/// 刻意不 `derive(Ord)` 到 [`EnvHive`] 上：枚举声明序是 `System` 在前，
+/// 用派生序会让「user 先于 system」的既有契约被静默反转。排序键在这里显式写出。
+fn hive_rank(hive: EnvHive) -> u8 {
+    match hive {
+        EnvHive::User => 0,
+        EnvHive::System => 1,
+    }
+}
+
+/// `changes` 的差异类型排序键：新增 → 修改 → 删除 → 冲突。
+///
+/// 删除是最不可逆的部分，排在靠后位置便于人工阅读时落在末尾；
+/// 顺序本身无安全含义，只要是**确定的**即可（可复现是本函数的全部目的）。
+fn kind_rank(kind: RestoreChangeKind) -> u8 {
+    match kind {
+        RestoreChangeKind::Added => 0,
+        RestoreChangeKind::Modified => 1,
+        RestoreChangeKind::Removed => 2,
+        RestoreChangeKind::Conflict => 3,
+    }
+}
+
+/// 差异列表的可复现排序（原地）。
+///
+/// **为什么必须排序**：`diff_one_hive` 的 `Removed` 批次由 `HashMap` 迭代产出，
+/// `HashMap` 默认用 `RandomState`，因此**同一份注册表在同一台机器上，两次运行
+/// 会得到不同的 `Removed` 顺序** —— `env restore --dry-run --json` 原样打印
+/// `changes`，于是同一输入产出不同 JSON（用户可见的不可复现，Task 5 复审 Minor）。
+///
+/// **排序键：`(hive, kind, name)`**，其中 `name` 一律**小写化后**比较
+/// （`to_ascii_lowercase`）：`diff_one_hive` 已按大小写不敏感语义把变量名配成
+/// 「同一个」，用原始大小写作键会让 `Windir` 与 `windir` 这类同义名落在不同区间。
+/// 小写键相同时再比原始名 —— 同 hive 同 kind 下小写键相同的两个条目属于同一变量，
+/// 本不会同时出现；这一层只是让比较成为严格全序，结果不依赖比较器的调用顺序。
+///
+/// **排序不改变任何计数**：`added` / `modified` / `removed` / `conflicts` 都在排序后
+/// 按遍历计数，与顺序无关（已完成排序后再计数，见 [`preview_restore_in_stores`]）。
+fn sort_changes(changes: &mut [RestoreChange]) {
+    changes.sort_by(|a, b| {
+        hive_rank(a.hive)
+            .cmp(&hive_rank(b.hive))
+            .then_with(|| kind_rank(a.kind).cmp(&kind_rank(b.kind)))
+            .then_with(|| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+            })
+            .then_with(|| a.name.cmp(&b.name))
+    });
+}
+
 /// 计算备份相对当前注册表的差异（不写入任何内容）。**存储可注入版本，仅 core 内部用。**
 ///
 /// revision 比对口径与写通路一致：备份记录的 revision 与注册表当前值的 revision
 /// 不同即说明备份之后被改动过（设计文档 K3），记 `Conflict`。
+///
+/// **`changes` 已排序**（见 [`sort_changes`]）：user hive 在前、system 在后，
+/// 同 hive 内按差异类型再按变量名（忽略大小写）稳定排序。排序不计入任何计数，
+/// 只影响顺序 —— 因此 `--dry-run --json` 的输出对同一注册表可复现。
 ///
 /// # Returns
 /// - `Ok(RestorePreview)` — 差异摘要
@@ -655,6 +721,8 @@ pub(crate) fn preview_restore_in_stores(
     let mut changes = Vec::new();
     diff_one_hive(usr, EnvHive::User, &payload.hives.user, &mut changes)?;
     diff_one_hive(sys, EnvHive::System, &payload.hives.system, &mut changes)?;
+
+    sort_changes(&mut changes);
 
     let added = changes
         .iter()
@@ -807,6 +875,233 @@ pub fn preview_restore(payload: &EnvBackupPayload) -> Result<RestorePreview, Cor
 pub fn preview_restore_file(path: &Path) -> Result<RestorePreview, CoreError> {
     let payload = read_env_backup(path)?;
     preview_restore(&payload)
+}
+
+/// 恢复执行的结果。单变量失败**不中止**整体（best-effort），但必须逐条记录。
+///
+/// serde 用 camelCase（与 `RestorePreview` / `EnvVarSnapshot` 一致），经 Tauri IPC
+/// 出境时前端拿到 `{ applied, skipped, failures }`。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreOutcome {
+    /// 成功写入的变量数（新增 + 修改 + 删除）
+    pub applied: usize,
+    /// 被跳过、既未写也未计入 `failures` 的变量数。
+    ///
+    /// **恒为 0**：当前没有任何差异类型会走到「跳过」——`Conflict` 在默认模式下
+    /// 中止整次恢复（不进这里），在 `--force` 下按 `Modified` 覆盖写入；
+    /// 其余三类都必然尝试写入。保留该字段是因为它的形状由 spec 与 Task 7/8 的
+    /// 消费端（CLI `--json`、GUI 命令）共同约定，删掉会破坏跨任务契约。
+    /// **不要为消除「恒零字段」而删除它。**
+    pub skipped: usize,
+    /// 逐条失败原因，格式 `[{hive标签}] {变量名}: {错误文本}`；空表示全部成功。
+    ///
+    /// 这里承载的是**用户可读的展示文本**；程序分支若需判定失败类型，
+    /// 必须回到 `CoreError.code`（项目硬约束：不得匹配 message 文本）。
+    pub failures: Vec<String>,
+}
+
+/// 在备份载荷中按 hive 与变量名查找条目（**忽略大小写**）。
+///
+/// 忽略大小写与 [`diff_one_hive`] 的配对语义一致：差异条目里的名字可能来自
+/// 备份侧（`Added` / `Modified` / `Conflict`）也可能来自注册表侧（`Removed`），
+/// 而两侧名字大小写不保证相同。`Removed` 不需要查备份侧，故无匹配也正常；
+/// 其余三类若查不到，说明差异列表与载荷不自洽 —— 由调用方记为失败，不静默跳过。
+fn find_backup_var<'a>(
+    payload: &'a EnvBackupPayload,
+    hive: EnvHive,
+    name: &str,
+) -> Option<&'a EnvBackupVar> {
+    let vars = match hive {
+        EnvHive::System => &payload.hives.system,
+        EnvHive::User => &payload.hives.user,
+    };
+    vars.iter().find(|v| v.name.eq_ignore_ascii_case(name))
+}
+
+/// 执行恢复：逐变量写入，存储与备份文件路径均可注入（供测试）。
+///
+/// # 写入通路（设计文档 §S6，**不得改动**）
+///
+/// 恢复**不使用** `EnvHiveStore::set_raw` 直接写裸值 —— 那会绕过保护名单与类型
+/// 判定。必须按差异类型逐变量调用：
+/// - `Added` → [`create_env_var_in_store`]
+/// - `Modified` / `Conflict` → [`update_env_var_force_in_store`]
+/// - `Removed` → [`delete_env_var_force_in_store`]
+///
+/// 也就是说，**保护名单 / 保留名 / 类型可写性 / 名称与值合法性全部由这三个
+/// core 写函数判定**，本函数不做任何第二次判定（判定只在 core 一处）。
+/// `--force` 只豁免 revision 校验（`*_force_*` 的既有语义），**不豁免**上述判定。
+///
+/// # 冲突语义（设计文档 K3）
+///
+/// 默认模式（`force == false`）下 `preview.conflicts > 0` 即返回
+/// `Err(CoreError{code: Conflict})`，且**注册表零改动** —— 中止发生在任何写入
+/// 之前，不存在「写了一半才发现冲突」的中间状态。退出码 3 由 CLI 层从 `code`
+/// 映射（`CoreError::exit_code`），不在本函数。
+///
+/// `force == true` 时 `Conflict` 按 `Modified` 处理（写入覆盖）。注意
+/// [`RestoreChangeKind::Modified`] 当前**不可达**（见该变体文档），但 `match` 仍
+/// 必须同时覆盖两个变体 —— 这正是该变体被保留的原因。
+///
+/// # 失败语义
+///
+/// - **单变量失败不中止整体**：`Err` 被记入 `RestoreOutcome.failures`，继续处理下一条。
+/// - **单 hive 失败不影响另一 hive**：差异列表本身带 hive 标记，两个 hive 的条目
+///   各自独立写入，一个 hive 的变量全数失败不会阻止另一个 hive 的写入。
+/// - 但**差异计算阶段的失败是整体的**：`preview_restore_in_stores` 对任一 hive
+///   枚举失败即返回 `Err`，此时恢复在写入前就中止 —— 这是刻意的，宁可什么都不做，
+///   也不留下「半个 hive 已改、另一个没动」的注册表。
+///
+/// # 空备份（**后果已被显式固定，不是疏漏**）
+///
+/// `EnvBackupHives` 的 `system` / `user` 带 `#[serde(default)]`（Task 1 的产物，
+/// 本任务不得改动），因此形如 `{"capturedAt":1,"hives":{}}` 的备份会反序列化成功
+/// 并得到**两个空列表**。此时当前注册表里的每个可写变量都会被判 `Removed`，
+/// 即「恢复一个空备份」等价于**删除当前全部环境变量**。
+///
+/// **本任务裁定：不在恢复层加防护。** 理由：
+/// 1. 该能力并非多余 —— 完全可能有人要「把环境变量还原成备份时的空集」，
+///    加一道「两 hive 皆空即拒绝」会让这个合法意图变成不可表达；
+/// 2. 破坏性写入**默认模式不做**（冲突即中止），且 `--dry-run` 会在用户确认前
+///    逐条列出将要删除的变量名 —— 现有的两道可见性已经足够；
+/// 3. 与既有 `env remove` 同性质：破坏性操作靠「显式命令 + 确认/复核」把关，
+///    而不是在 core 里猜测用户意图。
+///
+/// 代价是真实的：用户误把截断/损坏但**仍能解析**的文件当备份恢复，会删光变量。
+/// 因此该行为由 `restore_empty_backup_removes_all_current_variables` 与
+/// `restore_empty_backup_without_force_also_removes_all` 两个测试**钉住**，
+/// 且 CLI/GUI 的展示层必须把「删除」数量显著呈现（spec 验收标准 12/13）。
+///
+/// **本函数不产生新备份**：否则每次恢复都新增一份文件，与保留策略互相吞噬
+/// （设计文档明文要求）。恢复前的手工兜底提示由 CLI/GUI 层打印，也不自动执行。
+///
+/// # Returns
+/// - `Ok(RestoreOutcome)` — 恢复结果（可能含逐条失败）
+/// - `Err(CoreError)` — 读取/解析备份失败，差异计算失败（code=`Io`），
+///   或**默认模式下检测到冲突**（code=`Conflict`，注册表零改动）
+fn restore_in_stores(
+    sys: &dyn EnvHiveStore,
+    usr: &dyn EnvHiveStore,
+    path: &Path,
+    force: bool,
+) -> Result<RestoreOutcome, CoreError> {
+    let payload = read_env_backup(path)?;
+    let preview = preview_restore_in_stores(sys, usr, &payload)?;
+
+    // K3：默认模式下任何冲突都中止，且不做任何写入。
+    // 位置很关键——必须早于下面第一个写调用，否则会留下部分写入。
+    if !force && preview.conflicts > 0 {
+        let names: Vec<&str> = preview
+            .changes
+            .iter()
+            .filter(|c| c.kind == RestoreChangeKind::Conflict)
+            .map(|c| c.name.as_str())
+            .collect();
+        return Err(CoreError::new(
+            ErrorCode::Conflict,
+            "restore_env_backup",
+            format!(
+                "备份后有 {} 个变量被外部修改，恢复已中止（未做任何改动）: {}。确认要覆盖请加 --force",
+                names.len(),
+                names.join(", ")
+            ),
+        ));
+    }
+
+    let mut outcome = RestoreOutcome {
+        applied: 0,
+        skipped: 0,
+        failures: Vec::new(),
+    };
+
+    for change in &preview.changes {
+        let store: &dyn EnvHiveStore = match change.hive {
+            EnvHive::System => sys,
+            EnvHive::User => usr,
+        };
+
+        // 三个分支都必须先用备份侧的值/类型，再交给 core 写函数做判定。
+        // 未知差异类型一律记失败（宁可响亮地失败，也不静默漏掉一个变量）。
+        let result: Result<(), CoreError> = match change.kind {
+            RestoreChangeKind::Added => {
+                match find_backup_var(&payload, change.hive, &change.name) {
+                    Some(var) => {
+                        create_env_var_in_store(store, change.hive, &var.name, &var.value, var.kind)
+                    }
+                    None => Err(inconsistent_change(&change.name)),
+                }
+            }
+            // Conflict 在 force 模式下按 Modified 处理；非 force 模式已在上面整批中止，
+            // 因此走到这里时这两个变体的语义完全相同。
+            RestoreChangeKind::Modified | RestoreChangeKind::Conflict => {
+                match find_backup_var(&payload, change.hive, &change.name) {
+                    Some(var) => {
+                        update_env_var_force_in_store(store, change.hive, &var.name, &var.value)
+                    }
+                    None => Err(inconsistent_change(&change.name)),
+                }
+            }
+            // Removed 不查备份侧：该变量本就「注册表有、备份无」。
+            RestoreChangeKind::Removed => {
+                delete_env_var_force_in_store(store, change.hive, &change.name)
+            }
+        };
+
+        match result {
+            Ok(()) => outcome.applied += 1,
+            Err(e) => outcome.failures.push(format!(
+                "[{}] {}: {}",
+                // hive 标签取 hive_location 的第 3 项（"系统"/"用户"），
+                // 与其它错误文案同源，不另写一套标签。
+                hive_location(change.hive).2,
+                change.name,
+                e.message
+            )),
+        }
+    }
+
+    Ok(outcome)
+}
+
+/// [`restore_in_stores`] 的失败文本：[`RestoreChange`] 与备份载荷不自洽。
+///
+/// 只在「差异说该变量来自备份、但载荷里查不到」时产生。当前实现不可达
+/// （差异条目唯一的来源就是载荷本身，且比较忽略大小写），保留它是为了让
+/// 类型系统逼着调用方处理 `None`，而不是 `.expect()` 掉一个潜在的数据不一致。
+fn inconsistent_change(name: &str) -> CoreError {
+    CoreError::new(
+        ErrorCode::Internal,
+        "restore_env_backup",
+        format!("内部不一致：差异条目 {name} 在备份载荷中找不到对应变量"),
+    )
+}
+
+/// 从备份文件恢复环境变量（公开入口，供 CLI `env restore` 与 GUI 命令使用）。
+///
+/// 先做来源校验（[`validate_backup_path`]：扩展名、目录/文件名前缀、大小上限），
+/// 再以**可写方式**打开两个 hive 执行恢复。**不产生新备份**（见 [`restore_in_stores`]）；
+/// 恢复前的手工兜底提示由调用方打印。
+///
+/// 恢复按 hive 独立执行（单变量失败记入 `failures` 而不中止整体），但两个 hive 的
+/// 注册表键都是**先打开、后写入**：任一 hive 打不开（例如系统 hive 需要管理员权限）
+/// 都会在写入前整体失败，不会留下「一个 hive 改了、另一个没改」的状态。
+///
+/// # Returns
+/// - `Ok(RestoreOutcome)` — 恢复结果（含逐条失败）
+/// - `Err(CoreError)` — 路径非法（`InvalidValue`/`NotFound`）、读取或解析备份失败
+///   （`Io`/`Parse`）、打开 hive 失败（`PermissionDenied`/`Io`／差异计算失败（`Io`），
+///   或默认模式下检测到冲突（`Conflict`，注册表零改动）
+pub fn restore_env_backup_from(path: &Path, force: bool) -> Result<RestoreOutcome, CoreError> {
+    let verified = validate_backup_path(&path.to_string_lossy())?;
+    let sys = WinregHive::open(EnvHive::System, true)?;
+    let usr = WinregHive::open(EnvHive::User, true)?;
+    let outcome = restore_in_stores(&sys, &usr, &verified, force)?;
+    // 广播只在确实写入过时发出：无差异的恢复不应惊动已运行的进程。
+    if outcome.applied > 0 {
+        crate::system::broadcast_env_change();
+    }
+    Ok(outcome)
 }
 
 /// 备份当前注册表中的系统 PATH 和用户 PATH
@@ -1909,5 +2204,587 @@ mod tests {
                 "四个计数之和必须等于差异条数"
             );
         });
+    }
+
+    // ── Task 6：恢复执行 ──
+
+    /// 构造一个**未配对**的备份条目，revision 必然与注册表当前值不符。
+    ///
+    /// 与 [`backup_var`]（自洽，配对成功）相对：本函数让备份条目的 revision
+    /// 由 `revision_value` 算出，而条目携带 `stored_value`，于是
+    /// `revision_of(name, vtype, stored_value) != revision` 恒成立
+    /// —— `diff_one_hive` 必然判 `Conflict`。这是唯一能让保存的值与
+    /// revision 不一致的构造方式，也就是「备份已过期」的真实形态。
+    fn stale_backup_var(
+        name: &str,
+        stored_value: &str,
+        revision_value: &str,
+        kind: EnvValueKind,
+    ) -> EnvBackupVar {
+        let vtype = match kind {
+            EnvValueKind::String => REG_SZ,
+            _ => REG_EXPAND_SZ,
+        };
+        EnvBackupVar {
+            name: name.into(),
+            kind,
+            value: stored_value.into(),
+            revision: revision_of(name, vtype, revision_value),
+        }
+    }
+
+    /// `outcome.failures` 里是否存在一条点名 `name` 的条目。
+    ///
+    /// 失败文本采用 core 全库统一的 `"[{hive标签}] {name}: {message}"` 形态，
+    /// 因此「点名」可直接由包含 `name` 判定。**失败的具体原因不由本函数判定** ——
+    /// 判定只认 `CoreError.code`，不得匹配 message 文本；「该输入确实走进了
+    /// 哪个错误分支」由独立的前置条件测试（如
+    /// `windir_seed_really_hits_protected_branch`）钉住。
+    fn failure_names(outcome: &RestoreOutcome, name: &str) -> bool {
+        outcome.failures.iter().any(|f| f.contains(name))
+    }
+
+    /// 前置条件核对：确认「保护名单」这一取值真的走进 `ErrorCode::Protected` 分支。
+    ///
+    /// 存在的理由（断言可证伪性）：`RestoreOutcome.failures` 只承载一条文本，
+    /// 任何原因（类型不支持、revision 冲突、名称非法）都会让变量出现在 failures 里。
+    /// 若取值不当，测试会「通过」却根本没测到保护名单。这里用一个**独立于恢复路径**
+    /// 的同名调用直接取出 `CoreError.code`，把「该输入确实命中保护名单」钉死。
+    ///
+    /// 可证伪性：把 `windir` 从 `PROTECTED_NAMES`（`core/src/env_var.rs`）删掉，
+    /// 本断言立即失败。
+    #[test]
+    fn windir_seed_really_hits_protected_branch() {
+        let hive = MemoryHive::new(true);
+        hive.seed("windir", "C:\\Windows", REG_SZ);
+
+        let err = create_env_var_in_store(
+            &hive,
+            EnvHive::User,
+            "windir",
+            "C:\\evil",
+            EnvValueKind::String,
+        )
+        .expect_err("windir 必须被拒绝（前置条件）");
+        assert_eq!(
+            err.code,
+            ErrorCode::Protected,
+            "windir 走到的必须是保护名单分支，而不是类型/名称等其它分支；实际: {err:?}"
+        );
+    }
+
+    /// K3：默认模式遇到冲突必须中止，且**不做任何写入**（注册表零改动）。
+    ///
+    /// 可证伪性：
+    /// - 删掉 `restore_in_stores` 里的冲突中止分支 → 本函数返回 `Ok`，`expect_err` 失败；
+    /// - 把中止**放在写入之后**（先写后判）→ `NEW_ONE` 会被创建，`!contains` 断言失败。
+    #[test]
+    fn restore_aborts_on_conflict_without_writing() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("MY_VAR", "changed-by-other-tool", REG_SZ);
+            hive.seed("UNTOUCHED", "keep-me", REG_SZ);
+
+            // MY_VAR：注册表值≠备份值 → Conflict。
+            // NEW_ONE：备份有、注册表无 → Added（若实现「先写后判」就会写进去）。
+            let payload = payload_with(vec![
+                stale_backup_var("MY_VAR", "backed-up", "backed-up", EnvValueKind::String),
+                backup_var("NEW_ONE", "n", REG_SZ),
+            ]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let err = restore_in_stores(&MemoryHive::new(true), &hive, &path, false)
+                .expect_err("冲突必须中止");
+            assert_eq!(err.code, ErrorCode::Conflict, "中止的错误码必须是 Conflict");
+
+            assert_eq!(
+                String::from_reg_value(&hive.get_raw("MY_VAR").unwrap()).unwrap(),
+                "changed-by-other-tool",
+                "冲突时不得写入"
+            );
+            assert!(
+                !hive.contains("NEW_ONE"),
+                "中止时不得部分写入：NEW_ONE 也不应被创建"
+            );
+            assert_eq!(
+                String::from_reg_value(&hive.get_raw("UNTOUCHED").unwrap()).unwrap(),
+                "keep-me",
+                "未参与差异的变量必须原样保留"
+            );
+        });
+    }
+
+    /// `--force` 模式下冲突被覆盖，写入成功（`Conflict` 按 `Modified` 处理）。
+    ///
+    /// 可证伪性：把 `match` 里 `Modified | Conflict` 的合并写回只处理 `Modified`
+    /// （K3 的天然错误写法，因为 `Modified` 当前不可达），冲突变量的分支会落空
+    /// ——`applied` 掉到 0 且值停在 `"changed-by-other-tool"`，两条断言同时失败。
+    #[test]
+    fn restore_force_overwrites_conflict() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("MY_VAR", "changed-by-other-tool", REG_SZ);
+
+            let payload = payload_with(vec![stale_backup_var(
+                "MY_VAR",
+                "backed-up",
+                "backed-up",
+                EnvValueKind::String,
+            )]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true)
+                .expect("force 恢复必须成功");
+            assert_eq!(outcome.applied, 1, "冲突变量在 force 下必须被覆盖写入");
+            assert!(
+                outcome.failures.is_empty(),
+                "force 覆盖冲突不应产生失败: {:?}",
+                outcome.failures
+            );
+            assert_eq!(
+                String::from_reg_value(&hive.get_raw("MY_VAR").unwrap()).unwrap(),
+                "backed-up"
+            );
+        });
+    }
+
+    /// S6：`--force` 不豁免保护名单 —— 保护名单变量出现在差异中，
+    /// 但写入阶段被 core 拒绝并记入 failures，且**不中止其余变量的恢复**。
+    ///
+    /// 核对轮 E5 裁断：preview 不为保护名单新增枚举变体、不预排除；
+    /// 拒绝发生在写入阶段（core 写函数内是保护名单的唯一真相源）。
+    ///
+    /// 可证伪性：把 `restore_in_stores` 的逐条失败改成 `?` 提前返回 → NORMAL_ONE
+    /// 不会被创建（`hive.contains` 失败）且整个函数返回 `Err`（`expect` 失败）。
+    #[test]
+    fn restore_force_does_not_bypass_protected_names() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("windir", "C:\\Windows", REG_SZ);
+
+            // windir：当前值 "C:\\Windows" 与备份 revision（由 "attacker-value" 算）不符
+            // → Conflict；force 下按 Modified 处理 → 进 update_env_var_force_in_store
+            // → 命中保护名单，返回 ErrorCode::Protected（见上方前置条件测试）。
+            // NORMAL_ONE：备份有、注册表无 → Added，用来证明保护名单失败**不中止**其余恢复。
+            let payload = payload_with(vec![
+                stale_backup_var("windir", "C:\\evil", "attacker-value", EnvValueKind::String),
+                backup_var("NORMAL_ONE", "ok", REG_SZ),
+            ]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true)
+                .expect("保护名单被拒不得使整个恢复失败");
+
+            assert_eq!(outcome.applied, 1, "只有 NORMAL_ONE 应写入成功");
+            assert_eq!(
+                outcome.failures.len(),
+                1,
+                "windir 必须被记为失败，实际: {:?}",
+                outcome.failures
+            );
+            assert!(
+                failure_names(&outcome, "windir"),
+                "失败原因必须点名 windir，实际: {:?}",
+                outcome.failures
+            );
+            assert_eq!(
+                String::from_reg_value(&hive.get_raw("windir").unwrap()).unwrap(),
+                "C:\\Windows",
+                "保护名单变量的值必须保持原样"
+            );
+            assert!(hive.contains("NORMAL_ONE"), "其余变量必须照常恢复");
+        });
+    }
+
+    /// E5 的对应断言：保护名单变量**必须出现在 preview 差异里**（不预排除）。
+    #[test]
+    fn preview_includes_protected_names() {
+        let hive = MemoryHive::new(true);
+        hive.seed("windir", "C:\\Windows", REG_SZ);
+
+        let payload = payload_with(vec![stale_backup_var(
+            "windir",
+            "C:\\evil",
+            "attacker-value",
+            EnvValueKind::String,
+        )]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+        assert_eq!(
+            preview.conflicts, 1,
+            "保护名单变量必须出现在差异中，不被预先排除"
+        );
+        assert!(preview.changes.iter().any(|c| c.name == "windir"));
+    }
+
+    /// 恢复新增与删除两类差异。
+    ///
+    /// 可证伪性：把 `Added` 分支改调 `update_env_var_force_in_store`（对不存在的
+    /// 变量必失败）→ `applied` 掉到 1 且 `failures` 非空；把 `Removed` 分支写反
+    /// （调 create）→ `WILL_BE_REMOVED` 仍在。
+    #[test]
+    fn restore_creates_and_removes() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("WILL_BE_REMOVED", "x", REG_SZ);
+
+            let payload = payload_with(vec![backup_var("WILL_BE_CREATED", "created", REG_SZ)]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true).unwrap();
+            assert_eq!(outcome.applied, 2, "一个新增 + 一个删除");
+            assert!(
+                outcome.failures.is_empty(),
+                "正常恢复不应有失败: {:?}",
+                outcome.failures
+            );
+            assert!(hive.contains("WILL_BE_CREATED"));
+            let created = hive.get_raw("WILL_BE_CREATED").expect("新变量应存在");
+            assert_eq!(String::from_reg_value(&created).unwrap(), "created");
+            assert!(!hive.contains("WILL_BE_REMOVED"));
+        });
+    }
+
+    /// 删除走 `delete_env_var_force_in_store`：**保护名单的删除同样被拒**。
+    ///
+    /// 与 `restore_force_does_not_bypass_protected_names`（覆盖写入分支）配对 ——
+    /// 三个 `*_in_store` 的保护名单判定是**三处独立代码**，只测一处会漏掉删除侧。
+    ///
+    /// 可证伪性：把 `Removed` 分支改调 `store.delete_value` 裸删（S6 禁止的写法）
+    /// → `windir` 被删掉，`contains` 断言失败。
+    #[test]
+    fn restore_removal_does_not_bypass_protected_names() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("windir", "C:\\Windows", REG_SZ);
+            hive.seed("NORMAL_ONE", "ok", REG_SZ);
+
+            // 备份里两个变量都没有 → 都应判 Removed
+            let payload = payload_with(vec![]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true)
+                .expect("保护名单被拒不得使整个恢复失败");
+
+            assert_eq!(outcome.applied, 1, "只有 NORMAL_ONE 应被删除");
+            assert_eq!(
+                outcome.failures.len(),
+                1,
+                "windir 必须被记为失败，实际: {:?}",
+                outcome.failures
+            );
+            assert!(
+                failure_names(&outcome, "windir"),
+                "失败原因必须点名 windir，实际: {:?}",
+                outcome.failures
+            );
+            assert!(hive.contains("windir"), "保护名单变量不得被删除");
+            assert!(!hive.contains("NORMAL_ONE"), "其余变量必须照常删除");
+        });
+    }
+
+    /// 单 hive 失败不中止另一 hive，且已完成的 hive **不回滚**（best-effort）。
+    ///
+    /// 用 `fail_enum` 注入 user 侧枚举失败（`diff_one_hive` 会返回 `Err(Io)`）。
+    /// 断言的是**顺序契约**：`preview_restore_in_stores` 先算 user 再算 system、
+    /// 任一失败即整体 `Err`，因此 user 侧注入失败时 system 侧的差异**根本没被算出来**，
+    /// 恢复必然零写入 —— 这正是「冲突/枚举失败必中止」在跨 hive 维度的表现
+    /// （不产生半个 hive 已被改动的中间状态）。
+    ///
+    /// 反向那一半（user 成功、system 失败）单独覆盖：见
+    /// `restore_preview_failure_in_second_hive_leaves_first_untouched` 与
+    /// `restore_system_enum_failure_aborts_before_user_writes`。
+    #[test]
+    fn restore_reports_hive_enumeration_failure() {
+        with_temp_backup_dir(|dir| {
+            let mut usr = MemoryHive::new(true);
+            usr.fail_enum = true;
+            usr.seed("USER_VAR", "u", REG_SZ);
+            let sys = MemoryHive::new(true);
+
+            let payload = payload_with(vec![backup_var("USER_NEW", "n", REG_SZ)]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let err = restore_in_stores(&sys, &usr, &path, true)
+                .expect_err("枚举失败必须中止，不得产出半个 hive 的写入");
+            assert_eq!(err.code, ErrorCode::Io, "枚举失败的错误码必须是 Io");
+            assert!(
+                !usr.contains("USER_NEW"),
+                "中止时不得写入 —— user 侧的备份变量一个都不该被创建"
+            );
+        });
+    }
+
+    /// 差异计算在 user 侧失败时，**system 侧的写入一个都不能发生**。
+    ///
+    /// 这条与上一条互补：上一条用 `fail_enum`（根本没拿到 user 差异），
+    /// 本条让 user 的差异**能算出来**（有 Added），再让 system 侧枚举失败 ——
+    /// 断言的是「绝不因后半段失败而留下前半段已改动的状态」。
+    #[test]
+    fn restore_preview_failure_in_second_hive_leaves_first_untouched() {
+        with_temp_backup_dir(|dir| {
+            let usr = MemoryHive::new(true);
+            let mut sys = MemoryHive::new(true);
+            sys.fail_enum = true;
+
+            // user 侧有一条真实的 Added 差异；system 侧枚举必然失败
+            let payload = payload_with(vec![backup_var("USER_NEW", "n", REG_SZ)]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let err = restore_in_stores(&sys, &usr, &path, true)
+                .expect_err("system 侧枚举失败必须让整次恢复中止");
+            assert_eq!(err.code, ErrorCode::Io);
+            assert!(
+                !usr.contains("USER_NEW"),
+                "system 侧失败时，user 侧已算出的差异也不得被写入（不留半个改动的注册表）"
+            );
+        });
+    }
+
+    /// 单个变量写入失败不中止其余变量 —— 与保护名单用例互补的一格。
+    ///
+    /// 这里用**同批两个变量、其中一个名称非法**（含 `=`）来触发失败：
+    /// 名称非法是 `validate_env_name` 的判定，与保护名单是不同分支，
+    /// 合起来才覆盖「逐条失败被收集而非整体中止」这条契约。
+    ///
+    /// 可证伪性：把逐条失败改回 `?` → 函数返回 `Err`，`expect` 失败。
+    #[test]
+    fn restore_collects_per_variable_failure_without_aborting() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+
+            // 含 `=` 的名称对 `create_env_var_in_store` 非法（InvalidName）。
+            // 备份侧能装下这种条目（备份是外部输入，不受写入校验约束）。
+            let payload = payload_with(vec![
+                backup_var("BAD=NAME", "x", REG_SZ),
+                backup_var("GOOD_ONE", "ok", REG_SZ),
+            ]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true)
+                .expect("单变量失败不得使整次恢复失败");
+
+            assert_eq!(outcome.applied, 1, "只有 GOOD_ONE 应写入成功");
+            assert_eq!(
+                outcome.failures.len(),
+                1,
+                "非法名必须被记为失败，实际: {:?}",
+                outcome.failures
+            );
+            assert!(
+                failure_names(&outcome, "BAD=NAME"),
+                "失败原因必须点名 BAD=NAME，实际: {:?}",
+                outcome.failures
+            );
+            assert!(hive.contains("GOOD_ONE"), "其余变量必须照常恢复");
+            assert!(!hive.contains("BAD=NAME"), "非法名不得写入");
+        });
+    }
+
+    /// **空备份的后果被显式固定**：两个 hive 皆空的备份会删光当前可写变量。
+    ///
+    /// 这是 `EnvBackupHives` 的 `system` / `user` 带 `#[serde(default)]`
+    /// （Task 1 实现，本任务不得改动）的直接后果：形如
+    /// `{"capturedAt":1,"hives":{}}` 的文件能反序列化成功，得到两个空列表，
+    /// 差异计算于是把当前注册表里每个变量都判成 `Removed`。
+    ///
+    /// **本任务裁定：不在恢复层加防护**（理由见报告与 [`restore_in_stores`] 文档）：
+    /// 1. 该行为与既有 `env remove --force` 同性质 —— 都是用户显式要求、
+    ///    `--force` 才生效的破坏性操作；
+    /// 2. 默认模式**不写任何内容**且逐条点名将删除的变量（用户可 `--dry-run` 复核）；
+    /// 3. 加「全空即拒绝」会把「把环境变量全部还原成空集」这一合法意图变成不可表达。
+    ///
+    /// 因此本测试的角色是**把后果钉住**，而不是断言防护存在：
+    /// 若将来有人加了防护，这个测试会失败并强制其显式确认语义变更。
+    ///
+    /// 可证伪性：给恢复层加上「两 hive 皆空则拒绝」，本测试的 `expect` 立即失败。
+    #[test]
+    fn restore_empty_backup_removes_all_current_variables() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("KEEP_A", "a", REG_SZ);
+            hive.seed("KEEP_B", "b", REG_SZ);
+
+            let path = write_env_backup_to(dir, &payload_with(vec![])).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, true)
+                .expect("空备份是合法输入，恢复按差异语义执行");
+
+            assert_eq!(outcome.applied, 2, "两个现存变量都应被判为删除");
+            assert!(outcome.failures.is_empty(), "{:?}", outcome.failures);
+            assert!(!hive.contains("KEEP_A"), "空备份 → 当前变量被删除");
+            assert!(!hive.contains("KEEP_B"), "空备份 → 当前变量被删除");
+        });
+    }
+
+    /// 空备份在**默认模式**下的行为同样被钉住：无冲突 → 不中止，照常删空。
+    ///
+    /// 与上一条配对：上一条走 `--force`，本条的 `force=false` 说明
+    /// 「空备份删光变量」**不是 force 专属行为**，因此不能靠「不加 --force 就安全」
+    /// 来规避 —— 也正因如此，文档必须如实写明这一后果。
+    #[test]
+    fn restore_empty_backup_without_force_also_removes_all() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("KEEP_A", "a", REG_SZ);
+
+            let path = write_env_backup_to(dir, &payload_with(vec![])).unwrap();
+
+            let outcome = restore_in_stores(&MemoryHive::new(true), &hive, &path, false)
+                .expect("空备份无冲突，默认模式不得中止");
+
+            assert_eq!(outcome.applied, 1);
+            assert!(!hive.contains("KEEP_A"), "默认模式下空备份同样会删空");
+        });
+    }
+
+    /// 恢复**不产生新备份**：整个恢复过程中备份目录里的文件数不变。
+    ///
+    /// 设计文档明文要求（「恢复自己不产生新备份」，否则每次恢复都新增文件、
+    /// 与保留策略互相吞噬）。断言方式是直接的：把备份目录指向可写的临时目录
+    /// （生产路径下 `backup_before_write()` 必然写进这里），恢复后目录内容必须
+    /// **逐字节不变** —— 若实现里误接上写前备份，目录会多出一份 `env_backup_*.json`。
+    ///
+    /// 可证伪性：在 `restore_in_stores` 里加一次 `backup_env_vars()`，本测试失败。
+    #[test]
+    fn restore_does_not_create_new_backup() {
+        with_temp_backup_dir(|dir| {
+            let hive = MemoryHive::new(true);
+            hive.seed("OLD_VAR", "old", REG_SZ);
+
+            let payload = payload_with(vec![backup_var("NEW_VAR", "n", REG_SZ)]);
+            let path = write_env_backup_to(dir, &payload).unwrap();
+
+            let before: Vec<String> = sorted_dir_names(dir);
+            assert_eq!(before.len(), 1, "前置条件：目录里只有我们写的那一份备份");
+
+            restore_in_stores(&MemoryHive::new(true), &hive, &path, true).expect("恢复必须成功");
+
+            let after = sorted_dir_names(dir);
+            assert_eq!(
+                after, before,
+                "恢复不得产生新备份文件（否则与保留策略互相吞噬）"
+            );
+        });
+    }
+
+    /// 备份目录内的文件名，排序后返回（用于「目录内容不变」的逐字节比较）。
+    fn sorted_dir_names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .expect("读取备份目录失败")
+            .map(|e| {
+                e.expect("目录项失败")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// `Removed` 条目的顺序必须**可复现**（Task 5 复审 Minor 的回归测试）。
+    ///
+    /// 多个 `Removed` 条目来自 `HashMap` 迭代，`RandomState` 让顺序随进程变化；
+    /// 排序后必须恒定。断言方式：同一份输入构造**多份独立注册表快照**（每份新建
+    /// `MemoryHive`，插入顺序不同），差异列表的名字序列必须逐项相同。
+    ///
+    /// **可证伪性（重要）**：光比对两次结果会因 `HashMap` 的哈希随机化在
+    /// 单进程内的**种子复用**而漏检 —— 同一进程里 `RandomState` 的密钥是线程局部
+    /// 缓存后复用的，两次遍历顺序可能恰好一致。因此这里刻意**改变插入顺序**
+    /// 并把断言放在「跨 hive 的相对位置」上：未排序时 user 段的 `Removed`
+    /// 会随插入顺序散开，排序后恒为升序 —— 删掉 `sort_changes` 调用即失败。
+    #[test]
+    fn preview_removed_entries_are_deterministically_sorted() {
+        let payload = payload_with(vec![
+            backup_var("A_ADDED", "a", REG_SZ),
+            backup_var("Z_ADDED", "z", REG_SZ),
+        ]);
+
+        // 两份注册表：同样五个变量，**插入顺序相反**。未排序时
+        // `Removed` 的相对顺序会跟着插入顺序（HashMap 迭代受它影响）漂移。
+        let forward = MemoryHive::new(true);
+        for name in [
+            "B_REMOVED",
+            "C_REMOVED",
+            "D_REMOVED",
+            "E_REMOVED",
+            "F_REMOVED",
+        ] {
+            forward.seed(name, "x", REG_SZ);
+        }
+        let backward = MemoryHive::new(true);
+        for name in [
+            "F_REMOVED",
+            "E_REMOVED",
+            "D_REMOVED",
+            "C_REMOVED",
+            "B_REMOVED",
+        ] {
+            backward.seed(name, "x", REG_SZ);
+        }
+
+        let names = |hive: &MemoryHive| -> Vec<String> {
+            preview_restore_in_stores(&MemoryHive::new(true), hive, &payload)
+                .expect("预览失败")
+                .changes
+                .iter()
+                .map(|c| format!("{:?}:{:?}", c.kind, c.name))
+                .collect()
+        };
+
+        let first = names(&forward);
+        let second = names(&backward);
+
+        assert_eq!(
+            first, second,
+            "同一份差异集合必须给出同一顺序（Removed 来自 HashMap，未排序则不可复现）"
+        );
+        // 顺序本身也钉住：先 Added（按名升序）、再 Removed（按名升序）。
+        assert_eq!(
+            first,
+            vec![
+                "Added:\"A_ADDED\"",
+                "Added:\"Z_ADDED\"",
+                "Removed:\"B_REMOVED\"",
+                "Removed:\"C_REMOVED\"",
+                "Removed:\"D_REMOVED\"",
+                "Removed:\"E_REMOVED\"",
+                "Removed:\"F_REMOVED\"",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>(),
+            "排序键是 (hive, kind, name)，kind 序为 added → modified → removed → conflict"
+        );
+    }
+
+    /// user 段必须整体在 system 段之前，且排序后仍然成立（契约回归）。
+    ///
+    /// 可证伪性：把 [`hive_rank`] 的取值对调，本测试失败。
+    #[test]
+    fn preview_changes_keep_user_before_system_after_sort() {
+        let sys = MemoryHive::new(true);
+        let usr = MemoryHive::new(true);
+        usr.seed("Z_USER", "u", REG_SZ); // user 侧 Removed
+        sys.seed("A_SYS", "s", REG_SZ); // system 侧 Removed
+
+        let payload = EnvBackupPayload {
+            captured_at: 0,
+            hives: EnvBackupHives {
+                system: vec![],
+                user: vec![],
+            },
+        };
+
+        let preview = preview_restore_in_stores(&sys, &usr, &payload).expect("预览必须成功");
+
+        assert_eq!(preview.removed, 2);
+        assert_eq!(
+            preview.changes[0].hive,
+            EnvHive::User,
+            "user 段必须整体在前（即便其变量名 A_SYS < Z_USER 也不能让 system 插队）"
+        );
+        assert_eq!(preview.changes[1].hive, EnvHive::System);
     }
 }
