@@ -20,6 +20,7 @@ import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { useEnvStore } from '@/store/env-store';
+import { backend } from '@/services/backend';
 import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
 
 /** Tauri's File object includes the native filesystem path */
@@ -84,9 +85,19 @@ export function AppShell() {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const handler = await getCurrentWindow().onCloseRequested((event) => {
           const pending = useAppStore.getState().isModified || useEnvStore.getState().hasDrafts();
-          if (pending && !window.confirm(i18n.t('dialog.unsavedConfirm'))) {
-            event.preventDefault();
-          }
+          if (!pending) return; // 无待保存内容：不拦截，包装层自动 destroy
+          event.preventDefault(); // 同步拦截默认销毁；确认后显式 destroy 收口（G-B2）
+          void (async () => {
+            try {
+              const confirmed = await backend.confirmDialog(i18n.t('dialog.unsavedConfirm'));
+              if (confirmed) await getCurrentWindow().destroy();
+            } catch {
+              // 对话框 IPC 失败时保守放行关窗：宁可丢草稿不可把窗口锁死
+              await getCurrentWindow()
+                .destroy()
+                .catch(() => {});
+            }
+          })();
         });
         if (disposed) handler();
         else unlisten = handler;
@@ -122,8 +133,14 @@ export function AppShell() {
 
   /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
   const confirmRemoveVar = (meta: EnvVarMeta) => {
-    if (!window.confirm(t('envVar.deleteConfirm', { name: meta.name }))) return;
-    void useEnvStore.getState().remove(meta);
+    // 异步确认替代阻塞式 window.confirm（同关窗路径机制）。删除是破坏性操作，
+    // 对话框 IPC 失败时按「取消」处理（fail-closed），绝不静默删除。
+    void backend
+      .confirmDialog(t('envVar.deleteConfirm', { name: meta.name }))
+      .then((confirmed) => {
+        if (confirmed) void useEnvStore.getState().remove(meta);
+      })
+      .catch(() => {});
   };
 
   return (
@@ -181,8 +198,16 @@ export function AppShell() {
               const state = useAppStore.getState();
               // 环境变量草稿尚未提交时同样需要确认，否则关窗会静默丢弃用户输入。
               const hasPendingChanges = state.isModified || useEnvStore.getState().hasDrafts();
-              if (hasPendingChanges && !window.confirm(t('dialog.unsavedConfirm'))) return;
-              window.close();
+              if (!hasPendingChanges) {
+                window.close();
+                return;
+              }
+              void backend
+                .confirmDialog(t('dialog.unsavedConfirm'))
+                .then((confirmed) => {
+                  if (confirmed) window.close();
+                })
+                .catch(() => {});
             }}
             onHelp={() => setHelpOpen(true)}
             onLanguage={() => {

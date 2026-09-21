@@ -5,6 +5,9 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 // 不能在工厂外引用 mock 变量 —— vi.mock 会被提升到 import 之前，外层 const 仍处于 TDZ。
 vi.mock('@/services/backend', async () => {
   const { vi: viModule } = await import('vitest');
+  // confirmDialog 委托给 plugin-dialog 的 confirm mock：与真实 backend.confirmDialog
+  // 的转发关系一致，断言 dialogConfirm 即覆盖完整链路。
+  const { confirm: tauriConfirm } = await import('@tauri-apps/plugin-dialog');
   return {
     backend: {
       listAllEnvVars: viModule.fn(),
@@ -16,22 +19,54 @@ vi.mock('@/services/backend', async () => {
       deleteEnvVar: viModule.fn(),
       expandEnvVars: viModule.fn(),
       validatePath: viModule.fn(),
+      confirmDialog: (message: string) => tauriConfirm(message),
     },
   };
 });
+
+// 关窗/删除确认走 Tauri 异步对话框（plugin-dialog），mock 掉避免 jsdom 下走真实 IPC。
+vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn() }));
+
+// onCloseRequested 关窗链路（G-N1）：全局 mock @tauri-apps/api/window —— AppShell
+// 内的动态 import 同样命中 mock，关窗 effect 在 jsdom 下也能真实注册回调。
+// 工厂在首次动态 import（渲染期）才执行，引用下方外层 const 无 TDZ 风险。
+const closeRequestedHandlers: Array<(event: MockCloseEvent) => unknown> = [];
+const destroyMock = vi.fn().mockResolvedValue(undefined);
+
+/** 与 Tauri CloseRequestedEvent 对齐的最小事件形状。 */
+interface MockCloseEvent {
+  preventDefault: () => void;
+  isPreventDefault: () => boolean;
+}
+
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({
+    onCloseRequested: (handler: (event: MockCloseEvent) => unknown) => {
+      closeRequestedHandlers.push(handler);
+      // 真实 API 返回 Promise<UnlistenFn>，effect 卸载时会调用它
+      return Promise.resolve(() => {});
+    },
+    destroy: destroyMock,
+  }),
+}));
 
 // i18n 用**部分 mock**：保留 initReactI18next 等真实导出（src/i18n 在模块加载时要用），
 // 只覆盖 useTranslation，并以真实 zh-CN 词条取值，断言基于可见文案而非 i18n key。
 vi.mock('react-i18next', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-i18next')>();
   const zh = ((await import('@/i18n/locales/zh-CN.json')).default ?? {}) as Record<string, unknown>;
-  const t = (key: string): string => {
+  const t = (key: string, params?: Record<string, unknown>): string => {
     let node: unknown = zh;
     for (const part of key.split('.')) {
       if (node === null || typeof node !== 'object') return key;
       node = (node as Record<string, unknown>)[part];
     }
-    return typeof node === 'string' ? node : key;
+    if (typeof node !== 'string') return key;
+    // 简单 {{name}} 插值：confirmDialog 收到的是渲染后的完整文案。
+    if (params) {
+      return node.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(params[k] ?? `{{${k}}}`));
+    }
+    return node;
   };
   return { ...actual, useTranslation: () => ({ t }) };
 });
@@ -54,11 +89,17 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 import { AppShell } from '@/components/layout/AppShell';
 import { backend } from '@/services/backend';
+import { confirm as dialogConfirm } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '@/store/app-store';
 import { useEnvStore } from '@/store/env-store';
 import type { EnvVarMeta } from '@/core/env-var';
 
 const mockBackend = vi.mocked(backend);
+
+/** 设定异步确认对话框的返回值（关窗确认 describe 与后续用例共用）。 */
+function mockDialogConfirm(v: boolean) {
+  return vi.mocked(dialogConfirm).mockResolvedValue(v);
+}
 
 function meta(overrides: Partial<EnvVarMeta> = {}): EnvVarMeta {
   return {
@@ -205,9 +246,9 @@ describe('「全部变量」拖放早退（决策 3）', () => {
   });
 });
 
-describe('关窗确认纳入环境变量草稿（决策 4）', () => {
-  it('仅有环境变量草稿时也会弹确认，取消则不关窗', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
+  it('仅有环境变量草稿时也弹异步确认，取消则不关窗', async () => {
+    mockDialogConfirm(false);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
     // isModified 为 false，草稿是唯一待提交内容。
     useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'secret']]) });
@@ -215,31 +256,116 @@ describe('关窗确认纳入环境变量草稿（决策 4）', () => {
     render(<AppShell />);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => expect(dialogConfirm).toHaveBeenCalledWith('有未保存的修改，确定退出吗？'));
     expect(closeSpy).not.toHaveBeenCalled();
   });
 
-  it('确认后关窗', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('确认后关窗', async () => {
+    mockDialogConfirm(true);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
     useAppStore.setState({ isModified: true });
 
     render(<AppShell />);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
     expect(closeSpy).toHaveBeenCalled();
   });
 
-  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', async () => {
+    mockDialogConfirm(false);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
 
     render(<AppShell />);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(dialogConfirm).not.toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();
+  });
+});
+
+describe('onCloseRequested 原生关窗回调（诊断报告 §四.3 补底）', () => {
+  beforeEach(() => {
+    closeRequestedHandlers.length = 0;
+    destroyMock.mockClear();
+    // 全局 beforeEach 的 resetAllMocks 会清掉 mockResolvedValue 实现；
+    // IPC 异常用例的兜底路径要对 destroy() 返回值调 .catch，必须恢复 Promise 语义。
+    destroyMock.mockResolvedValue(undefined);
+  });
+
+  /**
+   * 模拟 Tauri 包装层触发关窗：真实实现（window.js）是
+   * `await handler(evt); if (!evt.isPreventDefault()) await this.destroy()`。
+   * 这里逐字复刻该语义 —— handler 未调用 preventDefault 时由包装层自动
+   * destroy，故下方「无 pending」用例断言 destroy 是包装层触发的真实路径。
+   */
+  async function fireClose(): Promise<void> {
+    for (const h of closeRequestedHandlers) {
+      let prevented = false;
+      const evt: MockCloseEvent = {
+        preventDefault: () => {
+          prevented = true;
+        },
+        isPreventDefault: () => prevented,
+      };
+      await h(evt);
+      if (!evt.isPreventDefault()) await destroyMock();
+    }
+  }
+
+  it('无 pending：不弹确认，直接 destroy', async () => {
+    mockDialogConfirm(false);
+    render(<AppShell />);
+    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
+    await fireClose();
+    await waitFor(() => expect(destroyMock).toHaveBeenCalled());
+    expect(dialogConfirm).not.toHaveBeenCalled();
+  });
+
+  it('有草稿 + 用户确认：destroy', async () => {
+    mockDialogConfirm(true);
+    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'x']]) });
+    render(<AppShell />);
+    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
+    await fireClose();
+    await waitFor(() => expect(destroyMock).toHaveBeenCalled());
+    expect(dialogConfirm).toHaveBeenCalled();
+  });
+
+  it('有草稿 + 用户取消：preventDefault 被调用且不 destroy（窗口保留）', async () => {
+    mockDialogConfirm(false);
+    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'x']]) });
+    render(<AppShell />);
+    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
+
+    // 记录 preventDefault 是否被同步调用（G-B2：先同步拦截再异步确认）
+    let prevented = false;
+    for (const h of closeRequestedHandlers) {
+      const evt: MockCloseEvent = {
+        preventDefault: () => {
+          prevented = true;
+        },
+        isPreventDefault: () => prevented,
+      };
+      await h(evt);
+      // handler 同步调用 preventDefault 后 isPreventDefault 必须为 true ——
+      // 包装层据此跳过自动 destroy（若 mock 复刻错误，此处会误触发 destroy）
+      expect(evt.isPreventDefault()).toBe(true);
+    }
+    expect(prevented).toBe(true);
+
+    // 确认对话框 resolve false 之外的路径都不应 destroy
+    await new Promise((r) => setTimeout(r, 50));
+    expect(destroyMock).not.toHaveBeenCalled();
+  });
+
+  it('confirmDialog IPC 异常：兜底 destroy（宁可丢草稿不锁死窗口）', async () => {
+    vi.mocked(dialogConfirm).mockRejectedValue(new Error('ipc denied'));
+    useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'x']]) });
+    render(<AppShell />);
+    await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
+    await fireClose();
+    await waitFor(() => expect(destroyMock).toHaveBeenCalled());
   });
 });
 
@@ -523,8 +649,8 @@ describe('删除与选中管理', () => {
     );
   }
 
-  it('删除需要确认；确认后调用 deleteEnvVar 并清除选中', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('删除前弹异步确认；确认后调用 deleteEnvVar 并清除选中', async () => {
+    mockDialogConfirm(true);
     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
     mockBackend.deleteEnvVar.mockResolvedValue(undefined);
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
@@ -534,7 +660,9 @@ describe('删除与选中管理', () => {
     await selectJavaHome();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(dialogConfirm).toHaveBeenCalledWith('确定删除变量 JAVA_HOME 吗？此操作不可撤销。'),
+    );
     await waitFor(() =>
       expect(mockBackend.deleteEnvVar).toHaveBeenCalledWith('user', 'JAVA_HOME', 'rev-1'),
     );
@@ -546,7 +674,7 @@ describe('删除与选中管理', () => {
   });
 
   it('取消删除时不调用 deleteEnvVar', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mockDialogConfirm(false);
     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
     mockBackend.deleteEnvVar.mockResolvedValue(undefined);
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
@@ -556,8 +684,30 @@ describe('删除与选中管理', () => {
     await selectJavaHome();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
 
+    await waitFor(() =>
+      expect(dialogConfirm).toHaveBeenCalledWith('确定删除变量 JAVA_HOME 吗？此操作不可撤销。'),
+    );
     expect(mockBackend.deleteEnvVar).not.toHaveBeenCalled();
     // 选中保留，编辑按钮仍可用
+    expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('确认对话框 IPC 失败时不删除（破坏性操作 fail-closed，与关窗路径相反）', async () => {
+    vi.mocked(dialogConfirm).mockRejectedValue(new Error('ipc denied'));
+    mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
+    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+    mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
+
+    render(<AppShell />);
+    fireEvent.click(screen.getByText('全部变量'));
+    await selectJavaHome();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
+    // IPC 失败按取消处理：绝不静默删除
+    expect(mockBackend.deleteEnvVar).not.toHaveBeenCalled();
     expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(
       false,
     );

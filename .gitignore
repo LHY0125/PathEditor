@@ -41,6 +41,9 @@ playwright-report/
 .codegraph/
 CLAUDE.md
 
+# Review wave diff snapshots (regenerable, kept local only)
+review-*.diff
+
 # Platform
 e2e/debug-screenshot.png
 target/

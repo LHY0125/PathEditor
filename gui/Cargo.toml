@@ -12,6 +12,12 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "rlib"]
 
+# 显式声明 bin 名与 tauri productName（PathEditor）一致，
+# 避免 gui/cli 两个 crate 自动推导出同名 patheditor bin 互相覆盖产物。
+[[bin]]
+name = "PathEditor"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 

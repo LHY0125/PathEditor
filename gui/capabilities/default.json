@@ -9,6 +9,7 @@
     "core:default",
     "core:window:allow-set-title",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "core:window:allow-minimize",
     "core:window:allow-start-dragging",
     "core:window:allow-is-minimized",
@@ -17,6 +18,7 @@
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
+    "dialog:allow-confirm",
     "log:default"
   ]
 }

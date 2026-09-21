@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog';
 import type { PathEntry, PathSnapshot } from '@/core/path-entry';
 import type { PathCapabilities } from '@/core/path-capabilities';
 import type {
@@ -274,6 +275,8 @@ export const backend = {
     parsePathCapabilities(await invoke<unknown>('get_path_capabilities')),
   validatePath: (path: string) => invoke<boolean>('validate_path', { path }),
   expandEnvVars: (path: string) => invoke<string>('expand_env_vars', { path }),
+  /** 异步确认对话框（替代阻塞式 window.confirm）：关窗确认等路径专用，绝不阻塞 JS 线程。 */
+  confirmDialog: (message: string) => tauriConfirm(message),
   broadcastEnvChange: () => invoke<void>('broadcast_env_change'),
   backupRegistry: (customDir: string | null = null) =>
     invoke<string | null>('backup_registry', { customDir }),
