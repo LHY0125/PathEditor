@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import i18n from '@/i18n';
 import {
+  backupFailed,
   envVarKey,
   validateVarName,
   type EnvHive,
@@ -11,7 +12,7 @@ import {
   type RevealedValue,
 } from '@/core/env-var';
 import { backend } from '@/services/backend';
-import type { CoreError } from '@/core/env-var';
+import type { BackupOutcome, CoreError } from '@/core/env-var';
 
 /**
  * F-06（Task 3）：错误判定完全按 `code` —— backend.ts 已把 Tauri rejection
@@ -33,6 +34,19 @@ function isCoreError(err: unknown): err is CoreError {
     'message' in err &&
     typeof (err as { message: unknown }).message === 'string'
   );
+}
+
+/**
+ * 写入成功后的状态文案：写前自动备份失败时如实降级为「保存成功（备份失败）」。
+ *
+ * 复用既有 `status.saved_without_backup` 键，不新增文案源（J1a）。
+ * 备份是 best-effort（设计文档 K2）：失败**不改变**操作成功的判定 ——
+ * 调用方的 `return true` 照旧，只有状态栏措辞变化。
+ */
+function savedStatusMessage(backup: BackupOutcome): string {
+  return backupFailed(backup) !== null
+    ? i18n.t('status.saved_without_backup')
+    : i18n.t('status.saved');
 }
 
 /**
@@ -156,10 +170,10 @@ export const useEnvStore = create<EnvState>((set, get) => {
       if (value === undefined) return false;
       set({ isSaving: true });
       try {
-        await backend.updateEnvVar(meta.hive, meta.name, value, meta.revision);
+        const { backup } = await backend.updateEnvVar(meta.hive, meta.name, value, meta.revision);
         const draft = new Map(get().draft);
         draft.delete(envVarKey(meta));
-        set({ draft, isSaving: false, statusMessage: i18n.t('status.saved') });
+        set({ draft, isSaving: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
       } catch (error) {
@@ -183,8 +197,8 @@ export const useEnvStore = create<EnvState>((set, get) => {
       }
       set({ isSaving: true });
       try {
-        await backend.createEnvVar(hive, name, value, kind);
-        set({ isSaving: false, statusMessage: i18n.t('status.saved') });
+        const { backup } = await backend.createEnvVar(hive, name, value, kind);
+        set({ isSaving: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
       } catch (error) {
@@ -199,8 +213,8 @@ export const useEnvStore = create<EnvState>((set, get) => {
     remove: async (meta) => {
       set({ isSaving: true });
       try {
-        await backend.deleteEnvVar(meta.hive, meta.name, meta.revision);
-        set({ isSaving: false, statusMessage: i18n.t('status.saved') });
+        const { backup } = await backend.deleteEnvVar(meta.hive, meta.name, meta.revision);
+        set({ isSaving: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
       } catch (error) {

@@ -11,6 +11,14 @@ import type {
   ErrorCode,
   RevealedValue,
 } from '@/core/env-var';
+import type { BackupOutcome, WriteOutcome } from '@/core/env-var';
+import type {
+  EnvBackupInfo,
+  RestoreChange,
+  RestoreChangeKind,
+  RestoreOutcome,
+  RestorePreview,
+} from '@/core/env-backup';
 
 export type { PathCapabilities } from '@/core/path-capabilities';
 
@@ -245,6 +253,126 @@ function parseEnvVarSnapshot(value: unknown): EnvVarSnapshot {
   };
 }
 
+/**
+ * 解析 Rust `BackupOutcome`（外部标签枚举）：`{created}` / `"skipped"` / `{failed}`。
+ *
+ * 只认 `created` 的有效形状（字符串路径）：`{created: null}` 这类「键对值错」
+ * 会让 `backupFailed` 静默判成非失败，等于把上游回归吞掉。
+ */
+function parseBackupOutcome(value: unknown, label: string): BackupOutcome {
+  if (value === 'skipped') return 'skipped';
+  if (isRecord(value)) {
+    if (typeof value.created === 'string') return { created: value.created };
+    if (typeof value.failed === 'string') return { failed: value.failed };
+  }
+  // 文案统一挂在 WriteOutcome.backup 上：调用方只认一个入口，报错定位到具体字段。
+  throw new Error(`${label} 返回了无效的 WriteOutcome.backup 契约`);
+}
+
+/**
+ * 写方法返回值的入口校验。
+ *
+ * `undefined` 是**兼容回退**：旧后端（或在 E2E mock 未接线时）返回空值，
+ * 规范化为 `"skipped"`（「本次无需备份」）而不是报错 —— 把缺字段当成
+ * 备份失败会在状态栏误报「保存成功（备份失败）」，比不显示更糟。
+ * 其余非法形状（有 `backup` 但形状不对、或连 `backup` 都没有）一律拒绝，
+ * 绝不透传。
+ */
+function parseWriteOutcome(value: unknown, label: string): WriteOutcome {
+  if (value === undefined) return { backup: 'skipped' };
+  if (!isRecord(value) || !('backup' in value)) {
+    throw new Error(`${label} 返回了无效的 WriteOutcome 契约`);
+  }
+  return { backup: parseBackupOutcome(value.backup, label) };
+}
+
+const RESTORE_CHANGE_KINDS: readonly string[] = ['added', 'modified', 'removed', 'conflict'];
+
+/** 单条恢复差异的运行时校验（hive / kind 白名单，name 非空）。 */
+function parseRestoreChange(value: unknown, label: string): RestoreChange {
+  if (
+    !isRecord(value) ||
+    (value.hive !== 'system' && value.hive !== 'user') ||
+    typeof value.kind !== 'string' ||
+    !RESTORE_CHANGE_KINDS.includes(value.kind) ||
+    typeof value.name !== 'string' ||
+    value.name.length === 0
+  ) {
+    throw new Error(`${label} 返回了无效的 RestoreChange 契约`);
+  }
+  return {
+    hive: value.hive,
+    name: value.name,
+    kind: value.kind as RestoreChangeKind,
+  };
+}
+
+/** 四个计数必须是非负整数，且与 changes 长度自洽（Rust 侧契约恒等）。 */
+function parseCount(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} 返回了无效的计数`);
+  }
+  return value;
+}
+
+function parseRestorePreview(value: unknown): RestorePreview {
+  const label = 'preview_env_backup';
+  if (!isRecord(value) || !Array.isArray(value.changes)) {
+    throw new Error(`${label} 返回了无效的 RestorePreview 契约`);
+  }
+  return {
+    changes: value.changes.map((item) => parseRestoreChange(item, label)),
+    added: parseCount(value.added, label),
+    modified: parseCount(value.modified, label),
+    removed: parseCount(value.removed, label),
+    conflicts: parseCount(value.conflicts, label),
+  };
+}
+
+/** 备份列表项的运行时校验；`variableCount` 缺失时回退 0（该字段恒为 0，见契约）。 */
+function parseEnvBackupInfo(value: unknown, label: string): EnvBackupInfo {
+  if (
+    !isRecord(value) ||
+    typeof value.file !== 'string' ||
+    typeof value.path !== 'string' ||
+    typeof value.timestamp !== 'string' ||
+    typeof value.sizeBytes !== 'number'
+  ) {
+    throw new Error(`${label} 返回了无效的 EnvBackupInfo 契约`);
+  }
+  return {
+    file: value.file,
+    path: value.path,
+    timestamp: value.timestamp,
+    sizeBytes: value.sizeBytes,
+    variableCount: typeof value.variableCount === 'number' ? value.variableCount : 0,
+  };
+}
+
+/** 恢复结果：`applied` / `skipped` 非负整数，`failures` 全为字符串。 */
+function parseRestoreOutcome(value: unknown): RestoreOutcome {
+  const label = 'restore_env_backup';
+  if (!isRecord(value) || !Array.isArray(value.failures)) {
+    throw new Error(`${label} 返回了无效的 RestoreOutcome 契约`);
+  }
+  if (!value.failures.every((item: unknown) => typeof item === 'string')) {
+    throw new Error(`${label} 的 failures 必须是字符串数组`);
+  }
+  return {
+    applied: parseCount(value.applied, label),
+    skipped: parseCount(value.skipped, label),
+    failures: value.failures as string[],
+  };
+}
+
+/** 备份路径返回值：非空字符串（`backup_env_vars` 的成功路径）。 */
+function parseBackupPath(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${label} 返回了无效的备份路径契约`);
+  }
+  return value;
+}
+
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
   loadSystemPaths: async () =>
@@ -300,10 +428,57 @@ export const backend = {
       await parseCoreError(invoke<unknown>('reveal_env_var', { hive, name })),
       'reveal_env_var',
     ),
-  updateEnvVar: (hive: EnvHive, name: string, value: string, expectedRevision: string) =>
-    parseCoreError(invoke<void>('update_env_var', { hive, name, value, expectedRevision })),
-  createEnvVar: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) =>
-    parseCoreError(invoke<void>('create_env_var', { hive, name, value, kind })),
-  deleteEnvVar: (hive: EnvHive, name: string, expectedRevision: string) =>
-    parseCoreError(invoke<void>('delete_env_var', { hive, name, expectedRevision })),
+  /**
+   * 写入已有变量。成功返回 `WriteOutcome`；rejection 经 `parseCoreError` 结构化。
+   *
+   * 注意 `parseCoreError` 的返回值类型是 `unknown` —— 形状由
+   * `parseWriteOutcome` 收口，不靠 TS 断言。
+   */
+  updateEnvVar: async (hive: EnvHive, name: string, value: string, expectedRevision: string) =>
+    parseWriteOutcome(
+      await parseCoreError(
+        invoke<unknown>('update_env_var', { hive, name, value, expectedRevision }),
+      ),
+      'update_env_var',
+    ),
+  createEnvVar: async (hive: EnvHive, name: string, value: string, kind: EnvValueKind) =>
+    parseWriteOutcome(
+      await parseCoreError(invoke<unknown>('create_env_var', { hive, name, value, kind })),
+      'create_env_var',
+    ),
+  deleteEnvVar: async (hive: EnvHive, name: string, expectedRevision: string) =>
+    parseWriteOutcome(
+      await parseCoreError(invoke<unknown>('delete_env_var', { hive, name, expectedRevision })),
+      'delete_env_var',
+    ),
+  /** 立即创建一份环境变量备份，返回备份文件路径。 */
+  backupEnvVars: async () =>
+    parseBackupPath(await parseCoreError(invoke<unknown>('backup_env_vars')), 'backup_env_vars'),
+  /** 列出已有的环境变量备份（Rust 侧按时间倒序，不解析内容）。 */
+  listEnvBackups: async () => {
+    const label = 'list_env_backups';
+    const result = await parseCoreError(invoke<unknown>(label));
+    if (!Array.isArray(result)) throw new Error(`${label} 返回了无效的 EnvBackupInfo[] 契约`);
+    return result.map((item) => parseEnvBackupInfo(item, label));
+  },
+  /**
+   * 计算备份相对当前注册表的差异（不写任何内容）。
+   *
+   * 路径来源校验（扩展名 / 是否在备份目录内 / 大小上限）**在本命令内于 Rust 侧
+   * 先于读取执行**：Rust 的 `preview_restore_file` 自身不校验，对不可解析的文件
+   * 会经 persist 层把它重命名隔离为 `<file>.corrupt-<ts>`。Tauri 命令
+   * `preview_env_backup` 的第一行即 `validate_backup_path`，前端不复制该规则。
+   */
+  previewEnvBackup: async (file: string) =>
+    parseRestorePreview(await parseCoreError(invoke<unknown>('preview_env_backup', { file }))),
+  /**
+   * 执行恢复。`force = false` 时遇冲突整批中止并返回 code=`conflict`。
+   *
+   * `force = true` 会覆盖冲突项，但那些变量仍计入 `preview.conflicts` ——
+   * 确认弹窗因此**低报**改动量，这是 Rust 侧的已知取舍，前端不做换算。
+   */
+  restoreEnvBackup: async (file: string, force: boolean) =>
+    parseRestoreOutcome(
+      await parseCoreError(invoke<unknown>('restore_env_backup', { file, force })),
+    ),
 };

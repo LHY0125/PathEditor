@@ -9,6 +9,8 @@ interface EnvVarToolbarProps {
   onEdit: () => void;
   onDelete: () => void;
   onRefresh: () => void;
+  /** 打开「备份与恢复」对话框（环境变量通路的整体备份/恢复入口）。 */
+  onBackup: () => void;
   onSearchChange: (query: string) => void;
   searchQuery: string;
   selected: EnvVarMeta | null;
@@ -33,6 +35,7 @@ export function EnvVarToolbar({
   onEdit,
   onDelete,
   onRefresh,
+  onBackup,
   onSearchChange,
   searchQuery,
   selected,
@@ -62,6 +65,9 @@ export function EnvVarToolbar({
       </button>
       <button className={btnClass} style={btnStyle} onClick={onRefresh}>
         {t('envVar.refresh')}
+      </button>
+      <button className={btnClass} style={btnStyle} onClick={onBackup}>
+        {t('envBackup.title')}
       </button>
       <input
         type="text"
