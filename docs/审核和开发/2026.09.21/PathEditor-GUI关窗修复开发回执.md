@@ -40,8 +40,8 @@ T5 Step 2 的 WM_CLOSE 自动化冒烟（诊断报告 §五 A 线方法，进程
 
 1. `@tauri-apps/api/window.js:1632-1640`：`onCloseRequested` 包装层在 handler 返回后 `if (!evt.isPreventDefault()) await this.destroy()`；
 2. `window.js:959-962`：`destroy()` = `invoke('plugin:window|destroy')`；
-3. 新构建运行时 ACL **拒绝** `plugin:window|destroy`（CDP 实测报「Command plugin:window|destroy not allowed by ACL」），而 `gui/capabilities/default.json` 从 v5.1（cbf99f1）起**从未声明过 `core:window:allow-destroy`**；
-4. 旧代码为何没触发：旧回调 `pending && !window.confirm(...)` 时才 `preventDefault`，无 pending 时同样走 wrapper 的 `destroy()`——**旧构建同样没有 destroy 权限**。旧构建关窗能成功，是因为阻塞式 `window.confirm` 挂起期间 tao 的默认关窗拦截路径在本地 GNU 构建上直接放行（诊断报告 §3.2 确认该路径只在 CI/MSVC 构建出错）。换言之：**阻塞式 confirm 的死锁掩盖了 destroy 权限缺失；异步化让关窗路径真正依赖 `destroy()` IPC，权限缺失随即暴露**。异步化本身没有引入新缺陷，它移除了掩盖。
+3. 新构建运行时 ACL **拒绝** `plugin:window|destroy`（CDP 实测报「Command plugin:window|destroy not allowed by ACL」），而 `gui/capabilities/default.json` 自 v4.0（48129a8）起**从未声明过 `core:window:allow-destroy`**（`git log -S` 实证，早于本回执初稿所写的 v5.1）；
+4. **旧构建为何能退出——未解之疑（如实记录，不作因果定论）**。已确认的事实链：`onCloseRequested` 包装层无论新旧代码，在 handler 未 `preventDefault` 时都会走 `destroy()` → `invoke('plugin:window|destroy')`；运行时 ACL 需放行该命令才能成功；`git log -S "allow-destroy"` 实证 `gui/capabilities/default.json` 及其前身**自 v4.0（48129a8）起从未声明过 `core:window:allow-destroy`**（早于本回执初稿所写的 v5.1）；新构建在无该权限下 WM_CLOSE 3/3 不退出，补权限后 3/3 正常退出。**但**按此事实链，旧构建的无 pending 路径同样调用 `destroy()`、同样应挂起——这与「旧构建 3/3 正常退出（exit 0）」的观察**矛盾**。该矛盾目前**无法用已有证据解释**，记为开放问题。按可能性排序的假设：① 旧 A/B 二进制不干净（Task 3 已实证共享 target 目录下同名产物互相覆盖的污染机制，旧「main@145b3a3 构建」可能实际含其他代码）；② 旧本地构建中 `@tauri-apps/api/window` 动态导入静默失败，包装层从未生效；③ 旧构建存在未知构建级 ACL 差异。初稿的「阻塞式 confirm 的死锁掩盖了 destroy 权限缺失」仅为**假设**，未经对照实验证实，不作为已验证结论。**决定性后续动作**：在干净 worktree 重建 145b3a3 并复跑无 pending WM_CLOSE 冒烟（已登记入 §六未覆盖项）。修复本身不受该未解问题影响——新构建「无权限挂起 / 有权限退出」的 A/B 已在本波内闭环验证。
 
 ### 2.3 修复与验证
 
@@ -145,7 +145,7 @@ T5 Step 2 的 WM_CLOSE 自动化冒烟（诊断报告 §五 A 线方法，进程
 | cargo fmt / clippy（-D warnings） | 通过 |
 | cargo test --workspace | **192 通过**（core 151 + CLI 41），2 ignored（均有 `#[ignore]` 注明原因：winreg lossy 解码不可达分支 / 需真实注册表写权限的隔离键测试） |
 | Playwright E2E | **24 passed**（mock IPC，生产构建 + 2 workers，17.0s） |
-| `npx tauri build` | 成功；NSIS `PathEditor_5.1.3_x64-setup.exe` 4,525,302 字节；`target\release\PathEditor.exe` **20,939,140 字节（≈20MB，无产物污染）** |
+| `npx tauri build` | 成功；NSIS `PathEditor_5.1.3_x64-setup.exe` 4,524,886 字节；`target\release\PathEditor.exe` **20,940,164 字节（≈20MB，无产物污染）**（以上为第二轮构建产物，本回执定稿时以 `Get-Item ... .Length` 实测磁盘文件为准；初稿曾录第一轮数字 20,939,140 / 4,525,302，两轮字节差异属构建非确定性，与污染无关——同轮内两产物 MD5 不同已另行验证） |
 
 时间点：第一轮 verify:all 于 17:03 完成全绿；capabilities 修复后第二轮 verify:all 重跑确认全绿（数字以第二轮为准）；tauri build 于同日完成两轮（第二轮含 allow-destroy）。
 
@@ -156,6 +156,7 @@ T5 Step 2 的 WM_CLOSE 自动化冒烟（诊断报告 §五 A 线方法，进程
 3. profile hook（`use-profiles.ts`）无专属测试文件，走计划的降级路径（全量回归 + `window.confirm` 归零 grep）。
 4. E2E 不覆盖关窗与删除确认流（mock IPC 无原生窗口事件；确认对话框为原生 `#32770`，Playwright 页面内不可见）。
 5. 「有草稿 + 用户取消/确认」的端到端进程级冒烟未做（需写注册表制造草稿，违反本波无注册表写入约束）；该分支由 T4 单测覆盖（jsdom 层）。
+6. **旧构建退出观察的对照实验未做**：干净 worktree 重建 145b3a3 + 复跑无 pending WM_CLOSE 冒烟（§2.2 第 4 条开放问题的决定性验证）。本波内旧构建 A/B 结果只能视为**未经提纯的观察**，不作为根因结论的证据。
 
 ---
 
@@ -165,7 +166,7 @@ T5 Step 2 的 WM_CLOSE 自动化冒烟（诊断报告 §五 A 线方法，进程
 
 诊断报告 §二复现矩阵：CI 版 GUI 死锁 3/3、本地 GNU 构建 2/2 正常——死锁只复现于 CI/MSVC 构建。本波修复消除了死锁前提（JS 线程不再被阻塞式 `window.confirm` 挂起），并在本机 GNU 构建上验证了 WM_CLOSE 退出与异步确认对话框弹出（见 §六/§二）；但 **CI 环境的最终验证只能等下一次真实发布构建后由用户侧确认**。本回执与任何后续文档不得写成本修复「已在 CI 环境验证」。
 
-另外必须如实记录：本波修复的收口冒烟（WM_CLOSE 自动化）恰恰发现了异步化后暴露的 `allow-destroy` 权限缺失（§二）——这证明自动化冒烟环节有真实价值，也说明「异步化 = 修复完成」的假设需要构建级验证兜底。
+另外必须如实记录：本波修复的收口冒烟（WM_CLOSE 自动化）恰恰发现了异步化后暴露的 `allow-destroy` 权限缺失（§二）——这证明自动化冒烟环节有真实价值，也说明「异步化 = 修复完成」的假设需要构建级验证兜底。注意：关于旧构建为何无 destroy 权限仍能正常退出，本回执 §2.2 第 4 条**仅记为开放问题**（假设已列、未做对照实验）；任何后续文档在干净重建对照实验完成前，不得把「阻塞式 confirm 掩盖了权限缺失」写成已验证事实。
 
 ---
 
