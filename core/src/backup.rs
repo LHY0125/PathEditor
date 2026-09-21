@@ -260,8 +260,12 @@ pub fn collect_env_backup() -> Result<EnvBackupPayload, CoreError> {
 /// （例外：`keep = 0` 时用户明确要求零保留，新文件也会被删，见实现说明。）
 ///
 /// # Returns
-/// - `Ok(PathBuf)` — 写入的备份文件绝对路径
-/// - `Err(CoreError)` — 目录创建、写文件或轮换失败（code=`Io`）。
+/// - `Ok(PathBuf)` — 写入的备份文件路径。是 `dir.join(...)` 的**原样结果**：
+///   `dir` 是相对路径时返回值也是相对路径，**不保证绝对**（`backup_env_vars()`
+///   传入的 `env_backup_dir()` 通常绝对，但可被 `PATHEDITOR_BACKUP_DIR` 设成
+///   相对路径）。调用方若需要绝对路径须自行解析。
+/// - `Err(CoreError)` — 目录创建、写文件或轮换失败（code=`Io`）；
+///   另有一条序列化失败路径返回 code=`Internal`（正常载荷不会走到）。
 ///   **注意轮换失败这一路**：此时新备份文件**已经在磁盘上**，返回值只表示
 ///   「保留策略未能执行」，**不等于**备份未落盘。调用方措辞须按此理解。
 pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<PathBuf, CoreError> {
@@ -552,7 +556,8 @@ pub enum BackupOutcome {
 /// 采集两个 hive 并落盘一份 env 备份（公开入口，供 CLI `env backup` 与写前自动备份使用）。
 ///
 /// # Returns
-/// - `Ok(PathBuf)` — 备份文件绝对路径
+/// - `Ok(PathBuf)` — 备份文件路径。**不保证绝对**：由 `env_backup_dir()` 决定，
+///   该目录可被 `PATHEDITOR_BACKUP_DIR` 设成相对路径。需要绝对路径须自行解析。
 /// - `Err(CoreError)` — 采集或落盘失败
 pub fn backup_env_vars() -> Result<PathBuf, CoreError> {
     let payload = collect_env_backup()?;
