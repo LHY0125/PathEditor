@@ -21,7 +21,7 @@ npm run dev                         # 仅运行 Vite 前端
 npm run build                       # 前端类型检查 + Vite 构建
 cargo check                         # Rust workspace 检查
 cargo build --release -p patheditor-cli
-npx tauri build                     # 生成 NSIS 安装包
+npx tauri build                     # 生成 NSIS 安装包；GUI 产物 target\release\PathEditor.exe，CLI 产物 patheditor.exe，两者不再同名冲突
 
 npm test                            # Vitest 单元测试
 npm run test:watch                  # Vitest 监听模式
@@ -182,6 +182,7 @@ patheditor env remove    <NAME> (--revision <R>|--force)
 | 文件                  | 字段                          |
 | --------------------- | ----------------------------- |
 | `package.json`        | `version`                     |
+| `package-lock.json`   | `version`（`npm install` 同步） |
 | `Cargo.toml`          | `[workspace.package] version` |
 | `gui/tauri.conf.json` | `version`、窗口 `title`       |
 | `README.md`           | 版本徽章和安装包说明          |
@@ -239,7 +240,7 @@ $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)
 | ------------ | ------------------------------------------------------------------------------------------------------- |
 | 校验项目版本 | `package.json`、`gui/tauri.conf.json`、`Cargo.toml` 三处版本必须与 tag 一致，否则整条流水线失败         |
 | Tauri Build  | 需要 `npm ci` 与 Node 20                                                                                |
-| 整理发布产物 | 需要 `target\release\bundle\nsis\PathEditor_<VERSION>_x64-setup.exe` 与 `target\release\patheditor.exe` |
+| 整理发布产物 | 需要 `target\release\bundle\nsis\PathEditor_<VERSION>_x64-setup.exe`、`target\release\PathEditor.exe`（GUI 本体，portable zip 用）与 `target\cli\release\patheditor.exe`（CLI，独立 target 目录构建） |
 | 生成发布日志 | 读 `CHANGELOG.md`（缺失则回退 git log）                                                                 |
 
 工作流使用 MSVC 工具链（覆盖 `rust-toolchain.toml` 的 GNU 设置），因为 GitHub Windows runner 上 MSVC 更稳定。这是刻意的，不要"修正"它。
@@ -249,7 +250,8 @@ $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)
 | 文件                                 | 说明                                                                                           |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `PathEditor_<VERSION>_x64-setup.exe` | NSIS 安装包（GUI），产物目录中原始名                                                           |
-| `patheditor-cli_<VERSION>_x64.exe`   | CLI 二进制，CI 在整理产物时重命名——**本地产物名为 `patheditor.exe`，不要据此判断发布包的名称** |
+| `PathEditor.exe`                     | GUI 本体（tauri bin 产物，portable zip 装的就是它）                                            |
+| `patheditor-cli_<VERSION>_x64.exe`   | CLI 二进制，CI 在整理产物时重命名——**本地产物为 `target\cli\release\patheditor.exe`，不要据此判断发布包的名称** |
 
 ### Release 已存在时的行为
 

@@ -106,7 +106,10 @@ jobs:
 
       - name: 构建 CLI
         if: steps.check.outputs.exists == 'false'
-        run: cargo build --release -p patheditor-cli
+        # Windows NTFS 大小写不敏感：若 CLI 与 GUI 共用 target 目录，
+        # CLI 链接出的 patheditor.exe 会覆盖 GUI 的 PathEditor.exe（同一条目），
+        # portable zip 就会装到 CLI。CLI 必须用独立 target 目录隔离产物。
+        run: cargo build --release -p patheditor-cli --target-dir target/cli
 
       - name: 整理发布产物
         if: steps.check.outputs.exists == 'false'
@@ -123,7 +126,11 @@ jobs:
           }
           Copy-Item -LiteralPath $installer.FullName -Destination $assetDir
 
-          $cli = 'target\release\patheditor.exe'
+          # bin 改名后：GUI crate 产出 target\release\PathEditor.exe，
+          # CLI crate 产出 target\cli\release\patheditor.exe（独立 target 目录，
+          # 避免 NTFS 大小写不敏感导致两产物互为同一文件、CLI 覆盖 GUI）。
+          # portable zip 的 GUI 本体取 target\release\PathEditor.exe。
+          $cli = 'target\cli\release\patheditor.exe'
           if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
             throw "未找到 CLI 可执行文件: $cli"
           }
@@ -134,7 +141,7 @@ jobs:
           # 供 scoop 等包管理器直接解压即用（NSIS 安装器不便解包）。
           $portableStage = Join-Path $env:RUNNER_TEMP "patheditor-portable"
           New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
-          Copy-Item -LiteralPath 'target\release\patheditor.exe' -Destination $portableStage
+          Copy-Item -LiteralPath 'target\release\PathEditor.exe' -Destination $portableStage
           Copy-Item -LiteralPath 'gui\WebView2Loader.dll' -Destination $portableStage
 
           $zip = Join-Path $assetDir "PathEditor_${env:VERSION}_x64-portable.zip"
