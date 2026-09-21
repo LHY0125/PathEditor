@@ -123,9 +123,50 @@ cargo 1.96.0 (30a34c682 2026-05-25) / rustc 1.96.0 (ac68faa20 2026-05-25)。
 
 ### 6.4 编码 / 字节损坏
 
-本波共 **7 处**：计划原文 2 处 U+FFFD、`core/src/service.rs` 1 处（**先于本波存在**，`0da96a7` 时即有）、以及多次因 heredoc / 正则编辑中文文本引入 U+FFFD 与控制字节。
+本波共 **7 处**：计划原文、`core/src/service.rs`（**先于本波存在**）、以及多次因
+heredoc / 正则编辑中文文本引入的 U+FFFD 与控制字节。
 
-**建议：改中文文本一律用精确 `Edit`（不用 heredoc / sed / 正则）；提交前对文本文件同时自查 U+FFFD 与控制字符。**
+**可复现核验**（Task 9 结束时实测；口径：仓库全部文本文件，排除
+`target/` `node_modules/` `.git/` `dist/` `coverage/` `test-results/`；
+`REPL = chr(0xFFFD)`，控制字符指 `< 0x20` 且不属于 TAB/LF/CR 的字节）：
+
+```python
+import io, pathlib
+REPL = chr(0xFFFD)
+for f in pathlib.Path('.').rglob('*'):
+    p = str(f).replace(chr(92), '/')
+    if any(s in p for s in ('/target/', '/node_modules/', '/.git/', '/dist/')):
+        continue
+    if not f.is_file():
+        continue
+    t = io.open(f, encoding='utf-8', errors='replace').read()
+    n = t.count(REPL)
+    c = [hex(ord(ch)) for ch in t if ord(ch) < 32 and ch not in '\t\n\r']
+    if n or c:
+        print(p, 'FFFD=', n, 'CTRL=', c[:5])
+```
+
+**实测结果（本波提交范围之外，全部遗留）**：
+
+| 文件                                                                     | U+FFFD | 行号      | 归属                           |
+| ------------------------------------------------------------------------ | ------ | --------- | ------------------------------ |
+| `docs/superpowers/plans/2026-09-21-env-backup-restore-implementation.md` | 4      | 1165,2494 | 计划原文（审核窗口维护）       |
+| `core/src/service.rs`                                                    | 2      | 58        | **先于本波**（`0da96a7` 即有） |
+| `docs/审核和开发/2026.09.19/PathEditor-Wave1数据一致性审查报告.md`       | 2      | 82        | 更早波次的历史文档             |
+| `docs/审核和开发/2026.09.20/PathEditor-Wave2架构收口开发回执.md`         | 2      | 137       | 更早波次的历史文档             |
+
+**本波提交范围（`455c376..52823e1`）实测 U+FFFD = 0、控制字符 = 0**；六个 blob 逐个复核
+（含提交后的 `git show` 复扫）= `checked 6 bad 0`。
+
+**本波自身仍犯了 3 次**：回执初稿 1 处、`task-9-report` 1 处、本节的代码块 1 处
+（写检测示例时把 U+FFFD 写成了字面量而非 `chr(0xFFFD)`），均用精确替换修复。**第 3 次尤其说明问题**：想写一段
+「如何检测 U+FFFD」的示例，反而自己写出了一个 U+FFFD——所以示例必须用 `chr(0xFFFD)` 而非字面量。
+
+**处置**：上表四处**均未修改** —— plan 按指令不得改（审核窗口的产物），
+另外三处属本波范围外的既有遗留，改它们会把无关文件拖进本波 diff。
+
+**建议**：改中文文本一律用精确 `Edit`（不用 heredoc / sed / 正则）；提交前对**提交范围内的**
+文本文件自查 U+FFFD 与控制字符；写「检测损坏字符」的示例时用 `chr(0xFFFD)`，不要写别名。
 
 ### 6.5 「字节级一致」的文档对里，只有一份过质量门
 
