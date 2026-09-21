@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-234%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-240%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -243,11 +243,12 @@ CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 
 
 ### 安全
 
-- 保存前自动备份注册表到 `%APPDATA%/PathEditor/backups/`
+- 保存前自动备份注册表到 `~/.patheditor/backups/`（文件名含时间戳，如 `path_backup_20260921_200437_062.txt`）
 - PATH 长度检查（Windows 单变量上限 32767 字符）
 - 非管理员仅系统 PATH 只读，用户 PATH 仍可编辑
 - 保存中途失败精确提示哪个注册表 hive 出错
-- 禁用路径从注册表移除后仍会以完整快照保留，重启后可恢复显示并重新启用。
+- 禁用路径从注册表移除后仍会以完整快照保留，重启后可恢复显示并重新启用
+- 未保存修改时的退出确认使用 Tauri 异步对话框，绝不阻塞界面线程
 
 ### 界面
 
@@ -304,7 +305,7 @@ npx tauri build
 | 国际化    | i18next                           |
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
-| 前端测试  | Vitest + Playwright (234 + 24)    |
+| 前端测试  | Vitest + Playwright (240 + 24)    |
 | Rust 测试 | cargo test (192 个测试)           |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
@@ -313,17 +314,20 @@ npx tauri build
 
 ```
 core/                         # Rust 核心库（零 Tauri 依赖）
-├── registry.rs               # 注册表读写 + 路径清理
+├── error.rs                  # CoreError 结构化错误（code 驱动错误码与前端本地化）
+├── service.rs                # 应用服务层（多 hive 事务编排 + 侧车快照）
+├── persist.rs                # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
+├── registry/                 # 注册表通路（path / access / env_var / conflict 子模块）
 ├── system.rs                 # 权限检测、路径验证、环境变量展开
 ├── scanner.rs                # 冲突检测、工具清单
 ├── profiles.rs               # 配置文件管理
 ├── backup.rs / disabled.rs   # 备份、禁用状态
 └── fs.rs                     # 文件读写、导入导出解析
-gui/                          # Tauri 桌面应用
+gui/                          # Tauri 桌面应用（bin 产物 PathEditor.exe）
 └── src/commands/             # 薄包装 → 调用 core
-cli/                          # 命令行工具
+cli/                          # 命令行工具（bin 产物 patheditor.exe）
 ├── src/main.rs               # Clap 定义、CRUD、分派
-└── src/                      # runtime / import_export / profile_ops / scan_ops
+└── src/                      # runtime / import_export / profile_ops / scan_ops / env_ops
 src/                          # React 前端
 ├── core/                     # 纯逻辑 — 零框架依赖
 ├── store/                    # Zustand 状态管理
