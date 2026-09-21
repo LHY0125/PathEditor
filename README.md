@@ -203,6 +203,9 @@ patheditor env get      <NAME> [--system]
 patheditor env set      <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force)
 patheditor env add      <NAME> [<VALUE>] [--kind string|expand] [--system]
 patheditor env remove   <NAME> (--revision <R>|--force)
+patheditor env backup   [--json]
+patheditor env backups  [--json]
+patheditor env restore  <FILE> [--dry-run] [--force] [--json]
 ```
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
@@ -214,6 +217,28 @@ patheditor env remove   <NAME> (--revision <R>|--force)
 CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）。`--force` 不携带 revision，不会因并发冲突产生退出码 3。
 
 完整 17 条顶层命令（另有 `env` / `profile` 子命令组）：`patheditor --help`
+
+### 环境变量备份与恢复
+
+```bash
+# 立即备份两个 hive 的全部环境变量
+patheditor env backup
+
+# 查看已有备份（按时间倒序；只列文件，不解析内容）
+patheditor env backups
+
+# 先看差异，不写注册表
+patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json --dry-run
+
+# 执行恢复（默认模式：任一变量被外部改动则整批中止，退出码 3）
+patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
+```
+
+此外，**每一次环境变量写入前都会自动备份**：CLI 的 `env set` / `env add` / `env remove` 与 GUI 的编辑 / 新建 / 删除都会先落一份备份，备份失败**不阻断写入**，只在 stderr 或状态栏提示。默认保留最近 20 份（可在 `~/.patheditor/config.ini` 用 `env_backup_keep = N` 覆盖），轮换只删除本工具生成的 `env_backup_*.json`。
+
+> ⚠️ `~/.patheditor/backups/` 下的 `env_backup_*.json` 含环境变量的**明文值**，可能包括 API key、token 等敏感信息。请勿将该目录同步到云端或提交到版本库。
+
+`env restore --dry-run` 的「修改 N」恒显示 0 —— 备份的 revision 与注册表不一致时一律判为「冲突」而非「修改」，两者在实现中是同一个条件。`--force` 下被冲突覆盖的变量会被改写却计入「冲突」，所以 dry-run 会**低报** force 模式的实际改动量。另需注意：**未提权时恢复恒失败**（无法以写权限打开系统 hive），请以管理员身份运行。
 
 ## 功能
 
@@ -254,6 +279,7 @@ CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 
 ### 安全
 
 - 保存前自动备份注册表到 `~/.patheditor/backups/`（文件名含时间戳，如 `path_backup_20260921_200437_062.txt`）
+- 环境变量写入前自动备份到同一目录（`env_backup_*.json`），支持差异预览与一键恢复；**该文件含敏感值明文**，请勿同步到云端或提交到版本库
 - PATH 长度检查（Windows 单变量上限 32767 字符）
 - 非管理员仅系统 PATH 只读，用户 PATH 仍可编辑
 - 保存中途失败精确提示哪个注册表 hive 出错

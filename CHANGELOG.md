@@ -1,5 +1,36 @@
 # Changelog
 
+## 5.1.4 (2026-09-22)
+
+### 新增
+
+- 环境变量备份：CLI 与 GUI 的每一次环境变量写入前自动备份到 `~/.patheditor/backups/env_backup_<时间戳>.json`，含两个 hive 的全部可写变量与注册表类型（`REG_SZ` / `REG_EXPAND_SZ`）。
+- 环境变量恢复：新增 `patheditor env restore <FILE>` 与 GUI 备份恢复界面，支持差异预览（新增 / 删除 / 冲突）与冲突保护；`--dry-run` 只打印差异、不写注册表。
+- 新增 `patheditor env backup`（立即备份）与 `patheditor env backups`（列出备份，按时间倒序）。
+- 新增 GUI 备份与恢复对话框（`envBackupPanel`），含删除项逐名提示、手工兜底命令提示与冲突二次确认。
+- 保留份数可通过 `~/.patheditor/config.ini` 的 `env_backup_keep` 覆盖（默认 20 份）。
+
+### 变更
+
+- 环境变量写入口（CLI `env set/add/remove`、GUI 编辑 / 新建 / 删除）返回值携带备份结果（`WriteOutcome.backup`）；备份失败不阻断写入，仅在 stderr 或状态栏提示。
+- 恢复复用既有的 `create_env_var_in_store` / `update_env_var_force_in_store` / `delete_env_var_force_in_store` 写函数，保护名单、类型可写性、hive 权限判定仍只在 core 一处；CLI 与 GUI 均不做二次判定。
+- 差异列表排序键固定为 `(hive, kind, name)`（user 在前、system 在后），使 `--dry-run --json` 的输出可复现。
+
+### 修复
+
+- GUI 关窗死锁：关窗确认从阻塞式 `window.confirm` 改为 Tauri 异步对话框，并补齐 `core:window:allow-destroy` 权限（v5.1.3 中缺失导致无草稿关窗挂起）。
+- gui/cli 产物同名冲突：GUI 二进制改名 `PathEditor.exe`，CI 用独立 target 目录构建 CLI，避免 NTFS 大小写不敏感导致 portable zip 装到 CLI。
+
+### 说明
+
+- `~/.patheditor/backups/` 下的 `env_backup_*.json` 含敏感值**明文**（可能包括 API key、token），请勿同步到云端或提交到版本库。备份目录的文件权限**未做收紧**（登记为未覆盖项）。
+- 备份默认保留最近 20 份，旧的自动轮换删除；只删除本工具生成的 `env_backup_*.json`，绝不触碰 `.txt` PATH 备份、`.bak` 与 `.corrupt-*` 文件。
+- **差异计数的两个已知口径**：`RestorePreview.modified` 与 `RestoreOutcome.skipped` 恒为 0。备份 revision 与注册表不一致时一律判为「冲突」而非「修改」（`revision_of` 是 `(name, type, value)` 的纯函数，两者是同一条件）。因此 `--dry-run` 与 GUI 确认弹窗的「修改 N」恒显示 0，而 `--force` 下被冲突覆盖的变量确实被改写却计入「冲突」——dry-run 会**低报** force 模式的实际改动量。
+- **未提权时恢复恒失败**：普通用户无法以写权限打开系统 hive，`restore_env_backup_from` 必然返回 `permissionDenied`（退出码 1），GUI 会提示需要管理员权限，且**不提供**「仅恢复用户 hive」这类降级路径。
+- 恢复**逐条失败不改变退出码**（仍为 0），脚本无法从退出码检出部分失败；单变量失败以 stderr 警告呈现。
+- `env restore --dry-run` 对**损坏备份**并非严格纯读：`read_env_backup` 对不可解析文件会经 persist 层将其重命名为 `<file>.corrupt-<ts>`（注册表未触碰）。
+- `EnvBackupInfo.variableCount` 恒为 0 —— 列表只枚举目录与 stat，**不解析内容**，单个损坏备份不会让列表整体失败。
+
 ## 5.1.3 (2026-09-18)
 
 ### 新增
