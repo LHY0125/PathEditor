@@ -170,10 +170,20 @@ sequenceDiagram
 
 ## CLI 命令行
 
-```bash
-# 安装
-cargo install --path cli
+### 安装
 
+```powershell
+scoop bucket add lhy https://github.com/LHY0125/scoop-bucket
+scoop install lhy/patheditor-cli
+```
+
+或从源码安装：
+
+```bash
+cargo install --path cli
+```
+
+```bash
 # 安装后可直接使用:
 patheditor --help
 
@@ -259,9 +269,26 @@ CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 
 
 ## 安装
 
+> 本仓库不维护 scoop manifest；两个应用分别在 `LHY0125/scoop-bucket` 中发布。
+
+### 图形界面（GUI）
+
+**方式一：安装包**
+
 从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.3_x64-setup.exe` 安装。
 
-或从源码构建：
+**方式二：Scoop（免安装）**
+
+```powershell
+scoop bucket add lhy https://github.com/LHY0125/scoop-bucket
+scoop install lhy/patheditor-gui
+```
+
+从 portable zip 解压即用（`PathEditor.exe` + `WebView2Loader.dll`），开始菜单生成 PathEditor 快捷方式。
+
+> **已知问题（v5.1.3）**：GUI 在部分环境下点 X 无响应（窗口 hang），需用任务管理器结束进程。该问题已在 main 修复（关窗确认改为 Tauri 异步对话框 + 补齐窗口销毁权限），待下一版发布。
+
+**方式三：源码构建**
 
 ```bash
 # 安装依赖
@@ -269,6 +296,23 @@ npm install
 
 # 构建安装包
 npx tauri build
+```
+
+### 命令行（CLI）
+
+**方式一：Scoop**
+
+```powershell
+scoop bucket add lhy https://github.com/LHY0125/scoop-bucket
+scoop install lhy/patheditor-cli
+```
+
+安装后即可在任意终端使用 `patheditor`（CLI 二进制在发布时重命名为 `patheditor-cli_<版本>_x64.exe`，manifest 用 `#/patheditor.exe` 装回原名）。
+
+**方式二：从源码安装**
+
+```bash
+cargo install --path cli
 ```
 
 > **要求**：Windows 10+（自带 WebView2），管理员权限才能编辑系统 PATH。
