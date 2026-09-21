@@ -71,7 +71,7 @@ gh api repos/LHY0125/PathEditor/releases/tags/v<VERSION> \
       "hash": "sha256:<上面取到的 digest>"
     }
   },
-  "shortcuts": [["patheditor.exe", "PathEditor"]],
+  "shortcuts": [["PathEditor.exe", "PathEditor"]],
   "checkver": {
     "url": "https://api.github.com/repos/LHY0125/PathEditor/releases/latest",
     "jsonpath": "$.tag_name",
@@ -91,7 +91,7 @@ gh api repos/LHY0125/PathEditor/releases/tags/v<VERSION> \
 }
 ```
 
-**为什么用 zip 而不是 NSIS 安装包**：Tauri 的 `--bundles` 只支持 `msi`/`nsis`，zip 由 `release.yml` 手工 `Compress-Archive` 产出（内容是 `patheditor.exe` + `WebView2Loader.dll` 两个文件）。zip 解压即用，符合 scoop 的常规做法；而用 `7z` 解 NSIS 安装包的方案在实际机器上失败过（scoop 未能解包，只留下空壳安装目录），**不要回退到那个方案**。
+**为什么用 zip 而不是 NSIS 安装包**：Tauri 的 `--bundles` 只支持 `msi`/`nsis`，zip 由 `release.yml` 手工 `Compress-Archive` 产出（内容是 `PathEditor.exe` + `WebView2Loader.dll` 两个文件）。zip 解压即用，符合 scoop 的常规做法；而用 `7z` 解 NSIS 安装包的方案在实际机器上失败过（scoop 未能解包，只留下空壳安装目录），**不要回退到那个方案**。
 
 ### CLI manifest
 
