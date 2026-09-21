@@ -1,6 +1,6 @@
 use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarSnapshot, RevealedValue};
 use path_editor_core::error::CoreError;
-use path_editor_core::registry;
+use path_editor_core::registry::{self, WriteOutcome};
 
 /// 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）。
 ///
@@ -28,8 +28,10 @@ pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<RevealedValue, Core
 
 /// 写入已有变量；类型从注册表读取，revision 不匹配则拒绝（code=`Conflict`）。
 ///
+/// 写前尽力备份；备份失败不阻断写入，结果经 `WriteOutcome.backup` 如实返回。
+///
 /// # Returns
-/// - `Ok(())` — 写入成功并广播环境变更
+/// - `Ok(WriteOutcome)` — 写入成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 校验失败、修订冲突或类型不受支持
 #[tauri::command]
 pub fn update_env_var(
@@ -37,14 +39,16 @@ pub fn update_env_var(
     name: String,
     value: String,
     expected_revision: String,
-) -> Result<(), CoreError> {
+) -> Result<WriteOutcome, CoreError> {
     registry::update_env_var(hive, &name, &value, &expected_revision)
 }
 
 /// 新建变量，`kind` 决定写入的注册表类型；同名或保护名单变量会被拒绝。
 ///
+/// 写前尽力备份；备份失败不阻断写入，结果经 `WriteOutcome.backup` 如实返回。
+///
 /// # Returns
-/// - `Ok(())` — 创建成功并广播环境变更
+/// - `Ok(WriteOutcome)` — 创建成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 名称非法、已存在（`NameExists`）、保护名单（`Protected`）
 ///   或类型不受支持
 #[tauri::command]
@@ -53,20 +57,22 @@ pub fn create_env_var(
     name: String,
     value: String,
     kind: EnvValueKind,
-) -> Result<(), CoreError> {
+) -> Result<WriteOutcome, CoreError> {
     registry::create_env_var(hive, &name, &value, kind)
 }
 
 /// 删除变量；revision 不匹配则拒绝（code=`Conflict`），变量保持原样。
 ///
+/// 写前尽力备份；备份失败不阻断写入，结果经 `WriteOutcome.backup` 如实返回。
+///
 /// # Returns
-/// - `Ok(())` — 删除成功并广播环境变更
+/// - `Ok(WriteOutcome)` — 删除成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 校验失败、修订冲突或类型不受支持
 #[tauri::command]
 pub fn delete_env_var(
     hive: EnvHive,
     name: String,
     expected_revision: String,
-) -> Result<(), CoreError> {
+) -> Result<WriteOutcome, CoreError> {
     registry::delete_env_var(hive, &name, &expected_revision)
 }

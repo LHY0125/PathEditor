@@ -377,6 +377,22 @@ fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError
     Ok(removed)
 }
 
+/// 一次写操作前的备份结果。
+///
+/// 备份是 **best-effort**：失败不使写入失败（设计文档 K2），但必须被调用方看见 ——
+/// 因此写入口把它作为返回值的一部分（`WriteOutcome`），而不是只记一条日志
+/// （CLI 未初始化 logger，core 的 `log::warn!` 在 CLI 下会被丢弃）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackupOutcome {
+    /// 备份已写入，携带文件路径
+    Created(PathBuf),
+    /// 本次操作无需备份
+    Skipped,
+    /// 备份失败（不阻断写入），携带原因
+    Failed(String),
+}
+
 /// 采集两个 hive 并落盘一份 env 备份（公开入口，供 CLI `env backup` 与写前自动备份使用）。
 ///
 /// # Returns

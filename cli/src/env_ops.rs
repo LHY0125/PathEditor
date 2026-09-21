@@ -3,10 +3,9 @@
 //! 本模块**不实现任何安全判定**（保留 / 保护 / 敏感 / 权限 / revision 校验），
 //! 全部由 `path_editor_core` 负责，此处仅透传错误文本。
 
-use crate::runtime::{apply_core_result, exit_core_error, exit_err};
+use crate::runtime::{exit_core_error, exit_err, warn_if_backup_failed};
 use path_editor_core as core;
 use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
-use path_editor_core::error::CoreError;
 
 /// 值的输入通道。三选一，互斥。
 pub(crate) enum ValueSource {
@@ -111,14 +110,6 @@ pub(crate) fn resolve_concurrency(revision: Option<String>, force: bool) -> Conc
         0 => exit_err("需要提供 --revision（并发校验）或 --force（跳过校验）"),
         _ => exit_err("--revision 与 --force 互斥，只能指定一个"),
     }
-}
-
-/// 统一处理写操作结果：冲突走退出码 3，其他错误走退出码 1。
-///
-/// F-06（Wave 2 Task 3）：退出码全部由 `CoreError::exit_code()` 驱动，
-/// CLI 侧零判定逻辑 —— 只把结果交给 `apply_core_result` 结构化出口。
-pub(crate) fn apply_concurrency(result: Result<(), CoreError>) {
-    apply_core_result(result);
 }
 
 /// 注册表类型的人类可读标签。
@@ -336,11 +327,14 @@ pub(crate) fn cmd_env_set(
     let new_value = read_value(&src);
     match mode {
         Concurrency::Revision(r) => {
-            apply_concurrency(core::registry::update_env_var(hive, &name, &new_value, &r));
+            let outcome = core::registry::update_env_var(hive, &name, &new_value, &r)
+                .unwrap_or_else(|e| exit_core_error(&e));
+            warn_if_backup_failed(&outcome.backup);
         }
         Concurrency::Force => {
-            core::registry::update_env_var_force(hive, &name, &new_value)
+            let outcome = core::registry::update_env_var_force(hive, &name, &new_value)
                 .unwrap_or_else(|e| exit_core_error(&e));
+            warn_if_backup_failed(&outcome.backup);
         }
     }
     println!("已更新{}变量: {name}", hive_label(hive));
@@ -360,8 +354,9 @@ pub(crate) fn cmd_env_add(
     let new_value = read_value(&src);
     let kind = parse_kind(&kind);
     // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
-    core::registry::create_env_var(hive, &name, &new_value, kind)
+    let outcome = core::registry::create_env_var(hive, &name, &new_value, kind)
         .unwrap_or_else(|e| exit_core_error(&e));
+    warn_if_backup_failed(&outcome.backup);
     // 广播由 core 负责，此处不重复
     println!("已新建{}变量: {name}", hive_label(hive));
 }
@@ -374,11 +369,14 @@ pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool
     let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
-            apply_concurrency(core::registry::delete_env_var(hive, &name, &r));
+            let outcome = core::registry::delete_env_var(hive, &name, &r)
+                .unwrap_or_else(|e| exit_core_error(&e));
+            warn_if_backup_failed(&outcome.backup);
         }
         Concurrency::Force => {
-            core::registry::delete_env_var_force(hive, &name)
+            let outcome = core::registry::delete_env_var_force(hive, &name)
                 .unwrap_or_else(|e| exit_core_error(&e));
+            warn_if_backup_failed(&outcome.backup);
         }
     }
     println!("已删除{}变量: {name}", hive_label(hive));

@@ -23,10 +23,12 @@ pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
     std::process::exit(err.exit_code());
 }
 
-/// 统一处理写操作结果：冲突 3，其余 1（由 CoreError 决定）。
-pub(crate) fn apply_core_result(result: Result<(), core::CoreError>) {
-    if let Err(e) = result {
-        exit_core_error(&e);
+/// 备份失败时在 stderr 提示，**不改变退出码**（设计文档 K2）。
+///
+/// CLI 未初始化 logger，core 的 `log::warn!` 在此被丢弃 —— 必须经返回值显式打印。
+pub(crate) fn warn_if_backup_failed(outcome: &core::backup::BackupOutcome) {
+    if let core::backup::BackupOutcome::Failed(reason) = outcome {
+        eprintln!("警告: 环境变量写前备份失败（写入已完成）: {reason}");
     }
 }
 
