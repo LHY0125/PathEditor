@@ -20,6 +20,7 @@ import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { useEnvStore } from '@/store/env-store';
+import { backend } from '@/services/backend';
 import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
 
 /** Tauri's File object includes the native filesystem path */
@@ -84,9 +85,19 @@ export function AppShell() {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const handler = await getCurrentWindow().onCloseRequested((event) => {
           const pending = useAppStore.getState().isModified || useEnvStore.getState().hasDrafts();
-          if (pending && !window.confirm(i18n.t('dialog.unsavedConfirm'))) {
-            event.preventDefault();
-          }
+          if (!pending) return; // 无待保存内容：不拦截，包装层自动 destroy
+          event.preventDefault(); // 同步拦截默认销毁；确认后显式 destroy 收口（G-B2）
+          void (async () => {
+            try {
+              const confirmed = await backend.confirmDialog(i18n.t('dialog.unsavedConfirm'));
+              if (confirmed) await getCurrentWindow().destroy();
+            } catch {
+              // 对话框 IPC 失败时保守放行关窗：宁可丢草稿不可把窗口锁死
+              await getCurrentWindow()
+                .destroy()
+                .catch(() => {});
+            }
+          })();
         });
         if (disposed) handler();
         else unlisten = handler;
@@ -181,8 +192,16 @@ export function AppShell() {
               const state = useAppStore.getState();
               // 环境变量草稿尚未提交时同样需要确认，否则关窗会静默丢弃用户输入。
               const hasPendingChanges = state.isModified || useEnvStore.getState().hasDrafts();
-              if (hasPendingChanges && !window.confirm(t('dialog.unsavedConfirm'))) return;
-              window.close();
+              if (!hasPendingChanges) {
+                window.close();
+                return;
+              }
+              void backend
+                .confirmDialog(t('dialog.unsavedConfirm'))
+                .then((confirmed) => {
+                  if (confirmed) window.close();
+                })
+                .catch(() => {});
             }}
             onHelp={() => setHelpOpen(true)}
             onLanguage={() => {

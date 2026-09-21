@@ -5,6 +5,9 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 // 不能在工厂外引用 mock 变量 —— vi.mock 会被提升到 import 之前，外层 const 仍处于 TDZ。
 vi.mock('@/services/backend', async () => {
   const { vi: viModule } = await import('vitest');
+  // confirmDialog 委托给 plugin-dialog 的 confirm mock：与真实 backend.confirmDialog
+  // 的转发关系一致，断言 dialogConfirm 即覆盖完整链路。
+  const { confirm: tauriConfirm } = await import('@tauri-apps/plugin-dialog');
   return {
     backend: {
       listAllEnvVars: viModule.fn(),
@@ -16,9 +19,13 @@ vi.mock('@/services/backend', async () => {
       deleteEnvVar: viModule.fn(),
       expandEnvVars: viModule.fn(),
       validatePath: viModule.fn(),
+      confirmDialog: (message: string) => tauriConfirm(message),
     },
   };
 });
+
+// 关窗/删除确认走 Tauri 异步对话框（plugin-dialog），mock 掉避免 jsdom 下走真实 IPC。
+vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn() }));
 
 // i18n 用**部分 mock**：保留 initReactI18next 等真实导出（src/i18n 在模块加载时要用），
 // 只覆盖 useTranslation，并以真实 zh-CN 词条取值，断言基于可见文案而非 i18n key。
@@ -54,11 +61,17 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 import { AppShell } from '@/components/layout/AppShell';
 import { backend } from '@/services/backend';
+import { confirm as dialogConfirm } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '@/store/app-store';
 import { useEnvStore } from '@/store/env-store';
 import type { EnvVarMeta } from '@/core/env-var';
 
 const mockBackend = vi.mocked(backend);
+
+/** 设定异步确认对话框的返回值（关窗确认 describe 与后续用例共用）。 */
+function mockDialogConfirm(v: boolean) {
+  return vi.mocked(dialogConfirm).mockResolvedValue(v);
+}
 
 function meta(overrides: Partial<EnvVarMeta> = {}): EnvVarMeta {
   return {
@@ -205,9 +218,9 @@ describe('「全部变量」拖放早退（决策 3）', () => {
   });
 });
 
-describe('关窗确认纳入环境变量草稿（决策 4）', () => {
-  it('仅有环境变量草稿时也会弹确认，取消则不关窗', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
+  it('仅有环境变量草稿时也弹异步确认，取消则不关窗', async () => {
+    mockDialogConfirm(false);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
     // isModified 为 false，草稿是唯一待提交内容。
     useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'secret']]) });
@@ -215,30 +228,30 @@ describe('关窗确认纳入环境变量草稿（决策 4）', () => {
     render(<AppShell />);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => expect(dialogConfirm).toHaveBeenCalledWith('有未保存的修改，确定退出吗？'));
     expect(closeSpy).not.toHaveBeenCalled();
   });
 
-  it('确认后关窗', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('确认后关窗', async () => {
+    mockDialogConfirm(true);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
     useAppStore.setState({ isModified: true });
 
     render(<AppShell />);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
     expect(closeSpy).toHaveBeenCalled();
   });
 
-  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('无草稿且未修改时不弹确认，直接关窗（PATH 既有行为）', async () => {
+    mockDialogConfirm(false);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
 
     render(<AppShell />);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(dialogConfirm).not.toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();
   });
 });
