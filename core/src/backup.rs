@@ -219,15 +219,39 @@ pub fn collect_env_backup() -> Result<EnvBackupPayload, CoreError> {
     })
 }
 
-/// 把备份载荷写入目录，并在写入后执行保留策略轮换。
+/// 把备份载荷写入目录，随后执行保留策略轮换。
 ///
 /// 文件名为 `env_backup_<YYYYMMDD>_<HHMMSS>_<毫秒3位>.json`，时间戳格式与
 /// PATH 备份一致，便于用户在同一目录中找到全部备份。
 ///
+/// **顺序：先写新文件、再轮换。** 目录稳态恰好等于保留份数 `keep`：
+/// `keep` 份 → 写入 → `keep+1` 份 → 轮换删 1 份 → `keep` 份。
+/// 若反过来「先轮换、后写入」，`keep` 份时轮换无可删、写入后变成 `keep+1` 份，
+/// 目录会长期稳定在 `keep+1` 份——与 spec 验收标准 11 的端到端口径不符。
+///
+/// **新文件必被保留**：`rotate_env_backups` 按文件名降序排列后从 `keep` 处开始
+/// 删，丢弃的是字典序最小（最旧）的一端；刚写入的文件时间戳最大，永不落入删除集。
+/// （例外：`keep = 0` 时用户明确要求零保留，新文件也会被删，见实现说明。）
+///
 /// # Returns
 /// - `Ok(PathBuf)` — 写入的备份文件绝对路径
-/// - `Err(CoreError)` — 目录创建、轮换或写文件失败（code=`Io`）
+/// - `Err(CoreError)` — 目录创建、写文件或轮换失败（code=`Io`）。
+///   **注意轮换失败这一路**：此时新备份文件**已经在磁盘上**，返回值只表示
+///   「保留策略未能执行」，**不等于**备份未落盘。调用方措辞须按此理解。
 pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<PathBuf, CoreError> {
+    write_env_backup_to_with_keep(dir, payload, env_backup_keep())
+}
+
+/// [`write_env_backup_to`] 的实现体，保留份数由调用方显式注入。
+///
+/// 拆出这一层是为了让测试能显式指定 `keep` 断言端到端稳态，而**不必**去写
+/// 用户真实的 `~/.patheditor/config.ini`（`config_file_path()` 不受
+/// `PATHEDITOR_BACKUP_DIR` 重定向）。生产路径只有 `write_env_backup_to` 一个入口。
+fn write_env_backup_to_with_keep(
+    dir: &Path,
+    payload: &EnvBackupPayload,
+    keep: usize,
+) -> Result<PathBuf, CoreError> {
     std::fs::create_dir_all(dir).map_err(|e| {
         CoreError::new(
             ErrorCode::Io,
@@ -251,10 +275,6 @@ pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<Pat
         )
     })?;
 
-    // 轮换在写新文件之前执行：新文件必然保留，不会被自己轮换掉。
-    // 保留份数来自 config.ini（缺省 ENV_BACKUP_KEEP），每次读一次不缓存。
-    rotate_env_backups(dir, env_backup_keep())?;
-
     std::fs::write(&filepath, json).map_err(|e| {
         CoreError::new(
             ErrorCode::Io,
@@ -262,6 +282,9 @@ pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<Pat
             format!("无法写入备份文件 {}: {}", filepath.display(), e),
         )
     })?;
+
+    // 写入后才轮换，目录稳态恰为 keep 份（见 write_env_backup_to 的顺序说明）。
+    rotate_env_backups(dir, keep)?;
 
     log::info!("env 备份已保存到: {}", filepath.display());
     Ok(filepath)
@@ -274,6 +297,9 @@ pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<Pat
 /// 2. 只在给定目录内操作（自定义备份目录不参与轮换）；
 /// 3. 只删最旧的、超出 `keep` 之外的文件；
 /// 4. 绝不删除 `.txt` PATH 备份、`.bak`、`.corrupt-*` 及目录中任何其他文件。
+///
+/// `keep = 0` 是合法输入，表示用户明确要求零保留，此时本函数会删空所有候选
+/// 文件（含刚写入的那份）。`config.ini` 的 `env_backup_keep = 0` 即可触发。
 ///
 /// # Returns
 /// - `Ok(Vec<PathBuf>)` — 被删除的文件路径（供测试与日志核对）
@@ -653,6 +679,67 @@ mod tests {
                 })
                 .count();
             assert_eq!(remaining, ENV_BACKUP_KEEP);
+        });
+    }
+
+    /// 端到端回归：经写入路径之后，目录稳态**恰好**等于 keep 份。
+    ///
+    /// 这才是 spec 验收标准 11（「轮换保留 config.ini 的 env_backup_keep 份」）的
+    /// 口径——用户看到的是目录里有多少份，不是 `rotate_env_backups` 单次调用的
+    /// 结果。函数级测试看不到「先轮换、后写入」把稳态推高到 `keep + 1` 的偏差，
+    /// 必须走完整写入路径整体断言。
+    #[test]
+    fn write_env_backup_steady_state_is_exactly_keep_files() {
+        with_temp_backup_dir(|dir| {
+            let count = |dir: &std::path::Path| {
+                std::fs::read_dir(dir)
+                    .unwrap()
+                    .flatten()
+                    .filter(|e| {
+                        let n = e.file_name().to_string_lossy().into_owned();
+                        n.starts_with("env_backup_") && n.ends_with(".json")
+                    })
+                    .count()
+            };
+            const KEEP: usize = 5;
+
+            // 预置远超 keep 份的旧备份
+            for i in 0..25 {
+                std::fs::write(
+                    dir.join(format!("env_backup_202601{:02}_120000_000.json", i)),
+                    "{}",
+                )
+                .unwrap();
+            }
+            assert_eq!(count(dir), 25, "预置基线");
+
+            let mut written_paths = Vec::new();
+            for round in 0..4 {
+                let written = write_env_backup_to_with_keep(dir, &sample_payload(), KEEP)
+                    .expect("写备份失败");
+                assert!(
+                    written.exists(),
+                    "第 {round} 轮：刚写入的备份必须保留，不得被自己轮换掉"
+                );
+                assert_eq!(
+                    count(dir),
+                    KEEP,
+                    "第 {round} 轮写入后应为恰好 {KEEP} 份；若为 {} 说明轮换与写入顺序颠倒",
+                    KEEP + 1
+                );
+                written_paths.push(written);
+                // 文件名时间戳精度到毫秒；错开 20ms 确保每轮都产生新文件
+                // （Windows 计时器粒度约 15.6ms），否则同名覆盖会让本测试失去意义。
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+
+            // 前置条件：四轮确实各写了不同文件，稳态断言才覆盖「keep+1 → keep」回缩
+            let unique: std::collections::HashSet<_> = written_paths.iter().collect();
+            assert_eq!(unique.len(), 4, "四轮写入应产生 4 个不同文件，否则测试空转");
+
+            // 最新的一份必须仍在（时间戳最大，永不落入删除集）
+            let newest = written_paths.last().unwrap();
+            assert!(newest.exists(), "最新备份必须保留");
         });
     }
 
