@@ -309,6 +309,10 @@ scoop install lhy/patheditor-cli
 
 安装后即可在任意终端使用 `patheditor`（CLI 二进制在发布时重命名为 `patheditor-cli_<版本>_x64.exe`，manifest 用 `#/patheditor.exe` 装回原名）。
 
+> **已知问题（v5.1.3）**：该版本发布流程存在产物覆盖缺陷——CLI 与 GUI 共用 Cargo target 目录，而 NTFS 大小写不敏感使 `patheditor.exe` 与 `PathEditor.exe` 实际是同一条目录项，CLI 链接产物覆盖了 GUI 本体。结果是 **`scoop install lhy/patheditor-cli` 装出的可执行文件是 GUI（且无法运行，报 `DLL_NOT_FOUND`）**，不是命令行工具。
+>
+> 该缺陷已在 main 修复（CLI 改用独立 target 目录构建，`release.yml` 加 `--target-dir target/cli`），**待 v5.1.4 发布后执行 `scoop update patheditor-cli` 即可恢复**。在此之前请改用下面的源码安装方式。
+
 **方式二：从源码安装**
 
 ```bash
