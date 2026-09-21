@@ -377,6 +377,146 @@ fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError
     Ok(removed)
 }
 
+/// 备份文件列表项（不含内容，见设计文档 §S5）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvBackupInfo {
+    /// 文件名
+    pub file: String,
+    /// 绝对路径
+    pub path: String,
+    /// 文件名中的时间戳部分（`YYYYMMDD_HHMMSS_mmm`）
+    pub timestamp: String,
+    /// 文件字节数
+    pub size_bytes: u64,
+    /// 备份中的变量条数。
+    ///
+    /// **恒为 0：列表不解析内容（S5 / J4 裁断）** —— 变量数只能靠解析 JSON 得到，
+    /// 一旦解析，单个损坏文件就会让列表整体失败。字段保留是为了保持契约稳定，
+    /// 调用方**不得**把它当作真实计数使用。
+    pub variable_count: u64,
+}
+
+/// 备份文件大小上限：正常备份几十 KB，超过 1 MiB 说明不是本工具产物。
+const MAX_BACKUP_FILE_BYTES: u64 = 1024 * 1024;
+
+/// 列出目录中的 env 备份，按时间倒序。**只枚举目录与 stat，不解析内容**，
+/// 因此单个损坏文件不会让列表整体失败。
+///
+/// # Returns
+/// - `Ok(Vec<EnvBackupInfo>)` — 备份列表，最新在前
+/// - `Err(CoreError)` — 目录枚举失败（code=`Io`）；目录不存在时返回空列表
+pub fn list_env_backups_in(dir: &Path) -> Result<Vec<EnvBackupInfo>, CoreError> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "list_env_backups",
+            format!("枚举备份目录 {} 失败: {}", dir.display(), e),
+        )
+    })?;
+
+    let mut infos = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("env_backup_") || !name.ends_with(".json") {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let timestamp = name
+            .trim_start_matches("env_backup_")
+            .trim_end_matches(".json")
+            .to_string();
+        infos.push(EnvBackupInfo {
+            file: name,
+            path: path.to_string_lossy().into_owned(),
+            timestamp,
+            size_bytes: meta.len(),
+            variable_count: 0, // 不解析内容：见 S5
+        });
+    }
+
+    infos.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(infos)
+}
+
+/// 列出默认备份目录中的 env 备份。
+///
+/// # Returns
+/// - `Ok(Vec<EnvBackupInfo>)` — 备份列表，最新在前
+/// - `Err(CoreError)` — 目录枚举失败
+pub fn list_env_backups() -> Result<Vec<EnvBackupInfo>, CoreError> {
+    list_env_backups_in(&env_backup_dir())
+}
+
+/// 校验用户给定的备份文件路径（设计文档 §S4）。
+///
+/// 规则：扩展名必须为 `.json`；必须位于默认备份目录之内，**或**文件名以
+/// `env_backup_` 开头；文件必须存在且不超过 1 MiB。
+///
+/// # Returns
+/// - `Ok(PathBuf)` — 校验通过的绝对路径
+/// - `Err(CoreError)` — 路径非法（code=`InvalidValue`）或文件不存在/过大（code=`NotFound`/`InvalidValue`）
+pub fn validate_backup_path(path: &str) -> Result<PathBuf, CoreError> {
+    let p = PathBuf::from(path);
+    let file_name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            CoreError::new(
+                ErrorCode::InvalidValue,
+                "restore_env_backup",
+                format!("备份路径非法: {path}"),
+            )
+        })?;
+
+    if p.extension().map(|e| e != "json").unwrap_or(true) {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "restore_env_backup",
+            format!("备份文件必须是 .json: {path}"),
+        ));
+    }
+
+    let in_backup_dir = p
+        .parent()
+        .map(|parent| parent == env_backup_dir())
+        .unwrap_or(false);
+    if !in_backup_dir && !file_name.starts_with("env_backup_") {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "restore_env_backup",
+            format!("备份文件必须位于备份目录内或以 env_backup_ 开头: {path}"),
+        ));
+    }
+
+    let meta = std::fs::metadata(&p).map_err(|e| {
+        CoreError::new(
+            ErrorCode::NotFound,
+            "restore_env_backup",
+            format!("无法读取备份文件 {path}: {e}"),
+        )
+    })?;
+    if meta.len() > MAX_BACKUP_FILE_BYTES {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "restore_env_backup",
+            format!(
+                "备份文件过大（{} 字节，上限 {}），不是本工具生成的备份",
+                meta.len(),
+                MAX_BACKUP_FILE_BYTES
+            ),
+        ));
+    }
+    Ok(p)
+}
+
 /// 一次写操作前的备份结果。
 ///
 /// 备份是 **best-effort**：失败不使写入失败（设计文档 K2），但必须被调用方看见 ——
@@ -1000,5 +1140,156 @@ mod tests {
         assert_eq!(read_env_backup_keep(&cfg), 7);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 列表只枚举目录、不解析内容：损坏文件不得让列表整体失败（S5）。
+    #[test]
+    fn list_env_backups_survives_corrupt_file() {
+        with_temp_backup_dir(|dir| {
+            std::fs::write(
+                dir.join("env_backup_20260901_120000_000.json"),
+                "not json at all",
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("env_backup_20260902_120000_000.json"),
+                "{\"broken\":",
+            )
+            .unwrap();
+            // 干扰文件不得出现在列表里
+            std::fs::write(dir.join("path_backup_20260920_152446_043.txt"), "PATH").unwrap();
+            std::fs::write(dir.join("env_backup_x.json.bak"), "BAK").unwrap();
+
+            let list = list_env_backups_in(dir).expect("损坏文件不得使列表失败");
+
+            assert_eq!(list.len(), 2, "只有两个 env_backup_*.json");
+            assert!(list.iter().all(|i| i.file.starts_with("env_backup_")));
+        });
+    }
+
+    /// 列表按时间倒序（最新在前）。
+    #[test]
+    fn list_env_backups_sorted_newest_first() {
+        with_temp_backup_dir(|dir| {
+            for ts in [
+                "20260901_120000_000",
+                "20260903_120000_000",
+                "20260902_120000_000",
+            ] {
+                std::fs::write(dir.join(format!("env_backup_{ts}.json")), "{}").unwrap();
+            }
+            let list = list_env_backups_in(dir).unwrap();
+            assert_eq!(list[0].file, "env_backup_20260903_120000_000.json");
+            assert_eq!(list[2].file, "env_backup_20260901_120000_000.json");
+        });
+    }
+
+    /// S4：路径校验拒绝非 .json、非备份目录、超大文件。
+    #[test]
+    fn validate_backup_path_rejects_invalid() {
+        with_temp_backup_dir(|dir| {
+            assert!(
+                validate_backup_path("C:\\Windows\\System32\\config\\SAM").is_err(),
+                "非 .json 必须拒绝"
+            );
+            assert!(
+                validate_backup_path("C:\\some\\other\\file.json").is_err(),
+                "既不在备份目录也不带 env_backup_ 前缀必须拒绝"
+            );
+
+            // 带前缀但超大 → 拒绝
+            let big = dir.join("env_backup_huge.json");
+            std::fs::write(&big, vec![b'x'; 1024 * 1024 + 1]).unwrap();
+            assert!(
+                validate_backup_path(&big.to_string_lossy()).is_err(),
+                "超过 1 MiB 必须拒绝"
+            );
+
+            // 正常文件 → 通过
+            let ok = dir.join("env_backup_20260901_120000_000.json");
+            std::fs::write(&ok, "{}").unwrap();
+            assert!(validate_backup_path(&ok.to_string_lossy()).is_ok());
+        });
+    }
+
+    /// S4 逐规则隔离：每条拒绝规则都必须**单独可证伪**。
+    ///
+    /// 上面那条测试里，「非 .json 必须拒绝」与「既不在备份目录也不带前缀必须拒绝」
+    /// 两条断言各自被**另一条规则**兜住了：`SAM` 没有扩展名，但去掉扩展名规则后
+    /// 它仍会被来源规则拒绝；`C:\some\other\file.json` 不存在，去掉来源规则后仍会
+    /// 被存在性规则拒绝。删掉任一条规则，那两条断言照样通过——是自证的断言，
+    /// 测不到东西。
+    ///
+    /// 本测试为每条规则各造一个**只有该规则能拒**的输入：其余规则的前置条件全满足，
+    /// 删掉对应规则即变 `Ok`。
+    #[test]
+    fn validate_backup_path_rejects_each_rule_in_isolation() {
+        with_temp_backup_dir(|dir| {
+            // 规则 1（扩展名）单独生效：文件在备份目录内、存在、体积正常，
+            // 唯一的问题是没有 .json 扩展名。
+            let wrong_ext = dir.join("env_backup_20260901_120000_000.txt");
+            std::fs::write(&wrong_ext, "{}").unwrap();
+            assert!(
+                validate_backup_path(&wrong_ext.to_string_lossy()).is_err(),
+                "目录内的非 .json 文件必须被扩展名规则拒绝（其余三条规则均满足）"
+            );
+
+            // 规则 2（来源）单独生效：文件存在、体积正常、扩展名为 .json，
+            // 唯一的问题是既不在备份目录内、又没有 env_backup_ 前缀。
+            // **必须真实存在**——否则会被存在性规则兜住而失去隔离性。
+            let foreign = std::env::temp_dir().join(format!(
+                "patheditor_foreign_backup_{}.json",
+                std::process::id()
+            ));
+            std::fs::write(&foreign, "{}").unwrap();
+            let foreign_result = validate_backup_path(&foreign.to_string_lossy());
+            let _ = std::fs::remove_file(&foreign);
+            assert!(
+                foreign_result.is_err(),
+                "备份目录之外、无 env_backup_ 前缀的 .json 必须被来源规则拒绝\
+                 （其余三条规则均满足）"
+            );
+
+            // 规则 3（存在性）单独生效：路径在备份目录内、带前缀、扩展名为 .json，
+            // 唯一的问题是文件不存在。
+            let missing = dir.join("env_backup_20260902_120000_000.json");
+            assert!(
+                !missing.exists(),
+                "前置条件：该文件必须不存在，否则本用例测的不是存在性规则"
+            );
+            assert!(
+                validate_backup_path(&missing.to_string_lossy()).is_err(),
+                "不存在的备份文件必须被存在性规则拒绝（其余三条规则均满足）"
+            );
+        });
+    }
+
+    /// 目录不存在不是错误：返回空列表（首次使用时的正常情形）。
+    #[test]
+    fn list_env_backups_missing_dir_returns_empty() {
+        let missing = std::env::temp_dir().join(format!(
+            "patheditor_no_such_backup_dir_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&missing);
+
+        let list = list_env_backups_in(&missing).expect("目录不存在必须返回空列表，而不是报错");
+        assert!(list.is_empty());
+    }
+
+    /// 公开入口 `list_env_backups()` 必须枚举被重定向的默认目录。
+    #[test]
+    fn list_env_backups_public_entry_uses_default_dir() {
+        with_temp_backup_dir(|dir| {
+            std::fs::write(dir.join("env_backup_20260901_120000_000.json"), "{}").unwrap();
+
+            let list = list_env_backups().expect("列表失败");
+            assert_eq!(
+                list.len(),
+                1,
+                "公开入口必须走默认（被重定向的）备份目录，而不是别处"
+            );
+            assert_eq!(list[0].file, "env_backup_20260901_120000_000.json");
+        });
     }
 }
