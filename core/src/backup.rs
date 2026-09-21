@@ -6,6 +6,7 @@ use crate::reg_store::{EnvHiveStore, WinregHive};
 use crate::registry::{self, hive_location, SYS_REG_PATH, USER_REG_PATH};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use winreg::enums::*;
 use winreg::types::FromRegValue;
@@ -565,6 +566,249 @@ pub fn backup_env_vars() -> Result<PathBuf, CoreError> {
     write_env_backup_to(&dir, &payload)
 }
 
+/// 恢复差异的类型。
+///
+/// 当前 [`diff_one_hive`] 只产出 [`RestoreChangeKind::Added`] /
+/// [`RestoreChangeKind::Removed`] / [`RestoreChangeKind::Conflict`] 三种；
+/// [`RestoreChangeKind::Modified`] 的不可达原因见该变体自身的说明。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreChangeKind {
+    /// 备份中有、注册表中没有 → 将新建
+    Added,
+    /// 两边都有但值不同 → 将覆盖
+    ///
+    /// **当前 [`diff_one_hive`] 不产出本变体**，因此 `RestorePreview.modified` 恒为 0：
+    /// `revision_of` 是对 `name + vtype + value` 取值的纯函数，同名同类型下
+    /// revision 不同**当且仅当**值不同 —— 「值变了」与「备份已过期」在差异计算里
+    /// 是**同一个条件**，后者按行为契约一律判为 [`RestoreChangeKind::Conflict`]
+    /// （设计文档 K3：revision 不一致即冲突）。
+    ///
+    /// 保留本变体是为了维持 spec 声明的类型形状，以及恢复执行侧对
+    /// `Modified | Conflict` 的合并处理；不要为消除「未使用变体」而删除它。
+    Modified,
+    /// 注册表中有、备份中没有 → 将删除（最不可逆）
+    Removed,
+    /// 备份中的 revision 与注册表当前值不符 → 备份后被外部修改
+    Conflict,
+}
+
+/// 单条恢复差异。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreChange {
+    /// 该差异所属的 hive
+    pub hive: EnvHive,
+    /// 变量名，**保留来源侧的原始大小写**：`Added` / `Conflict` 用备份中的名字，
+    /// `Removed` 用注册表枚举返回的名字（见行为契约第 5、6 条）
+    pub name: String,
+    /// 差异类型
+    pub kind: RestoreChangeKind,
+}
+
+/// 恢复差异预览（供 CLI `--dry-run` 与 GUI 确认弹窗消费）。
+///
+/// 四个计数都是 `changes` 的按类型计数，因此
+/// `added + modified + removed + conflicts == changes.len()` 恒成立。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestorePreview {
+    /// 全部差异，user hive 在前、system hive 在后
+    pub changes: Vec<RestoreChange>,
+    /// 新增数量
+    pub added: usize,
+    /// 修改数量。**恒为 0**：见 [`RestoreChangeKind::Modified`]
+    pub modified: usize,
+    /// 删除数量（最不可逆的一部分）
+    pub removed: usize,
+    /// 冲突数量（备份后被外部修改）
+    pub conflicts: usize,
+}
+
+/// 读取并校验备份文件。
+///
+/// # Returns
+/// - `Ok(EnvBackupPayload)` — 校验通过的内容
+/// - `Err(CoreError)` — 读取失败（code=`Io`）、解析失败（code=`Parse`，
+///   损坏文件会被 `persist` 隔离为 `<file>.corrupt-<ts>`）、版本过高（code=`Parse`）
+///
+/// **不做路径来源校验**（扩展名 / 是否在备份目录内）：那是
+/// [`validate_backup_path`] 的职责。本函数只负责「读出并验版本」。
+pub fn read_env_backup(path: &Path) -> Result<EnvBackupPayload, CoreError> {
+    let versioned = crate::persist::read_versioned_file::<EnvBackupPayload>(path, "env 备份")?;
+    crate::persist::migrate(versioned, "env 备份")
+}
+
+/// 计算备份相对当前注册表的差异（不写入任何内容）。**存储可注入版本，仅 core 内部用。**
+///
+/// revision 比对口径与写通路一致：备份记录的 revision 与注册表当前值的 revision
+/// 不同即说明备份之后被改动过（设计文档 K3），记 `Conflict`。
+///
+/// # Returns
+/// - `Ok(RestorePreview)` — 差异摘要
+/// - `Err(CoreError)` — 枚举任一 hive 的环境变量失败（code=`Io`）
+pub(crate) fn preview_restore_in_stores(
+    sys: &dyn EnvHiveStore,
+    usr: &dyn EnvHiveStore,
+    payload: &EnvBackupPayload,
+) -> Result<RestorePreview, CoreError> {
+    let mut changes = Vec::new();
+    diff_one_hive(usr, EnvHive::User, &payload.hives.user, &mut changes)?;
+    diff_one_hive(sys, EnvHive::System, &payload.hives.system, &mut changes)?;
+
+    let added = changes
+        .iter()
+        .filter(|c| c.kind == RestoreChangeKind::Added)
+        .count();
+    let modified = changes
+        .iter()
+        .filter(|c| c.kind == RestoreChangeKind::Modified)
+        .count();
+    let removed = changes
+        .iter()
+        .filter(|c| c.kind == RestoreChangeKind::Removed)
+        .count();
+    let conflicts = changes
+        .iter()
+        .filter(|c| c.kind == RestoreChangeKind::Conflict)
+        .count();
+
+    Ok(RestorePreview {
+        changes,
+        added,
+        modified,
+        removed,
+        conflicts,
+    })
+}
+
+/// 计算单个 hive 的差异，追加到 `out`。
+///
+/// **行为契约（每条都必须成立）**：
+/// 1. 当前注册表中的**保留名**（`Path`，用 [`is_reserved`] 判定）与 **`Unsupported`
+///    类型**不参与差异计算 —— 既不产生 `Removed`，也不产生其他任何变体；
+/// 2. 备份中有、当前无 → `Added`；
+/// 3. 备份的 revision 与当前值的 revision **相同** → 不进差异（无变化）；
+/// 4. 备份的 revision 与当前**不同** → `Conflict`；
+/// 5. 当前有、备份无 → `Removed`，且 `Removed` 条目必须携带**注册表返回的原始大小写
+///    名字**（不能是小写化的比较键）；
+/// 6. 变量名比较**忽略大小写**（Windows 注册表语义），但输出保留原始大小写。
+///
+/// **不判定保护名单**：保护名单变量照常出现在差异中，拒绝发生在恢复执行的写函数内
+/// （保护名单在 core 写函数中是唯一真相源，此处再判一次等于双份规则）。
+/// 代价是差异列表可能含实际写不进去的变量 —— 由恢复结果如实报告，比提前隐藏更诚实。
+///
+/// **读取失败的条目被跳过**：枚举成功但单条 `get_raw` 失败（例如枚举与读取之间
+/// 该值被其他进程删除）时，该变量既不算无变化也不算 `Removed`，而是完全不进差异。
+/// 这是刻意的韧性取舍：单条读取失败不应让整份预览失败；而它若同时存在于备份中，
+/// 会因 `current` 里没有对应键而落 `Added`，由执行阶段的「同名已存在」如实报错。
+///
+/// # Returns
+/// - `Ok(())` — 差异已追加到 `out`
+/// - `Err(CoreError)` — 枚举该 hive 的环境变量失败（code=`Io`）
+fn diff_one_hive(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    backup_vars: &[EnvBackupVar],
+    out: &mut Vec<RestoreChange>,
+) -> Result<(), CoreError> {
+    let (_, _, label) = hive_location(hive);
+
+    // 当前可写变量表：小写比较键 → (注册表原始名, revision)。
+    // 原始名用于 `Removed` 差异的展示（注册表返回的大小写不保证与写入时一致），
+    // 小写键用于契约第 6 条的大小写不敏感比较。
+    let mut current: HashMap<String, (String, String)> = HashMap::new();
+    let names = store.enum_names().map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "preview_restore",
+            format!("读取{}环境变量列表失败: {}", label, e),
+        )
+        .with_hive(hive)
+    })?;
+    for name in names {
+        if is_reserved(&name) {
+            continue; // 契约第 1 条：保留名由专用 PATH 通路管理
+        }
+        let Ok(raw) = store.get_raw(&name) else {
+            continue; // 单条读取失败：跳过，不让整份预览失败
+        };
+        // 契约第 1 条：Unsupported 既不恢复，也不构成删除差异。
+        if !EnvValueKind::from_reg_type(raw.vtype.clone()).is_writable() {
+            continue;
+        }
+        let Ok(value) = String::from_reg_value(&raw) else {
+            continue; // 解码失败同样跳过，理由同上
+        };
+        let revision = revision_of(&name, raw.vtype, &value);
+        current.insert(name.to_ascii_lowercase(), (name, revision));
+    }
+
+    // 契约第 2、3、4、6 条：遍历备份侧，用大小写不敏感的比较键查当前值。
+    let mut seen: HashSet<String> = HashSet::new();
+    for var in backup_vars {
+        let key = var.name.to_ascii_lowercase();
+        seen.insert(key.clone());
+        match current.get(&key) {
+            // 备份有、当前无 → 新增（用备份中的原始名）
+            None => out.push(RestoreChange {
+                hive,
+                name: var.name.clone(),
+                kind: RestoreChangeKind::Added,
+            }),
+            // revision 相同 → 值相同，无变化，不进差异
+            Some((_, current_revision)) if current_revision == &var.revision => {}
+            // revision 不同 → 备份后已被外部修改
+            Some(_) => out.push(RestoreChange {
+                hive,
+                name: var.name.clone(),
+                kind: RestoreChangeKind::Conflict,
+            }),
+        }
+    }
+
+    // 契约第 5 条：当前有、备份无 → 删除，且用注册表返回的原始名（不是小写比较键）。
+    for (key, (original_name, _)) in &current {
+        if seen.contains(key) {
+            continue;
+        }
+        out.push(RestoreChange {
+            hive,
+            name: original_name.clone(),
+            kind: RestoreChangeKind::Removed,
+        });
+    }
+
+    Ok(())
+}
+
+/// 计算备份相对当前注册表的差异（不写入任何内容）。
+///
+/// **不含 force 参数** —— force 只在执行层影响「冲突是否中止」，
+/// 差异计算本身与 force 无关（核对轮 E3 裁断）。
+///
+/// 注册表按**只读**方式打开（`WinregHive::open(hive, false)`），本函数不写入任何内容。
+///
+/// # Returns
+/// - `Ok(RestorePreview)` — 差异摘要
+/// - `Err(CoreError)` — 打开注册表键失败（code=`Io`/`PermissionDenied`）或枚举失败（code=`Io`）
+pub fn preview_restore(payload: &EnvBackupPayload) -> Result<RestorePreview, CoreError> {
+    let sys = WinregHive::open(EnvHive::System, false)?;
+    let usr = WinregHive::open(EnvHive::User, false)?;
+    preview_restore_in_stores(&sys, &usr, payload)
+}
+
+/// 从文件读取备份后计算差异（GUI 确认弹窗用）。
+///
+/// # Returns
+/// - `Ok(RestorePreview)` — 差异摘要
+/// - `Err(CoreError)` — 读取/解析备份失败（见 [`read_env_backup`]），
+///   或打开注册表键/枚举失败（见 [`preview_restore`]）
+pub fn preview_restore_file(path: &Path) -> Result<RestorePreview, CoreError> {
+    let payload = read_env_backup(path)?;
+    preview_restore(&payload)
+}
+
 /// 备份当前注册表中的系统 PATH 和用户 PATH
 /// 在保存前调用，备份的是注册表中的当前值（保存前的状态）
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
@@ -620,7 +864,8 @@ mod tests {
     // `MemoryHive` 定义在 `reg_store::memory`（`#[cfg(test)] pub(crate) mod`），
     // 未经根 re-export —— brief 写的 `crate::reg_store::MemoryHive` 不成立。
     use crate::reg_store::memory::MemoryHive;
-    use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
+    // `RegType` 经 `winreg::enums::*` 已在文件顶部导入，测试模块经 `use super::*` 可见。
+    use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_MULTI_SZ, REG_SZ};
 
     #[test]
     fn get_appdata_dir_returns_non_empty() {
@@ -1311,6 +1556,358 @@ mod tests {
                 "公开入口必须走默认（被重定向的）备份目录，而不是别处"
             );
             assert_eq!(list[0].file, "env_backup_20260901_120000_000.json");
+        });
+    }
+
+    /// 构造只含 user hive 的备份载荷（其余测试都只需要 user 侧）。
+    fn payload_with(user: Vec<EnvBackupVar>) -> EnvBackupPayload {
+        EnvBackupPayload {
+            captured_at: 0,
+            hives: EnvBackupHives {
+                system: vec![],
+                user,
+            },
+        }
+    }
+
+    /// 构造一个备份条目，revision 由本条目的 name/type/value 自洽算出 ——
+    /// 即「备份时该变量就是这个值」。
+    fn backup_var(name: &str, value: &str, vtype: RegType) -> EnvBackupVar {
+        // 先算 revision 再移动 vtype；`RegType` 非 Copy（同 collect_hive_vars_in_store）。
+        let revision = revision_of(name, vtype.clone(), value);
+        EnvBackupVar {
+            name: name.into(),
+            kind: EnvValueKind::from_reg_type(vtype),
+            value: value.into(),
+            revision,
+        }
+    }
+
+    /// 差异三类（新增 / 冲突 / 删除）都要被识别，无变化的变量不进差异。
+    ///
+    /// **本测试原先断言 `modified == 1`，与契约第 4 条互斥**（见
+    /// `preview_marks_conflict_when_revision_differs` 与 `RestoreChangeKind::Modified`
+    /// 的注释）：`revision_of` 对 name+type+value 取值，故「值变了」与「备份已过期」
+    /// 是同一条件，一律判 `Conflict`。改判后本测试的 `CHANGED` 走的就是 `Conflict`
+    /// 分支，而 `SAME` 仍覆盖「revision 相同 → 无变化」这条。
+    #[test]
+    fn preview_classifies_added_conflict_removed() {
+        let hive = MemoryHive::new(true);
+        hive.seed("SAME", "v", REG_SZ); // 与备份一致，无变化
+        hive.seed("CHANGED", "new-value", REG_SZ); // 备份里是旧值 → revision 不符 → Conflict
+        hive.seed("EXTRA", "x", REG_SZ); // 备份里没有 → Removed
+
+        let payload = payload_with(vec![
+            backup_var("SAME", "v", REG_SZ),
+            backup_var("CHANGED", "old-value", REG_SZ),
+            backup_var("BRAND_NEW", "n", REG_SZ),
+        ]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+
+        assert_eq!(preview.added, 1, "BRAND_NEW 应记为新增");
+        assert_eq!(
+            preview.conflicts, 1,
+            "CHANGED 的 revision 与当前不符，应记为冲突"
+        );
+        assert_eq!(preview.removed, 1, "EXTRA 应记为删除");
+        // Modified 当前不可达（见枚举文档）；钉住这一点，避免将来误以为它是活路径。
+        assert_eq!(
+            preview.modified, 0,
+            "Modified 不可达：值变化与备份过期是同一条件，一律判 Conflict"
+        );
+        assert_eq!(
+            preview.changes.len(),
+            3,
+            "恰好三条差异（新增/冲突/删除），无变化的不进列表"
+        );
+        assert!(
+            !preview.changes.iter().any(|c| c.name == "SAME"),
+            "无变化的变量不进差异"
+        );
+        // 三条差异的 kind 逐一钉住，避免「计数对但分类错」蒙混过关
+        let kind_of = |name: &str| {
+            preview
+                .changes
+                .iter()
+                .find(|c| c.name == name)
+                .map(|c| c.kind)
+                .expect("差异缺失")
+        };
+        assert_eq!(kind_of("BRAND_NEW"), RestoreChangeKind::Added);
+        assert_eq!(kind_of("CHANGED"), RestoreChangeKind::Conflict);
+        assert_eq!(kind_of("EXTRA"), RestoreChangeKind::Removed);
+    }
+
+    /// K3 / 契约第 4 条：备份中的 revision 与当前不一致时记为 Conflict。
+    ///
+    /// **可证伪性**：这里走的是 `Conflict` 分支而非「无变化」分支——当前值是
+    /// `"changed-by-other-tool"`，备份的 revision 由 `"backed-up-value"` 算出，
+    /// 两者必然不同（`revision_of` 对 value 取值）。若把契约第 4 条改成
+    /// 「revision 不同也不进差异」，`conflicts` 会掉到 0 而本测试失败。
+    #[test]
+    fn preview_marks_conflict_when_revision_differs() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "changed-by-other-tool", REG_SZ);
+
+        let payload = payload_with(vec![backup_var("MY_VAR", "backed-up-value", REG_SZ)]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+
+        assert_eq!(preview.conflicts, 1, "外部改动必须被识别为冲突");
+        assert_eq!(preview.added, 0, "该变量当前存在，不得同时记为新增");
+        assert_eq!(preview.removed, 0, "该变量在备份中存在，不得记为删除");
+        assert_eq!(preview.changes[0].kind, RestoreChangeKind::Conflict);
+        assert_eq!(preview.changes[0].name, "MY_VAR");
+        assert_eq!(preview.changes[0].hive, EnvHive::User);
+    }
+
+    /// 契约第 3 条：两端 revision 一致时该变量**完全不出现在差异里**。
+    ///
+    /// 与上一条构成配对——同一形状的输入，只有 revision 是否相符这一个变量，
+    /// 一条要求进差异、一条要求不进，两条合起来才真正钉住契约第 3、4 条。
+    #[test]
+    fn preview_omits_unchanged_variable() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "same-value", REG_SZ);
+
+        // revision 由同一份 name+type+value 算出，与注册表当前值一致
+        let payload = payload_with(vec![backup_var("MY_VAR", "same-value", REG_SZ)]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+
+        assert_eq!(preview.changes.len(), 0, "值未变的变量必须零差异");
+        assert_eq!(preview.added, 0);
+        assert_eq!(preview.conflicts, 0);
+        assert_eq!(preview.removed, 0);
+    }
+
+    /// 契约第 1 条（Unsupported 半边）：`Unsupported` 类型的当前值不构成「删除」差异。
+    ///
+    /// **必须放进 `REG_MULTI_SZ`，不能只用 `REG_DWORD`**：`REG_DWORD` 的解码
+    /// （`String::from_reg_value` 对非字符串类型返回 `Err`）会先把该变量滤掉，
+    /// 于是「跳过 Unsupported」这条判定**删掉也照样通过** —— 断言被另一条守卫
+    /// 兜住，不可证伪（变异验证第 2 项实测如此）。`REG_MULTI_SZ` 能被解码成字符串
+    /// （winreg 把多字符串按 `\n` 连接），只有 `is_writable()` 这一条能拦下它，
+    /// 断言才真正钉在契约第 1 条上。
+    ///
+    /// 两种类型都保留：`REG_MULTI_SZ` 提供可证伪性，`REG_DWORD` 覆盖实际最常见
+    /// 的非字符串类型。
+    #[test]
+    fn preview_ignores_unsupported_current_vars() {
+        let hive = MemoryHive::new(true);
+        hive.seed("SomeDword", "1", REG_DWORD); // 非字符串类型，解码阶段即被滤掉
+        hive.seed("SomeMultiSz", "a", REG_MULTI_SZ); // 可解码，只有 is_writable 能拦住
+
+        let preview =
+            preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload_with(vec![]))
+                .unwrap();
+
+        assert_eq!(
+            preview.removed, 0,
+            "Unsupported 变量的存在不构成「删除」差异"
+        );
+        assert_eq!(preview.changes.len(), 0, "Unsupported 不得产生任何变体");
+    }
+
+    /// 契约第 1 条（保留名半边）：注册表中的 `Path` 不参与差异计算。
+    ///
+    /// 用 `path`（小写）作输入是有意的：`is_reserved` 忽略大小写，而若实现
+    /// 误把保留名判定写成精确匹配 `"Path"`，本用例会失败。
+    ///
+    /// **可证伪性**：去掉实现里的 `is_reserved` 跳过，`path` 就会以原始名落进
+    /// `Removed`，`removed` 由 0 变 1 而失败。
+    #[test]
+    fn preview_ignores_reserved_current_vars() {
+        let hive = MemoryHive::new(true);
+        hive.seed("path", "C:\\Windows", REG_EXPAND_SZ); // 保留名，须排除
+        hive.seed("KEEP_ME", "v", REG_SZ); // 普通变量，用来证明不是「整表被跳过」
+
+        let payload = payload_with(vec![backup_var("KEEP_ME", "v", REG_SZ)]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+
+        assert_eq!(preview.removed, 0, "保留名不得构成删除差异");
+        assert_eq!(preview.changes.len(), 0, "保留名不得产生任何变体");
+        // 前置条件：KEEP_ME 确实在两表中且值一致（否则本测试空转）
+        assert!(
+            !preview
+                .changes
+                .iter()
+                .any(|c| c.name.eq_ignore_ascii_case("path")),
+            "保留名不得出现在差异中"
+        );
+    }
+
+    /// 契约第 5 条：`Removed` 必须携带**注册表返回的原始大小写名字**，
+    /// **不能**是小写化的比较键。
+    ///
+    /// **可证伪性**：注册表里存的是 `MixedCaseVar`（而非全大写），若实现把
+    /// 小写键直接当作展示名输出（`mixedcasevar`），断言 `== "MixedCaseVar"` 即失败。
+    /// 用全大写名（如 `EXTRA`）测这一条是**测不到的**——那种输入下原始名与
+    /// 小写键只在大小写上不同的话仍可通过，故此处刻意用混合大小写。
+    #[test]
+    fn preview_removed_entry_keeps_registry_original_case() {
+        let hive = MemoryHive::new(true);
+        hive.seed("MixedCaseVar", "x", REG_SZ); // 备份里没有 → 应判 Removed
+
+        let preview =
+            preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload_with(vec![]))
+                .unwrap();
+
+        assert_eq!(preview.removed, 1, "该变量应被判为删除");
+        let removed = &preview.changes[0];
+        assert_eq!(removed.kind, RestoreChangeKind::Removed);
+        assert_eq!(
+            removed.name, "MixedCaseVar",
+            "Removed 必须用注册表返回的原始大小写，而不是小写比较键（mixedcasevar）"
+        );
+        assert_ne!(
+            removed.name,
+            removed.name.to_ascii_lowercase(),
+            "前置条件：该名字本身必须含大写，否则本测试区分不出大小写保留"
+        );
+    }
+
+    /// 契约第 6 条：变量名比较**忽略大小写**，两个方向都要成立。
+    ///
+    /// - 备份写 `MixedCaseVar`、注册表存 `mixedcasevar` → 应认出是**同一个**变量
+    ///   （不进 Added），且因 revision 相同而**零差异**；
+    /// - 备份写 `SAMEVAR`、注册表存 `samevar` → 同上。
+    ///
+    /// **可证伪性**：把实现里的 `to_ascii_lowercase()` 换成直接比较名字（区分大小写），
+    /// `current.get(&key)` 会查不到 → 该变量被判 `Added`，`added` 由 0 变 1 而失败。
+    #[test]
+    fn preview_matches_names_case_insensitively() {
+        let hive = MemoryHive::new(true);
+        hive.seed("mixedcasevar", "v1", REG_SZ);
+        hive.seed("samevar", "v2", REG_SZ);
+
+        let payload = payload_with(vec![
+            backup_var("MixedCaseVar", "v1", REG_SZ),
+            backup_var("SAMEVAR", "v2", REG_SZ),
+        ]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+
+        assert_eq!(
+            preview.added, 0,
+            "仅大小写不同的同名变量必须被认出是同一个，不得判为新增"
+        );
+        assert_eq!(preview.removed, 0, "反向同理：不得因大小写差异判为删除");
+        assert_eq!(preview.conflicts, 0, "值一致，不得判为冲突");
+        assert_eq!(preview.changes.len(), 0, "两端大小写不同但值相同 → 零差异");
+    }
+
+    /// 契约第 5 与第 6 条的组合：大小写不敏感配对后，**未配对的**那个才判删除，
+    /// 且仍用注册表原始名。避免「配对成功」的断言掩盖「未配对时用了小写键」。
+    #[test]
+    fn preview_pairs_case_insensitively_and_reports_unmatched_original() {
+        let hive = MemoryHive::new(true);
+        hive.seed("PairedVar", "same", REG_SZ); // 备份里有（不同大小写）→ 无差异
+        hive.seed("OrphanVar", "x", REG_SZ); // 备份里没有 → Removed
+
+        let payload = payload_with(vec![backup_var("PAIREDVAR", "same", REG_SZ)]);
+
+        let preview = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload).unwrap();
+
+        assert_eq!(preview.removed, 1, "只有未配对的 OrphanVar 应判删除");
+        assert_eq!(preview.added, 0, "PAIREDVAR 已配对，不得判新增");
+        assert_eq!(
+            preview.changes[0].name, "OrphanVar",
+            "删除项须用注册表原始名"
+        );
+    }
+
+    /// 两个 hive 都要被扫描，且差异各自带上正确的 hive 标记。
+    ///
+    /// **可证伪性**：把 `preview_restore_in_stores` 里对 system 的调用删掉，
+    /// 本测试的 `added` 会从 1 掉到 0（system 侧那条没了）而失败。
+    #[test]
+    fn preview_covers_both_hives_and_tags_each_change() {
+        let sys = MemoryHive::new(true);
+        let usr = MemoryHive::new(true);
+        usr.seed("USER_ONLY", "u", REG_SZ);
+
+        let payload = EnvBackupPayload {
+            captured_at: 0,
+            hives: EnvBackupHives {
+                system: vec![backup_var("SYS_NEW", "s", REG_SZ)],
+                user: vec![backup_var("USER_ONLY", "u", REG_SZ)],
+            },
+        };
+
+        let preview = preview_restore_in_stores(&sys, &usr, &payload).unwrap();
+
+        assert_eq!(preview.added, 1);
+        assert_eq!(preview.removed, 0);
+        let change = preview
+            .changes
+            .iter()
+            .find(|c| c.name == "SYS_NEW")
+            .expect("缺 SYS_NEW");
+        assert_eq!(
+            change.hive,
+            EnvHive::System,
+            "system 侧的差异必须带 System 标记"
+        );
+    }
+
+    /// 枚举失败必须上报为错误（code=`Io`），而不是静默产出空差异。
+    ///
+    /// **判定只认 `code`**（项目硬约束），不得匹配 message 文本。
+    #[test]
+    fn preview_reports_enumeration_failure() {
+        let mut hive = MemoryHive::new(true);
+        hive.fail_enum = true;
+
+        let err = preview_restore_in_stores(&MemoryHive::new(true), &hive, &payload_with(vec![]))
+            .expect_err("枚举失败必须上报");
+
+        assert_eq!(err.code, ErrorCode::Io, "枚举失败的错误码必须是 Io");
+    }
+
+    /// 读取并校验备份文件：正常文件往返一致，损坏文件判 `Parse` 并隔离。
+    #[test]
+    fn read_env_backup_round_trips_and_quarantines_corrupt() {
+        with_temp_backup_dir(|dir| {
+            let payload = payload_with(vec![backup_var("JAVA_HOME", "C:\\jdk17", REG_SZ)]);
+            let path = write_env_backup_to(dir, &payload).expect("写备份失败");
+
+            let back = read_env_backup(&path).expect("读备份失败");
+            assert_eq!(back, payload, "读回的载荷必须与写入的一致");
+
+            // 损坏文件：读失败、code=Parse，且被隔离成 .corrupt-*
+            let corrupt = dir.join("env_backup_20260101_000000_000.json");
+            std::fs::write(&corrupt, "{\"broken\":").unwrap();
+            let err = read_env_backup(&corrupt).expect_err("损坏文件必须报错");
+            assert_eq!(err.code, ErrorCode::Parse, "损坏文件的错误码必须是 Parse");
+            assert!(!corrupt.exists(), "损坏文件必须被隔离（原名不再存在）");
+        });
+    }
+
+    /// `preview_restore_file` 必须是「读文件 + 算差异」的组合入口。
+    ///
+    /// 因为绑定的是真实注册表（`preview_restore` 无存储注入），这里只断言
+    /// 「链路可用」：写一份备份再读，必须 `Ok`。差异内容本身由注入版测试覆盖。
+    /// 用只读打开注册表，不写入任何内容。
+    #[test]
+    fn preview_restore_file_reads_and_previews() {
+        with_temp_backup_dir(|dir| {
+            let path = write_env_backup_to(dir, &payload_with(vec![])).expect("写备份失败");
+            // 空备份：差异只可能来自真实注册表里「有而备份无」的变量，
+            // 无论多少都必须是 Ok（不是 Err）。
+            let preview = preview_restore_file(&path).expect("读文件并预览必须成功");
+            assert_eq!(
+                preview.added, 0,
+                "空备份不可能产生新增（备份侧没有任何条目）"
+            );
+            assert_eq!(preview.modified, 0, "Modified 不可达");
+            assert_eq!(
+                preview.added + preview.modified + preview.removed + preview.conflicts,
+                preview.changes.len(),
+                "四个计数之和必须等于差异条数"
+            );
         });
     }
 }
