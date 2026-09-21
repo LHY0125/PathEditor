@@ -957,7 +957,18 @@ mod tests {
     /// 改为按需构建二进制并缓存路径。嵌套 `cargo build` 在首次跑测试时已完成编译，
     /// 此处是秒级的空跑；加锁保证并行用例只构建一次。
     ///
-    /// 该路径由 [`cli_bin`] 的调用方负责存在性；构建失败直接 panic（后续断言无意义）。
+    /// **target 目录从 `cargo metadata` 读，不写死 `target/`**：后者只是
+    /// 「`CARGO_TARGET_DIR` 未设置且无 `--target`」时的约定。若外部环境设了
+    /// `CARGO_TARGET_DIR`，嵌套构建会把产物写到别处，而写死的仓库内路径可能被
+    /// **上一次构建的陈旧二进制**满足 —— 测试就「为错误的原因通过」了。
+    /// 让「问 cargo 拿目录」与「让 cargo 往那里构建」共用同一个答案，二者才必然一致。
+    ///
+    /// 刻意**不**用 mtime 断言「产物晚于本次构建」：cargo 对已是最新的产物不重写
+    /// （实测第二次空跑 mtime 不变），那种断言会在任何 no-op 重建上假失败。
+    /// 排除陈旧产物要靠路径正确，不是靠时间戳。
+    ///
+    /// 已知未覆盖项：`Command::output()` 无超时，若并发 `cargo` 持锁会阻塞而非失败
+    /// （未被观测到；加超时需自建 spawn+poll 循环，评估为不划算，记为待办）。
     fn cli_bin() -> std::path::PathBuf {
         static BUILD: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
         BUILD
@@ -966,6 +977,28 @@ mod tests {
                 let root = manifest_dir
                     .parent()
                     .expect("cli crate 必有父目录（workspace 根）");
+
+                // 1) 问 cargo 真实的 target 目录（它自己会考虑 CARGO_TARGET_DIR 与配置）。
+                let meta = std::process::Command::new("cargo")
+                    .args(["metadata", "--format-version", "1", "--no-deps"])
+                    .current_dir(root)
+                    .output()
+                    .expect("启动 cargo metadata 失败");
+                assert!(
+                    meta.status.success(),
+                    "cargo metadata 失败: {}",
+                    String::from_utf8_lossy(&meta.stderr)
+                );
+                let meta_json: serde_json::Value =
+                    serde_json::from_slice(&meta.stdout).expect("cargo metadata 输出不是合法 JSON");
+                let target_dir = std::path::PathBuf::from(
+                    meta_json["target_directory"]
+                        .as_str()
+                        .expect("cargo metadata 缺少 target_directory"),
+                );
+
+                // 2) 用**同一个** target 目录构建（不显式传 --target-dir，让它走默认解析，
+                //    与 metadata 的答案保持一致）。
                 let out = std::process::Command::new("cargo")
                     .args(["build", "-p", "patheditor-cli"])
                     .current_dir(root)
@@ -976,7 +1009,8 @@ mod tests {
                     "构建 CLI 二进制失败: {}",
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let bin = root.join("target").join("debug").join("patheditor.exe");
+
+                let bin = target_dir.join("debug").join("patheditor.exe");
                 assert!(bin.is_file(), "构建后仍找不到二进制: {}", bin.display());
                 bin
             })
@@ -1393,6 +1427,7 @@ mod tests {
         let stderr = String::from_utf8_lossy(&out.stderr);
 
         // C7：兜底指引必须打印，且走 stderr —— 绝不能污染 stdout 的输出契约。
+        // 这两条断言与退出码无关，两个分支都成立。
         assert!(
             stderr.contains("patheditor backup"),
             "必须提示 patheditor backup: {stderr}"
@@ -1401,18 +1436,24 @@ mod tests {
             stderr.contains("patheditor env backup"),
             "必须提示 patheditor env backup: {stderr}"
         );
-        assert!(
-            stdout.is_empty(),
-            "恢复过程中 stdout 必须保持干净（指引走 stderr）: {stdout}"
-        );
 
         match out.status.code() {
-            // 未提权：HKLM 写权限错误，退出码 1（spec 允许）
-            Some(1) => assert!(
-                stderr.contains("错误:"),
-                "退出码 1 时必须打印错误文本: {stderr}"
-            ),
-            // 已提权：备份即当前状态，零变更零失败
+            // 未提权：HKLM 写权限错误，退出码 1（spec 允许）。
+            // 这条路径**没有成功输出**，所以 stdout 必须干净 —— 指引没有漏进 stdout。
+            Some(1) => {
+                assert!(
+                    stderr.contains("错误:"),
+                    "退出码 1 时必须打印错误文本: {stderr}"
+                );
+                assert!(
+                    stdout.is_empty(),
+                    "失败路径 stdout 必须保持干净（指引走 stderr）: {stdout}"
+                );
+            }
+            // 已提权：备份即当前状态，零变更零失败。
+            // 注意：成功路径**必然**往 stdout 打「恢复完成」那一行，所以
+            // 「stdout 必须干净」的断言绝不能提到 match 之前 —— 那会让本分支
+            // 构造上不可达（提权环境含 GitHub windows-latest runner）。
             Some(0) => {
                 assert!(
                     stdout.contains("恢复完成: 成功 0 个"),
