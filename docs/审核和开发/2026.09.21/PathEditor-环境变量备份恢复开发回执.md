@@ -3,8 +3,9 @@
 **日期**: 2026-09-22
 **分支**: `worktree-env-backup-restore`（worktree 隔离）
 **范围**: 5.1.4「环境变量备份与恢复」特性，Task 1–8 实现 + Task 9 收口
-**BASE**: `0da96a7`（Task 1–8 前）→ **代码收口基线** `455c376`（Task 9 文档改动前）→ **本回执交付态** `d4538cb`（Task 9 六个文档提交之后，见第 7 节）
-**收口轮提交**: Task 9 共 6 个，见文末第 7 节
+**BASE**: `0da96a7`（Task 1–8 前）→ `455c376`（Task 1–8 代码收口，共 19 个提交）
+→ `d4538cb`（Task 9 六个文档提交之后，复审基线）
+**Task 9 提交**: 六个文档提交（`5b6a43a`…`d4538cb`，见第 7 节）；修复轮在其后另有新增提交，见第 7 节脚注
 
 ## 1. 任务映射
 
@@ -79,7 +80,7 @@ cargo 1.96.0 (30a34c682 2026-05-25) / rustc 1.96.0 (ac68faa20 2026-05-25)。
 7. **恢复的 `1 MiB` 大小上限、`--dry-run` 与校验之间无 TOCTOU 防护**（`validate_backup_path` 原样返回路径、不做 canonicalize，随后的读取与校验是两次独立文件系统调用）。CLI 为单线程，该窗口是理论性的，本波不解决，已在 doc 中如实标注。
 8. **`validate_backup_path` 的目录判断用 `parent == env_backup_dir()`**：入参目录若被 `PATHEDITOR_BACKUP_DIR` 设成相对路径，该等值判断与用户给的绝对路径不相等，只能靠 `env_backup_` 前缀兜底。不构成安全缺陷（前缀规则本就独立生效），但「在备份目录内即可」这条语义在相对路径下**不成立**。
 9. **两个「恒 0」计数字段：`RestoreOutcome.skipped` 恒为 0，`EnvBackupInfo.variable_count` 恒为 0**。前者——恢复路径里**没有任何一条会「跳过」的分支**（core 测试 `skipped 恒 0：没有「跳过」这条路径` 钉住）；后者——`list_env_backups` **只枚举目录与 stat、不解析内容**（spec §S5），故 `variable_count` 无从填充。`variable_count`（TS 镜像 `variableCount`）在 GUI 与 `--json` 输出中恒显示 0，**不是「备份为空」，而是「未统计」**。
-10. **格式门控的文件范围不足（先于本波存在的独立缺陷，本波未修，范围外）**。`package.json` 的 `format:check` glob 只含 `src/**` / `tests/**` / `e2e/**` 下的 `ts` / `tsx`，**从不覆盖 `.md` / `.json` / `.css` / `.html`**（与 §6.5 同一根因）。实测：`src/styles/globals.css` 是**被跟踪**文件、**本波未改动**，但 `npx prettier --check src/styles/globals.css` **报格式不合**，而 `npm run format:check` 从不检查它 → 该文件长期绕过格式门控，只在被暂存提交时才由 lint-staged 的 `*.{json,md,css,html}` 改写。同类文件（`.json` / `.css` / `.html`）均不在门控内。
+10. **格式门控的文件范围不足（先于本波存在的独立缺陷，本波未修，范围外）**。`package.json` 的 `format:check` glob 只含 `src/**` / `tests/**` / `e2e/**` 下的 `ts` / `tsx`，**从不覆盖 `.md` / `.json` / `.css` / `.html`**（与 §6.5 同一根因）。实测：`src/styles/globals.css` 是**被跟踪**文件、**本波未改动**，但 `npx prettier --check src/styles/globals.css` **报格式不合**（**当前磁盘上仍不合规**，非历史状态——说明该文件自上次被暂存提交后未再经 lint-staged 改写），而 `npm run format:check` 从不检查它 → 该文件长期绕过格式门控，只在被暂存提交时才由 lint-staged 的 `*.{json,md,css,html}` 改写。同类文件（`.json` / `.css` / `.html`）均不在门控内。
 
 ## 5. 需要审核窗口重点关注的项
 
@@ -187,9 +188,7 @@ for f in pathlib.Path('.').rglob('*'):
 1. **两份都从不被 `format:check` 覆盖。** `package.json` 的 `format:check` 为
    `prettier --check "src/**/*.{ts,tsx}" "tests/**/*.{ts,tsx}" "e2e/**/*.ts"`——
    glob 只含 `ts` / `tsx`，**连 `.css` 都不覆盖**，更不必说 `.md`。因此这不是「其中一个被绕过」，
-   而是**两份都不在检查范围内**。实测佐证：`npx prettier --check CLAUDE.md AGENTS.md`
-   对 Task 9 改动前的版本**两份都判不合规**，而 `npm run format:check` 同时报
-   `All matched files use Prettier code style!`——门控对 `.md` 完全失明。
+   而是**两份都不在检查范围内**——门控对 `.md` 完全失明。
 2. **`.gitignore:42` 的 `CLAUDE.md` 模式是空操作。** 该模式确实存在
    （`git check-ignore -v --no-index CLAUDE.md` → `.gitignore:42:CLAUDE.md`），但 `CLAUDE.md`
    是**已跟踪文件**（`git ls-files --error-unmatch CLAUDE.md` 成功），而 gitignore 只对
@@ -226,11 +225,12 @@ Task 9 共 **6 个提交**（新 → 旧）：
 | `5b6a43a` | `docs: 同步 env 备份恢复的命令与 IPC 文档，落盘开发回执`（Task 9 全部产物）          |
 
 后五个均为**本回执自身的勘误**（清单、SHA、编码数据、提交表），不改动任何面向用户的文档与代码。
-`git log --oneline 455c376..d4538cb` 可复现（6 条，含 HEAD 本身）。
+`git log --oneline 455c376..d4538cb` 可复现（6 条，含上表末条 `d4538cb`）。
 
 > 上表列 Task 9 的**六个原始提交**（截至复审基线 `d4538cb`）。**本次修复轮在其后另加提交**
-> （§6.5 归因改正 + 上列各项 Minor），故 Task 9 到修复轮交付态的实际提交数**多于上表六条**
-> —— 不写死数字（避免自指漂移），以 `git log --oneline d4538cb..HEAD` 的实际条数为准。
+> （§6.2 措辞删改 + §6.5 归因改正 + 头部指针一致性等），故 Task 9 到修复轮交付态的实际提交数
+> **多于上表六条** —— 不写死数字（避免自指漂移），以 `git log --oneline d4538cb..HEAD`
+> 的实际条数为准；**回执真正的最终提交即 `d4538cb..HEAD` 的 HEAD**。
 
 > **版本号未升（本波明令禁止）**：`package.json` / `Cargo.toml` / `gui/tauri.conf.json` / README 徽章
 > 均仍为 `5.1.3`，但 `CHANGELOG.md` 顶部已有 `## 5.1.4` 段落。**这不是漂移**——本波按指令只落盘
