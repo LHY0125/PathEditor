@@ -3,8 +3,8 @@
 **日期**: 2026-09-22
 **分支**: `worktree-env-backup-restore`（worktree 隔离）
 **范围**: 5.1.4「环境变量备份与恢复」特性，Task 1–8 实现 + Task 9 收口
-**BASE**: `0da96a7` → **HEAD（Task 9 提交前）**: `455c376`
-**收口轮提交**: 见文末第 7 节
+**BASE**: `0da96a7`（Task 1–8 前）→ **代码收口基线** `455c376`（Task 9 文档改动前）→ **本回执交付态** `d4538cb`（Task 9 六个文档提交之后，见第 7 节）
+**收口轮提交**: Task 9 共 6 个，见文末第 7 节
 
 ## 1. 任务映射
 
@@ -20,8 +20,10 @@
 | T8   | GUI 备份与恢复界面，含差异预览与冲突二次确认                | `2faa0f1`, `455c376`                                                 |
 | T9   | 文档同步与收口（本文件）                                    | 见第 7 节                                                            |
 
-累计 19 个提交，`git log --oneline 0da96a7..HEAD` 可复现；
-`git diff --stat 0da96a7..HEAD` = **30 files changed, 6438 insertions(+), 86 deletions(-)**。
+T1–T8 共 19 个提交（`git log --oneline 0da96a7..455c376`），Task 9 另 6 个（见第 7 节），
+本波到复审基线 `d4538cb` 止合计 **25 个提交**，`git log --oneline 0da96a7..d4538cb` = 25 可复现；
+`git diff --stat 0da96a7..d4538cb` = **36 files changed, 6832 insertions(+), 127 deletions(-)**
+（其中 Task 9 的六个文档提交即 `455c376..d4538cb` = 6 files / 394 insertions(+) / 41 deletions(-)）。
 
 ## 2. Execution Notes（计划原文 / 实际 / 处理）
 
@@ -76,6 +78,8 @@ cargo 1.96.0 (30a34c682 2026-05-25) / rustc 1.96.0 (ac68faa20 2026-05-25)。
 6. **CI 不跑任何测试**。仓库唯一 workflow 是 `.github/workflows/release.yml`（tag 触发），**零测试步骤**（`grep -n "vitest\|cargo test\|npm test\|playwright" .github/workflows/*.yml` 无命中）。`npm run verify` **不含 e2e**（`package.json` 的 `verify` 脚本链：format:check → lint → build → test:coverage → cargo fmt → clippy → cargo test）。因此**本波的全部质量门证据都是本地证据**，无任何 CI 背书。
 7. **恢复的 `1 MiB` 大小上限、`--dry-run` 与校验之间无 TOCTOU 防护**（`validate_backup_path` 原样返回路径、不做 canonicalize，随后的读取与校验是两次独立文件系统调用）。CLI 为单线程，该窗口是理论性的，本波不解决，已在 doc 中如实标注。
 8. **`validate_backup_path` 的目录判断用 `parent == env_backup_dir()`**：入参目录若被 `PATHEDITOR_BACKUP_DIR` 设成相对路径，该等值判断与用户给的绝对路径不相等，只能靠 `env_backup_` 前缀兜底。不构成安全缺陷（前缀规则本就独立生效），但「在备份目录内即可」这条语义在相对路径下**不成立**。
+9. **两个「恒 0」计数字段：`RestoreOutcome.skipped` 恒为 0，`EnvBackupInfo.variable_count` 恒为 0**。前者——恢复路径里**没有任何一条会「跳过」的分支**（core 测试 `skipped 恒 0：没有「跳过」这条路径` 钉住）；后者——`list_env_backups` **只枚举目录与 stat、不解析内容**（spec §S5），故 `variable_count` 无从填充。`variable_count`（TS 镜像 `variableCount`）在 GUI 与 `--json` 输出中恒显示 0，**不是「备份为空」，而是「未统计」**。
+10. **格式门控的文件范围不足（先于本波存在的独立缺陷，本波未修，范围外）**。`package.json` 的 `format:check` glob 只含 `src/**` / `tests/**` / `e2e/**` 下的 `ts` / `tsx`，**从不覆盖 `.md` / `.json` / `.css` / `.html`**（与 §6.5 同一根因）。实测：`src/styles/globals.css` 是**被跟踪**文件、**本波未改动**，但 `npx prettier --check src/styles/globals.css` **报格式不合**，而 `npm run format:check` 从不检查它 → 该文件长期绕过格式门控，只在被暂存提交时才由 lint-staged 的 `*.{json,md,css,html}` 改写。同类文件（`.json` / `.css` / `.html`）均不在门控内。
 
 ## 5. 需要审核窗口重点关注的项
 
@@ -156,8 +160,12 @@ for f in pathlib.Path('.').rglob('*'):
 | `docs/审核和开发/2026.09.19/PathEditor-Wave1数据一致性审查报告.md`       | 2      | 82        | 更早波次的历史文档             |
 | `docs/审核和开发/2026.09.20/PathEditor-Wave2架构收口开发回执.md`         | 2      | 137       | 更早波次的历史文档             |
 
-**本波提交范围（`455c376..HEAD`）实测 U+FFFD = 0、控制字符 = 0**；Task 9 的六个 blob
+**Task 9 提交范围（`455c376..d4538cb`）实测 U+FFFD = 0、控制字符 = 0**——该范围**只有文档**
+（4 个 `.md` + `CLAUDE.md` / `AGENTS.md`，零 `src/` `core/` `cli/` `gui/` 改动），
+故此结论**仅对这六个 blob 成立，对 Task 1–8 的源码什么都没说明**。Task 9 的六个 blob
 逐个复核（`git show` 复扫）= `checked 6 bad 0`，后续勘正提交的 blob 亦逐个复核。
+全仓被跟踪文本仍有 U+FFFD 的四处见上表，均为**先于本波存在**（`service.rs` 与计划文件
+属本波范围外，两份更早波次文档同理）。
 
 **本波自身仍犯了 3 次**：回执初稿 1 处、`task-9-report` 1 处、本节的代码块 1 处
 （写检测示例时把 U+FFFD 写成了字面量而非 `chr(0xFFFD)`），均用精确替换修复。**第 3 次尤其说明问题**：想写一段
@@ -169,32 +177,56 @@ for f in pathlib.Path('.').rglob('*'):
 **建议**：改中文文本一律用精确 `Edit`（不用 heredoc / sed / 正则）；提交前对**提交范围内的**
 文本文件自查 U+FFFD 与控制字符；写「检测损坏字符」的示例时用 `chr(0xFFFD)`，**不要写字面量**。
 
-### 6.5 「字节级一致」的文档对里，只有一份过质量门
+### 6.5 「字节级一致」的文档对没有自动门禁
 
-**Task 9 实测发现**：`AGENTS.md` 被 Prettier 检查（且被 lint-staged 在提交时自动改写），
-`CLAUDE.md` 却被 `.gitignore:42` 忽略、绕过 Prettier——**两份要求「字节级一致」的文件，
-只有一份接受格式化**。后果是「保持两份同步」与「满足 Prettier」可能互相推开：
-本波给 IPC 表加行后列宽变化，`AGENTS.md` 被 prettier 判为不合规，而 `CLAUDE.md` 不受检，
-若只跑 `prettier --check` 不看 `AGENTS.md` 就会漏掉。
+`CLAUDE.md` 与 `AGENTS.md` 要求**字节级一致**（两份内容相同，互相是副本）。本波实测确认：
+**没有任何自动工具强制这条不变量**，两份文件可以任意漂移而质量门全绿。
 
-本次处理：先 `prettier --write AGENTS.md`，再 `cp AGENTS.md CLAUDE.md`，两边同时合规且哈希一致
-（`E1AADF6B…`）。**但这是手工步骤，没有自动化守卫。**
+三条实测事实（均可复现）：
 
-**建议**：把 `CLAUDE.md` 从 `.gitignore` 移出（或给两份文件加一个「哈希一致」的 pre-commit 钩子），
-并让 `npm run format:check` 覆盖 `CLAUDE.md`——否则下一次同样的失误仍会漏检。
+1. **两份都从不被 `format:check` 覆盖。** `package.json` 的 `format:check` 为
+   `prettier --check "src/**/*.{ts,tsx}" "tests/**/*.{ts,tsx}" "e2e/**/*.ts"`——
+   glob 只含 `ts` / `tsx`，**连 `.css` 都不覆盖**，更不必说 `.md`。因此这不是「其中一个被绕过」，
+   而是**两份都不在检查范围内**。实测佐证：`npx prettier --check CLAUDE.md AGENTS.md`
+   对 Task 9 改动前的版本**两份都判不合规**，而 `npm run format:check` 同时报
+   `All matched files use Prettier code style!`——门控对 `.md` 完全失明。
+2. **`.gitignore:42` 的 `CLAUDE.md` 模式是空操作。** 该模式确实存在
+   （`git check-ignore -v --no-index CLAUDE.md` → `.gitignore:42:CLAUDE.md`），但 `CLAUDE.md`
+   是**已跟踪文件**（`git ls-files --error-unmatch CLAUDE.md` 成功），而 gitignore 只对
+   未跟踪文件生效——`git check-ignore CLAUDE.md` 返回非零（未被忽略）。**它与 Prettier 是否
+   检查该文件毫无关系**；即便把它从 `.gitignore` 移出，也不会有任何变化。
+3. **lint-staged 对两份文件一视同仁，无不对称。** `package.json` 的
+   `"*.{json,md,css,html}": ["prettier --write"]` **同时匹配** `CLAUDE.md` 与 `AGENTS.md`；
+   即两份文件在被暂存提交时都会经 `prettier --write` 格式化。
+
+**结论**：差异不在「某份被拦截」，而在**时机与范围**——`format:check` 完全不看 `.md`，
+lint-staged 只在提交时各自格式化、且**只保证各自合规，不会让两份相等**。所以真正失效的是
+「字节一致 + 统一格式」这两条不变量的自动化执行：没有检查覆盖 `.md`，也没有任何步骤比对两份是否相同。
+
+本次处理（手工，无守卫）：改完两份后 `prettier --write` 再整份复制，最终两份同时合规且哈希一致
+（`E1AADF6B448B64A05803E63338BCABE704524D6434C294A3870A50066681E23A`）。**这是手工步骤，
+不会自动重放——下一次同样的失误仍会漏检。**
+
+**建议**（范围外决策，本波未改）：根因是 `format:check` 的**文件类型范围不足**——
+`package.json` 的 glob 未覆盖 `.md`（也未覆盖 `.json` / `.css` / `.html`）。若要补上，须改
+`format:check` 的 glob 或另加一步（如专设「两份 md 哈希一致」的 pre-commit 检查）。
+仅把 `CLAUDE.md` 移出 `.gitignore` **治不了本**——问题不在 gitignore。
 
 ## 7. 提交信息
 
+Task 9 共 **6 个提交**（新 → 旧）：
+
 | 提交      | 说明                                                                                 |
 | --------- | ------------------------------------------------------------------------------------ |
-| `5b6a43a` | `docs: 同步 env 备份恢复的命令与 IPC 文档，落盘开发回执`（Task 9 全部产物）          |
-| `a0bbd7c` | `docs: 勘正回执第 8 节的产出文件清单`（初稿清单凭印象写，与命令输出不符；见第 8 节） |
-| `52823e1` | `docs: 回执第 7 节回填实际提交 SHA`                                                  |
-| `bb7872c` | `docs: 回执 6.4 节改为实测数据并修正范围外损坏的表述`（见 6.4 节）                   |
+| `d4538cb` | `docs: 回执第 7 节补全 Task 9 全部五个提交`（补出本表；本身即第 7 节的收口）         |
 | `f46f9aa` | `docs: 回执 6.4 节前言改为与实测表格自洽`                                            |
+| `bb7872c` | `docs: 回执 6.4 节改为实测数据并修正范围外损坏的表述`（见 6.4 节）                   |
+| `52823e1` | `docs: 回执第 7 节回填实际提交 SHA`                                                  |
+| `a0bbd7c` | `docs: 勘正回执第 8 节的产出文件清单`（初稿清单凭印象写，与命令输出不符；见第 8 节） |
+| `5b6a43a` | `docs: 同步 env 备份恢复的命令与 IPC 文档，落盘开发回执`（Task 9 全部产物）          |
 
-后四个均为**本回执自身的勘误**（清单、SHA、编码数据），不改动任何面向用户的文档与代码。
-`git log --oneline 455c376..f46f9aa` 可复现。
+后五个均为**本回执自身的勘误**（清单、SHA、编码数据、提交表），不改动任何面向用户的文档与代码。
+`git log --oneline 455c376..d4538cb` 可复现（6 条，含 HEAD 本身）。
 
 > **版本号未升（本波明令禁止）**：`package.json` / `Cargo.toml` / `gui/tauri.conf.json` / README 徽章
 > 均仍为 `5.1.3`，但 `CHANGELOG.md` 顶部已有 `## 5.1.4` 段落。**这不是漂移**——本波按指令只落盘
@@ -238,7 +270,7 @@ tests/unit/env-var-toolbar.test.tsx
 e2e/mocks/ipc.ts
 ```
 
-> **两处澄清（初稿清单有误，此处以命令输出为准）**：
+> **四处澄清（初稿清单有误，此处以命令输出为准）**：
 >
 > - `core/src/reg_store.rs` **不是**本波产出——它在 `ff5b4f8`（更早的波次）已存在，
 >   本波只是**使用** `EnvHiveStore` / `WinregHive`（`git log 0da96a7..455c376 -- core/src/reg_store.rs` 为空）。
@@ -248,9 +280,12 @@ e2e/mocks/ipc.ts
 >   `core/src/registry/env_var.rs`。
 > - spec / plan 两文档由审核窗口维护，不在本波代码提交内。
 
-**T9（文档收口，本提交 `5b6a43a`）**
+**T9（文档收口，主提交 `5b6a43a`）**
 
 修改：`CLAUDE.md`、`AGENTS.md`（两份字节级一致，`E1AADF6B…`）、`README.md`、`CHANGELOG.md`、
 `docs/审核和开发/2026.09.19/PathEditor-备份体系未覆盖环境变量登记.md`（关闭登记）。
 新增：`docs/审核和开发/2026.09.21/PathEditor-环境变量备份恢复开发回执.md`（本文件）。
-`git show --stat 5b6a43a` = **6 files changed, 312 insertions(+), 41 deletions(-)**。
+**该主提交本身的** `git show --stat 5b6a43a` = **6 files changed, 312 insertions(+), 41 deletions(-)**。
+注意这是 `5b6a43a` 单个提交的 stat，**不是 Task 9 的交付态**——其后的五个勘正提交
+（`a0bbd7c`…`d4538cb`）继续给同一回执文件加行，Task 9 全量的 stat 是
+`455c376..d4538cb` = **6 files changed, 394 insertions(+), 41 deletions(-)**。
