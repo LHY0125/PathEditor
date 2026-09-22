@@ -1,14 +1,148 @@
+use crate::backup::{backup_env_vars, BackupOutcome};
 use crate::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
     EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
 };
 use crate::error::{CoreError, ErrorCode};
 use crate::reg_store::{EnvHiveStore, WinregHive};
+use serde::{Deserialize, Serialize};
 use winreg::enums::*;
 use winreg::types::{FromRegValue, ToRegValue};
 
 use super::access::hive_location;
 use super::conflict::conflict_error;
+
+/// 一次环境变量写操作的结果。
+///
+/// 写入本身的成败仍由外层 `Result` 表达；本结构只承载**备份**这一附带结果 ——
+/// 备份失败不使写入失败（设计文档 K2），但必须被调用方看见。
+///
+/// 补 serde 派生（核对轮裁定 1）：本类型经 GUI 的 `#[tauri::command]` 返回值
+/// 出境，Tauri 要求返回值实现 `Serialize`。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteOutcome {
+    /// 写前备份的结果
+    pub backup: BackupOutcome,
+}
+
+/// 写前尽力备份：失败只记警告并如实返回，绝不阻断写入。
+///
+/// **必须在所有「便宜且无副作用」的校验之后调用** —— 校验失败时不应产生
+/// 无意义的备份文件。
+fn backup_before_write() -> BackupOutcome {
+    match backup_env_vars() {
+        Ok(path) => BackupOutcome::Created(path),
+        Err(e) => {
+            // GUI 侧 logger 会收到；CLI 侧经 WriteOutcome 返回值显式打印
+            // （CLI 未初始化 logger，这条 warn 在 CLI 下被丢弃）。
+            log::warn!("环境变量写前备份失败（写入继续）: {}", e.message);
+            BackupOutcome::Failed(e.message)
+        }
+    }
+}
+
+/// 写入口共享的「便宜校验」：变量名合法性、保留名、保护名单。
+///
+/// 判定源与各 `*_in_store` 内的同名判定一致（`validate_env_name` /
+/// `is_reserved` / `is_protected` 三个 core 函数），不构成第二套规则。
+/// 这里的目的是**在产生备份文件之前**拒绝明显非法的写入；
+/// `*_in_store` 内那一次是防御性兜底（真实写入路径必经）。
+///
+/// `reserved_verb` / `protected_verb` 是两个分支的差异化文案后缀，
+/// 取值必须与对应 `*_in_store` 内的措辞**逐字一致** —— 这些 message 是
+/// 用户可见的，漂移即为行为变化。各入口取值见调用点。
+fn reject_reserved_and_protected(
+    hive: EnvHive,
+    name: &str,
+    operation: &str,
+    reserved_verb: &str,
+    protected_verb: &str,
+) -> Result<(), CoreError> {
+    validate_env_name(name).map_err(|m| {
+        CoreError::new(ErrorCode::InvalidName, operation, m).with_target(hive, name)
+    })?;
+    if is_reserved(name) {
+        return Err(CoreError::new(
+            ErrorCode::ReservedName,
+            operation,
+            format!("{} 由专用 PATH 通路管理，{}", name, reserved_verb),
+        )
+        .with_target(hive, name));
+    }
+    if is_protected(name) {
+        return Err(CoreError::new(
+            ErrorCode::Protected,
+            operation,
+            format!("{} 是系统内置变量，{}", name, protected_verb),
+        )
+        .with_target(hive, name));
+    }
+    Ok(())
+}
+
+/// 广播观察标志：记录最近一次写成功路径是否走了广播（仅测试读取）。
+///
+/// 这是**测试观察点**，不是新架构层：生产路径恒为 `true` 的副作用，
+/// 无分支可跑偏。存在的理由是补上 golden/README.md 第 6 类此前「不做测试」
+/// 留下的缺口 —— 5 个写入口的广播调用曾在本轮重构中被整体丢失，
+/// 而当时**没有任何测试会因此失败**。
+static BROADCAST_OBSERVED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 最近一次成功写入是否发出了广播（仅测试读取）。
+///
+/// 用全局标志而非给写入口加注入参数：写入口的公开签名是跨层契约
+/// （CLI/GUI 都按它调用），为测试加参数会污染契约。
+#[cfg(test)]
+pub(crate) fn last_write_broadcast() -> bool {
+    BROADCAST_OBSERVED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// 复位广播观察标志（仅测试使用，避免用例间串扰）。
+#[cfg(test)]
+pub(crate) fn reset_write_broadcast() {
+    BROADCAST_OBSERVED.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 写入口共用的广播出口：记下观察标志，再广播环境变更。
+///
+/// 这 5 个写入口的文档注释都写着「写入成功并广播环境变更」——本函数是那句话
+/// 的实现，**不得删除**（见 `BROADCAST_OBSERVED` 的说明）。
+/// 广播位于公开 API 层而非 `*_in_store`，是 `golden/README.md` 第 6 类的不变量。
+///
+/// # `cfg!(test)` 的实际语义（实证，勿按直觉复述）
+///
+/// `cfg!(test)` **不是运行时求值**，rustc 在展开期就替换成字面量。对带副作用的
+/// 被调方，实测 IR（`rustc --emit=llvm-ir`，同形最小用例）：
+///
+/// - **非测试构建**：`define void @wrapper() { tail call void @real_broadcast_side_effect() }`
+///   —— 分支**和**真实调用都在。`cargo build`、`cargo build --release`、
+///   `cargo clippy --workspace --all-targets` 的 lint 构建都属此类，
+///   **一律真实广播**。
+/// - **测试构建**：`define void @wrapper() { ret void }` —— 分支仍在源码里，
+///   只有调用被消除；被调方符号随之成为死代码。
+///
+/// 即：**测试构建跳过真实 Win32 调用，生产构建无条件执行广播。**
+/// 跳过仅省测试期开销，**不改变生产行为**（生产每次写仍付完整广播耗时）。
+///
+/// 之所以要写明这段：这个「源码一套、两种构建两套行为」的分裂**没有工具守着**。
+/// clippy 的 `cfg_not_test` lint 只覆盖 `#[cfg(not(test))]`（见 `disabled.rs`
+/// 与 `profiles.rs` 的用法），**不覆盖 `cfg!(test)`**，所以注释必须诚实。
+///
+/// 跳过真实调用的理由：真实广播每次约 **4s**（本机三次实测
+/// `3141 / 4025 / 4024 ms`，另一次复审实测 `3671 / 4021 / 4021 ms`，测量方式为
+/// 计时环绕 `crate::system::broadcast_env_change()` —— 内部即
+/// `SendMessageTimeoutW(HWND_BROADCAST, …, SMTO_ABORTIFHUNG, 5000)`），
+/// 5 个写入口的表驱动测试会让 core 套件白等约 20s。
+/// 测试要断言的是「这条路径走了广播」，不是 Win32 调用是否成功——后者由
+/// `system.rs::broadcast_env_change` 自行负责（其失败只记 warn，从不返回 Err）。
+fn broadcast_after_write() {
+    BROADCAST_OBSERVED.store(true, std::sync::atomic::Ordering::SeqCst);
+    if !cfg!(test) {
+        crate::system::broadcast_env_change();
+    }
+}
 
 /// 读取单个值，返回 (vtype, value)。仅用于字符串类型。
 ///
@@ -248,16 +382,44 @@ fn reveal_env_var_in_store(
 }
 
 /// 写入已有变量。类型从注册表读取，不由前端决定。
+///
+/// # Returns
+/// - `Ok(WriteOutcome)` — 写入成功并广播环境变更；`backup` 字段说明写前备份结果
+/// - `Err(CoreError)` — 校验失败、修订冲突或类型不受支持
 pub fn update_env_var(
     hive: EnvHive,
     name: &str,
     value: &str,
     expected_revision: &str,
-) -> Result<(), CoreError> {
+) -> Result<WriteOutcome, CoreError> {
     let store = WinregHive::open(hive, true)?;
-    update_env_var_in_store(&store, hive, name, value, expected_revision)?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    update_env_var_with_store(&store, hive, name, value, expected_revision)
+}
+
+/// [`update_env_var`] 的核心逻辑，存储可注入。
+///
+/// 顺序为「校验（便宜且无副作用的保留名 / 保护名单）→ 写前备份 → `*_in_store`」。
+/// 顺序不可颠倒：校验失败时**不产生无意义的备份文件**。
+/// `*_in_store` 内部会再判一次同类规则（防御性兜底，见函数文档）。
+fn update_env_var_with_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+    value: &str,
+    expected_revision: &str,
+) -> Result<WriteOutcome, CoreError> {
+    reject_reserved_and_protected(
+        hive,
+        name,
+        "update_env_var",
+        "请使用 PATH 视图编辑",
+        "不允许修改",
+    )?;
+    let backup = backup_before_write();
+    update_env_var_in_store(store, hive, name, value, expected_revision)?;
+    // 广播必须在公开 API 层（golden/README.md 第 6 类不变量：*_in_store 不含广播）
+    broadcast_after_write();
+    Ok(WriteOutcome { backup })
 }
 
 /// `update_env_var` 的核心逻辑，存储可注入。
@@ -320,16 +482,44 @@ fn update_env_var_in_store(
 }
 
 /// 新建变量。`kind` 仅在此决定。
+///
+/// # Returns
+/// - `Ok(WriteOutcome)` — 创建成功并广播环境变更；`backup` 字段说明写前备份结果
+/// - `Err(CoreError)` — 名称非法、已存在（`NameExists`）、保护名单（`Protected`）
+///   或类型不受支持
 pub fn create_env_var(
     hive: EnvHive,
     name: &str,
     value: &str,
     kind: EnvValueKind,
-) -> Result<(), CoreError> {
+) -> Result<WriteOutcome, CoreError> {
     let store = WinregHive::open(hive, true)?;
-    create_env_var_in_store(&store, hive, name, value, kind)?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    create_env_var_with_store(&store, hive, name, value, kind)
+}
+
+/// [`create_env_var`] 的核心逻辑，存储可注入。顺序契约同 [`update_env_var_with_store`]。
+///
+/// 「同名已存在」需要枚举注册表，属昂贵校验，留在 `*_in_store` 内 —— 此时备份会
+/// 先于该失败发生，属可接受代价（备份文件无害）。
+fn create_env_var_with_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+    value: &str,
+    kind: EnvValueKind,
+) -> Result<WriteOutcome, CoreError> {
+    reject_reserved_and_protected(
+        hive,
+        name,
+        "create_env_var",
+        "无法通过通用通路创建",
+        "不允许覆盖",
+    )?;
+    let backup = backup_before_write();
+    create_env_var_in_store(store, hive, name, value, kind)?;
+    // 广播必须在公开 API 层（golden/README.md 第 6 类不变量：*_in_store 不含广播）
+    broadcast_after_write();
+    Ok(WriteOutcome { backup })
 }
 
 /// `create_env_var` 的核心逻辑，存储可注入。
@@ -343,7 +533,12 @@ pub fn create_env_var(
 /// 新行为是「失败响亮优于冒险覆盖」，与 F-04 同源，但**超出 F-04 只针对
 /// list 的字面范围**。若不愿引入该变更，改 `store.enum_names().unwrap_or_default()`
 /// 即可完全保持现状。
-fn create_env_var_in_store(
+///
+/// `pub(crate)` 而非 `pub`：恢复执行（`core/src/backup.rs`）需要逐变量调用它
+/// （设计文档 §S6：恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::registry`
+/// 对外公开 —— 外部入口一贯带写前备份（`create_env_var`），恢复自己不产生备份。
+/// `crate::registry` 根模块为其加了 `pub(crate) use` 重导出。
+pub(crate) fn create_env_var_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
@@ -404,11 +599,38 @@ fn create_env_var_in_store(
 }
 
 /// 删除变量。在同一调用内完成 revision 比对与删除。
-pub fn delete_env_var(hive: EnvHive, name: &str, expected_revision: &str) -> Result<(), CoreError> {
+///
+/// # Returns
+/// - `Ok(WriteOutcome)` — 删除成功并广播环境变更；`backup` 字段说明写前备份结果
+/// - `Err(CoreError)` — 校验失败、修订冲突或类型不受支持
+pub fn delete_env_var(
+    hive: EnvHive,
+    name: &str,
+    expected_revision: &str,
+) -> Result<WriteOutcome, CoreError> {
     let store = WinregHive::open(hive, true)?;
-    delete_env_var_in_store(&store, hive, name, expected_revision)?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    delete_env_var_with_store(&store, hive, name, expected_revision)
+}
+
+/// [`delete_env_var`] 的核心逻辑，存储可注入。顺序契约同 [`update_env_var_with_store`]。
+fn delete_env_var_with_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+    expected_revision: &str,
+) -> Result<WriteOutcome, CoreError> {
+    reject_reserved_and_protected(
+        hive,
+        name,
+        "delete_env_var",
+        "请使用 PATH 视图编辑",
+        "不允许删除",
+    )?;
+    let backup = backup_before_write();
+    delete_env_var_in_store(store, hive, name, expected_revision)?;
+    // 广播必须在公开 API 层（golden/README.md 第 6 类不变量：*_in_store 不含广播）
+    broadcast_after_write();
+    Ok(WriteOutcome { backup })
 }
 
 /// `delete_env_var` 的核心逻辑，存储可注入。
@@ -469,15 +691,47 @@ fn delete_env_var_in_store(
 /// 仅供 CLI `--force` 使用；GUI 一律走 [`update_env_var`] 的 CAS 语义。
 /// force 只豁免并发校验，**不豁免**保留名 / 保护名单 / 类型 / 权限判定。
 /// 这不是原子操作：读类型与写入仍是两次独立调用。
-pub fn update_env_var_force(hive: EnvHive, name: &str, value: &str) -> Result<(), CoreError> {
+///
+/// # Returns
+/// - `Ok(WriteOutcome)` — 写入成功并广播环境变更；`backup` 字段说明写前备份结果
+/// - `Err(CoreError)` — 校验失败或类型不受支持（不存在修订冲突——force 不做 CAS）
+pub fn update_env_var_force(
+    hive: EnvHive,
+    name: &str,
+    value: &str,
+) -> Result<WriteOutcome, CoreError> {
     let store = WinregHive::open(hive, true)?;
-    update_env_var_force_in_store(&store, hive, name, value)?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    update_env_var_force_with_store(&store, hive, name, value)
+}
+
+/// [`update_env_var_force`] 的核心逻辑，存储可注入。
+/// 顺序契约同 [`update_env_var_with_store`]。
+fn update_env_var_force_with_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+    value: &str,
+) -> Result<WriteOutcome, CoreError> {
+    reject_reserved_and_protected(
+        hive,
+        name,
+        "update_env_var_force",
+        "请使用 PATH 视图编辑",
+        "不允许修改",
+    )?;
+    let backup = backup_before_write();
+    update_env_var_force_in_store(store, hive, name, value)?;
+    // 广播必须在公开 API 层（golden/README.md 第 6 类不变量：*_in_store 不含广播）
+    broadcast_after_write();
+    Ok(WriteOutcome { backup })
 }
 
 /// `update_env_var_force` 的核心逻辑，存储可注入。
-fn update_env_var_force_in_store(
+///
+/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它（设计文档 §S6）。
+/// **只豁免 revision 校验，保护名单 / 保留名 / 类型 / 名值合法性判定照旧** ——
+/// 这正是恢复 `--force` 需要的语义（不允许在恢复层自行实现「跳过校验」）。
+pub(crate) fn update_env_var_force_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
@@ -523,15 +777,41 @@ fn update_env_var_force_in_store(
 }
 
 /// 强制删除变量（**最后写入者胜**）。不做 revision 比对，其余校验照旧。
-pub fn delete_env_var_force(hive: EnvHive, name: &str) -> Result<(), CoreError> {
+///
+/// # Returns
+/// - `Ok(WriteOutcome)` — 删除成功并广播环境变更；`backup` 字段说明写前备份结果
+/// - `Err(CoreError)` — 校验失败或类型不受支持（不存在修订冲突——force 不做 CAS）
+pub fn delete_env_var_force(hive: EnvHive, name: &str) -> Result<WriteOutcome, CoreError> {
     let store = WinregHive::open(hive, true)?;
-    delete_env_var_force_in_store(&store, hive, name)?;
-    crate::system::broadcast_env_change();
-    Ok(())
+    delete_env_var_force_with_store(&store, hive, name)
+}
+
+/// [`delete_env_var_force`] 的核心逻辑，存储可注入。
+/// 顺序契约同 [`update_env_var_with_store`]。
+fn delete_env_var_force_with_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+) -> Result<WriteOutcome, CoreError> {
+    reject_reserved_and_protected(
+        hive,
+        name,
+        "delete_env_var_force",
+        "请使用 PATH 视图编辑",
+        "不允许删除",
+    )?;
+    let backup = backup_before_write();
+    delete_env_var_force_in_store(store, hive, name)?;
+    // 广播必须在公开 API 层（golden/README.md 第 6 类不变量：*_in_store 不含广播）
+    broadcast_after_write();
+    Ok(WriteOutcome { backup })
 }
 
 /// `delete_env_var_force` 的核心逻辑，存储可注入。
-fn delete_env_var_force_in_store(
+///
+/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它（设计文档 §S6）。
+/// 同 [`update_env_var_force_in_store`]：只豁免 revision 校验，保护名单判定照旧。
+pub(crate) fn delete_env_var_force_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
@@ -577,6 +857,7 @@ fn delete_env_var_force_in_store(
 #[cfg(test)]
 mod env_var_tests {
     use super::*;
+    use crate::backup::BackupOutcome;
     use crate::env_var::{EnvHive, EnvValueKind};
     use crate::reg_store::memory::MemoryHive;
     use crate::registry::conflict::ERR_CONFLICT;
@@ -1004,5 +1285,327 @@ mod env_var_tests {
 
         delete_env_var_force_in_store(&hive, EnvHive::User, "MY_VAR").expect("force 删除必须成功");
         assert!(!hive.contains("MY_VAR"));
+    }
+
+    // ── 写前备份挂载（Task 3）──
+    // 测试用注入写入逻辑（`*_with_store`），备份目录经 `PATHEDITOR_BACKUP_DIR`
+    // 指向临时目录。**不在测试里向用户真实备份目录写入**。
+    // 注意：`backup_env_vars()` 内部仍以**只读**方式打开真实 hive 采集
+    // （`WinregHive::open(hive, false)`），因此这里只断言「备份结果被诚实返回」，
+    // 不断言具体的 Created/Failed —— 结果取决于运行环境。
+
+    #[test]
+    fn update_env_var_reports_backup_outcome() {
+        let _guard = crate::persist::test_persist_lock();
+        let dir = std::env::temp_dir().join(format!("patheditor_t3_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
+
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
+        let revision = revision_of("MY_VAR", vtype, &value);
+
+        let outcome = update_env_var_with_store(&hive, EnvHive::User, "MY_VAR", "new", &revision)
+            .expect("写入必须成功");
+
+        // 备份目录已指向可写的临时目录，因此必须是 Created ——
+        // 宽断言（Created | Skipped | Failed）在本用例里是重言式，测不到
+        // 「结果被算出来又被丢弃」这类退化；失败路径由
+        // `update_env_var_succeeds_even_when_backup_fails` 的可证伪断言覆盖。
+        assert!(
+            matches!(outcome.backup, BackupOutcome::Created(_)),
+            "备份目录可写时必须返回 Created，实际: {:?}",
+            outcome.backup
+        );
+        assert_eq!(
+            String::from_reg_value(&hive.get_raw("MY_VAR").unwrap()).unwrap(),
+            "new",
+            "备份结果不影响写入本身"
+        );
+
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 备份失败（目录不可写）时写入仍必须成功（K2：不阻断）。
+    #[test]
+    fn update_env_var_succeeds_even_when_backup_fails() {
+        let _guard = crate::persist::test_persist_lock();
+        // 指向一个不可能创建目录的路径：Windows 上以文件占位再当目录用
+        let blocker =
+            std::env::temp_dir().join(format!("patheditor_t3_block_{}", std::process::id()));
+        let _ = std::fs::remove_file(&blocker);
+        std::fs::write(&blocker, b"x").unwrap();
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", blocker.join("sub"));
+
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
+        let revision = revision_of("MY_VAR", vtype, &value);
+
+        let outcome = update_env_var_with_store(&hive, EnvHive::User, "MY_VAR", "new", &revision)
+            .expect("备份失败不得使写入失败");
+        assert!(
+            matches!(outcome.backup, BackupOutcome::Failed(_)),
+            "备份失败必须被如实报告为 Failed"
+        );
+        assert_eq!(
+            String::from_reg_value(&hive.get_raw("MY_VAR").unwrap()).unwrap(),
+            "new"
+        );
+
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+        let _ = std::fs::remove_file(&blocker);
+    }
+
+    /// 广播回归：5 个写入口的成功路径都必须发出 `WM_SETTINGCHANGE`。
+    ///
+    /// 存在的理由（2026-09-21 复审 Critical）：Task 3 的重构把 5 处
+    /// `broadcast_env_change()` 整体丢失，而**当时没有任何测试会因此失败**——
+    /// 运行中的进程会一直持有陈旧环境变量直到重启 shell。golden/README.md
+    /// 第 6 类记的正是「端口未抽出、本类不做测试」，本用例用观察标志补上这一格。
+    ///
+    /// 表驱动穷举 5 个入口：任一处漏掉广播，对应用例即失败。
+    #[test]
+    fn all_write_entrypoints_broadcast_on_success() {
+        let _guard = crate::persist::test_persist_lock();
+        let dir = std::env::temp_dir().join(format!("patheditor_t3_bcast_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
+
+        // 每臂自建 hive（MemoryHive 非 Sync，不能共享），返回是否写入成功。
+        /// 一个写入口的探针：跑一次写操作，返回是否成功。
+        type WriteProbe = fn() -> bool;
+        let cases: [(&str, WriteProbe); 5] = [
+            ("update_env_var", || {
+                let hive = MemoryHive::new(true);
+                hive.seed("V", "old", REG_SZ);
+                let (t, v) = read_env_var(&hive, "V").expect("读取失败");
+                let rev = revision_of("V", t, &v);
+                update_env_var_with_store(&hive, EnvHive::User, "V", "new", &rev).is_ok()
+            }),
+            ("create_env_var", || {
+                let hive = MemoryHive::new(true);
+                create_env_var_with_store(&hive, EnvHive::User, "V", "new", EnvValueKind::String)
+                    .is_ok()
+            }),
+            ("delete_env_var", || {
+                let hive = MemoryHive::new(true);
+                hive.seed("V", "old", REG_SZ);
+                let (t, v) = read_env_var(&hive, "V").expect("读取失败");
+                let rev = revision_of("V", t, &v);
+                delete_env_var_with_store(&hive, EnvHive::User, "V", &rev).is_ok()
+            }),
+            ("update_env_var_force", || {
+                let hive = MemoryHive::new(true);
+                hive.seed("V", "old", REG_SZ);
+                update_env_var_force_with_store(&hive, EnvHive::User, "V", "new").is_ok()
+            }),
+            ("delete_env_var_force", || {
+                let hive = MemoryHive::new(true);
+                hive.seed("V", "old", REG_SZ);
+                delete_env_var_force_with_store(&hive, EnvHive::User, "V").is_ok()
+            }),
+        ];
+
+        for (name, run) in cases {
+            reset_write_broadcast();
+            assert!(run(), "{name} 应写入成功（前置条件）");
+            assert!(
+                last_write_broadcast(),
+                "{name} 成功路径必须广播环境变更；缺失会让运行中的进程持有陈旧变量"
+            );
+        }
+
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 广播回归（负向）：校验被拒的路径不得广播。
+    ///
+    /// 与上一条合起来才构成完整契约「成功 → 广播，拒绝 → 不广播」。
+    #[test]
+    fn rejected_write_does_not_broadcast() {
+        let _guard = crate::persist::test_persist_lock();
+        let dir =
+            std::env::temp_dir().join(format!("patheditor_t3_nobcast_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
+
+        let hive = MemoryHive::new(true);
+        hive.seed("V", "old", REG_SZ);
+        let (t, v) = read_env_var(&hive, "V").expect("读取失败");
+        let rev = revision_of("V", t, &v);
+
+        reset_write_broadcast();
+        assert!(
+            update_env_var_with_store(&hive, EnvHive::User, "Path", "x", &rev).is_err(),
+            "保留名必须被拒绝（前置条件）"
+        );
+        assert!(!last_write_broadcast(), "被拒绝的写入不得广播环境变更");
+
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 文案等价：5 个写入口的保留名 / 保护名单 message 必须逐字等于对应
+    /// `*_in_store` 的 message。
+    ///
+    /// 存在的理由（2026-09-21 复审 Important）：内联校验曾因辅助函数只带一个
+    /// `verb` 参数而让 `create_env_var` 的保留名文案漂移成「请使用 PATH 视图编辑」，
+    /// 而 `*_in_store` 是「无法通过通用通路创建」—— 用户可见的行为变化。
+    /// 本用例把「逐字一致」从人工核对升级为可执行断言。
+    ///
+    /// 两侧都经真实入口触发并取出 `CoreError.message`，不是比对源码字符串。
+    /// **5 个入口全覆盖**：只比一个入口会漏掉 create 这类差异化措辞。
+    #[test]
+    fn entrypoint_messages_match_in_store_messages() {
+        let _guard = crate::persist::test_persist_lock();
+        let hive = MemoryHive::new(true);
+
+        // 每臂取「内联层 message」与「*_in_store 层 message」。
+        type Probe = fn(&MemoryHive, &str) -> String;
+        let inline: [(&str, Probe); 5] = [
+            ("update_env_var", |h, n| {
+                update_env_var_with_store(h, EnvHive::User, n, "x", "r")
+                    .expect_err("内联层必须拒绝")
+                    .message
+            }),
+            ("create_env_var", |h, n| {
+                create_env_var_with_store(h, EnvHive::User, n, "x", EnvValueKind::String)
+                    .expect_err("内联层必须拒绝")
+                    .message
+            }),
+            ("delete_env_var", |h, n| {
+                delete_env_var_with_store(h, EnvHive::User, n, "r")
+                    .expect_err("内联层必须拒绝")
+                    .message
+            }),
+            ("update_env_var_force", |h, n| {
+                update_env_var_force_with_store(h, EnvHive::User, n, "x")
+                    .expect_err("内联层必须拒绝")
+                    .message
+            }),
+            ("delete_env_var_force", |h, n| {
+                delete_env_var_force_with_store(h, EnvHive::User, n)
+                    .expect_err("内联层必须拒绝")
+                    .message
+            }),
+        ];
+        let in_store: [(&str, Probe); 5] = [
+            ("update_env_var", |h, n| {
+                update_env_var_in_store(h, EnvHive::User, n, "x", "r")
+                    .expect_err("in_store 层必须拒绝")
+                    .message
+            }),
+            ("create_env_var", |h, n| {
+                create_env_var_in_store(h, EnvHive::User, n, "x", EnvValueKind::String)
+                    .expect_err("in_store 层必须拒绝")
+                    .message
+            }),
+            ("delete_env_var", |h, n| {
+                delete_env_var_in_store(h, EnvHive::User, n, "r")
+                    .expect_err("in_store 层必须拒绝")
+                    .message
+            }),
+            ("update_env_var_force", |h, n| {
+                update_env_var_force_in_store(h, EnvHive::User, n, "x")
+                    .expect_err("in_store 层必须拒绝")
+                    .message
+            }),
+            ("delete_env_var_force", |h, n| {
+                delete_env_var_force_in_store(h, EnvHive::User, n)
+                    .expect_err("in_store 层必须拒绝")
+                    .message
+            }),
+        ];
+
+        // 保留名 Path + 保护名单 windir，两分支都覆盖；5 个入口逐一配对。
+        for (name, branch) in [("Path", "保留名"), ("windir", "保护名单")] {
+            for i in 0..inline.len() {
+                let (label, inline_probe) = inline[i];
+                let (in_store_label, in_store_probe) = in_store[i];
+                assert_eq!(label, in_store_label, "两个探针表必须同序");
+                assert_eq!(
+                    inline_probe(&hive, name),
+                    in_store_probe(&hive, name),
+                    "{label} 的{branch}文案必须与 *_in_store 逐字一致"
+                );
+            }
+        }
+
+        // 绝对措辞一并固定，防止「两层同时漂移」逃过上面的相等断言。
+        let create_reserved =
+            create_env_var_with_store(&hive, EnvHive::User, "Path", "x", EnvValueKind::String)
+                .expect_err("保留名必须拒绝")
+                .message;
+        assert!(
+            create_reserved.ends_with("无法通过通用通路创建"),
+            "create 的保留名文案应是「无法通过通用通路创建」，实际: {create_reserved}"
+        );
+        let create_protected =
+            create_env_var_with_store(&hive, EnvHive::User, "windir", "x", EnvValueKind::String)
+                .expect_err("保护名单必须拒绝")
+                .message;
+        assert!(
+            create_protected.ends_with("不允许覆盖"),
+            "create 的保护名单文案应是「不允许覆盖」，实际: {create_protected}"
+        );
+        let update_protected = update_env_var_with_store(&hive, EnvHive::User, "windir", "x", "r")
+            .expect_err("保护名单必须拒绝")
+            .message;
+        assert!(
+            update_protected.ends_with("不允许修改"),
+            "update 的保护名单文案应是「不允许修改」，实际: {update_protected}"
+        );
+        let delete_protected = delete_env_var_with_store(&hive, EnvHive::User, "windir", "r")
+            .expect_err("保护名单必须拒绝")
+            .message;
+        assert!(
+            delete_protected.ends_with("不允许删除"),
+            "delete 的保护名单文案应是「不允许删除」，实际: {delete_protected}"
+        );
+    }
+
+    /// 顺序契约：校验失败时**不发生备份**（不产生无意义的备份文件）。
+    ///
+    /// 保留名 / 保护名单是「便宜且无副作用」的校验，必须在 `backup_before_write()`
+    /// 之前执行。断言方式是直接的：备份目录指向一个**可正常写入**的临时目录，
+    /// 校验失败后该目录必须仍为空 —— 若实现先备份后校验，目录里会多出一份
+    /// `env_backup_*.json`，本测试即失败。
+    #[test]
+    fn rejected_write_produces_no_backup_file() {
+        let _guard = crate::persist::test_persist_lock();
+        let dir = std::env::temp_dir().join(format!("patheditor_t3_order_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
+
+        let hive = MemoryHive::new(true);
+        hive.seed("MY_VAR", "original", REG_SZ);
+        hive.seed("windir", "C:\\Windows", REG_EXPAND_SZ);
+        let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
+        let revision = revision_of("MY_VAR", vtype, &value);
+
+        // 保留名：必须 Err
+        assert!(
+            update_env_var_with_store(&hive, EnvHive::User, "Path", "x", &revision).is_err(),
+            "保留名必须被拒绝"
+        );
+        // 保护名单：必须 Err
+        assert!(
+            update_env_var_with_store(&hive, EnvHive::User, "windir", "x", &revision).is_err(),
+            "保护名单必须被拒绝"
+        );
+
+        let backups = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(backups, 0, "校验失败时不得产生备份文件");
+
+        std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

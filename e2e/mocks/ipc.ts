@@ -76,6 +76,48 @@ const allEnvVarsFixture = {
 export type IpcOverrides = Partial<Record<string, unknown>>;
 
 /**
+ * list_env_backups 的 mock 列表。`variableCount` 恒为 0（Rust 不解析内容）。
+ * 两条记录的时间戳故意不同，用于验证列表顺序原样透传（前端不重排）。
+ */
+const envBackupsFixture = [
+  {
+    file: 'env_backup_20260922_120000_000.json',
+    path: 'C:\\backups\\env_backup_20260922_120000_000.json',
+    timestamp: '20260922_120000_000',
+    sizeBytes: 2048,
+    variableCount: 0,
+  },
+  {
+    file: 'env_backup_20260921_090000_000.json',
+    path: 'C:\\backups\\env_backup_20260921_090000_000.json',
+    timestamp: '20260921_090000_000',
+    sizeBytes: 1024,
+    variableCount: 0,
+  },
+];
+
+/**
+ * preview_env_backup 的 mock 差异。
+ *
+ * 三个计数故意两两不等（新增 1 / 修改 0 / 删除 2 / 冲突 3），这样界面上任何
+ * 计数对调都会让断言失败。含两条 removed，用于验收「单独列出将被删除的变量名」。
+ */
+const restorePreviewFixture = {
+  changes: [
+    { hive: 'user', name: 'NEW_ONLY', kind: 'added' },
+    { hive: 'user', name: 'OLD_VAR', kind: 'removed' },
+    { hive: 'system', name: 'LEGACY_HOME', kind: 'removed' },
+    { hive: 'user', name: 'JAVA_HOME', kind: 'conflict' },
+    { hive: 'system', name: 'windir', kind: 'conflict' },
+    { hive: 'user', name: 'MY_TOKEN', kind: 'conflict' },
+  ],
+  added: 1,
+  modified: 0,
+  removed: 2,
+  conflicts: 3,
+};
+
+/**
  * reveal_env_var 的 mock 返回值（F-01 新契约）：按变量名索引
  * `{ value, revision }`，revision 与 allEnvVarsFixture 快照一致。
  */
@@ -134,6 +176,40 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'reveal_env_var':
             // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）
             return ${JSON.stringify(revealedFixture)}[args?.name] ?? null;
+          // Tauri 插件对话框：插件侧 confirm() 实际调 plugin:dialog|message，
+          // 并把返回值与 okLabel（默认 Ok）比较得出布尔结果。默认返回 Cancel
+          // （与「取消」一致）；测试置 window.__confirmResponse = true 走通确认链路
+          // （正文经 __capturedCalls 记录供断言：args.message / args.title / args.kind）。
+          case 'plugin:dialog|message':
+            return window.__confirmResponse ? 'Ok' : 'Cancel';
+          // 环境变量备份通路（Task 8）。返回值形状必须与 Rust 序列化一致：
+          // BackupOutcome 是外部标签枚举 → {"created":"路径"} / "skipped" / {"failed":"原因"}。
+          case 'backup_env_vars': return 'C:\\\\backups\\\\env_backup_20260922_120000_000.json';
+          case 'list_env_backups': return ${JSON.stringify(envBackupsFixture)};
+          case 'preview_env_backup': return ${JSON.stringify(restorePreviewFixture)};
+          case 'restore_env_backup':
+            // 冲突契约（与 update_env_var 同源）：对象带 code 字段，前端按 code 判定。
+            if (window.__conflictOverride && !args?.force) {
+              throw {
+                code: 'conflict',
+                operation: 'restore_env_backup',
+                hive: null,
+                name: null,
+                retryable: true,
+                message: '备份后有外部修改，请确认是否强制覆盖'
+              };
+            }
+            if (window.__restoreForbidden) {
+              throw {
+                code: 'permissionDenied',
+                operation: 'restore_env_backup',
+                hive: 'system',
+                name: null,
+                retryable: false,
+                message: '打开系统注册表键失败：拒绝访问'
+              };
+            }
+            return { applied: 3, skipped: 0, failures: [] };
           case 'update_env_var':
             // 冲突契约（F-06）：与 Rust CoreError 序列化一致，对象形状携带
             // code 字段（前端按 code 判定，不再匹配 [E_CONFLICT] 文本前缀）。
@@ -148,9 +224,9 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
                 message: '[E_CONFLICT] 变量已被其他进程修改，请重新加载',
               };
             }
-            return undefined;
-          case 'create_env_var': return undefined;
-          case 'delete_env_var': return undefined;
+            return { backup: { created: 'C:\\\\backups\\\\env_backup_x.json' } };
+          case 'create_env_var': return { backup: 'skipped' };
+          case 'delete_env_var': return { backup: 'skipped' };
           default: throw new Error('Unexpected invoke: ' + cmd);
         }
       }

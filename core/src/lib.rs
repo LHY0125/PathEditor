@@ -13,8 +13,10 @@ pub mod scanner;
 pub mod service;
 pub mod system;
 
+pub use backup::BackupOutcome;
 pub use env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue};
 pub use error::{CoreError, ErrorCode};
 pub use path_entry::{PathEntry, PathSnapshot};
 pub use profiles::{ProfileData, ProfileMeta, ProfilePathEntry};
+pub use registry::WriteOutcome;
 pub use scanner::{ConflictEntry, ConflictLocation, ToolGroup};

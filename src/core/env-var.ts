@@ -10,6 +10,33 @@ export type EnvHive = 'system' | 'user';
 export type HiveFilter = 'system' | 'user' | 'all';
 
 /**
+ * 一次写操作前的备份结果（Rust `backup::BackupOutcome` 的 serde 形状）。
+ *
+ * 是**外部标签枚举**（externally tagged），JSON 形如：
+ * - `Created(PathBuf)` → `{ "created": "C:\\…\\env_backup_….json" }`
+ * - `Skipped`          → `"skipped"`
+ * - `Failed(String)`   → `{ "failed": "原因" }`
+ */
+export type BackupOutcome = { created: string } | 'skipped' | { failed: string };
+
+/** 一次环境变量写操作的结果（Rust `registry::WriteOutcome`）。 */
+export interface WriteOutcome {
+  backup: BackupOutcome;
+}
+
+/**
+ * 备份是否失败；未知形状（未来新增变体）按「非失败」处理，不影响写入成功语义。
+ *
+ * 判定只认 `failed` 自有属性 —— `{created}` 与 `{failed}` 是同一层级的不同键，
+ * 不能用「是对象 → 失败」这种粗判，否则备份成功也会被报成失败。
+ */
+export function backupFailed(backup: BackupOutcome): string | null {
+  return typeof backup === 'object' && backup !== null && 'failed' in backup
+    ? (backup as { failed: string }).failed
+    : null;
+}
+
+/**
  * Rust `ErrorCode` 的镜像（serde camelCase 序列化）。
  *
  * F-06：错误判定只看 `code`，不匹配 `message` 文本 —— 措辞变化不会静默

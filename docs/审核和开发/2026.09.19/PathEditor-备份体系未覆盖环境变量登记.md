@@ -1,8 +1,13 @@
 # 备份体系未覆盖通用环境变量（登记文档）
 
+> **状态更新（2026-09-21）**：两项缺口已由 5.1.4 的「环境变量备份与恢复」特性关闭。
+> 本文件保留为历史记录，不再作为待办跟踪。
+>
+> 关闭依据：`docs/审核和开发/2026.09.21/PathEditor-环境变量备份恢复开发回执.md`。
+
 - **登记日期**：2026-09-19
 - **登记人**：审核窗口
-- **状态**：待开发窗口评估；本轮（三波次收口）**不处理**，开发完后再议
+- **状态**：**已关闭（2026-09-21，5.1.4）**；原状态「待开发窗口评估；本轮（三波次收口）**不处理**，开发完后再议」
 - **来源**：审核窗口在答疑中发现的复审未覆盖项
 
 ## 1. 问题陈述
@@ -10,6 +15,10 @@
 PathEditor v5.2 将管理范围从 PATH 扩展到通用环境变量，但**备份体系没有跟着扩**，存在两个独立缺口：
 
 ### 缺口 1：备份内容只有 PATH
+
+> **已关闭（5.1.4）**：新增 `env_backup_<时间戳>.json`（`core/src/backup.rs`），
+> 含两个 hive 的全部可写环境变量、注册表类型与 revision。下方描述为
+> 5.1.4 之前的实况，保留作历史记录。
 
 `core/src/backup.rs:38-39` 的 `backup_registry()` 只读两个键：
 
@@ -21,6 +30,11 @@ let user_paths = registry::load_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户"
 备份文件 `path_backup_<时间戳>.txt` 只有 `[System PATH]` / `[User PATH]` 两段。其他环境变量（`JAVA_HOME` 等）不进备份。
 
 ### 缺口 2：环境变量写入路径不触发备份
+
+> **已关闭（5.1.4）**：CLI 的 `env set` / `env add` / `env remove` 与 GUI 的
+> `update_env_var` / `create_env_var` / `delete_env_var` 均在写入前调用
+> `backup_before_write`（`core/src/registry/env_var.rs`），返回值经 `WriteOutcome.backup`
+> 抵达调用方。下方描述为 5.1.4 之前的实况，保留作历史记录。
 
 全库 `backup_registry` 调用点仅 3 处，全部绑定 PATH 保存流程：
 

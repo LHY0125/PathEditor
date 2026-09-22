@@ -19,6 +19,7 @@ import { EnvVarTable } from '@/components/env-list/EnvVarTable';
 import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
+import { EnvBackupDialog } from '@/components/dialogs/EnvBackupDialog';
 import { useEnvStore } from '@/store/env-store';
 import { backend } from '@/services/backend';
 import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
@@ -54,6 +55,7 @@ export function AppShell() {
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
   const [newVarOpen, setNewVarOpen] = useState(false);
+  const [envBackupOpen, setEnvBackupOpen] = useState(false);
   // 选中与编辑都只存稳定键；meta 一律从快照派生 —— 冲突刷新后重试自动
   // 携带新 revision（F-02），快照换代后悬空引用自动失效。
   const [selectedVarKey, setSelectedVarKey] = useState<string | null>(null);
@@ -178,6 +180,7 @@ export function AppShell() {
               if (selectedVar) confirmRemoveVar(selectedVar);
             }}
             onRefresh={() => void loadEnvVars()}
+            onBackup={() => setEnvBackupOpen(true)}
             onSearchChange={setEnvSearch}
             searchQuery={envSearch}
             selected={selectedVar}
@@ -296,6 +299,12 @@ export function AppShell() {
       />
       <AnalyzeDialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} />
       <ProfileDialog open={profilesOpen} onClose={() => setProfilesOpen(false)} />
+      {/* 恢复改的是注册表：成功后刷新环境变量表格，否则界面与实际不一致。 */}
+      <EnvBackupDialog
+        open={envBackupOpen}
+        onClose={() => setEnvBackupOpen(false)}
+        onRestored={() => void loadEnvVars()}
+      />
       {newVarOpen && (
         <NewEnvVarDialog
           canWriteSystem={canWriteSystem}

@@ -228,6 +228,29 @@ enum EnvCmd {
         #[arg(short, long)]
         system: bool,
     },
+    /// 立即创建一份环境变量备份
+    Backup {
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出已有的环境变量备份（按时间倒序）
+    Backups {
+        #[arg(long)]
+        json: bool,
+    },
+    /// 从备份文件恢复环境变量
+    Restore {
+        /// 备份文件路径
+        file: String,
+        /// 只显示将要发生的变更，不写注册表
+        #[arg(long)]
+        dry_run: bool,
+        /// 跳过 revision 校验直接覆盖（不豁免保护名单与类型判定）
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 // ── 命令实现 ──
@@ -533,6 +556,14 @@ fn main() {
                 force,
                 system,
             } => env_ops::cmd_env_remove(name, revision, force, system),
+            EnvCmd::Backup { json } => env_ops::cmd_env_backup(json),
+            EnvCmd::Backups { json } => env_ops::cmd_env_backups(json),
+            EnvCmd::Restore {
+                file,
+                dry_run,
+                force,
+                json,
+            } => env_ops::cmd_env_restore(file, dry_run, force, json),
         },
         Command::Profile(cmd) => match cmd {
             ProfileCmd::List { json } => profile_list(json),

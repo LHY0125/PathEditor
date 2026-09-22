@@ -146,10 +146,13 @@ describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
     expect((err as CoreError).message).toBe('未知错误详情');
   });
 
-  it('成功时原样返回，不包裹', async () => {
-    mockInvoke.mockResolvedValue(undefined);
+  it('成功时原样返回，不包裹为错误对象', async () => {
+    // 成功路径原样透传写结果（不再返回 void —— 含写前备份结果，见 Task 8）。
+    mockInvoke.mockResolvedValue({ backup: { created: 'C:\\b\\env_backup_1.json' } });
 
-    await expect(backend.updateEnvVar('user', 'X', 'v', 'rev')).resolves.toBeUndefined();
+    await expect(backend.updateEnvVar('user', 'X', 'v', 'rev')).resolves.toEqual({
+      backup: { created: 'C:\\b\\env_backup_1.json' },
+    });
   });
 });
 

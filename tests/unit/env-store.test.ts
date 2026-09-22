@@ -15,9 +15,12 @@ vi.mock('@/services/backend', async () => {
 
 import { useEnvStore } from '@/store/env-store';
 import { backend } from '@/services/backend';
-import type { EnvVarMeta, RevealedValue } from '@/core/env-var';
+import type { EnvVarMeta, RevealedValue, WriteOutcome } from '@/core/env-var';
 
 const mockBackend = vi.mocked(backend);
+
+/** 写成功的标准返回：本次无需备份（`Skipped`）。 */
+const noBackup: WriteOutcome = { backup: 'skipped' };
 
 function meta(overrides: Partial<EnvVarMeta> = {}): EnvVarMeta {
   return {
@@ -162,7 +165,7 @@ describe('load 竞态防护（F-03）', () => {
 
 describe('save', () => {
   it('携带 meta.revision 调用 updateEnvVar', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -179,7 +182,7 @@ describe('save', () => {
   });
 
   it('readRevision 与 meta.revision 不一致时拒绝保存、不调 IPC 且触发刷新（F-01）', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -196,7 +199,7 @@ describe('save', () => {
   });
 
   it('readRevision 与 meta.revision 一致时正常保存', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -305,7 +308,7 @@ describe('save', () => {
 
 describe('create / remove', () => {
   it('create 校验名称后调用 createEnvVar', async () => {
-    mockBackend.createEnvVar.mockResolvedValue(undefined);
+    mockBackend.createEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
 
     await useEnvStore.getState().create('user', 'NEW_VAR', 'value', 'string');
@@ -321,7 +324,7 @@ describe('create / remove', () => {
   });
 
   it('remove 携带 meta.revision 调用 deleteEnvVar', async () => {
-    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
 
@@ -344,7 +347,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   it('save 成功返回 true，失败返回 false', async () => {
     const target = meta();
 
-    mockBackend.updateEnvVar.mockResolvedValue(undefined);
+    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
     await expect(useEnvStore.getState().save(target, null)).resolves.toBe(true);
@@ -355,7 +358,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   });
 
   it('create 成功返回 true，失败返回 false', async () => {
-    mockBackend.createEnvVar.mockResolvedValue(undefined);
+    mockBackend.createEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     await expect(useEnvStore.getState().create('user', 'N1', 'v', 'string')).resolves.toBe(true);
 
@@ -366,7 +369,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   it('remove 成功返回 true，失败返回 false', async () => {
     const target = meta();
 
-    mockBackend.deleteEnvVar.mockResolvedValue(undefined);
+    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     await expect(useEnvStore.getState().remove(target)).resolves.toBe(true);
 
@@ -377,5 +380,64 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   it('无草稿时 save 直接返回 false', async () => {
     await expect(useEnvStore.getState().save(meta(), null)).resolves.toBe(false);
     expect(mockBackend.updateEnvVar).not.toHaveBeenCalled();
+  });
+});
+
+// Task 8 / J2：写方法的返回值携带写前备份结果，状态栏必须如实降级。
+// 备份是 best-effort（K2）：失败**不改变**操作成功语义。
+describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链路）', () => {
+  const backupFailedOutcome: WriteOutcome = { backup: { failed: '磁盘已满' } };
+  const backupCreatedOutcome: WriteOutcome = {
+    backup: { created: 'C:\\Users\\me\\.patheditor\\backups\\env_backup_1.json' },
+  };
+
+  it('save：备份失败 → 「保存成功（备份失败）」且仍返回 true', async () => {
+    mockBackend.updateEnvVar.mockResolvedValue(backupFailedOutcome);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await expect(useEnvStore.getState().save(target, null)).resolves.toBe(true);
+
+    // 断言具体文案而非「不是 saved」：词条来自 zh-CN.json，漂移即回归
+    expect(useEnvStore.getState().statusMessage).toMatch(/保存成功（备份失败）|backup failed/);
+  });
+
+  it('save：备份成功 → 普通「保存成功」', async () => {
+    mockBackend.updateEnvVar.mockResolvedValue(backupCreatedOutcome);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+    const target = meta();
+    useEnvStore.getState().setDraft(target, 'C:\\NewJava');
+
+    await useEnvStore.getState().save(target, null);
+
+    // 成对反例：{created} 不得被误判为备份失败
+    expect(useEnvStore.getState().statusMessage).not.toMatch(/备份失败|backup failed/);
+    expect(useEnvStore.getState().statusMessage).toMatch(/保存成功|Saved/);
+  });
+
+  it('create：备份失败 → 降级文案，仍返回 true', async () => {
+    mockBackend.createEnvVar.mockResolvedValue(backupFailedOutcome);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+
+    await expect(useEnvStore.getState().create('user', 'N1', 'v', 'string')).resolves.toBe(true);
+    expect(useEnvStore.getState().statusMessage).toMatch(/保存成功（备份失败）|backup failed/);
+  });
+
+  it('remove：备份失败 → 降级文案，仍返回 true', async () => {
+    mockBackend.deleteEnvVar.mockResolvedValue(backupFailedOutcome);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+
+    await expect(useEnvStore.getState().remove(meta())).resolves.toBe(true);
+    expect(useEnvStore.getState().statusMessage).toMatch(/保存成功（备份失败）|backup failed/);
+  });
+
+  it('Skipped 不触发降级文案（成对反例）', async () => {
+    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
+
+    await useEnvStore.getState().remove(meta());
+
+    expect(useEnvStore.getState().statusMessage).not.toMatch(/备份失败|backup failed/);
   });
 });

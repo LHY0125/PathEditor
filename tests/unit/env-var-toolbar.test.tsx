@@ -53,6 +53,7 @@ function renderToolbar(selected: EnvVarMeta | null = null) {
     onEdit: vi.fn(),
     onDelete: vi.fn(),
     onRefresh: vi.fn(),
+    onBackup: vi.fn(),
     onSearchChange: vi.fn(),
   };
   render(<EnvVarToolbar {...handlers} searchQuery="" selected={selected} />);

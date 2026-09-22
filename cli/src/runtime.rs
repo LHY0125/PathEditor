@@ -23,10 +23,12 @@ pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
     std::process::exit(err.exit_code());
 }
 
-/// 统一处理写操作结果：冲突 3，其余 1（由 CoreError 决定）。
-pub(crate) fn apply_core_result(result: Result<(), core::CoreError>) {
-    if let Err(e) = result {
-        exit_core_error(&e);
+/// 备份失败时在 stderr 提示，**不改变退出码**（设计文档 K2）。
+///
+/// CLI 未初始化 logger，core 的 `log::warn!` 在此被丢弃 —— 必须经返回值显式打印。
+pub(crate) fn warn_if_backup_failed(outcome: &core::backup::BackupOutcome) {
+    if let core::backup::BackupOutcome::Failed(reason) = outcome {
+        eprintln!("警告: 环境变量写前备份失败（写入已完成）: {reason}");
     }
 }
 
@@ -249,5 +251,121 @@ mod tests {
         );
         assert!(msg.contains("手工核对"), "必须提示手工核对: {msg}");
         assert!(msg.contains("磁盘已满"), "必须透传原始错误: {msg}");
+    }
+
+    // ── `warn_if_backup_failed`：CLI 侧唯一的「写前备份失败」可见渠道（K2）──
+    //
+    // 为什么必须用**子进程**而不是进程内调用：被测函数直接 `eprintln!` 到真实
+    // stderr，进程内拿不到那串字节（libtest 默认还会把 `eprintln!` 收进内存捕获
+    // 缓冲，连 fd 都到不了）。而断言「警告确实出现在 stderr」正是本用例的全部价值
+    // ——删掉 `eprintln!` 的函数体会让所有进程内写法一起变绿，等于没测。
+    //
+    // 做法：**重新执行测试二进制自身**（`current_exe()`），用环境变量让子进程只做
+    // 一次探针调用后正常返回；父进程读被重定向的 stderr 断言。子进程**不接触注册表**
+    // ——探针函数只接收一个内存里的 `BackupOutcome`（项目硬约束：不写真实注册表），
+    // 因此这条路既拿到了真实 stderr，又比启动 CLI 二进制更安全。
+    //
+    // 已知未覆盖项（如实标注）：本用例证明「`BackupOutcome::Failed` → 输出该警告」
+    // 这个映射，以及删掉实现会让它失败；**不证明** 5 个 CLI 写路径都调用了本函数
+    // （「调用点已接线」由代码审阅确认，见 `env_ops.rs` 的 5 处调用）。
+
+    /// 子进程探针模式的环境变量名。
+    const WARN_PROBE_ENV: &str = "PATHEDITOR_WARN_PROBE";
+
+    /// 本用例的完整测试名，供子进程用 `--exact` 精确复现。
+    ///
+    /// 写死字符串是刻意的：测试若被改名，父进程的 `--exact` 会匹配不到任何用例、
+    /// 子进程 stderr 不含警告，断言立刻失败（失败是响亮的，不会静默空转）。
+    const WARN_PROBE_TEST: &str = "runtime::tests::warn_if_backup_failed_writes_warning_to_stderr";
+
+    /// 子进程分支：按 `WARN_PROBE_ENV` 指定的结果调用一次被测函数。
+    ///
+    /// 返回 `true` 表示当前进程是子进程（已执行探针，调用方应立即返回）。
+    /// 未知取值一律 panic —— 避免「环境变量被外部设成意外值」把用例静默变成空跑。
+    fn run_warn_probe_if_child() -> bool {
+        let Ok(mode) = std::env::var(WARN_PROBE_ENV) else {
+            return false;
+        };
+        let outcome = match mode.as_str() {
+            "failed" => core::backup::BackupOutcome::Failed("磁盘已满".into()),
+            "created" => core::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json")),
+            "skipped" => core::backup::BackupOutcome::Skipped,
+            other => panic!("未知探针模式: {other}"),
+        };
+        warn_if_backup_failed(&outcome);
+        true
+    }
+
+    /// **`warn_if_backup_failed` 的可证伪性测试：真实 stderr 字节级断言。**
+    ///
+    /// 覆盖设计文档 K2 的三条语义：
+    /// 1. `Failed` → stderr 出现「警告: 环境变量写前备份失败」，且透传原因；
+    /// 2. 该警告只在 `Failed` 出现（`Created` / `Skipped` 一条都不许有）；
+    /// 3. 警告走 stderr 而非 stdout（stdout 不得出现该文案）。
+    ///
+    /// 变异可证伪性（任一改动都会让某条断言失败）：
+    /// - 删掉 `warn_if_backup_failed` 里整个 `if let` 分支 → 情形 1 失败；
+    /// - 去掉 `if let ... == Failed` 的判断、无条件打印 → 情形 2 失败；
+    /// - 把 `eprintln!` 换成 `println!` → 情形 1（stderr 无）与情形 3（stdout 有）同时失败。
+    #[test]
+    fn warn_if_backup_failed_writes_warning_to_stderr() {
+        if run_warn_probe_if_child() {
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("取当前测试可执行文件路径失败");
+        // 复现同一个测试二进制、只跑本用例，并把 `--nocapture` 打开：
+        // 否则 libtest 会把子进程里的 `eprintln!` 收进内存缓冲，fd 上什么都看不到。
+        let run = |mode: &str| {
+            let out = std::process::Command::new(&exe)
+                .args(["--exact", WARN_PROBE_TEST, "--nocapture"])
+                .env(WARN_PROBE_ENV, mode)
+                .output()
+                .expect("启动探针子进程失败");
+            assert!(
+                out.status.success(),
+                "探针子进程必须成功退出（模式 {mode}）: {:?} / {}",
+                out.status.code(),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            (
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )
+        };
+
+        // 情形 1：Failed → 必须输出警告、透传原因、点明「写入已完成」（K2 的措辞语义）
+        let (stdout, stderr) = run("failed");
+        assert!(
+            stderr.contains("警告: 环境变量写前备份失败"),
+            "Failed 必须输出写前备份失败警告（这是 CLI 用户唯一能得知该失败的地方）: {stderr}"
+        );
+        assert!(
+            stderr.contains("写入已完成"),
+            "警告必须点明写入已完成（备份失败不阻断写入，K2）: {stderr}"
+        );
+        assert!(
+            stderr.contains("磁盘已满"),
+            "警告必须透传备份失败原因: {stderr}"
+        );
+
+        // 情形 3：警告走 stderr，绝不污染 stdout
+        assert!(
+            !stdout.contains("警告: 环境变量写前备份失败"),
+            "警告必须走 stderr 而非 stdout: {stdout}"
+        );
+
+        // 情形 2：Created / Skipped 一条警告都不许有
+        for mode in ["created", "skipped"] {
+            let (stdout, stderr) = run(mode);
+            assert!(
+                !stderr.contains("警告"),
+                "{mode} 不得输出备份失败警告: {stderr}"
+            );
+            assert!(
+                !stdout.contains("警告"),
+                "{mode} stdout 亦不得有警告: {stdout}"
+            );
+        }
     }
 }
