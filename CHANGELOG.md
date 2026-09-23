@@ -1,6 +1,8 @@
 # Changelog
 
-## 5.1.4 (2026-09-22)
+## 5.1.4 (2026-09-23)
+
+本版包含三批内容：**一致性与架构收口**（Wave 0/1/2，2026-09-18 复审的 11 项问题）、**GUI 关窗死锁修复**、以及**环境变量备份与恢复**新特性。
 
 ### 新增
 
@@ -9,17 +11,28 @@
 - 新增 `patheditor env backup`（立即备份）与 `patheditor env backups`（列出备份，按时间倒序）。
 - 新增 GUI 备份与恢复对话框（`envBackupPanel`），含删除项逐名提示、手工兜底命令提示与冲突二次确认。
 - 保留份数可通过 `~/.patheditor/config.ini` 的 `env_backup_keep` 覆盖（默认 20 份）。
+- 结构化错误契约 `CoreError` / `ErrorCode`：环境变量通路的错误不再是自由文本，前端按 `code` 判定，CLI 退出码由 `CoreError::exit_code()` 驱动。`[E_CONFLICT]` 消息前缀降级为过渡期展示文本，不再作为判定机制。
+- 持久化文件（`disabled.json` / profiles）增加 `schemaVersion`、写入前保留上一份 `.bak` 轮换，以及损坏文件的隔离与恢复提示 —— 解析失败不再只返回通用 JSON 错误。
+- 环境变量写入口新增 `reveal_env_var` 携带读取时 revision，编辑弹窗据此绑定「本值读取到的版本」。
 
 ### 变更
 
 - 环境变量写入口（CLI `env set/add/remove`、GUI 编辑 / 新建 / 删除）返回值携带备份结果（`WriteOutcome.backup`）；备份失败不阻断写入，仅在 stderr 或状态栏提示。
 - 恢复复用既有的 `create_env_var_in_store` / `update_env_var_force_in_store` / `delete_env_var_force_in_store` 写函数，保护名单、类型可写性、hive 权限判定仍只在 core 一处；CLI 与 GUI 均不做二次判定。
 - 差异列表排序键固定为 `(hive, kind, name)`（user 在前、system 在后），使 `--dry-run --json` 的输出可复现。
+- core 新增共享应用服务层（`apply_path_snapshot` / `apply_profile` / `save_path_with_sidecar` / `retry_pending_path_state`），统一 GUI 与 CLI 的 PATH 事务编排；GUI 侧接线延后，`path-session.ts` 仍走旧编排。
+- 注册表访问改为 `EnvHiveStore` 端口：生产用 `WinregHive`，测试用内存替身 `MemoryHive`，`cargo test --workspace` 不再写真实 HKCU，可在任意环境执行。
+- `core/src/registry.rs`（1101 行）拆分为 `registry/` 目录模块（纯搬家，零行为变化）。
+- 新增 C→Rust 行为等价 golden 基线，覆盖 PATH 分割、写回类型、备份格式与广播时机。
 
 ### 修复
 
-- GUI 关窗死锁：关窗确认从阻塞式 `window.confirm` 改为 Tauri 异步对话框，并补齐 `core:window:allow-destroy` 权限（v5.1.3 中缺失导致无草稿关窗挂起）。
-- gui/cli 产物同名冲突：GUI 二进制改名 `PathEditor.exe`，CI 用独立 target 目录构建 CLI，避免 NTFS 大小写不敏感导致 portable zip 装到 CLI。
+- **GUI 关窗死锁（v5.1.3 已知问题）**：关窗确认从阻塞式 `window.confirm` 改为 Tauri 异步对话框，并补齐 `core:window:allow-destroy` 权限（v5.1.3 中缺失，导致无草稿关窗挂起）。同步把其余阻塞式 `confirm` 全部换为异步对话框。
+- **CLI 安装包装错二进制（v5.1.3 已知问题）**：GUI 与 CLI 产物同名（`patheditor.exe`）且共用 Cargo target 目录，NTFS 大小写不敏感使两者实为同一条目录项，CLI 链接产物覆盖了 GUI 本体——`scoop install lhy/patheditor-cli` 因此装到的是 GUI。现已将 GUI 二进制改名为 `PathEditor.exe`，并让 CI 用独立 target 目录（`--target-dir target/cli`）构建 CLI。
+- `--force` 语义与文档不符：此前实为「重读一次 revision 再 CAS」，读与写之间的窗口仍会以退出码 3 失败。现改为真正的 force API（最后写入者胜，不做 revision 比对），仍保留名称校验、保护名单、类型可写性与 hive 写权限判定。
+- 编辑弹窗可能用陈旧值覆盖外部更新：现在记录读值时的 revision，快照刷新时若已变化则提示并重载，提交前断言一致。
+- CLI 注册表与 `disabled.json` 双写失败后状态丢失：sidecar 写失败会落 pending 待补写状态，PATH 命令启动时自动补写。
+- 环境变量列表失败不再静默：此前枚举 / 读取 / 解码错误被 `Iterator::flatten()` 与 `continue` 吞掉，只留 warning；现在同一 hive 内任一步失败即返回错误，调用方明确知道结果不可用。
 
 ### 说明
 
@@ -30,6 +43,8 @@
 - 恢复**逐条失败不改变退出码**（仍为 0），脚本无法从退出码检出部分失败；单变量失败以 stderr 警告呈现。
 - `env restore --dry-run` 对**损坏备份**并非严格纯读：`read_env_backup` 对不可解析文件会经 persist 层将其重命名为 `<file>.corrupt-<ts>`（注册表未触碰）。
 - `EnvBackupInfo.variableCount` 恒为 0 —— 列表只枚举目录与 stat，**不解析内容**，单个损坏备份不会让列表整体失败。
+- GUI 关窗修复只在本机 GNU 构建上验证（WM_CLOSE 退出 + 异步确认对话框）；死锁仅复现于 CI/MSVC 构建，**CI 侧最终验证待本次发布构建后确认**。
+- 4 个服务层 IPC 命令（`apply_path_snapshot` 等）已在 GUI 注册，但前端尚未接线，`path-session.ts` 仍走旧编排。
 
 ## 5.1.3 (2026-09-18)
 

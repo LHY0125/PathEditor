@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor v5.1.3 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
+PathEditor v5.1.4 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -190,7 +190,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 
 ## 版本号升级清单
 
-当前版本为 `5.1.3`。升级时至少检查：
+当前版本为 `5.1.4`。升级时至少检查：
 
 | 文件                  | 字段                            |
 | --------------------- | ------------------------------- |
@@ -215,12 +215,12 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 git push origin main
 
 # 4. 打 annotated tag 并推送 —— 这一步触发 CI
-git tag -a v5.1.3 -m "PathEditor v5.1.3" -m "- 变更要点..."
-git push origin v5.1.3
+git tag -a v5.1.4 -m "PathEditor v5.1.4" -m "- 变更要点..."
+git push origin v5.1.4
 
 # 5. 等 CI 跑完，用 gh 确认结果
 gh run list --limit 3
-gh release view v5.1.3
+gh release view v5.1.4
 ```
 
 **推送 tag 后不要做任何事，等 CI 完成。** 本地构建、手动创建 Release 都是重复劳动，且会与 CI 冲突。
@@ -243,7 +243,7 @@ gh release view v5.1.3
 $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)"
 ```
 
-匹配 `## 5.1.3` 或 `## 5.1.3 (2026-09-18)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
+匹配 `## 5.1.4` 或 `## 5.1.4 (2026-09-23)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
 
 所以发版前**必须在 CHANGELOG.md 顶部写好当前版本段落**，小节标题沿用最近几版的中文风格（`### 新增` / `### 变更` / `### 修复` / `### 说明`）。
 

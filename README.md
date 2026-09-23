@@ -4,13 +4,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.3-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.4-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-240%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-305%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -301,7 +301,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 
 **方式一：安装包**
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.3_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.4_x64-setup.exe` 安装。
 
 **方式二：Scoop（免安装）**
 
@@ -311,8 +311,6 @@ scoop install lhy/patheditor-gui
 ```
 
 从 portable zip 解压即用（`PathEditor.exe` + `WebView2Loader.dll`），开始菜单生成 PathEditor 快捷方式。
-
-> **已知问题（v5.1.3）**：GUI 在部分环境下点 X 无响应（窗口 hang），需用任务管理器结束进程。该问题已在 main 修复（关窗确认改为 Tauri 异步对话框 + 补齐窗口销毁权限），待下一版发布。
 
 **方式三：源码构建**
 
@@ -335,9 +333,9 @@ scoop install lhy/patheditor-cli
 
 安装后即可在任意终端使用 `patheditor`（CLI 二进制在发布时重命名为 `patheditor-cli_<版本>_x64.exe`，manifest 用 `#/patheditor.exe` 装回原名）。
 
-> **已知问题（v5.1.3）**：该版本发布流程存在产物覆盖缺陷——CLI 与 GUI 共用 Cargo target 目录，而 NTFS 大小写不敏感使 `patheditor.exe` 与 `PathEditor.exe` 实际是同一条目录项，CLI 链接产物覆盖了 GUI 本体。结果是 **`scoop install lhy/patheditor-cli` 装出的可执行文件是 GUI（且无法运行，报 `DLL_NOT_FOUND`）**，不是命令行工具。
+> **从 v5.1.3 升级**：v5.1.3 的发布流程存在产物覆盖缺陷——CLI 与 GUI 共用 Cargo target 目录，而 NTFS 大小写不敏感使 `patheditor.exe` 与 `PathEditor.exe` 实际是同一条目录项，CLI 链接产物覆盖了 GUI 本体，导致 `scoop install lhy/patheditor-cli` 装出的可执行文件是 GUI（且无法运行，报 `DLL_NOT_FOUND`）。
 >
-> 该缺陷已在 main 修复（CLI 改用独立 target 目录构建，`release.yml` 加 `--target-dir target/cli`），**待 v5.1.4 发布后执行 `scoop update patheditor-cli` 即可恢复**。在此之前请改用下面的源码安装方式。
+> 该缺陷已在 v5.1.4 修复（GUI 二进制改名 `PathEditor.exe`，CLI 改用独立 target 目录 `target/cli` 构建）。**若你在 v5.1.3 装过 CLI，执行 `scoop update patheditor-cli` 即可恢复。**
 
 **方式二：从源码安装**
 
@@ -379,8 +377,8 @@ npx tauri build
 | 国际化    | i18next                           |
 | 桌面框架  | Tauri 2.x                         |
 | 核心库    | Rust workspace (core + gui + cli) |
-| 前端测试  | Vitest + Playwright (240 + 24)    |
-| Rust 测试 | cargo test (192 个测试)           |
+| 前端测试  | Vitest + Playwright (305 + 30)    |
+| Rust 测试 | cargo test (264 个测试)           |
 | 构建      | Vite + Cargo                      |
 | 打包      | NSIS                              |
 
