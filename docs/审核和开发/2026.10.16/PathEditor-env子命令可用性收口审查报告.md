@@ -202,3 +202,27 @@ patheditor env set MY_API_TOKEN --value "new" --dry-run
 - 新增发现 1 / 2 **已修复并测试**，不构成新的待整改项。
 
 **修正后的判定：S-1 已修、发现 1/2 已修；仅 SP-1（测试缺口）作为已知未覆盖项保留。** 是否补 SP-1 由用户决定（本波已提交，补 SP-1 需再追加提交）。
+
+---
+
+## 六、SP-1 关闭（2026-10-16，审核窗口）
+
+用户要求发版前解决 SP-1。已补 3 个 `--bins` 进程级测试（提交 `5a6d9ef`）：
+
+| 测试                              | 断言的可观测副作用                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `probe_absent_after_dry_run_add`  | dry-run 后该变量在注册表中**不存在**（用只读 `env get` 反证：退出码 1 = notFound；若误写则为 0） |
+| `dry_run_produces_no_backup_file` | dry-run 后 `PATHEDITOR_BACKUP_DIR` 指向的目录**为空**（无 `env_backup_*.json`）                  |
+| `dry_run_json_end_to_end_shape`   | `--json` 端到端的字段契约（operation / name / oldValue=null / newValue / sensitive）             |
+
+**可证伪性已验证（变异测试）**：在 `cmd_env_add` 的 dry-run 分支注入一次 `create_env_var` 后，前两个用例**转红**（`dry_run_produces_no_backup_file`、`probe_absent_after_dry_run_add` 均 FAILED）；移除变异后恢复全绿。证明这两个用例确实在守护「dry-run 不写」这一性质，而非空转。
+
+**副作用清理**：变异测试期间向真实 HKCU 写入了 3 个探针变量（`PATHEDITOR_SP1_*`），已全部删除（复核计数为 0）。
+
+**结果**：CLI 测试 59 → **65**（+3 SP-1 + 早前 +3 安全），全绿；`npm run verify:all` 退出码 0。**SP-1 关闭，三档发现（S-1 / 发现 1 / 发现 2 / SP-1）全部处置完毕。**
+
+## 七、发布（2026-10-16，审核窗口）
+
+- 版本号升级至 **5.1.5**（`package.json` / `package-lock.json` / `Cargo.toml` / `Cargo.lock` / `gui/tauri.conf.json`（version + 窗口标题）/ README 徽章与安装包名，六处对齐；CHANGELOG 段落改为「5.1.5 (2026-10-16)」）。提交 `4e2c9c4`。
+- `cargo build -p patheditor-cli` 后 `patheditor --version` 输出 **`patheditor 5.1.5`**。
+- **审查判定：全部整改完成，可发布。**
