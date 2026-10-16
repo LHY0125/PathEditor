@@ -1772,4 +1772,110 @@ mod tests {
         assert!(text.contains("(敏感)"), "敏感变量应显示 (敏感): {text}");
         assert!(!text.contains("sk-"), "不得泄漏明文: {text}");
     }
+
+    // ── SP-1：dry-run 的写安全（进程级）──
+    //
+    // 上面三条测的是**纯函数**（打码 / 净化 / 渲染）。它们**证明不了**「命令真的
+    // 没写注册表、没产生备份、没广播」——那是 `cmd_env_*` 的运行时行为。本组用例
+    // 补上这一层：以子进程跑真实二进制，断言**可观测的副作用为零**。
+    //
+    // 可证伪性（这是本组存在的全部理由）：若有人在 dry-run 分支后误加一行写入
+    // 或备份调用，下面的断言会红。
+    // - `probe_absent_after_dry_run_*`：dry-run 后该变量在注册表中**不存在**
+    //   （若误写，`env get` 会返回 0 而非 notFound）；
+    // - `dry_run_produces_no_backup_file`：dry-run 后备份目录**为空**
+    //   （若误触发写前备份，目录会出现 env_backup_*.json）。
+    //
+    // 安全边界：`env add --dry-run` **确定不写注册表**（这正是被断言的性质），
+    // 故本用例不触碰真实注册表；备份目录经 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。
+
+    /// dry-run 后变量必须**不存在**于注册表 —— 用只读的 `env get` 反证「没写」。
+    ///
+    /// 探针名带进程号，避免并发用例互扰（`--bins` 用例跑在各自进程里）。
+    #[test]
+    fn probe_absent_after_dry_run_add() {
+        let dir = temp_dir("dryrun_noreg");
+        let probe = format!("PATHEDITOR_SP1_PROBE_{}", std::process::id());
+
+        let out = std::process::Command::new(cli_bin())
+            .args(["env", "add", &probe, "should-not-be-written", "--dry-run"])
+            .env("PATHEDITOR_BACKUP_DIR", &dir)
+            .output()
+            .expect("启动 env add --dry-run 失败");
+        assert!(
+            out.status.success(),
+            "dry-run 必须成功: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        // 反证：只读读取该变量必须 notFound（退出码 1）。若 dry-run 误写，这里会是 0。
+        let check = std::process::Command::new(cli_bin())
+            .args(["env", "get", &probe])
+            .env("PATHEDITOR_BACKUP_DIR", &dir)
+            .output()
+            .expect("启动 env get 失败");
+        assert_eq!(
+            check.status.code(),
+            Some(1),
+            "dry-run 后变量不得存在（退出码 1 = notFound）；若为 0 说明 dry-run 写了注册表: {} / {}",
+            String::from_utf8_lossy(&check.stdout),
+            String::from_utf8_lossy(&check.stderr)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// dry-run 不得触发写前备份 —— 备份目录必须保持为空。
+    #[test]
+    fn dry_run_produces_no_backup_file() {
+        let dir = temp_dir("dryrun_nobackup");
+        let probe = format!("PATHEDITOR_SP1_NOBK_{}", std::process::id());
+
+        let out = std::process::Command::new(cli_bin())
+            .args(["env", "add", &probe, "v", "--dry-run"])
+            .env("PATHEDITOR_BACKUP_DIR", &dir)
+            .output()
+            .expect("启动 env add --dry-run 失败");
+        assert!(
+            out.status.success(),
+            "dry-run 必须成功: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let names: Vec<String> = std::fs::read_dir(&dir)
+            .expect("枚举备份目录失败")
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.is_empty(),
+            "dry-run 不得产生任何备份文件（若误触发写前备份则非空）: {names:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 对照：`env add --dry-run --json` 输出可解析、字段完整（端到端契约）。
+    #[test]
+    fn dry_run_json_end_to_end_shape() {
+        let dir = temp_dir("dryrun_json");
+        let probe = format!("PATHEDITOR_SP1_JSON_{}", std::process::id());
+
+        let out = std::process::Command::new(cli_bin())
+            .args(["env", "add", &probe, "v", "--dry-run", "--json"])
+            .env("PATHEDITOR_BACKUP_DIR", &dir)
+            .output()
+            .expect("启动 env add --dry-run --json 失败");
+        assert!(
+            out.status.success(),
+            "dry-run --json 必须成功: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("--json 必须输出合法 JSON");
+        assert_eq!(value["operation"], "add");
+        assert_eq!(value["name"], probe.as_str());
+        assert!(value["oldValue"].is_null(), "add 的 oldValue 应为 null");
+        assert_eq!(value["newValue"], "v");
+        assert_eq!(value["sensitive"], false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
