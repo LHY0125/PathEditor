@@ -23,6 +23,12 @@ use winreg::types::FromRegValue;
 /// 保留份数越大暴露面越大。
 pub const ENV_BACKUP_KEEP: usize = 20;
 
+/// path 备份默认保留份数（spec D7，与 [`ENV_BACKUP_KEEP`] 对称）。
+///
+/// `path_backup_*.txt` 单文件约 2.3 KB，历史上无轮换，实测已累积约 250 份。
+/// 可被 `~/.patheditor/config.ini` 的 `path_backup_keep` 覆盖（回落语义同 `env_backup_keep`）。
+pub const PATH_BACKUP_KEEP: usize = 20;
+
 /// 配置文件路径：`~/.patheditor/config.ini`。
 ///
 /// 放用户目录而非 exe 同目录（设计文档 §配置文件）：CLI/GUI 是两份独立 exe，
@@ -64,7 +70,7 @@ fn should_warn_on_read_error(e: &std::io::Error) -> bool {
     e.kind() != std::io::ErrorKind::NotFound
 }
 
-/// 读取 env 备份保留份数；任何异常一律回落 [`ENV_BACKUP_KEEP`]。
+/// 读取备份保留份数；任何异常一律回落 `fallback`。
 ///
 /// 回落情形（设计文档 §解析与回落行为）：文件不存在 / 键不存在 / 值非整数 /
 /// 值为负数 / 值空 / 文件不可读。**不报错、不中止备份**。
@@ -75,8 +81,10 @@ fn should_warn_on_read_error(e: &std::io::Error) -> bool {
 ///
 /// 手写极简 INI 解析（`key = value`，`;` 或 `#` 起始为注释），不引入新依赖——
 /// 单键配置不值得拉一个 crate，与项目「手写 FNV-1a 而不引 sha2」的先例一致。
-fn read_env_backup_keep(path: &Path) -> usize {
-    let fallback = ENV_BACKUP_KEEP;
+///
+/// `key` 是配置键名（`"env_backup_keep"` / `"path_backup_keep"`），
+/// `fallback` 是回落值（分别为 [`ENV_BACKUP_KEEP`] / [`PATH_BACKUP_KEEP`]）。
+fn read_backup_keep(path: &Path, key: &str, fallback: usize) -> usize {
     let content = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(e) => {
@@ -97,17 +105,18 @@ fn read_env_backup_keep(path: &Path) -> usize {
         if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else {
+        let Some((k, value)) = line.split_once('=') else {
             continue;
         };
-        if key.trim() != "env_backup_keep" {
+        if k.trim() != key {
             continue;
         }
         match value.trim().parse::<usize>() {
             Ok(n) => return n,
             Err(_) => {
                 log::warn!(
-                    "config.ini 的 env_backup_keep 值非法（{}），回落默认 {}",
+                    "config.ini 的 {} 值非法（{}），回落默认 {}",
+                    key,
                     value.trim(),
                     fallback
                 );
@@ -116,6 +125,16 @@ fn read_env_backup_keep(path: &Path) -> usize {
         }
     }
     fallback
+}
+
+/// 读取 env 备份保留份数（[`read_backup_keep`] 的 env 专用入口）。
+fn read_env_backup_keep(path: &Path) -> usize {
+    read_backup_keep(path, "env_backup_keep", ENV_BACKUP_KEEP)
+}
+
+/// 读取 path 备份保留份数（[`read_backup_keep`] 的 path 专用入口）。
+fn path_backup_keep() -> usize {
+    read_backup_keep(&config_file_path(), "path_backup_keep", PATH_BACKUP_KEEP)
 }
 
 /// 从真实配置文件读取保留份数。
@@ -400,6 +419,60 @@ fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError
             }
             // 删除失败不中止轮换：留着旧文件无害，报错反而阻断后续写入。
             Err(e) => log::warn!("删除旧备份 {} 失败: {}", path.display(), e),
+        }
+    }
+    Ok(removed)
+}
+
+/// path 备份保留策略轮换：只删除本功能生成的 `path_backup_*.txt`，保留最近 `keep` 份。
+///
+/// 授权范围（spec §S1，用户 2026-10-16 明确授权的例外），与 [`rotate_env_backups`] 同构：
+/// 1. 只匹配文件名 `path_backup_*.txt`；
+/// 2. 只在给定目录内操作（自定义备份目录不参与轮换）；
+/// 3. 只删最旧的、超出 `keep` 之外的文件；
+/// 4. 绝不删除 `env_backup_*.json`、`.bak`、`.corrupt-*` 及目录中任何其它文件。
+///
+/// `keep = 0` 是合法输入（用户明确要求零保留），会删空所有候选文件。
+///
+/// # Returns
+/// - `Ok(Vec<PathBuf>)` — 被删除的文件路径
+/// - `Err(CoreError)` — 目录枚举失败（code=`Io`）；单个文件删除失败只记 warn
+fn rotate_path_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut candidates: Vec<(String, PathBuf)> = Vec::new();
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "rotate_path_backups",
+            format!("枚举备份目录 {} 失败: {}", dir.display(), e),
+        )
+    })?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // 只收 path_backup_*.txt；`.txt.bak` / `.txt.corrupt-*` 因后缀不是 `.txt` 天然排除。
+        if !name.starts_with("path_backup_") || !name.ends_with(".txt") {
+            continue;
+        }
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        candidates.push((name, path));
+    }
+    if candidates.len() <= keep {
+        return Ok(Vec::new());
+    }
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut removed = Vec::new();
+    for (_, path) in candidates.into_iter().skip(keep) {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                log::info!("已轮换删除旧 path 备份: {}", path.display());
+                removed.push(path);
+            }
+            Err(e) => log::warn!("删除旧 path 备份 {} 失败: {}", path.display(), e),
         }
     }
     Ok(removed)
@@ -1193,6 +1266,19 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
 
     std::fs::write(&filepath, &content).map_err(|e| format!("无法写入备份文件: {}", e))?;
 
+    // #37：与 env 备份对称，写后轮换。只作用于 path_backup_*.txt，且 custom_dir 不轮换
+    // （spec §S1 / 核对轮裁断 N4：用户指定目录可能混有他自己的文件，轮换风险高于收益）。
+    //
+    // 注意：轮换失败只 log::warn!，而 CLI 未初始化 logger（见 runtime.rs:28），
+    // 因此该警告在 CLI 下**不可见**。这是**有意的**，与 env 侧 rotate_env_backups 对称
+    // （它同样只有 log::warn!）。**不要**据此误以为用户会看到提示 —— 若要统一解决，
+    // 应作为独立 observability 议题（CLI 初始化 logger 或轮换失败计入退出口），不在本波。
+    if custom_dir.is_none() {
+        if let Err(e) = rotate_path_backups(&backup_dir, path_backup_keep()) {
+            log::warn!("path 备份轮换失败（备份已落盘）: {}", e.message);
+        }
+    }
+
     let result = filepath.to_string_lossy().to_string();
     log::info!("备份已保存到: {}", result);
     Ok(result)
@@ -1231,6 +1317,45 @@ mod tests {
     fn backup_registry_default_dir_no_panic() {
         // 验证不传参时不会 panic
         let _ = backup_registry(None);
+    }
+
+    /// #37 接线测试：`backup_registry` 写入后**确实调用了** path 轮换。
+    ///
+    /// 单测 `rotate_path_backups_*` 只能证明函数本身正确，**证明不了它被接线**
+    /// （若 Step 5 的调用漏写或条件写反，那些测试照样全绿）。本用例在临时目录预置
+    /// 超量旧备份，调一次 `backup_registry(None)`，断言目录不再无限增长。
+    ///
+    /// 无权限读注册表时 `backup_registry` 返回 `Err`（不 panic），此时无法验证接线，
+    /// 故按 `Ok` 分支断言（与 `backup_registry_with_custom_dir` 同手法）。
+    /// 注意：本测试用**默认目录**，故必须经 `PATHEDITOR_BACKUP_DIR` 隔离，
+    /// 避免触碰用户真实备份目录。
+    #[test]
+    fn backup_registry_triggers_path_rotation() {
+        with_temp_backup_dir(|dir| {
+            // 预置 25 份旧 path 备份（文件名时间戳递增，字典序即时间序）。
+            for i in 0..25 {
+                std::fs::write(
+                    dir.join(format!("path_backup_202609{:02}_120000_000.txt", i)),
+                    "PATH",
+                )
+                .unwrap();
+            }
+            // backup_registry 会写一份新的；随后应轮换到 keep 份（缺省 20）。
+            if backup_registry(None).is_ok() {
+                let remaining = std::fs::read_dir(dir)
+                    .unwrap()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        let n = e.file_name().to_string_lossy().into_owned();
+                        n.starts_with("path_backup_") && n.ends_with(".txt")
+                    })
+                    .count();
+                assert_eq!(
+                    remaining, PATH_BACKUP_KEEP,
+                    "写入后必须触发轮换，目录内 path 备份收敛到 keep 份"
+                );
+            }
+        });
     }
 
     /// 采集必须排除保留名（Path）与 Unsupported 类型，并携带明文与 revision。
@@ -3086,5 +3211,109 @@ mod tests {
             "user 段必须整体在前（即便其变量名 A_SYS < Z_USER 也不能让 system 插队）"
         );
         assert_eq!(preview.changes[1].hive, EnvHive::System);
+    }
+
+    // ── #37：path 备份保留策略 ──
+
+    /// #37：path 轮换只删 `path_backup_*.txt`，保留最近 keep 份。
+    #[test]
+    fn rotate_path_backups_keeps_exactly_keep_files() {
+        with_temp_backup_dir(|dir| {
+            for i in 0..25 {
+                std::fs::write(
+                    dir.join(format!("path_backup_202609{:02}_120000_000.txt", i)),
+                    "PATH",
+                )
+                .unwrap();
+            }
+            let removed = rotate_path_backups(dir, PATH_BACKUP_KEEP).expect("轮换失败");
+            let remaining = std::fs::read_dir(dir).unwrap().count();
+            assert_eq!(remaining, PATH_BACKUP_KEEP, "必须恰好保留 keep 份");
+            assert_eq!(removed.len(), 5);
+        });
+    }
+
+    /// #37 对抗性测试（spec §S1）：轮换**不得**删除 env 备份或任何非 path_backup 文件。
+    ///
+    /// 这是对向断言：env 侧既有测试证明「env 轮换不删 path 文件」，
+    /// 本用例证明「path 轮换不删 env 文件」——两个方向都必须成立。
+    #[test]
+    fn rotate_path_backups_never_deletes_foreign_files() {
+        with_temp_backup_dir(|dir| {
+            for i in 0..25 {
+                std::fs::write(
+                    dir.join(format!("path_backup_202609{:02}_120000_000.txt", i)),
+                    "PATH",
+                )
+                .unwrap();
+            }
+            // 以下全部不得被删
+            std::fs::write(dir.join("env_backup_20260901_120000_000.json"), "{}").unwrap();
+            std::fs::write(dir.join("path_backup_20260901_120000_000.txt.bak"), "PATH").unwrap();
+            std::fs::write(
+                dir.join("path_backup_20260901_120000_000.txt.corrupt-123"),
+                "x",
+            )
+            .unwrap();
+            std::fs::write(dir.join("notes.txt"), "user file").unwrap();
+
+            rotate_path_backups(dir, PATH_BACKUP_KEEP).expect("轮换失败");
+
+            assert!(
+                dir.join("env_backup_20260901_120000_000.json").exists(),
+                "env 备份必须保留"
+            );
+            assert!(
+                dir.join("path_backup_20260901_120000_000.txt.bak").exists(),
+                ".bak 必须保留"
+            );
+            assert!(
+                dir.join("path_backup_20260901_120000_000.txt.corrupt-123")
+                    .exists(),
+                ".corrupt-* 必须保留"
+            );
+            assert!(dir.join("notes.txt").exists(), "无关文件必须保留");
+        });
+    }
+
+    /// #37：`path_backup_keep` 的四种回落与 env 同口径。
+    #[test]
+    fn read_path_backup_keep_falls_back_like_env() {
+        let missing = std::env::temp_dir().join("patheditor_no_such_cfg_9f3.ini");
+        let _ = std::fs::remove_file(&missing);
+        assert_eq!(
+            read_backup_keep(&missing, "path_backup_keep", PATH_BACKUP_KEEP),
+            PATH_BACKUP_KEEP
+        );
+
+        for (i, bad) in [
+            "path_backup_keep = abc\n",
+            "path_backup_keep = -5\n",
+            "path_backup_keep =\n",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let cfg = std::env::temp_dir().join(format!("patheditor_cfg_path_{}.ini", i));
+            std::fs::write(&cfg, bad).unwrap();
+            assert_eq!(
+                read_backup_keep(&cfg, "path_backup_keep", PATH_BACKUP_KEEP),
+                PATH_BACKUP_KEEP,
+                "非法值应回落: {bad}"
+            );
+            let _ = std::fs::remove_file(&cfg);
+        }
+    }
+
+    /// #37：`env_backup_keep` 的既有解析经 `read_backup_keep` 通用化后逐字不回归。
+    #[test]
+    fn read_env_backup_keep_generic_refactor_preserves_behavior() {
+        let cfg = std::env::temp_dir().join("patheditor_cfg_env_9f3.ini");
+        std::fs::write(&cfg, "; c\n# c2\nenv_backup_keep   =   7   \n").unwrap();
+        assert_eq!(
+            read_backup_keep(&cfg, "env_backup_keep", ENV_BACKUP_KEEP),
+            7
+        );
+        let _ = std::fs::remove_file(&cfg);
     }
 }
