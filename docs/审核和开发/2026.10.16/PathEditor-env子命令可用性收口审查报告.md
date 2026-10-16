@@ -226,3 +226,19 @@ patheditor env set MY_API_TOKEN --value "new" --dry-run
 - 版本号升级至 **5.1.5**（`package.json` / `package-lock.json` / `Cargo.toml` / `Cargo.lock` / `gui/tauri.conf.json`（version + 窗口标题）/ README 徽章与安装包名，六处对齐；CHANGELOG 段落改为「5.1.5 (2026-10-16)」）。提交 `4e2c9c4`。
 - `cargo build -p patheditor-cli` 后 `patheditor --version` 输出 **`patheditor 5.1.5`**。
 - **审查判定：全部整改完成，可发布。**
+
+## 八、Issue 回填（2026-10-16，审核窗口）
+
+v5.1.5 发布后回填全部 issue：
+
+| Issue | 处置                             | 说明                                                           |
+| ----- | -------------------------------- | -------------------------------------------------------------- |
+| #34   | ✅ 关闭（completed）             | 已有修复评论（含「根因比 issue 更深 + W2-B1 注释与实现不符」） |
+| #33   | ✅ 关闭（completed）             | 回填：改文案；并更正「preview 未截断」的误判（截断早已实现）   |
+| #35   | ✅ 关闭（completed）             | 回填：纯新建语义是正确答案；已把豁免理由写进 help              |
+| #36   | ✅ 关闭（completed）             | 回填：--dry-run/--json 用法与语义；含敏感值打码加固            |
+| #37   | ✅ 关闭（completed）             | 回填：更正「env 侧已有轮换」；path 侧补保留策略                |
+| #38   | ✅ 关闭（completed，**不成立**） | 回填：省略 VALUE 本就立即报错，无代码缺陷                      |
+| #32   | ⏸ **保持开放**                   | 批量往返需跨命令 session，属架构变动，明确不在本波             |
+
+回填评论原文留档于本目录 `issue-3X-回填.md`。
