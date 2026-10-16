@@ -157,3 +157,48 @@ S-1 是一行注释修正、SP-1 是一个测试补充，均无架构影响。�
 | 未提交、issue 未回填               | 用户未授权；`gh issue comment 34` 草稿就绪待授权                                                                                                                                      |
 
 **下一步**：开发窗口整改 S-1（必须）+ SP-1（建议）→ 写复审回执 → 审核窗口复验。
+
+---
+
+## 五、补充：提交后安全审查（2026-10-16，审核窗口）
+
+在 6 个提交落盘后、**推送前**，一次后台安全审查报出 2 条发现（均在 `cli/src/env_ops.rs` 的 `--dry-run` 预览路径）。审核窗口独立核实**两条均成立**，并在推送前修复（追加提交 `a931288`）。
+
+### 发现 1【高危】敏感值明文泄漏 —— 已修复
+
+`build_change_preview` 的 `oldValue` 来自 `preview_env_change → reveal_env_var_in_store`，返回**完整明文且无 `is_sensitive` 检查**。后果：
+
+```bash
+patheditor env set MY_API_TOKEN --value "new" --dry-run
+# 修复前：将更新用户变量 MY_API_TOKEN：sk-realkey... → new（未写入任何内容）
+```
+
+**旧密钥明文打印到终端**（并可能进 shell 历史 / CI 日志）。**这与仓库既有约定冲突**：`env list` 对敏感值打码 `(敏感)`，`env get` 被文档明确为「CLI 侧**唯一**明文出口」。新 dry-run 路径**新开了第二个明文出口**，而 spec 未覆盖此点。
+
+**修复**（`a931288`）：`preview_env_change` 命中 `is_sensitive` 时不回传明文（`old_value = None`、新增 `sensitive: true` 字段）；`env add` 的新值经新增的 `mask_new_value` 同样打码；文本预览显示 `(敏感)`。JSON 契约加 `sensitive` 字段以区分「打码」与「空值」。
+
+### 发现 2【中危】输出注入（ANSI 逃逸）—— 已修复
+
+`render_change_preview_text` 把注册表值**原样**格式化进终端输出，未做控制字符净化。且既有 `sanitize_preview`（`env_var.rs`）**只剔除 `\r`/`\n`/`\0`，不剔除 `\x1b`（ESC）** —— 即它对「多行日志注入」有效，对「终端 ANSI 转义注入」无效。
+
+**修复**（`a931288`）：把 `sanitize_preview` 的剔除范围扩展为**全部 C0 控制字符（U+0000–U+001F）与 DEL（U+007F）**，覆盖 ESC。这是对**所有**展示路径（`env list` / `--dry-run`）的严格改进，既有 `sanitize_preview` 测试无回归。
+
+### 证据
+
+| 检验                                                 | 结果                                                 |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| `cargo test --workspace`                             | core 219 / CLI **62**（+3 安全测试）passed，0 failed |
+| `cargo clippy --workspace --all-targets -D warnings` | 零警告                                               |
+| `cargo fmt --check`                                  | 干净                                                 |
+| `npm run verify:all`                                 | 退出码 0（E2E 30 passed）                            |
+| 端到端 `env add MY_API_TOKEN sk-secret123 --dry-run` | 输出 `(敏感)`，**无明文**                            |
+| 端到端 `env add <非敏感> hello --dry-run`            | 正常显示值                                           |
+| `cmp CLAUDE.md AGENTS.md`                            | 字节一致（JSON 契约的 `sensitive` 字段已同步）       |
+
+### 对本报告判定的影响
+
+- **S-1** 已在提交前修复（`env_kind_label` 注释如实化）。
+- **SP-1**（dry-run 写安全无自动化测试）**仍为未覆盖项** —— 本次新增的 3 个测试测的是**打码与净化**（纯函数），**未**测「命令真的不写注册表/不备份」。SP-1 结论不变。
+- 新增发现 1 / 2 **已修复并测试**，不构成新的待整改项。
+
+**修正后的判定：S-1 已修、发现 1/2 已修；仅 SP-1（测试缺口）作为已知未覆盖项保留。** 是否补 SP-1 由用户决定（本波已提交，补 SP-1 需再追加提交）。
