@@ -7,7 +7,7 @@
 ### 新增
 
 - `env set` / `env add` / `env remove` 支持 `--dry-run`：只预览将要发生的变更，**不写注册表、不产生备份、不广播**。预览不要求 `--revision` / `--force`；变量不存在时照常报 `notFound`（退出码 1），与真正执行时的判定一致。
-- `--dry-run --json` 输出脚本友好的统一结构 `{operation, hive, name, oldValue, newValue, kind, writable}`（#36）。
+- `--dry-run --json` 输出脚本友好的统一结构 `{operation, hive, name, oldValue, newValue, kind, writable, sensitive}`（#36）。
 - PATH 备份加入保留策略：`path_backup_*.txt` 写后自动轮换，默认保留最近 20 份，可被 `~/.patheditor/config.ini` 的 `path_backup_keep` 覆盖（#37）。
 
 ### 变更
@@ -19,6 +19,8 @@
 
 - **`env get` 泄漏 Win32 原生错误串（#34）**：读取不存在的变量时，此前返回 `读取用户环境变量 X 失败: 无法读取环境变量 X: 系统找不到指定的文件。 (os error 2)`（变量名重复、暴露原生串）。现改为 `用户环境变量 X 不存在`，错误码 `NotFound`，退出码 1。根因修复在 `reg_store`：新增 `get_raw_kind` 按 `io::ErrorKind` 分类错误，使 `NotFound` 的结构信息能到达上层——此前 `get_raw` 把 `io::Error` 降级为 `String`，结构信息在中途丢失，上层无从判定。
 - 其它错误（类型不支持 / IO / 解码失败）的 message 与错误码**逐字节不变**。
+- **`--dry-run` 预览的敏感值保护（安全审查修正）**：预览输出会进终端、shell 历史、CI 日志，不应成为第二个明文出口。现 `preview_env_change` 对命中 `is_sensitive` 的变量**不回传明文**（`oldValue` 置 `null`、文本显示 `(敏感)`），`env add` 的新值同样经 `mask_new_value` 打码。
+- **展示路径的控制字符净化（安全审查修正）**：`sanitize_preview` 的剔除范围从 `\r`/`\n`/`\0` 扩展到**全部 C0 控制字符与 DEL**，覆盖 `\x1b`（ESC）——防止注册表值中的 ANSI 转义序列在 `env list` / `--dry-run` 输出时注入终端（清屏、改标题等）。
 
 ### 说明
 

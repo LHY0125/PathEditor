@@ -374,8 +374,13 @@ pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<RevealedValue, CoreEr
 /// 与 spec §命令规格 4 的字段表一致，且满足验收标准 9「预览层不拒绝」：
 /// 保护变量照常展示 `writable: false`，真正的拒绝留给执行阶段。
 ///
+/// **敏感值保护（安全审查修正）**：`old_value` 对命中 `is_sensitive` 的变量**不返回明文**
+/// （置 `None`，`sensitive = true`）——预览输出会进终端、shell 历史、CI 日志，
+/// 明文出口必须与 `env list`（打码）一致，不能新开第二个明文通道（`env get` 是唯一明文的既有约定）。
+/// 非敏感变量经 [`sanitize_preview`] 剔除控制字符后再返回，防止注册表值里的 ANSI 转义序列注入终端。
+///
 /// # Returns
-/// - `Ok(EnvChangePreview)` — 变量存在时的当前值、注册表类型标签、该 hive 可写性
+/// - `Ok(EnvChangePreview)` — 变量存在时的当前值（敏感则 `None`）、注册表类型标签、该 hive 可写性
 /// - `Err(CoreError)` — 变量不存在（`NotFound`）/ 保留名 / 读取失败
 pub fn preview_env_change(hive: EnvHive, name: &str) -> Result<EnvChangePreview, CoreError> {
     let store = WinregHive::open(hive, false)?;
@@ -384,8 +389,16 @@ pub fn preview_env_change(hive: EnvHive, name: &str) -> Result<EnvChangePreview,
     let kind = env_kind_label(&store, name)?;
     // 写权限：hive 级只读判定（复用 reg_store 的权限来源），不掺保护名单。
     let writable = env_hive_writable(hive);
+    // 敏感值保护：命中敏感规则时不回传明文；否则净化控制字符后回传。
+    let sensitive = is_sensitive(name);
+    let old_value = if sensitive {
+        None
+    } else {
+        sanitize_preview(&revealed.value)
+    };
     Ok(EnvChangePreview {
-        old_value: Some(revealed.value),
+        old_value,
+        sensitive,
         kind,
         writable,
     })
@@ -422,8 +435,11 @@ pub fn env_hive_writable(hive: EnvHive) -> bool {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvChangePreview {
-    /// 当前值；变量不存在时本函数已返回 `Err`，故此字段恒为 `Some`（保留 `Option` 便于将来扩展）
+    /// 当前值的展示形式；变量不存在时本函数已返回 `Err`。
+    /// **敏感变量恒为 `None`**（不回传明文），无预览（空值 / Unsupported）时亦为 `None`。
     pub old_value: Option<String>,
+    /// 是否为敏感变量（命中 `is_sensitive`）。为 `true` 时 `old_value` 必为 `None`。
+    pub sensitive: bool,
     /// 注册表类型标签：`"string"` / `"expand"`
     pub kind: String,
     /// 该 hive 对当前用户是否可写

@@ -141,9 +141,14 @@ pub(crate) fn render_name(meta: &EnvVarMeta) -> String {
 
 /// 构造 dry-run 的变更摘要（spec §命令规格 4 的统一 JSON 契约）。
 ///
-/// 字段固定为 `operation / hive / name / oldValue / newValue / kind / writable`；
+/// 字段固定为 `operation / hive / name / oldValue / newValue / kind / writable / sensitive`；
 /// 无值一侧一律 `null`（`add` 无 oldValue，`remove` 无 newValue）。**判定不在本函数**——
-/// `writable` / `kind` 由调用方从 core 结果传入，本函数只做形状组装。
+/// `writable` / `kind` / 敏感标记由调用方从 core 结果传入，本函数只做形状组装。
+///
+/// **安全（安全审查修正）**：`old` / `new` 必须已在 core 侧经敏感打码与控制字符净化 ——
+/// 本函数不做判定也不做净化，只透传（S3：CLI 零判定）。调用方对 `add` 的新值需经
+/// [`mask_new_value`] 处理后再传入。`sensitive` 用于让消费者区分「敏感打码」与「空值」。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_change_preview(
     op: &str,
     hive: EnvHive,
@@ -152,6 +157,7 @@ pub(crate) fn build_change_preview(
     new: Option<String>,
     kind: Option<String>,
     writable: bool,
+    sensitive: bool,
 ) -> serde_json::Value {
     serde_json::json!({
         "operation": op,
@@ -161,12 +167,27 @@ pub(crate) fn build_change_preview(
         "newValue": new,
         "kind": kind,
         "writable": writable,
+        "sensitive": sensitive,
     })
+}
+
+/// 对 dry-run 预览里的**新值**做敏感打码（`add` 的 `newValue` 用）。
+///
+/// `add` 的新值来自命令行，不在 `preview_env_change` 的覆盖范围（该函数只处理旧值）。
+/// 命中 `is_sensitive` 时返回 `None`（不预览明文），否则经 `sanitize_preview` 净化控制字符。
+/// **判定复用 core 的 `is_sensitive` / `sanitize_preview`，不在此重写规则**。
+pub(crate) fn mask_new_value(name: &str, value: String) -> Option<String> {
+    if core::env_var::is_sensitive(name) {
+        None
+    } else {
+        core::env_var::sanitize_preview(&value)
+    }
 }
 
 /// 把变更摘要渲染成人类可读的一行（spec §命令规格 4 的文本契约）。
 ///
 /// 三种操作各自成句；一律以「（未写入任何内容）」收尾，避免用户误以为已生效。
+/// 敏感变量（`sensitive = true`）的值以 `(敏感)` 占位，与 `env list` 的既有打码一致。
 pub(crate) fn render_change_preview_text(v: &serde_json::Value) -> String {
     let op = v["operation"].as_str().unwrap_or("");
     let hive = if v["hive"] == "system" {
@@ -175,20 +196,16 @@ pub(crate) fn render_change_preview_text(v: &serde_json::Value) -> String {
         "用户"
     };
     let name = v["name"].as_str().unwrap_or("");
-    let old = v["oldValue"].as_str();
-    let new = v["newValue"].as_str();
+    let sensitive = v["sensitive"].as_bool().unwrap_or(false);
+    // 敏感变量的值不显示；非敏感且无值（空/Unsupported）显示 `-`。
+    let placeholder = if sensitive { "(敏感)" } else { "-" };
+    let old = v["oldValue"].as_str().unwrap_or(placeholder);
+    let new = v["newValue"].as_str().unwrap_or(placeholder);
     let kind = v["kind"].as_str().unwrap_or("");
     let body = match op {
-        "set" => format!(
-            "将更新{hive}变量 {name}：{} → {}",
-            old.unwrap_or("-"),
-            new.unwrap_or("-")
-        ),
-        "add" => format!(
-            "将新建{hive}变量 {name}：{}（类型 {kind}）",
-            new.unwrap_or("-")
-        ),
-        "remove" => format!("将删除{hive}变量 {name}（当前值：{}）", old.unwrap_or("-")),
+        "set" => format!("将更新{hive}变量 {name}：{old} → {new}"),
+        "add" => format!("将新建{hive}变量 {name}：{new}（类型 {kind}）"),
+        "remove" => format!("将删除{hive}变量 {name}（当前值：{old}）"),
         _ => format!("将变更{hive}变量 {name}"),
     };
     format!("{body}（未写入任何内容）")
@@ -402,14 +419,16 @@ pub(crate) fn cmd_env_set(
         // 变量不存在时 core 返回 NotFound，照常报错 —— 预览与执行判定一致（验收标准 8）。
         let preview =
             core::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+        // 安全：旧值已由 core 打码/净化；新值来自命令行，须同样经 mask_new_value 处理。
         let json = build_change_preview(
             "set",
             hive,
             &name,
             preview.old_value,
-            Some(new_value),
+            mask_new_value(&name, new_value),
             Some(preview.kind),
             preview.writable,
+            preview.sensitive,
         );
         emit_preview(&json, json_out);
         return;
@@ -452,14 +471,17 @@ pub(crate) fn cmd_env_add(
     if dry_run {
         // add 的 kind 来自 --kind（默认 string），非注册表读取；writable 经 core 判定。
         // 同名已存在时**照常展示**（不在预览层拒绝），执行时才由 core 拒 NameExists（验收标准 9）。
+        // 安全：新值来自命令行，经 mask_new_value 打码/净化（敏感名不预览明文）。
+        let sensitive = core::env_var::is_sensitive(&name);
         let json = build_change_preview(
             "add",
             hive,
             &name,
             None,
-            Some(new_value),
+            mask_new_value(&name, new_value),
             Some(kind_label(parse_kind(&kind)).to_string()),
             core::registry::env_hive_writable(hive),
+            sensitive,
         );
         emit_preview(&json, json_out);
         return;
@@ -499,6 +521,7 @@ pub(crate) fn cmd_env_remove(
             None,
             None,
             preview.writable,
+            preview.sensitive,
         );
         emit_preview(&json, json_out);
         return;
@@ -1646,6 +1669,7 @@ mod tests {
             Some("C:\\jdk-21".into()),
             Some("string".into()),
             true,
+            false,
         );
         assert_eq!(v["operation"], "set");
         assert_eq!(v["hive"], "user");
@@ -1654,6 +1678,7 @@ mod tests {
         assert_eq!(v["newValue"], "C:\\jdk-21");
         assert_eq!(v["kind"], "string");
         assert_eq!(v["writable"], true);
+        assert_eq!(v["sensitive"], false);
     }
 
     /// #36：`add` 的 oldValue 为 null、`remove` 的 newValue 为 null（spec 字段表）。
@@ -1667,6 +1692,7 @@ mod tests {
             Some("v".into()),
             Some("string".into()),
             true,
+            false,
         );
         assert!(add["oldValue"].is_null(), "add 的 oldValue 必须为 null");
 
@@ -1678,6 +1704,7 @@ mod tests {
             None,
             None,
             true,
+            false,
         );
         assert!(rm["newValue"].is_null(), "remove 的 newValue 必须为 null");
     }
@@ -1693,9 +1720,56 @@ mod tests {
             Some("b".into()),
             Some("string".into()),
             false,
+            false,
         );
         let text = render_change_preview_text(&v);
         assert!(text.contains("未写入任何内容"), "必须点明未写入: {text}");
         assert!(text.contains("系统"), "必须带 hive 标签: {text}");
+    }
+
+    // ── 安全审查修正：敏感值打码 + 控制字符净化 ──
+
+    /// 安全：敏感变量的新值不得进入预览（`mask_new_value` 返回 `None`）。
+    #[test]
+    fn mask_new_value_hides_sensitive_plaintext() {
+        // 以 core 的敏感判定为准，取一个必然命中的名字。
+        assert!(
+            core::env_var::is_sensitive("MY_API_TOKEN"),
+            "前置：MY_API_TOKEN 应命中敏感规则"
+        );
+        assert_eq!(
+            mask_new_value("MY_API_TOKEN", "sk-realsecret".into()),
+            None,
+            "敏感变量的新值不得出现在预览里"
+        );
+    }
+
+    /// 安全：非敏感值经净化（剔除控制字符），且空/纯控制字符返回 `None`。
+    #[test]
+    fn mask_new_value_sanitizes_control_chars() {
+        assert_eq!(
+            mask_new_value("JAVA_HOME", "C:\\Java\x1b[2J".into()),
+            Some("C:\\Java[2J".to_string()),
+            "ANSI 转义序列的 ESC 字节必须被剔除"
+        );
+        assert_eq!(mask_new_value("JAVA_HOME", "\r\n".into()), None);
+    }
+
+    /// 安全：敏感变量在文本预览里显示 `(敏感)` 而非明文占位 `-`。
+    #[test]
+    fn sensitive_preview_text_shows_mask_marker() {
+        let v = build_change_preview(
+            "set",
+            EnvHive::User,
+            "MY_API_TOKEN",
+            None,
+            None,
+            Some("string".into()),
+            true,
+            true,
+        );
+        let text = render_change_preview_text(&v);
+        assert!(text.contains("(敏感)"), "敏感变量应显示 (敏感): {text}");
+        assert!(!text.contains("sk-"), "不得泄漏明文: {text}");
     }
 }

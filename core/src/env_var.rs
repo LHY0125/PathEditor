@@ -194,10 +194,14 @@ pub fn revision_of(name: &str, vtype: RegType, value: &str) -> String {
 }
 
 /// 净化并截断展示摘要。剔除控制字符；净化后为空则返回 `None`。
+///
+/// 剔除范围是**全部 C0 控制字符**（U+0000–U+001F）与 DEL（U+007F）——
+/// 既涵盖 `\r` / `\n` / `\0`（防多行日志注入），也涵盖 `\x1b`（ESC，防终端
+/// ANSI 转义序列注入：注册表值若含 `\x1b[2J` 可在展示时清屏、改标题）。安全审查修正。
 pub fn sanitize_preview(value: &str) -> Option<String> {
     let stripped: String = value
         .chars()
-        .filter(|c| !matches!(c, '\r' | '\n' | '\0'))
+        .filter(|c| !matches!(c, '\u{0000}'..='\u{001f}' | '\u{007f}'))
         .collect();
     if stripped.is_empty() {
         return None;
