@@ -24,6 +24,20 @@ pub trait EnvHiveStore {
     /// 读取值的原始字节与真实类型。
     fn get_raw(&self, name: &str) -> Result<RegValue, String>;
 
+    /// 读取值的原始字节与真实类型，并携带结构化错误分类（#34）。
+    ///
+    /// 与 [`get_raw`] 的**唯一区别**是错误类型：本方法把 winreg 的
+    /// `io::ErrorKind::NotFound` 映射为 [`ErrorCode::NotFound`]，其余为 [`ErrorCode::Io`]。
+    /// `get_raw` 保持 `Result<_, String>` 不动（W2-N2 端口边界裁断，本文件 `WinregHive::open`
+    /// 的文档注释）。
+    ///
+    /// 默认实现退回 `get_raw`（给不关心分类的实现用）；`WinregHive` 与 `MemoryHive` 各自覆写。
+    /// 判定只认 `code`，**不得**匹配 message 文本（Global Constraints）。
+    fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
+        self.get_raw(name)
+            .map_err(|m| CoreError::new(ErrorCode::Io, "read_env_var", m))
+    }
+
     /// 写入值，类型由调用方给定。
     fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String>;
 
@@ -101,6 +115,24 @@ impl EnvHiveStore for WinregHive {
         self.key
             .get_raw_value(name)
             .map_err(|e| format!("无法读取环境变量 {}: {}", name, e))
+    }
+
+    /// #34：与 [`get_raw`](Self::get_raw) 同源，但按 `io::ErrorKind` 分类错误码。
+    ///
+    /// 非 `NotFound` 分支的 message 与 `get_raw` **逐字节相同**（不变量 2）。
+    fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
+        self.key.get_raw_value(name).map_err(|e| {
+            let code = if e.kind() == std::io::ErrorKind::NotFound {
+                ErrorCode::NotFound
+            } else {
+                ErrorCode::Io
+            };
+            CoreError::new(
+                code,
+                "read_env_var",
+                format!("无法读取环境变量 {}: {}", name, e),
+            )
+        })
     }
 
     fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String> {
@@ -235,6 +267,34 @@ pub(crate) mod memory {
                 .ok_or_else(|| format!("无法读取环境变量 {}: 找不到", name))
         }
 
+        /// #34：与 [`get_raw`](Self::get_raw) 同源，但把「找不到」分类为 `NotFound`、
+        /// 注入失败分类为 `Io`。message 文本与 `get_raw` 逐字节相同（不变量 2）。
+        fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
+            if self
+                .fail_get
+                .as_deref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            {
+                return Err(CoreError::new(
+                    ErrorCode::Io,
+                    "read_env_var",
+                    format!("无法读取环境变量 {}: 注入的读取失败", name),
+                ));
+            }
+            self.values
+                .borrow()
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .map(|(_, v)| dup_reg_value(v))
+                .ok_or_else(|| {
+                    CoreError::new(
+                        ErrorCode::NotFound,
+                        "read_env_var",
+                        format!("无法读取环境变量 {}: 找不到", name),
+                    )
+                })
+        }
+
         fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String> {
             let mut values = self.values.borrow_mut();
             if let Some(slot) = values
@@ -314,5 +374,41 @@ mod memory_tests {
             .get_raw("MY_VAR")
             .unwrap_err()
             .contains("注入的读取失败"));
+    }
+
+    /// #34：不存在的变量必须产出 `NotFound` 码，而不是笼统的 `Io`。
+    ///
+    /// 这是 `env get` 能给出「该变量不存在」而非「os error 2」的前提。
+    #[test]
+    fn get_raw_kind_missing_name_yields_not_found_code() {
+        let hive = MemoryHive::new(true);
+        hive.seed("PRESENT", "v", REG_SZ);
+
+        let err = hive.get_raw_kind("ABSENT").expect_err("不存在应返回 Err");
+        assert_eq!(
+            err.code,
+            crate::error::ErrorCode::NotFound,
+            "不存在的变量必须是 NotFound 码，实际: {:?}",
+            err.code
+        );
+    }
+
+    /// #34 不变量 2：其它读取错误的 message 文本必须保持原样（不因新增方法而改变用户可见文案）。
+    ///
+    /// N1 裁断后：`fail_get` 注入场景下 `get_raw_kind` 默认实现直接复用 `get_raw`
+    /// 的错误字符串，故 message 与 `get_raw` 逐字节相同。
+    #[test]
+    fn get_raw_kind_error_message_text_matches_get_raw() {
+        // 既有测试 `memory_hive_injects_failures` 直接 `hive.fail_get = Some(...)`；
+        // 该字段在测试模块内可见，本用例沿用同一手法（plan 初稿的 seed_fail_get 假设已删）。
+        // 故障注入需要可变绑定（同既有测试的 `mut` 说明）。
+        let mut hive = MemoryHive::new(true);
+        hive.fail_get = Some("BROKEN".to_string());
+
+        let err = hive.get_raw_kind("BROKEN").expect_err("注入失败应返回 Err");
+        assert_eq!(
+            err.message, "无法读取环境变量 BROKEN: 注入的读取失败",
+            "message 文本不得因 #34 而改变"
+        );
     }
 }

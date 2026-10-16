@@ -18,8 +18,9 @@ mod path;
 pub use access::can_write_user;
 pub use conflict::conflict_message;
 pub use env_var::{
-    create_env_var, delete_env_var, delete_env_var_force, list_all_env_vars, reveal_env_var,
-    update_env_var, update_env_var_force, validate_env_name, validate_env_value, WriteOutcome,
+    create_env_var, delete_env_var, delete_env_var_force, env_hive_writable, list_all_env_vars,
+    preview_env_change, reveal_env_var, update_env_var, update_env_var_force, validate_env_name,
+    validate_env_value, EnvChangePreview, WriteOutcome,
 };
 pub use path::{
     clean_path_entries, clean_paths, load_system_paths, load_user_paths, save_system_paths,

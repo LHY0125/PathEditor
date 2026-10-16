@@ -153,10 +153,17 @@ fn broadcast_after_write() {
 /// W2-B1（2026-09-20 裁断）：三类错误在函数内部分类完成 ——
 /// 读取失败 → `Io`、类型不支持 → `UnsupportedType`、解码失败 → `Parse`。
 /// 调用方直接 `?` 传播，不再整体包成 `Io`；hive 标签由调用侧补（W2-B3b）。
+///
+/// #34（2026-10-16）：读取失败一路改走 [`EnvHiveStore::get_raw_kind`]，使「变量不存在」
+/// 以 `NotFound` 码上传，而非被稀释成通用 `Io`（此即 #34 的根因：旧代码恒包 `Io`，
+/// 与 W2-B1 声明的行为不符）。
+///
+/// **⚠️ 邻近改动禁区**：同文件的 `list_env_vars`（以及 `backup.rs` 的采集/恢复预览路径）
+/// **刻意保持 `get_raw` + 统一 `Io` 文案** —— 列表级路径不需要逐变量分类，
+/// 看到两套读法时**不要**「统一」，那会把列表的错误文案也改掉（非预期回归）。
 fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String), CoreError> {
-    let raw = store
-        .get_raw(name)
-        .map_err(|m| CoreError::new(ErrorCode::Io, "read_env_var", m))?;
+    // #34：`get_raw_kind` 已把 NotFound 与 Io 分类，此处**不得**再统一包成 Io。
+    let raw = store.get_raw_kind(name)?;
     // `RegType` 非 Copy（`winreg-0.52.0/src/enums.rs:20`），必须先
     // `.clone()` 取值再借用 `&raw`，否则 `from_reg_type(raw.vtype)` 会部分
     // 移出 `raw`，后面 `&raw` 与 `Ok((raw.vtype, …))` 都会编译失败。
@@ -358,6 +365,71 @@ pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<RevealedValue, CoreEr
     reveal_env_var_in_store(&store, hive, name)
 }
 
+/// 预览一次环境变量变更所需的只读信息（#36）。
+///
+/// **只读**：不写注册表、不产生备份、不广播。判定（类型、写权限）在此完成，
+/// CLI 只消费结果（S3：CLI 零判定）。
+///
+/// `writable` 是**该 hive 对当前用户的写权限**（hive 级，不含保护名单/类型判定）——
+/// 与 spec §命令规格 4 的字段表一致，且满足验收标准 9「预览层不拒绝」：
+/// 保护变量照常展示 `writable: false`，真正的拒绝留给执行阶段。
+///
+/// # Returns
+/// - `Ok(EnvChangePreview)` — 变量存在时的当前值、注册表类型标签、该 hive 可写性
+/// - `Err(CoreError)` — 变量不存在（`NotFound`）/ 保留名 / 读取失败
+pub fn preview_env_change(hive: EnvHive, name: &str) -> Result<EnvChangePreview, CoreError> {
+    let store = WinregHive::open(hive, false)?;
+    let revealed = reveal_env_var_in_store(&store, hive, name)?;
+    // 类型标签：经 read 路径取真实注册表类型（判定在 core）。
+    let kind = env_kind_label(&store, name)?;
+    // 写权限：hive 级只读判定（复用 reg_store 的权限来源），不掺保护名单。
+    let writable = env_hive_writable(hive);
+    Ok(EnvChangePreview {
+        old_value: Some(revealed.value),
+        kind,
+        writable,
+    })
+}
+
+/// 读取某变量的注册表类型标签（`"string"` / `"expand"`），供预览用。
+///
+/// `Unsupported` 类型回落 `"string"`（无法区分具体类型时的兜底标签）；
+/// **读取失败经 `?` 传播**，不回落 —— 变量不存在已在 `reveal_env_var_in_store` 处返回 `Err`。
+fn env_kind_label(store: &dyn EnvHiveStore, name: &str) -> Result<String, CoreError> {
+    let raw = store.get_raw_kind(name)?;
+    Ok(match EnvValueKind::from_reg_type(raw.vtype) {
+        EnvValueKind::ExpandString => "expand",
+        _ => "string",
+    }
+    .to_string())
+}
+
+/// 该 hive 对当前用户是否可写（hive 级，只读探测）。
+///
+/// 与 `reg_store::hive_writable` 同源（`check_admin` / `can_write_user`）；
+/// 此处独立一份以保持 `env_var` 模块不依赖 `reg_store` 私有项。
+///
+/// 供 CLI 的 `env add --dry-run` 预览写权限用（该变量可能尚不存在，
+/// 不能走 [`preview_env_change`]，后者对不存在变量返回 `Err`）。
+pub fn env_hive_writable(hive: EnvHive) -> bool {
+    match hive {
+        EnvHive::System => crate::system::check_admin(),
+        EnvHive::User => crate::registry::can_write_user(),
+    }
+}
+
+/// 变更预览的返回结构（camelCase 与前端/CLI 契约一致）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvChangePreview {
+    /// 当前值；变量不存在时本函数已返回 `Err`，故此字段恒为 `Some`（保留 `Option` 便于将来扩展）
+    pub old_value: Option<String>,
+    /// 注册表类型标签：`"string"` / `"expand"`
+    pub kind: String,
+    /// 该 hive 对当前用户是否可写
+    pub writable: bool,
+}
+
 /// `reveal_env_var` 的核心逻辑，存储可注入。`hive` 用于错误补标签。
 fn reveal_env_var_in_store(
     store: &dyn EnvHiveStore,
@@ -375,8 +447,20 @@ fn reveal_env_var_in_store(
         )
         .with_target(hive, name));
     }
-    let (vtype, value) =
-        read_env_var(store, name).map_err(|e| attach_read_context(e, hive, name))?;
+    // #34：`NotFound` 走专用简洁文案（变量名只出现一次、不泄漏原生错误串）；
+    // 其余错误保留 `attach_read_context` 的「读取X环境变量 Y 失败: 」前缀。
+    let (vtype, value) = read_env_var(store, name).map_err(|e| {
+        if e.code == ErrorCode::NotFound {
+            CoreError::new(
+                ErrorCode::NotFound,
+                "reveal_env_var",
+                format!("{}环境变量 {} 不存在", hive_location(hive).2, name),
+            )
+            .with_target(hive, name)
+        } else {
+            attach_read_context(e, hive, name)
+        }
+    })?;
     let revision = revision_of(name, vtype, &value);
     Ok(RevealedValue { value, revision })
 }
@@ -1607,5 +1691,47 @@ mod env_var_tests {
 
         std::env::remove_var("PATHEDITOR_BACKUP_DIR");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #34：不存在的变量，message 必须是「{hive}环境变量 X 不存在」，
+    /// 且**不含** `os error`、**不含**重复的变量名。
+    #[test]
+    fn reveal_missing_var_message_is_concise_and_named_once() {
+        let hive = MemoryHive::new(true);
+        let err = reveal_env_var_in_store(&hive, EnvHive::User, "THIS_VAR_ABSENT")
+            .expect_err("不存在应返回 Err");
+
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(err.message, "用户环境变量 THIS_VAR_ABSENT 不存在");
+        assert!(
+            !err.message.contains("os error"),
+            "不得泄漏原生错误串: {}",
+            err.message
+        );
+        assert_eq!(
+            err.message.matches("THIS_VAR_ABSENT").count(),
+            1,
+            "变量名只应出现一次: {}",
+            err.message
+        );
+    }
+
+    /// #34 不变量：其它错误（如类型不支持）的 message 保持既有前缀，不因本次改动而变。
+    #[test]
+    fn reveal_unsupported_type_message_keeps_existing_prefix() {
+        let hive = MemoryHive::new(true);
+        hive.seed_raw("DWORD_VAR", {
+            let mut v = "1".to_reg_value();
+            v.vtype = winreg::enums::REG_DWORD;
+            v
+        });
+        let err = reveal_env_var_in_store(&hive, EnvHive::User, "DWORD_VAR")
+            .expect_err("Unsupported 应返回 Err");
+        assert_eq!(err.code, ErrorCode::UnsupportedType);
+        assert!(
+            err.message.starts_with("读取用户环境变量 DWORD_VAR 失败:"),
+            "非 NotFound 错误的前缀必须保持: {}",
+            err.message
+        );
     }
 }
