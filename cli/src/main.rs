@@ -166,7 +166,7 @@ enum ProfileCmd {
 
 #[derive(Subcommand)]
 enum EnvCmd {
-    /// 列出环境变量元数据（不含明文）
+    /// 列出环境变量元数据（敏感变量不含明文，非敏感变量给出可能截断的 preview）
     List {
         #[arg(short, long)]
         system: bool,
@@ -199,21 +199,42 @@ enum EnvCmd {
         /// 跳过并发校验直接覆盖
         #[arg(long)]
         force: bool,
+        /// 只显示将要发生的变更，不写注册表
+        #[arg(long)]
+        dry_run: bool,
+        /// 以 JSON 输出变更摘要（需与 --dry-run 同用）
+        #[arg(long, requires = "dry_run")]
+        json: bool,
         #[arg(short, long)]
         system: bool,
     },
     /// 新建变量
+    ///
+    /// **纯新建语义**：同名变量会被拒绝（`NameExists`），不会覆盖 —— 因此无需
+    /// revision 守卫（新建没有「旧值」可被并发覆盖）。注意检查与写入是两步，
+    /// 存在毫秒级竞态窗口。
+    ///
+    /// 值必须经三通道之一提供；都不给会**立即报错**（不进入交互提示）。
     Add {
         name: String,
-        /// 值（敏感值建议改用 --stdin 或 --value-file）
+        /// 值。省略且不给 --stdin/--value-file 时报错（不进入交互提示）；
+        /// 敏感值建议改用 --stdin 或 --value-file
         value: Option<String>,
+        /// 从标准输入读取值（读到 EOF）
         #[arg(long, conflicts_with_all = ["value", "value_file"])]
         stdin: bool,
+        /// 从文件读取值
         #[arg(long, conflicts_with_all = ["value", "stdin"])]
         value_file: Option<String>,
         /// 注册表类型：string (REG_SZ) 或 expand (REG_EXPAND_SZ)
         #[arg(long, default_value = "string", value_parser = ["string", "expand"])]
         kind: String,
+        /// 只显示将要发生的变更，不写注册表
+        #[arg(long)]
+        dry_run: bool,
+        /// 以 JSON 输出变更摘要（需与 --dry-run 同用）
+        #[arg(long, requires = "dry_run")]
+        json: bool,
         #[arg(short, long)]
         system: bool,
     },
@@ -225,6 +246,12 @@ enum EnvCmd {
         /// 跳过并发校验直接删除
         #[arg(long)]
         force: bool,
+        /// 只显示将要发生的变更，不写注册表
+        #[arg(long)]
+        dry_run: bool,
+        /// 以 JSON 输出变更摘要（需与 --dry-run 同用）
+        #[arg(long, requires = "dry_run")]
+        json: bool,
         #[arg(short, long)]
         system: bool,
     },
@@ -540,22 +567,30 @@ fn main() {
                 value_file,
                 revision,
                 force,
+                dry_run,
+                json,
                 system,
-            } => env_ops::cmd_env_set(name, value, stdin, value_file, revision, force, system),
+            } => env_ops::cmd_env_set(
+                name, value, stdin, value_file, revision, force, dry_run, json, system,
+            ),
             EnvCmd::Add {
                 name,
                 value,
                 stdin,
                 value_file,
                 kind,
+                dry_run,
+                json,
                 system,
-            } => env_ops::cmd_env_add(name, value, stdin, value_file, kind, system),
+            } => env_ops::cmd_env_add(name, value, stdin, value_file, kind, dry_run, json, system),
             EnvCmd::Remove {
                 name,
                 revision,
                 force,
+                dry_run,
+                json,
                 system,
-            } => env_ops::cmd_env_remove(name, revision, force, system),
+            } => env_ops::cmd_env_remove(name, revision, force, dry_run, json, system),
             EnvCmd::Backup { json } => env_ops::cmd_env_backup(json),
             EnvCmd::Backups { json } => env_ops::cmd_env_backups(json),
             EnvCmd::Restore {
@@ -573,5 +608,56 @@ fn main() {
             ProfileCmd::Delete { name } => profile_delete(name),
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
         },
+    }
+}
+
+#[cfg(test)]
+mod help_tests {
+    //! CLI help 文案的回归测试。
+    //!
+    //! 放在 `main.rs`（crate root）而非 `env_ops.rs`：bin-only crate 的 root 模块
+    //! 对子模块是私有的，`struct Cli` 未 `pub`，子模块里写 `crate::Cli` 不可见。
+    //! root 内可直接取用（plan Task 4 Step 2 预留的退路）。
+    use super::*;
+    use clap::CommandFactory;
+
+    /// #35 / #38：`env add --help` 必须写明「纯新建语义」与「省略值会报错」。
+    ///
+    /// 可证伪性：删掉 `Add` 变体的文档注释或字段注释，对应片段消失，断言失败。
+    /// 这是把「豁免理由」从源码注释提升为**用户可见契约**的回归测试。
+    /// 刻意断言**具体短语**而非「解析成功」——后者无法证明文案存在。
+    #[test]
+    fn env_add_help_documents_pure_create_and_no_prompt() {
+        let mut cmd = Cli::command();
+        let env = cmd.find_subcommand_mut("env").expect("env 子命令必须存在");
+        let add = env.find_subcommand_mut("add").expect("add 子命令必须存在");
+        let help = add.render_long_help().to_string();
+
+        assert!(
+            help.contains("纯新建"),
+            "add --help 必须写明纯新建语义（同名会被拒绝、不会覆盖）: {help}"
+        );
+        assert!(
+            help.contains("不进入交互提示"),
+            "add --help 必须写明省略值会报错、不交互: {help}"
+        );
+    }
+
+    /// #33：`env list --help` 不得声称「不含明文」，须限定为「敏感变量不含明文」。
+    ///
+    /// 可证伪性：把描述行改回旧文案，`敏感变量不含明文` 消失，断言失败。
+    #[test]
+    fn env_list_help_scopes_the_no_plaintext_claim() {
+        let mut cmd = Cli::command();
+        let env = cmd.find_subcommand_mut("env").expect("env 子命令必须存在");
+        let list = env
+            .find_subcommand_mut("list")
+            .expect("list 子命令必须存在");
+        let help = list.render_long_help().to_string();
+
+        assert!(
+            help.contains("敏感变量不含明文"),
+            "list --help 必须把「不含明文」限定到敏感变量: {help}"
+        );
     }
 }

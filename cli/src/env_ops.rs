@@ -139,6 +139,73 @@ pub(crate) fn render_name(meta: &EnvVarMeta) -> String {
     }
 }
 
+/// 构造 dry-run 的变更摘要（spec §命令规格 4 的统一 JSON 契约）。
+///
+/// 字段固定为 `operation / hive / name / oldValue / newValue / kind / writable`；
+/// 无值一侧一律 `null`（`add` 无 oldValue，`remove` 无 newValue）。**判定不在本函数**——
+/// `writable` / `kind` 由调用方从 core 结果传入，本函数只做形状组装。
+pub(crate) fn build_change_preview(
+    op: &str,
+    hive: EnvHive,
+    name: &str,
+    old: Option<String>,
+    new: Option<String>,
+    kind: Option<String>,
+    writable: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "operation": op,
+        "hive": match hive { EnvHive::System => "system", EnvHive::User => "user" },
+        "name": name,
+        "oldValue": old,
+        "newValue": new,
+        "kind": kind,
+        "writable": writable,
+    })
+}
+
+/// 把变更摘要渲染成人类可读的一行（spec §命令规格 4 的文本契约）。
+///
+/// 三种操作各自成句；一律以「（未写入任何内容）」收尾，避免用户误以为已生效。
+pub(crate) fn render_change_preview_text(v: &serde_json::Value) -> String {
+    let op = v["operation"].as_str().unwrap_or("");
+    let hive = if v["hive"] == "system" {
+        "系统"
+    } else {
+        "用户"
+    };
+    let name = v["name"].as_str().unwrap_or("");
+    let old = v["oldValue"].as_str();
+    let new = v["newValue"].as_str();
+    let kind = v["kind"].as_str().unwrap_or("");
+    let body = match op {
+        "set" => format!(
+            "将更新{hive}变量 {name}：{} → {}",
+            old.unwrap_or("-"),
+            new.unwrap_or("-")
+        ),
+        "add" => format!(
+            "将新建{hive}变量 {name}：{}（类型 {kind}）",
+            new.unwrap_or("-")
+        ),
+        "remove" => format!("将删除{hive}变量 {name}（当前值：{}）", old.unwrap_or("-")),
+        _ => format!("将变更{hive}变量 {name}"),
+    };
+    format!("{body}（未写入任何内容）")
+}
+
+/// dry-run 的统一出口：`--json` 打 JSON，否则打文本。**不写注册表、不备份、不广播。**
+pub(crate) fn emit_preview(preview: &serde_json::Value, json_out: bool) {
+    if json_out {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(preview).unwrap_or_else(|_| "{}".to_string())
+        );
+    } else {
+        println!("{}", render_change_preview_text(preview));
+    }
+}
+
 /// 渲染变量表格。空列表返回占位文案。
 pub(crate) fn render_table(metas: &[EnvVarMeta]) -> String {
     if metas.is_empty() {
@@ -312,6 +379,10 @@ pub(crate) fn parse_kind(raw: &str) -> EnvValueKind {
 ///
 /// `--revision` 走 CAS（冲突退出码 3）；`--force` 走真正的覆盖写
 /// （最后写入者胜，**不会**产生退出码 3）。
+///
+/// `--dry-run` 只预览、不写注册表，且**不要求** `--revision`/`--force`
+/// （预览无并发风险，spec D9 / 验收标准 7）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_env_set(
     name: String,
     value: Option<String>,
@@ -319,12 +390,32 @@ pub(crate) fn cmd_env_set(
     value_file: Option<String>,
     revision: Option<String>,
     force: bool,
+    dry_run: bool,
+    json_out: bool,
     system: bool,
 ) {
     let hive = select_hive(system, false);
-    let mode = resolve_concurrency(revision, force);
     let src = resolve_value(value, stdin, value_file, true);
     let new_value = read_value(&src);
+    if dry_run {
+        // 预览是只读的：经 core 的 preview_env_change 取当前值/类型/写权限。
+        // 变量不存在时 core 返回 NotFound，照常报错 —— 预览与执行判定一致（验收标准 8）。
+        let preview =
+            core::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+        let json = build_change_preview(
+            "set",
+            hive,
+            &name,
+            preview.old_value,
+            Some(new_value),
+            Some(preview.kind),
+            preview.writable,
+        );
+        emit_preview(&json, json_out);
+        return;
+    }
+    // 预览分支之后才解析并发模式：dry-run 不要求 --revision/--force（验收标准 7）。
+    let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
             let outcome = core::registry::update_env_var(hive, &name, &new_value, &r)
@@ -341,17 +432,38 @@ pub(crate) fn cmd_env_set(
 }
 
 /// `env add` —— 新建变量。`--kind` 决定注册表类型。
+///
+/// `--dry-run` 只预览、不写注册表；`kind` 来自 `--kind`（非注册表读取），
+/// `writable` 经 core 判定。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_env_add(
     name: String,
     value: Option<String>,
     stdin: bool,
     value_file: Option<String>,
     kind: String,
+    dry_run: bool,
+    json_out: bool,
     system: bool,
 ) {
     let hive = select_hive(system, false);
     let src = resolve_value(value, stdin, value_file, true);
     let new_value = read_value(&src);
+    if dry_run {
+        // add 的 kind 来自 --kind（默认 string），非注册表读取；writable 经 core 判定。
+        // 同名已存在时**照常展示**（不在预览层拒绝），执行时才由 core 拒 NameExists（验收标准 9）。
+        let json = build_change_preview(
+            "add",
+            hive,
+            &name,
+            None,
+            Some(new_value),
+            Some(kind_label(parse_kind(&kind)).to_string()),
+            core::registry::env_hive_writable(hive),
+        );
+        emit_preview(&json, json_out);
+        return;
+    }
     let kind = parse_kind(&kind);
     // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
     let outcome = core::registry::create_env_var(hive, &name, &new_value, kind)
@@ -364,8 +476,34 @@ pub(crate) fn cmd_env_add(
 /// `env remove` —— 删除变量。
 ///
 /// `--revision` 走 CAS；`--force` 直接删除（最后写入者胜，不产生退出码 3）。
-pub(crate) fn cmd_env_remove(name: String, revision: Option<String>, force: bool, system: bool) {
+///
+/// `--dry-run` 只预览、不写注册表，且**不要求** `--revision`/`--force`。
+pub(crate) fn cmd_env_remove(
+    name: String,
+    revision: Option<String>,
+    force: bool,
+    dry_run: bool,
+    json_out: bool,
+    system: bool,
+) {
     let hive = select_hive(system, false);
+    if dry_run {
+        // 预览是只读的；变量不存在时 core 返回 NotFound，照常报错（验收标准 8）。
+        let preview =
+            core::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+        let json = build_change_preview(
+            "remove",
+            hive,
+            &name,
+            preview.old_value,
+            None,
+            None,
+            preview.writable,
+        );
+        emit_preview(&json, json_out);
+        return;
+    }
+    // 预览分支之后才解析并发模式：dry-run 不要求 --revision/--force。
     let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
@@ -1491,5 +1629,73 @@ mod tests {
             String::from_utf8_lossy(&out.stdout)
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── #36：dry-run 变更预览的 JSON / 文本契约 ──
+
+    /// #36：预览 JSON 的字段与类型契约（spec §命令规格 4）。
+    ///
+    /// 字段名错一个就会破坏脚本消费，故逐字段断言，而非只断言「是合法 JSON」。
+    #[test]
+    fn change_preview_json_has_stable_contract() {
+        let v = build_change_preview(
+            "set",
+            EnvHive::User,
+            "JAVA_HOME",
+            Some("C:\\jdk-17".into()),
+            Some("C:\\jdk-21".into()),
+            Some("string".into()),
+            true,
+        );
+        assert_eq!(v["operation"], "set");
+        assert_eq!(v["hive"], "user");
+        assert_eq!(v["name"], "JAVA_HOME");
+        assert_eq!(v["oldValue"], "C:\\jdk-17");
+        assert_eq!(v["newValue"], "C:\\jdk-21");
+        assert_eq!(v["kind"], "string");
+        assert_eq!(v["writable"], true);
+    }
+
+    /// #36：`add` 的 oldValue 为 null、`remove` 的 newValue 为 null（spec 字段表）。
+    #[test]
+    fn change_preview_nulls_are_correct_per_operation() {
+        let add = build_change_preview(
+            "add",
+            EnvHive::User,
+            "X",
+            None,
+            Some("v".into()),
+            Some("string".into()),
+            true,
+        );
+        assert!(add["oldValue"].is_null(), "add 的 oldValue 必须为 null");
+
+        let rm = build_change_preview(
+            "remove",
+            EnvHive::User,
+            "X",
+            Some("v".into()),
+            None,
+            None,
+            true,
+        );
+        assert!(rm["newValue"].is_null(), "remove 的 newValue 必须为 null");
+    }
+
+    /// #36：文本预览必须点明「未写入任何内容」，且带 hive 标签。
+    #[test]
+    fn change_preview_text_mentions_no_write() {
+        let v = build_change_preview(
+            "set",
+            EnvHive::System,
+            "JAVA_HOME",
+            Some("a".into()),
+            Some("b".into()),
+            Some("string".into()),
+            false,
+        );
+        let text = render_change_preview_text(&v);
+        assert!(text.contains("未写入任何内容"), "必须点明未写入: {text}");
+        assert!(text.contains("系统"), "必须带 hive 标签: {text}");
     }
 }
