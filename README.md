@@ -200,9 +200,9 @@ patheditor profile apply "Python开发"
 # 通用环境变量（Path 除外）
 patheditor env list     [--system|--user] [--json]
 patheditor env get      <NAME> [--system]
-patheditor env set      <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force)
-patheditor env add      <NAME> [<VALUE>] [--kind string|expand] [--system]
-patheditor env remove   <NAME> (--revision <R>|--force)
+patheditor env set      <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force) [--dry-run] [--json]
+patheditor env add      <NAME> [<VALUE>] [--kind string|expand] [--system] [--dry-run] [--json]
+patheditor env remove   <NAME> (--revision <R>|--force) [--dry-run] [--json]
 patheditor env backup   [--json]
 patheditor env backups  [--json]
 patheditor env restore  <FILE> [--dry-run] [--force] [--json]
@@ -213,6 +213,13 @@ patheditor env restore  <FILE> [--dry-run] [--force] [--json]
 `env` 子命令管理通用环境变量（`Path` 除外，请用 PATH 专用命令）。默认操作用户 hive，加 `--system` 操作系统 hive。
 
 `set` 与 `remove` 必须显式选择并发模式：`--revision <R>`（取自 `env list --json`，外部修改时拒绝写入，退出码 3）或 `--force`（跳过 revision 校验直接覆盖，最后写入者胜，仍受保护名单/类型/权限约束）。敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
+
+`set` / `add` / `remove` 支持 `--dry-run`：只显示将要发生的变更，**不写注册表、不产生备份、不广播**。预览不要求 `--revision` / `--force`；变量不存在时照常报错（与真正执行时的判定一致）。加 `--json` 可输出脚本友好的摘要（需与 `--dry-run` 同用，单独用会以退出码 2 被拒绝）：
+
+```bash
+patheditor env set JAVA_HOME --value "C:\Java\jdk-21" --dry-run --json
+# {"operation":"set","hive":"user","name":"JAVA_HOME","oldValue":"C:\\Java\\jdk-17","newValue":"C:\\Java\\jdk-21","kind":"string","writable":true}
+```
 
 CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）。`--force` 不携带 revision，不会因并发冲突产生退出码 3。
 
@@ -278,7 +285,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 
 ### 安全
 
-- 保存前自动备份注册表到 `~/.patheditor/backups/`（文件名含时间戳，如 `path_backup_20260921_200437_062.txt`）
+- 保存前自动备份注册表到 `~/.patheditor/backups/`（文件名含时间戳，如 `path_backup_20260921_200437_062.txt`）；同类备份默认保留最近 20 份，可在 `~/.patheditor/config.ini` 用 `path_backup_keep = N` 覆盖。轮换只删除本工具生成的 `path_backup_*.txt`，且**仅在默认备份目录生效**（用户指定目录不轮换）
 - 环境变量写入前自动备份到同一目录（`env_backup_*.json`），支持差异预览与一键恢复；**该文件含敏感值明文**，请勿同步到云端或提交到版本库
 - PATH 长度检查（Windows 单变量上限 32767 字符）
 - 非管理员仅系统 PATH 只读，用户 PATH 仍可编辑

@@ -140,9 +140,9 @@ patheditor check-admin   [--json]
 patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|delete <NAME>|rename --old <OLD> --new <NEW>}
 patheditor env list      [--system|--user] [--json]
 patheditor env get       <NAME> [--system]
-patheditor env set       <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force)
-patheditor env add       <NAME> [<VALUE>] [--kind string|expand] [--system]
-patheditor env remove    <NAME> (--revision <R>|--force)
+patheditor env set       <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force) [--dry-run] [--json]
+patheditor env add       <NAME> [<VALUE>] [--kind string|expand] [--system] [--dry-run] [--json]
+patheditor env remove    <NAME> (--revision <R>|--force) [--dry-run] [--json]
 patheditor env backup    [--json]
 patheditor env backups   [--json]
 patheditor env restore   <FILE> [--dry-run] [--force] [--json]
@@ -150,7 +150,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
 
-`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；`--force` 跳过 revision 校验直接覆盖（最后写入者胜，仍受保护名单/类型/权限约束），不会因并发冲突产生退出码 3；退出码 3 仅在 `--revision` 不匹配时出现，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。
+`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；`--force` 跳过 revision 校验直接覆盖（最后写入者胜，仍受保护名单/类型/权限约束），不会因并发冲突产生退出码 3；退出码 3 仅在 `--revision` 不匹配时出现，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。`set`/`add`/`remove` 支持 `--dry-run` 只预览变更、不写注册表、不产生备份、不广播；预览**不要求** `--revision`/`--force`，且不含保护名单/类型判定（`writable` 如实标记，真正的拒绝留给执行阶段）。`--json` 需与 `--dry-run` 同用（clap `requires`，单独用退出码 2），输出统一结构 `{operation, hive, name, oldValue, newValue, kind, writable}`。
 
 `env restore` 默认模式在备份中有变量被外部改动（revision 不匹配）时整批中止且**注册表零改动**（退出码 3）；`--force` 跳过 revision 校验直接覆盖，但**不豁免**保护名单与类型判定，也不会因并发冲突产生退出码 3。`--dry-run` 只打印差异、不写注册表。**逐条失败不改变退出码**（仍是 0）——恢复是 best-effort，单变量失败只进 `failures` 并以 stderr 警告呈现，脚本无法从退出码检出部分失败。
 
@@ -161,6 +161,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 - 保存前使用原始值做外部修改检测；不得用旧草稿覆盖其他进程刚写入的内容。
 - 清理、禁用和启用操作必须保留 `PathEntry`，不能只传路径字符串。
 - 通用环境变量写入（CLI 3 命令、GUI 3 命令）前自动产生一份 JSON 备份，落在 `~/.patheditor/backups/env_backup_<时间戳>.json`，含两个 hive 全部可写变量的**明文值**与 revision。备份失败**不阻断写入**，只记警告并如实返回（`WriteOutcome.backup`）。默认保留最近 20 份（`backup::ENV_BACKUP_KEEP`，可被 `~/.patheditor/config.ini` 的 `env_backup_keep` 覆盖），轮换只删除本功能生成的 `env_backup_*.json`。恢复默认在 revision 冲突时中止（退出码 3）且零写入；`--force` 跳过 revision 校验但**不豁免**保护名单与类型判定。
+- PATH 备份（`path_backup_<时间戳>.txt`，由 `backup_registry` 写入，含两个 hive 的完整 PATH 明文）同样写后自动轮换：默认保留最近 20 份（`backup::PATH_BACKUP_KEEP`，可被 `~/.patheditor/config.ini` 的 `path_backup_keep` 覆盖，回落语义同 `env_backup_keep`），只删除本功能生成的 `path_backup_*.txt`，且**仅作用于默认备份目录**——用户通过 `custom_dir` 指定的目录不参与轮换（可能混有用户自己的文件）。
 - 恢复的差异计数有两个**已知的规格级口径问题**，不是已修复项：`RestorePreview.modified` 与 `RestoreOutcome.skipped` **恒为 0**（前者因为 `revision_of` 是 `(name, type, value)` 的纯函数，「值变了」与「备份已过期」是同一条件，后者一律判 `Conflict`；后者因为没有路径会「跳过」）。因此 `--dry-run` 与 GUI 确认弹窗的「修改 N」恒显示 0，而 `--force` 下被冲突覆盖的变量**确实被改写却计入 `conflicts`** —— 两者都会**低报** force 模式的实际改动量。`EnvBackupInfo.variable_count` 同样恒为 0（列表不解析内容）。**未提权时恢复恒失败**：普通用户无法以写权限打开 HKLM，`restore_env_backup_from` 必然返回 `permissionDenied`，且 GUI **不提供**「仅恢复 user hive」这类降级路径。
 - `env restore --dry-run` 对**损坏备份**并非严格纯读：`read_env_backup` 对不可解析文件会经 `persist::parse_error_quarantined` 把文件重命名为 `<file>.corrupt-<ts>`（注册表未触碰）。
 - 备份文件的暴露面：含敏感值明文，**目录 ACL 未收紧**（spec §S2.1 登记的未覆盖项）。
@@ -178,6 +179,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 - 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
 - E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果（样本见 `docs/审核和开发/2026.09.18/`）。
 - CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove` 且使用 `--revision` 时；`--force` 不会因并发冲突产生退出码 3；PATH 命令恒为 1）。冲突判定按 `CoreError.code`（`CoreError::exit_code()`），`[E_CONFLICT]` 前缀仅为过渡期展示文本。
+- `env get` 读取不存在的变量时，返回 `ErrorCode::NotFound`、message 为 `{用户|系统}环境变量 <NAME> 不存在`（不泄漏 `os error` 原生串、变量名只出现一次），退出码 1。判定只认 `code`，**不得**匹配 message 文本——NotFound 的结构信息由 `reg_store::get_raw_kind` 分类上传。
 
 ## 测试与质量门
 
