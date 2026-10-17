@@ -230,3 +230,17 @@ body {
 .btn-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--app-danger) 12%, transparent);
 }
+
+/* 禁用态：必须用未分层的显式规则覆盖 —— Tailwind 的 disabled:opacity-40
+   位于 @layer utilities，而未分层的 .btn-* 规则优先级高于任何 layer。
+   同时清掉 primary 的强调光晕，避免禁用按钮在深色主题下看起来仍可点。 */
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-ghost:disabled,
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
+  filter: none;
+}

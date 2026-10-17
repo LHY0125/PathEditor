@@ -46,6 +46,18 @@ describe('Button', () => {
     expect(clicked).toBe(false);
   });
 
+  it('禁用的 primary 按钮带 disabled 属性（禁用态样式依赖它生效）', () => {
+    render(
+      <Button variant="primary" disabled>
+        保存
+      </Button>,
+    );
+    const btn = screen.getByRole('button', { name: '保存' });
+    // Button 直接透传原生 disabled，浏览器据此输出 disabled 属性，:disabled 选择器才能命中
+    expect(btn).toHaveAttribute('disabled');
+    expect(btn).toBeDisabled();
+  });
+
   it('primary 变体带强调底色', () => {
     render(<Button variant="primary">保存</Button>);
     expect(screen.getByRole('button').className).toContain('btn-primary');
