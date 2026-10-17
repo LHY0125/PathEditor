@@ -1,5 +1,46 @@
 # Changelog
 
+## 5.1.7 (2026-10-17)
+
+本版重做 **GUI 视觉与信息架构**：工具栏从「两行 18 个同权重按钮」收口为**单行分层工具栏 + ⋯ 菜单**，浅色主题改为中性现代、深色主题改为玻璃质感，并建立单一的设计 token 层。**Rust / CLI / IPC 契约零改动**，仅前端。
+
+### 新增
+
+- **设计 token 层**（`src/styles/globals.css`）：18 个语义变量（背景/表面/边框/文字/强调/语义色/浮层）+ 5 个几何变量（圆角 8px、行高 28px、间距 6px），两套主题共用同一骨架，仅材质分化。
+- **按钮原语**：`buttonVariants` 提供 `primary` / `secondary` / `ghost` / `danger` 四个变体；`btnClass` / `btnStyle` 保留为过渡别名。
+- **无依赖下拉菜单** `Menu`：受控开合、点击外部关闭、`Escape` 关闭并交还焦点、方向键 / `Home` / `End` 导航（跳过禁用项、两端循环）、`role="menu"` / `role="menuitem"`、`aria-haspopup` / `aria-expanded` / `aria-controls`。
+- **内联 SVG 图标集**（零依赖）。当前生产代码仅使用 `MoreIcon`，其余五个为后续波次预留并已标注。
+- **800px 视觉回归测试**：在两种尺寸 × 两种主题 × 中英双语下检测工具栏是否被裁切，并附**可证伪守卫**（注入超宽内容必须失败）。
+- **菜单遮挡回归测试**：用 `elementFromPoint` 命中测试检测菜单项是否被祖先裁切（`isVisible()` / `click()` 都不检测这一点）。
+
+### 变更
+
+- **工具栏单行分层**：`搜索 │ 新建 编辑 删除 │ 上移 下移 │ 撤销 重做 ...推... 导入 导出 │ 保存 │ ⋯`。保存按钮恒有强调色。
+- **低频操作收入 ⋯ 菜单**：浏览…、清理无效路径、冲突分析、配置方案（维护组）；深色/浅色模式、切换语言、帮助（应用组）；取消并关闭（底部，分隔线隔开）。
+- **浅色主题**：中性现代（`#fafafa` 背景、细边框、靛蓝 `#6366f1`）。
+- **深色主题**：玻璃质感（深色渐变背景、半透明表面、提亮强调色 `#7c6cff` + 辉光、菜单 `backdrop-filter: blur(14px)`）。
+- **表格行**交替底色改由**逻辑索引**驱动（`data-odd`），不再使用 `:nth-child`——虚拟滚动下后者会在滚动时闪烁。
+- **英文工具栏文案简写**：`Move Up` / `Move Down` → `Up` / `Down`，使 800px 最窄窗口下不换行。
+- **搜索框在窄窗口弹性收缩**（`flex: 0 1 160px; min-width: 96px`），空间充足时仍为 160px。
+
+### 修复
+
+- **⋯ 菜单被工具栏裁切**：`.toolbar { overflow: hidden }` 会裁掉其子元素，菜单原先作为工具栏后代只显示第 1 项。改用 `createPortal` 渲染到 `document.body` + `position: fixed` 按触发按钮定位（下方空间不足时翻到上方，窗口 resize / 滚动时重算）。`overflow: hidden` 保留。
+- **语言切换对区域变体失效**：原先读 `localStorage['i18nextLng']` 与字面量 `'zh-CN'` 比较，`zh-TW` 等变体下切换无效。改按 `i18n.resolvedLanguage ?? i18n.language` 判 `startsWith('zh')`。
+- **禁用按钮被 hover 样式覆盖**：Tailwind 的 `disabled:opacity-40` 位于 `@layer utilities`，而 `.btn-*` 规则未分层、优先级更高。新增显式 `:disabled` 规则（含 `box-shadow: none`，避免深色下辉光残留）。
+- **撤销/重做按钮未迁移**：仍用旧的 `btnClass`（`py-1`，50px 高），把工具栏撑到 67px 并换行。迁移至 `Button` 后回到 28px。
+- **表格行纵向节奏丢失**：`.path-text` 只有水平 padding，内容在 28px 行内偏移。补纵向 padding。
+- **淡色文字对比度不足**：菜单分组标题、快捷键提示、禁用项曾用 `--app-fg-faint`（2.46:1 / 3.27:1），低于 WCAG AA。改用 `--app-fg-muted`，并为快捷键提示新增 `--app-fg-subtle`（4.02:1 / 5.99:1）以保留与标签的层级差异。
+- **`index.html` 标题长期停留在 `v5.1.2`**：它是静态文件，读不到 `package.json`，也不在版本清单内。改为 Vite `transformIndexHtml` 注入 `%APP_VERSION%`，**从此不再是手工版本源**。
+
+### 说明
+
+- **`tests/setup.ts` 注册 jest-dom**：`@testing-library/jest-dom` 早已在 devDependencies 却从未接线，匹配器在运行时为空。同时全局修复了 RTL 自动 cleanup 缺失（未开 `vitest.globals`）与测试语言锁定为 `zh-CN`。
+- **未保存状态指示改由状态栏承担**：原设计在保存按钮内加实心圆点，但按钮内部只有强调底色与前景文字两色，任何标记都会与其中之一同色而不可辨。信号未丢失——状态栏本就有 `● 未保存`。
+- **过渡别名保留至 Wave 4.1**：`--app-list-bg` / `--app-list-alt` / `--app-select-row` 仍被 `src/components/dialogs/` 的 7 个文件引用（14 处）。本波**未重做对话框**，其视觉与主界面暂不一致，将在 Wave 4.1 一并对齐并清理别名。
+- **`body` 字号由 14px 调整为 13px**，会影响对话框内继承该值的文字。
+- 已知未覆盖：窗口缩放到 150%/200% 时的布局未验证；工具栏的 800px 约束由 E2E 断言保障。
+
 ## 5.1.6 (2026-10-17)
 
 本版完成 **F-08 收口**：把散在 GUI（TypeScript）与 CLI 里的两份「保存 PATH + sidecar」编排收敛为 `core::service::save_path_with_sidecar` 单一实现（补齐写前备份与乐观并发），并清理前端 3 个运行时零引用的死码模块与 3 个孤儿 IPC 命令。同时修复了一个**既有的保存死锁**（并发校验对顺序敏感）。
