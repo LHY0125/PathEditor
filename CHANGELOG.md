@@ -1,6 +1,6 @@
 # Changelog
 
-## 5.1.6（未发布）
+## 5.1.6 (2026-10-17)
 
 本版完成 **F-08 收口**：把散在 GUI（TypeScript）与 CLI 里的两份「保存 PATH + sidecar」编排收敛为 `core::service::save_path_with_sidecar` 单一实现（补齐写前备份与乐观并发），并清理前端 3 个运行时零引用的死码模块与 3 个孤儿 IPC 命令。同时修复了一个**既有的保存死锁**（并发校验对顺序敏感）。
 
@@ -20,7 +20,7 @@
 
 - **CLI 侧不再做乐观并发校验**：CLI 是单次进程，每次命令重新加载快照，「期望值」恒等于「当前值」，该层校验从未因真实并发触发（只可能因顺序差异误报，后者已由多重集修复消除）。现由类型显式去除该参数；并发校验由 GUI 侧承担（期望值来自界面加载时的已保存快照）。若未来 CLI 变为批处理模式，应重新引入。
 - **删除**：前端 3 个死码模块 `src/core/{path-manager,import-export,validation}.ts`（及各自测试）——运行时零引用，且已有 Rust 对应实现；3 个孤儿 IPC 命令 `scan_conflicts` / `scan_tools` / `get_appdata_dir`（前端零调用）。core 侧的 `scan_conflicts` / `scan_tools` / `get_appdata_dir` 函数**保留**（被内部使用）。
-- 版本号未升。
+- 移除项目级 `.cargo/config.toml`：其中的 `link-arg=-lmcfgthread` 已迁至全局 cargo 配置，项目级副本不再需要。
 
 ## 5.1.5 (2026-10-16)
 

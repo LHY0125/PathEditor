@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.5-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.6-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
@@ -310,7 +310,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 
 **方式一：安装包**
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.5_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_5.1.6_x64-setup.exe` 安装。
 
 **方式二：Scoop（免安装）**
 
