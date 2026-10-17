@@ -84,9 +84,13 @@ describe('ToolBar 单行结构', () => {
 
   it('脏标记不改变保存按钮的可访问名称', () => {
     setWritable();
+    // 显式钉住浅色主题，避免依赖测试执行顺序（前面的主题菜单用例会改 isDark）
+    useThemeStore.setState({ isDark: false });
     useAppStore.setState({ isModified: true });
     render(<ToolBar {...makeProps()} />);
     const save = screen.getByRole('button', { name: '保存' });
+    // getByRole 的 name 是子串匹配，「保存 已修改」也会命中；用精确可访问名称兜底
+    expect(save).toHaveAccessibleName('保存');
     const dot = save.querySelector('.dirty-dot');
     expect(dot).not.toBeNull();
     expect(dot?.getAttribute('aria-hidden')).toBe('true');
