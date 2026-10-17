@@ -95,23 +95,25 @@ afterEach(async () => {
 
 describe('语言切换按解析后语言判定（区域变体回归）', () => {
   /**
-   * 模拟「英文 Windows + 检测器已把区域变体写进缓存」的真实启动态：
-   * 重跑一次 i18n.init 让检测器走完整路径 —— 读 localStorage 的 'en-US' →
-   * 解析为 'en' → 再把解析结果回写缓存。此时 localStorage 与 resolvedLanguage 不一致，
-   * 正是旧实现（读 localStorage 原始值）误判的前提条件。
+   * 模拟「检测器已把语言写进缓存」的真实启动态：重跑一次 i18n.init 让检测器走完整路径 ——
+   * 读 localStorage 的原始值 → 解析 → 把解析结果回写缓存。
+   * 注意：不同区域变体的回写结果不同（见各用例中的具体断言），是否构成
+   * 「缓存原始值 ≠ resolvedLanguage」的缺陷现场也随之不同。
    */
   async function bootWithCachedLanguage(cached: string): Promise<void> {
-    // 检测器在存在区域变体时返回 [lang, baseLang]，i18next 解析后会把两者都回写缓存。
-    // 无论回写成 'en' 还是 'en-US'，旧实现读到的都不是 'zh-CN' —— 缺陷现场得以保留。
     localStorage.setItem('i18nextLng', cached);
     await i18n.init();
   }
 
-  it('缓存为 en-US 时点击「切换语言」能切到中文', async () => {
+  // 互补场景用例，不是回归用例：启动后缓存保留为 'en-US'，但 resolvedLanguage 是 'en'。
+  // 旧实现「原始缓存 ≠ 'zh-CN' 即视为英文」在这一场景下恰好得出正确结论，因此本用例
+  // 在修复前后都通过，不提供回归保护。回归能力由 zh-TW 用例承担；本用例只保证
+  // 缓存英文区域变体时的启动与切换行为未退化。
+  it('缓存为英文区域变体 en-US（解析为 en）时界面为英文并能切到中文', async () => {
     await bootWithCachedLanguage('en-US');
     expect(i18n.resolvedLanguage).toBe('en');
-    // 启动后缓存不再是干净的 'zh-CN'：旧实现按原始缓存字符串比较即会误判
-    expect(localStorage.getItem('i18nextLng')).not.toBe('zh-CN');
+    // 断言缓存的实际值：检测器把 'en-US' 原样留在缓存里，resolvedLanguage 与之不同
+    expect(localStorage.getItem('i18nextLng')).toBe('en-US');
 
     render(<AppShell />);
     // 前置断言：初始界面确为英文
@@ -136,16 +138,23 @@ describe('语言切换按解析后语言判定（区域变体回归）', () => {
     expect(i18n.resolvedLanguage).toBe('en');
   });
 
+  // 唯一的真实回归用例：zh-TW 在启动后缓存仍保留为非 'zh-CN' 的区域变体，
+  // 旧实现按原始缓存字符串 === 'zh-CN' 比较会把中文界面当成英文，切换方向反了。
   it('zh-TW 等中文区域变体同样能切到英文（再切回中文）', async () => {
     // zh-TW 无对应资源，解析结果回落到 zh-CN/zh —— startsWith('zh') 判定成立
     await bootWithCachedLanguage('zh-TW');
     expect(i18n.resolvedLanguage?.startsWith('zh')).toBe(true);
     render(<AppShell />);
+    expect(screen.getByRole('button', { name: '新建' })).toBeTruthy();
 
     clickToggleLanguage();
     await waitFor(() => expect(i18n.resolvedLanguage).toBe('en'));
+    // 断言可见界面：工具栏切换为英文
+    await waitFor(() => expect(screen.getByRole('button', { name: 'New' })).toBeTruthy());
 
     clickToggleLanguage();
     await waitFor(() => expect(i18n.resolvedLanguage?.startsWith('zh')).toBe(true));
+    // 断言可见界面：工具栏切回中文
+    await waitFor(() => expect(screen.getByRole('button', { name: '新建' })).toBeTruthy());
   });
 });
