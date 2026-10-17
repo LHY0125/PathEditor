@@ -1313,10 +1313,37 @@ mod tests {
         }
     }
 
+    /// `backup_registry(None)` 走**默认目录**且不 panic。
+    ///
+    /// **两条硬要求**（Wave 3.1 收尾修复；此前该测试只是 `let _ = backup_registry(None)`）：
+    /// 1. **必须隔离**：默认目录是用户的 `~/.patheditor/backups/`，那里有 **20 份轮换上限**
+    ///    ——无隔离地跑一次就会**挤掉一份真实备份**（不只是「污染」，是**数据被静默淘汰**）。
+    ///    故经 `with_temp_backup_dir` 把 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。
+    /// 2. **必须断言**：丢弃返回值等于什么都没验证（注册表不可读时也「通过」）。
+    ///    可读时断言备份文件**落在隔离目录内**；不可读时断言不 panic 并说明原因。
     #[test]
-    fn backup_registry_default_dir_no_panic() {
-        // 验证不传参时不会 panic
-        let _ = backup_registry(None);
+    fn backup_registry_default_dir_uses_redirected_dir_without_panic() {
+        with_temp_backup_dir(|dir| {
+            let result = backup_registry(None);
+
+            match result {
+                Ok(path) => {
+                    // 真机可读注册表：备份必须落在被重定向的默认目录内。
+                    let path = std::path::PathBuf::from(&path);
+                    assert!(
+                        path.starts_with(dir),
+                        "默认目录备份必须落在隔离目录内，实为 {path:?}（隔离目录 {dir:?}）"
+                    );
+                    assert!(path.exists(), "返回的备份路径必须真实存在: {path:?}");
+                }
+                Err(e) => {
+                    // 无权限读取注册表（如 CI 无交互会话）时无法生成备份，属预期；
+                    // 关键是**不 panic**，且错误信息可读。
+                    // 注：`backup_registry` 返回 `String` 错误（F-3 尚未迁移到 `CoreError`）。
+                    assert!(!e.is_empty(), "失败路径也必须给出可读的错误信息");
+                }
+            }
+        });
     }
 
     /// #37 接线测试：`backup_registry` 写入后**确实调用了** path 轮换。
