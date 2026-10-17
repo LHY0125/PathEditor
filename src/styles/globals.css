@@ -345,17 +345,3 @@ body {
   background: var(--app-border);
   flex: 0 0 auto;
 }
-
-.dirty-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  /* 未保存指示：在强调色底上，纯白实心会与按钮文字同色而不可见。
-     改为空心环：圆心透明，显示按钮底色（与按钮背景同色，不可分辨）；
-     1.5px 的环用强调色前景色（白），环上与按钮背景形成对比，环下透出的
-     按钮底色又把白环与同色的按钮文字隔开。 */
-  background: transparent;
-  box-shadow: 0 0 0 1.5px var(--app-accent-fg);
-  margin-left: 3px;
-}

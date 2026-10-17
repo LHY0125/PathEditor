@@ -31,7 +31,6 @@ export function ToolBar(props: ToolBarProps) {
   const isAdmin = useAppStore((s) => s.isAdmin);
   const activeTab = useAppStore((s) => s.activeTab);
   const pathCapabilities = useAppStore((s) => s.pathCapabilities);
-  const isModified = useAppStore((s) => s.isModified);
   const target = targetForTab(activeTab);
   const canWrite = target === null ? false : canWriteTarget(isAdmin, pathCapabilities, target);
 
@@ -53,13 +52,10 @@ export function ToolBar(props: ToolBarProps) {
         {t('button.import')}
       </Button>
       <Button onClick={props.onExport}>{t('button.export')}</Button>
+      {/* 未保存指示由状态栏的「● 未保存」（StatusBar）承担：
+          按钮内只有强调底色与前景文字两色，任何标记都会与其中之一同色而不可辨。 */}
       <Button variant="primary" disabled={!canWrite} onClick={props.onSave}>
         {t('button.savePath')}
-        {/* H3：用 aria-hidden 而非 aria-label —— 后者会改变按钮的可访问名称，
-            使 getByRole('button', { name: '保存' }) 的精确匹配失效。 */}
-        {isModified && (
-          <span className="dirty-dot" aria-hidden="true" title={t('status.modified')} />
-        )}
       </Button>
       <ToolbarMenu
         onBrowse={props.onBrowse}
