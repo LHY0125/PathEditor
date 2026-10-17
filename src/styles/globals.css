@@ -250,12 +250,12 @@ body {
   filter: none;
 }
 
-/* 下拉菜单 */
+/* 下拉菜单
+   面板经 createPortal 挂到 document.body（见 Menu.tsx），以此绕开 .toolbar 的
+   overflow: hidden 裁切；top / left 由 JS 按触发按钮位置内联计算，此处只管外观。 */
 .menu-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 40;
+  position: fixed;
+  z-index: 1000;
   min-width: 200px;
   padding: 5px;
   border: 1px solid var(--app-border);

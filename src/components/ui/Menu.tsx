@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from './Button';
 import { MoreIcon } from './icons';
 
@@ -31,6 +41,40 @@ const ITEM_SELECTOR = 'button[role="menuitem"]:not(:disabled)';
 /** 焦点移动目标：首项 / 末项 / 下一项 / 上一项。 */
 type MoveTarget = 'first' | 'last' | 'next' | 'prev';
 
+/** 面板与触发按钮之间的间距（px）。 */
+const PANEL_GAP = 4;
+/** 面板与视口边缘之间至少保留的间距（px）。 */
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * 根据触发按钮的视口坐标与面板实际尺寸，计算 fixed 定位的 top / left。
+ * - 默认开在触发按钮下方；下方放不下且上方更高时翻转到上方；
+ * - 垂直方向夹紧在视口内；
+ * - 右对齐触发按钮右边缘，并水平夹紧在视口内。
+ */
+function computePosition(
+  rect: DOMRect,
+  panelWidth: number,
+  panelHeight: number,
+): Pick<CSSProperties, 'top' | 'left'> {
+  const spaceBelow = window.innerHeight - rect.bottom - PANEL_GAP - VIEWPORT_MARGIN;
+  const spaceAbove = rect.top - PANEL_GAP - VIEWPORT_MARGIN;
+
+  let top = rect.bottom + PANEL_GAP;
+  if (panelHeight > spaceBelow && (spaceAbove > spaceBelow || panelHeight <= spaceAbove)) {
+    // 下方放不下：上方更高（或放得下）时翻到上方
+    top = rect.top - PANEL_GAP - panelHeight;
+  }
+  top = Math.min(top, window.innerHeight - VIEWPORT_MARGIN - panelHeight);
+  top = Math.max(VIEWPORT_MARGIN, top);
+
+  let left = rect.right - panelWidth;
+  left = Math.min(left, window.innerWidth - VIEWPORT_MARGIN - panelWidth);
+  left = Math.max(VIEWPORT_MARGIN, left);
+
+  return { top, left };
+}
+
 /**
  * 无依赖下拉菜单。
  * - 点击触发按钮开合；点击外部 / Escape 关闭；关闭后焦点回到触发按钮。
@@ -44,6 +88,30 @@ export function Menu({ groups, triggerLabel, triggerAriaLabel, footer }: MenuPro
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  /** 面板 fixed 定位坐标；null 表示尚未测量（渲染在视口外，避免首帧闪烁）。 */
+  const [position, setPosition] = useState<Pick<CSSProperties, 'top' | 'left'> | null>(null);
+
+  /** 按触发按钮当前位置重新计算面板坐标（挂载后、窗口缩放、滚动时调用）。 */
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    const panel = panelRef.current;
+    if (!trigger || !panel) return;
+    setPosition(
+      computePosition(trigger.getBoundingClientRect(), panel.offsetWidth, panel.offsetHeight),
+    );
+  }, []);
+
+  // 打开后（面板已挂载）测量并定位；resize / scroll 期间持续跟随触发按钮
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, updatePosition]);
 
   /** 面板内当前可用的全部条目（DOM 顺序即视觉顺序）。 */
   const enabledItems = useCallback((): HTMLButtonElement[] => {
@@ -84,11 +152,15 @@ export function Menu({ groups, triggerLabel, triggerAriaLabel, footer }: MenuPro
     triggerRef.current?.focus();
   }, []);
 
-  // 点击外部关闭；只关面板、不抢焦点，避免打断用户在新位置的点击
+  // 点击外部关闭；只关面板、不抢焦点，避免打断用户在新位置的点击。
+  // 面板已 portal 到 document.body，不在 rootRef 子树内，故两处都要判。
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
@@ -180,28 +252,32 @@ export function Menu({ groups, triggerLabel, triggerAriaLabel, footer }: MenuPro
       >
         {triggerLabel ?? <MoreIcon />}
       </Button>
-      {open && (
-        <div
-          id={panelId}
-          role="menu"
-          data-testid="menu-panel"
-          ref={panelRef}
-          className="menu-panel glass"
-        >
-          {groups.map((group) => (
-            <div key={group.key}>
-              {group.label && <div className="menu-group-label">{group.label}</div>}
-              {group.items.map(renderItem)}
-            </div>
-          ))}
-          {footer && (
-            <>
-              <div className="menu-separator" />
-              {renderItem(footer)}
-            </>
-          )}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          // 经 portal 挂到 document.body：绕开 .toolbar { overflow: hidden } 的裁切
+          <div
+            id={panelId}
+            role="menu"
+            data-testid="menu-panel"
+            ref={panelRef}
+            className="menu-panel glass"
+            style={position ?? { top: 0, left: 0, visibility: 'hidden' }}
+          >
+            {groups.map((group) => (
+              <div key={group.key}>
+                {group.label && <div className="menu-group-label">{group.label}</div>}
+                {group.items.map(renderItem)}
+              </div>
+            ))}
+            {footer && (
+              <>
+                <div className="menu-separator" />
+                {renderItem(footer)}
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
