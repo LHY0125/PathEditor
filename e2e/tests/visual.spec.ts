@@ -50,6 +50,8 @@ test('800px 下英文工具栏同样不被裁切', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByTestId('toolbar')).toBeVisible();
+  // 前置断言：必须先确认真的是英文界面，否则后面的裁切检查测的是中文布局（假绿）。
+  await expect(page.getByTestId('toolbar')).toContainText('Save');
   expect(await toolbarClip(page)).toBeLessThanOrEqual(0);
 
   const box = await (await page.getByTestId('toolbar')).boundingBox();
