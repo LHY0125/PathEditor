@@ -244,3 +244,65 @@ body {
   box-shadow: none;
   filter: none;
 }
+
+/* 下拉菜单 */
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 200px;
+  padding: 5px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  background: var(--app-menu-bg);
+  box-shadow: var(--app-menu-shadow);
+}
+
+.menu-group-label {
+  padding: 4px 8px 2px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-fg-faint);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--app-fg);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--app-hover);
+}
+
+.menu-item:disabled {
+  color: var(--app-fg-faint);
+  cursor: not-allowed;
+}
+
+.menu-item-danger {
+  color: var(--app-danger);
+}
+
+.menu-shortcut {
+  color: var(--app-fg-faint);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--app-border);
+}
