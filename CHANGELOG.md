@@ -1,5 +1,27 @@
 # Changelog
 
+## 5.1.6（未发布）
+
+本版完成 **F-08 收口**：把散在 GUI（TypeScript）与 CLI 里的两份「保存 PATH + sidecar」编排收敛为 `core::service::save_path_with_sidecar` 单一实现（补齐写前备份与乐观并发），并清理前端 3 个运行时零引用的死码模块与 3 个孤儿 IPC 命令。同时修复了一个**既有的保存死锁**（并发校验对顺序敏感）。
+
+### 变更
+
+- **CLI 每次成功写 PATH 都会产生一份备份**（`path_backup_*.txt`，默认目录、保留最近 20 份）。此前只有显式执行 `patheditor backup` 才产生。与 `env` 侧行为对称。**本次收口不是等价迁移**：`add` / `remove` / `edit` / `move-up` / `move-down` / `clean` / `enable` / `disable` / `import` / `profile apply` 现在都会写前备份。
+- **保存 PATH 的编排统一到 core**：GUI 与 CLI 都经 `save_path_with_sidecar`（写前备份 + 乐观并发 + 顺序写 system→user + 广播 + sidecar/pending 事务）。前端 `path-session.ts` 退化为「权限预检 + 组合长度软提醒 + 文案映射」。
+- GUI 的 pending 状态由 **store 内存**改为 **core 磁盘文件**（`disabled::save_pending_path_snapshot`）：跨重启存活的语义不变，但 GUI 不再以 `isModified` 表达「快照未落盘」；改为状态栏**非阻断提示**。
+- **PathEditor 存盘会覆盖外部对 PATH 顺序的改动**。既然快照是 PATH 顺序的真相源，保存时**不再**因「外部重排了顺序」而拒绝——这是下面那项死锁修复的直接含义。外部**增删**路径仍会照常检测并拒绝。
+
+### 修复
+
+- **PATH 保存的「顺序敏感死锁」**：乐观并发校验此前**按顺序比较**期望值与当前值，而期望值来自快照合并（**顺序取自快照**）、当前值是**注册表顺序**——二者在**任何外部重排**（例如 Scoop 重写 PATH）后即不相等，导致保存**永久被拒**（存不了 → 快照永不更新 → 一直拒绝），且「重新加载后重试」也无效（重新加载走同一合并，产出同一顺序）。现改为**内容比较（多重集）**：忽略顺序、保留重复计数。**真实成员变化仍被拒绝**。
+- **`patheditor clean` 后侧车快照陈旧**：此前 `clean` 只写注册表、不提交 `disabled.json` 快照，导致「注册表已清理，但有序快照仍是旧的」，下次 `load_path_snapshot` 合并时可能把已清理条目带回。收口到单一编排后由构造修复（clean 与其它入口一样提交 sidecar）。
+
+### 说明
+
+- **CLI 侧不再做乐观并发校验**：CLI 是单次进程，每次命令重新加载快照，「期望值」恒等于「当前值」，该层校验从未因真实并发触发（只可能因顺序差异误报，后者已由多重集修复消除）。现由类型显式去除该参数；并发校验由 GUI 侧承担（期望值来自界面加载时的已保存快照）。若未来 CLI 变为批处理模式，应重新引入。
+- **删除**：前端 3 个死码模块 `src/core/{path-manager,import-export,validation}.ts`（及各自测试）——运行时零引用，且已有 Rust 对应实现；3 个孤儿 IPC 命令 `scan_conflicts` / `scan_tools` / `get_appdata_dir`（前端零调用）。core 侧的 `scan_conflicts` / `scan_tools` / `get_appdata_dir` 函数**保留**（被内部使用）。
+- 版本号未升。
+
 ## 5.1.5 (2026-10-16)
 
 本版收口 `env` 子命令在真实使用中登记的 6 条可用性 issue（#33 / #34 / #35 / #36 / #37 / #38）：修正一处错误泄漏，补齐三处文案/语义不一致，给三个破坏性写命令加上变更预览，并给 PATH 备份补上保留策略。

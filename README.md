@@ -132,15 +132,14 @@ sequenceDiagram
 
     U->>UI: 点击「保存」
     UI->>Z: savePaths()
-    Z->>IPC: invoke('backup_registry')
-    IPC->>R: backup_registry()
-    R->>Win: 读取注册表 → 写入备份文件
-    Z->>IPC: Promise.allSettled([save_system, save_user])
-    IPC->>R: save_system_paths() / save_user_paths()
-    R->>Win: RegSetValueEx()
-    Z->>IPC: invoke('broadcast_env_change')
-    IPC->>R: SendMessageTimeout(WM_SETTINGCHANGE)
-    R->>Win: 通知所有进程
+    Note over Z: 权限预检 + 组合长度软提醒（GUI 侧）
+    Z->>IPC: invoke('save_path_with_sidecar', {system, user})
+    Note over IPC,R: 唯一保存编排（core::service::save_path_with_sidecar）
+    R->>Win: 写前备份（backup_registry）
+    R->>Win: RegSetValueEx()（顺序 system → user，含 expected 并发校验）
+    R->>Win: SendMessageTimeout(WM_SETTINGCHANGE)
+    R->>Win: 提交 sidecar 快照（失败则落 pending，下次自动补写）
+    R-->>Z: ApplyOutcome {system, user, sidecar}
     Z->>UI: isModified → false, statusMessage → '保存成功'
 ```
 
@@ -154,16 +153,16 @@ sequenceDiagram
     participant Win as Windows
 
     U->>CLI: patheditor add "D:\Tools" --system
-    CLI->>Core: load_system_paths() → 旧列表
+    CLI->>Core: load_path_snapshot() → 当前条目 + 期望值
     CLI->>CLI: 执行操作 (push / splice / clean)
-    CLI->>Core: load_system_paths() → 重新读取
-    alt 注册表未修改
-        CLI->>Core: save_system_paths(new_list)
+    CLI->>Core: save_path_with_sidecar(PathHiveWrite { entries, expected })
+    Note over Core: 写前备份 + 并发校验 + 顺序写
+    alt 注册表未修改（内容一致）
         Core->>Win: RegSetValueEx()
-        CLI->>Core: broadcast_env_change()
         Core->>Win: SendMessageTimeout(WM_SETTINGCHANGE)
+        Core->>Win: 提交 sidecar 快照
         CLI-->>U: 已添加到系统 PATH
-    else 注册表已被其他进程修改
+    else 注册表已被其他进程修改（成员变化）
         CLI-->>U: 错误: 注册表已被其他进程修改
     end
 ```
@@ -288,6 +287,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 ### 安全
 
 - 保存前自动备份注册表到 `~/.patheditor/backups/`（文件名含时间戳，如 `path_backup_20260921_200437_062.txt`）；同类备份默认保留最近 20 份，可在 `~/.patheditor/config.ini` 用 `path_backup_keep = N` 覆盖。轮换只删除本工具生成的 `path_backup_*.txt`，且**仅在默认备份目录生效**（用户指定目录不轮换）
+- **CLI 的 `add` / `remove` / `edit` / `move-up` / `move-down` / `clean` / `enable` / `disable` / `import` / `profile apply` 每次成功写入 PATH 前也自动产生一份 `path_backup_*.txt`**（与 GUI 保存、与 `env` 侧写入前备份对称）
 - 环境变量写入前自动备份到同一目录（`env_backup_*.json`），支持差异预览与一键恢复；**该文件含敏感值明文**，请勿同步到云端或提交到版本库
 - PATH 长度检查（Windows 单变量上限 32767 字符）
 - 非管理员仅系统 PATH 只读，用户 PATH 仍可编辑
