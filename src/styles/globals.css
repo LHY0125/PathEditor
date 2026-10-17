@@ -1,106 +1,182 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-@theme {
-  /* 浅色主题 */
-  --color-light-bg: #ffffff;
-  --color-light-list-bg: #f8f9fa;
-  --color-light-list-alt: #e9ecef;
-  --color-light-fg: #212529;
-  --color-light-border: #dee2e6;
-  --color-light-hover: #e9ecef;
+/* ─────────────────────────────────────────────────────────────
+   语义 token 层 —— 组件只允许使用这一层的变量。
+   浅色 = 中性现代；深色 = 玻璃深色。几何层两主题完全一致。
+   ───────────────────────────────────────────────────────────── */
 
-  /* 深色主题 */
-  --color-dark-bg: #1a1a2e;
-  --color-dark-list-bg: #16213e;
-  --color-dark-list-alt: #0f3460;
-  --color-dark-fg: #e0e0e0;
-  --color-dark-border: #2a2a4a;
-  --color-dark-hover: #1a1a3e;
+:root {
+  /* 背景与表面 */
+  --app-bg: #fafafa;
+  --app-surface: #ffffff;
+  --app-surface-raised: #ffffff;
+  --app-border: #e4e4e7;
+  --app-border-strong: #d4d4d8;
 
-  /* 路径有效性颜色 */
-  --color-path-invalid: #dc3545;
-  --color-path-duplicate: #fd7e14;
-  --color-path-valid: #198754;
+  /* 文字 */
+  --app-fg: #18181b;
+  --app-fg-muted: #71717a;
+  --app-fg-faint: #a1a1aa;
+
+  /* 强调 */
+  --app-accent: #6366f1;
+  --app-accent-fg: #ffffff;
+  --app-accent-bg: #eef2ff;
+  --app-accent-text: #4f46e5;
+  --app-accent-glow: none;
+
+  /* 行 */
+  --app-row-even: #ffffff;
+  --app-row-odd: #fafafa;
+  --app-row-selected: rgba(99, 102, 241, 0.1);
+  --app-hover: #f4f4f5;
+
+  /* 语义色 */
+  --app-danger: #dc2626;
+  --app-warning: #d97706;
+  --app-disabled-fg: #a1a1aa;
+
+  /* 浮层 */
+  --app-menu-bg: #ffffff;
+  --app-menu-shadow: 0 12px 32px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+
+  /* 几何（两主题一致，不随 .dark 变化） */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --row-h: 28px;
+  --gap: 6px;
+
+  /* TODO(Wave 4.1)：以下为过渡别名 —— 对话框重做后删除。不得静默遗留。
+     引用方：dialogs/ 下 7 个文件共 14 处（NewEnvVarDialog 4、ProfileDetail 3、
+     EnvBackupPanel 2、ToolsTab 2、ProfileDialog 1、PathEditDialog 1、EditEnvVarDialog 1）。 */
+  --app-list-bg: var(--app-surface);
+  --app-list-alt: var(--app-row-odd);
+  --app-select-row: var(--app-row-selected);
 }
 
-/* 全局基础样式 */
+:root.dark {
+  --app-bg: #0d0d12;
+  --app-surface: rgb(255 255 255 / 4%);
+  --app-surface-raised: rgb(30 30 40 / 92%);
+  --app-border: rgb(255 255 255 / 9%);
+  --app-border-strong: rgb(255 255 255 / 16%);
+
+  --app-fg: #f4f4f6;
+  --app-fg-muted: #8b8b96;
+  --app-fg-faint: #63636e;
+
+  --app-accent: #7c6cff;
+  --app-accent-fg: #ffffff;
+  --app-accent-bg: rgb(124 108 255 / 16%);
+  --app-accent-text: #b3a8ff;
+  --app-accent-glow: 0 0 18px rgb(124 108 255 / 50%);
+
+  --app-row-even: transparent;
+  --app-row-odd: rgb(255 255 255 / 2%);
+  --app-row-selected: rgb(124 108 255 / 18%);
+  --app-hover: rgb(255 255 255 / 6%);
+
+  --app-danger: #ff6b6b;
+  --app-warning: #ffb454;
+  --app-disabled-fg: #63636e;
+
+  --app-menu-bg: rgb(30 30 40 / 92%);
+  --app-menu-shadow: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px rgb(255 255 255 / 4%);
+}
+
+/* ─────────────────────────── 全局基础 ─────────────────────────── */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--app-bg);
+  color: var(--app-fg);
   overflow: hidden;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* 浅色模式（默认） */
-:root {
-  --app-bg: var(--color-light-bg);
-  --app-list-bg: var(--color-light-list-bg);
-  --app-list-alt: var(--color-light-list-alt);
-  --app-fg: var(--color-light-fg);
-  --app-border: var(--color-light-border);
-  --app-hover: var(--color-light-hover);
-  --app-select-row: rgba(59, 130, 246, 0.18);
+:root.dark body {
+  background: linear-gradient(160deg, #15151d, #0d0d12);
 }
 
-/* 深色模式 */
-:root.dark {
-  --app-bg: var(--color-dark-bg);
-  --app-list-bg: var(--color-dark-list-bg);
-  --app-list-alt: var(--color-dark-list-alt);
-  --app-fg: var(--color-dark-fg);
-  --app-border: var(--color-dark-border);
-  --app-hover: var(--color-dark-hover);
-  --app-select-row: rgba(96, 165, 250, 0.35);
-}
-
-/* 滚动条样式 */
+/* 滚动条 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--app-list-bg);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+  background: var(--app-border-strong);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: var(--app-fg-faint);
+  background-clip: padding-box;
 }
 
-/* Tab 选中状态 */
+/* ─────────────────────────── 工具类 ─────────────────────────── */
+
+/* 主界面 Tab（对话框仍用 .tab-active，勿改其规则） */
+.tab-pill {
+  border-radius: var(--radius);
+  padding: 4px 12px;
+  color: var(--app-fg-muted);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.tab-pill:hover {
+  background: var(--app-hover);
+  color: var(--app-fg);
+}
+
+.tab-pill[data-active='true'] {
+  background: var(--app-accent-bg);
+  color: var(--app-accent-text);
+  font-weight: 500;
+}
+
+/* 保留：对话框 EnvBackupPanel.tsx:61 依赖。
+   有意偏离（H5）：色值由硬编码 #3b82f6 改为 var(--app-accent)。
+   结构（border-bottom: 2px）不变，仅色值跟随主题。
+   理由：硬编码色在深色玻璃主题下与 --app-accent(#7c6cff) 不协调。 */
 .tab-active {
-  border-bottom: 2px solid #3b82f6;
-  color: #3b82f6;
+  border-bottom: 2px solid var(--app-accent);
+  color: var(--app-accent);
 }
 
-/* 斑马纹行 */
-.row-even {
-  background-color: var(--app-list-bg);
+/* 深色浮层毛玻璃 */
+.glass {
+  backdrop-filter: blur(14px);
 }
 
-.row-odd {
-  background-color: var(--app-list-alt);
-}
-
-/* 路径无效 - 红色文字 */
-.text-invalid {
-  color: var(--color-path-invalid);
-}
-
-/* 路径重复 - 橙色文字 */
-.text-duplicate {
-  color: var(--color-path-duplicate);
-}
-
-/* 禁用按钮 */
-.btn-disabled {
-  opacity: 0.5;
-  pointer-events: none;
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
