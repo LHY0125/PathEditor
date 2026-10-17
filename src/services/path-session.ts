@@ -3,7 +3,7 @@ import appConfig from '@/config/default.json';
 import type { PathEntry } from '@/core/path-entry';
 import { canWriteTarget, type PathCapabilities } from '@/core/path-capabilities';
 import { TargetType } from '@/core/undo-redo';
-import { backend } from '@/services/backend';
+import { backend, type ApplyOutcome } from '@/services/backend';
 
 export type SaveResult =
   | { kind: 'success' }
@@ -38,11 +38,6 @@ export interface SaveSnapshotOutcome {
   statusMessage: string;
 }
 
-type HiveSaveResult =
-  | { status: 'unchanged' }
-  | { status: 'success' }
-  | { status: 'failure'; error: string };
-
 export function arraysEqual(a: readonly PathEntry[], b: readonly PathEntry[]): boolean {
   return (
     a.length === b.length && a.every((v, i) => v.path === b[i].path && v.enabled === b[i].enabled)
@@ -62,23 +57,27 @@ export async function loadPathSnapshot(): Promise<LoadSnapshot> {
   };
 }
 
-/** 按 hive 计算并提交保存计划；禁用状态只在注册表成功后持久化。 */
+/** 按 hive 计算并提交保存计划；禁用状态只在注册表成功后持久化。
+ *
+ * **Wave 3.0-B（F-08 收口）**：编排已下沉到 `core::service::save_path_with_sidecar`
+ * （经 `backend.savePathWithSidecar`）。本函数**只保留三件 core 表达不了的事**：
+ * 1. 权限预检（`kind: 'blocked'`，来自 `canWriteTarget`）；
+ * 2. 组合长度软提醒（`kind: 'warning'`，可 `force` 放行）；
+ * 3. `ApplyOutcome` → `SaveSnapshotOutcome` 的文案映射。
+ *
+ * 已**删除**（改由 core 承担）：自理写前备份、两 hive 并行写、store 内 pending。
+ * 签名与返回类型**保持不变**，`app-store.ts` 调用点无需改动。
+ *
+ * **pending 语义变化（D6）**：pending 统一为 core 的**磁盘文件**机制
+ * （`disabled::save_pending_path_snapshot` + `retry_pending_path_state`），
+ * GUI store 不再携带 `pendingSys` / `pendingUser` —— 故本函数恒返回 `null`。
+ */
 export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<SaveSnapshotOutcome> {
-  const {
-    sysPaths,
-    userPaths,
-    savedSys,
-    savedUser,
-    pendingSys,
-    pendingUser,
-    isAdmin,
-    capabilities,
-    force,
-  } = request;
+  const { sysPaths, userPaths, savedSys, savedUser, isAdmin, capabilities, force } = request;
   const sysChanged = !arraysEqual(sysPaths, savedSys);
   const userChanged = !arraysEqual(userPaths, savedUser);
 
-  if (!sysChanged && !userChanged && !pendingSys && !pendingUser) {
+  if (!sysChanged && !userChanged) {
     return {
       result: { kind: 'success' },
       savedSys,
@@ -89,6 +88,7 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
     };
   }
 
+  // ── 1. 权限预检（core 表达不了：依赖运行时的 PathCapabilities）──
   const canWriteSys = canWriteTarget(isAdmin, capabilities, TargetType.SYSTEM);
   const canWriteUser = canWriteTarget(isAdmin, capabilities, TargetType.USER);
   const permissionErrors: string[] = [];
@@ -100,107 +100,92 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
       result: { kind: 'failure', message },
       savedSys,
       savedUser,
-      pendingSys,
-      pendingUser,
+      pendingSys: null,
+      pendingUser: null,
       statusMessage: message,
     };
   }
 
+  // ── 2. 组合长度软提醒（core 表达不了：比 Windows 更严的应用层约束，K1）──
   const enabledSys = sysPaths.filter((entry) => entry.enabled).map((entry) => entry.path);
   const enabledUser = userPaths.filter((entry) => entry.enabled).map((entry) => entry.path);
   const sysJoined = enabledSys.join(';');
   const userJoined = enabledUser.join(';');
-  const { maxSystemLength, maxUserLength, maxCombinedLength } = appConfig.path;
+  const { maxCombinedLength } = appConfig.path;
   const lengthExceeded =
-    (sysChanged && sysJoined.length > maxSystemLength) ||
-    (userChanged && userJoined.length > maxUserLength) ||
-    ((sysChanged || userChanged) && (sysJoined + userJoined).length > maxCombinedLength);
+    (sysChanged || userChanged) && (sysJoined + userJoined).length > maxCombinedLength;
   if (!force && lengthExceeded) {
     return {
       result: { kind: 'warning', reason: 'lengthExceeded' },
       savedSys,
       savedUser,
-      pendingSys,
-      pendingUser,
+      pendingSys: null,
+      pendingUser: null,
       statusMessage: i18n.t('status.saveWarningLongPaths'),
     };
   }
 
-  let backupFailed = false;
-  if (sysChanged || userChanged) {
-    await backend.backupRegistry().catch(() => {
-      backupFailed = true;
-    });
-  }
-
+  // ── 3. 交给 core 唯一编排（备份 + 并发 + 顺序写 + 广播 + sidecar）──
+  // `expected` 取上次已保存的**启用**路径（乐观并发校验）。
   const origSys = savedSys.filter((entry) => entry.enabled).map((entry) => entry.path);
   const origUser = savedUser.filter((entry) => entry.enabled).map((entry) => entry.path);
-  const [sysResult, userResult]: [HiveSaveResult, HiveSaveResult] = await Promise.all([
-    sysChanged
-      ? backend
-          .saveSystemPaths(enabledSys, origSys)
-          .then<HiveSaveResult>(() => ({ status: 'success' }))
-          .catch<HiveSaveResult>((error) => ({ status: 'failure', error: String(error) }))
-      : Promise.resolve<HiveSaveResult>({ status: 'unchanged' }),
-    userChanged
-      ? backend
-          .saveUserPaths(enabledUser, origUser)
-          .then<HiveSaveResult>(() => ({ status: 'success' }))
-          .catch<HiveSaveResult>((error) => ({ status: 'failure', error: String(error) }))
-      : Promise.resolve<HiveSaveResult>({ status: 'unchanged' }),
-  ]);
 
-  const sysTouched = sysResult.status === 'success';
-  const userTouched = userResult.status === 'success';
-  const nextSavedSys = sysTouched ? [...sysPaths] : savedSys;
-  const nextSavedUser = userTouched ? [...userPaths] : savedUser;
-
-  if (sysTouched || userTouched) {
-    backend.broadcastEnvChange().catch(() => {});
+  let outcome;
+  try {
+    outcome = await backend.savePathWithSidecar({
+      system: sysChanged ? { entries: sysPaths, expected: origSys } : null,
+      user: userChanged ? { entries: userPaths, expected: origUser } : null,
+    });
+  } catch (error) {
+    return {
+      result: { kind: 'failure', message: String(error) },
+      savedSys,
+      savedUser,
+      pendingSys: null,
+      pendingUser: null,
+      statusMessage: i18n.t('status.saveFailure', { details: String(error) }),
+    };
   }
 
-  // 待补写的元数据必须绑定上次已提交的注册表快照；当前草稿失败时不能覆盖它。
-  let nextPendingSys = sysTouched ? [...sysPaths] : pendingSys ? [...pendingSys] : null;
-  let nextPendingUser = userTouched ? [...userPaths] : pendingUser ? [...pendingUser] : null;
-  let disabledStateError = '';
-  if (nextPendingSys || nextPendingUser) {
-    try {
-      await backend.savePathSnapshot(nextPendingSys, nextPendingUser);
-      nextPendingSys = null;
-      nextPendingUser = null;
-    } catch (error) {
-      disabledStateError = String(error);
-    }
-  }
-
+  // ── 4. 映射 ApplyOutcome → SaveSnapshotOutcome ──
+  //
+  // 两类问题分开处理（复审裁断 ④）：
+  // - **hive 失败**（注册表未写入）→ 进 `errors`，把结果降级为 failure/partial；
+  // - **sidecar 异常**（注册表**已写入**，仅快照未落盘）→ **非阻断提示**：
+  //   不降级结果，只改 `statusMessage`。core 会在下次命令时经
+  //   `retry_pending_path_state` 自动补写（D6）。静默持久化失败是回归，故必须提示。
   const errors: string[] = [];
-  if (sysResult.status === 'failure') {
-    errors.push(i18n.t('status.saveSystemFailed', { error: sysResult.error }));
+  const sysApplied = hiveApplied(outcome.system);
+  const userApplied = hiveApplied(outcome.user);
+  if (hiveFailure(outcome.system)) {
+    errors.push(i18n.t('status.saveSystemFailed', { error: hiveFailure(outcome.system)! }));
   }
-  if (userResult.status === 'failure') {
-    errors.push(i18n.t('status.saveUserFailed', { error: userResult.error }));
+  if (hiveFailure(outcome.user)) {
+    errors.push(i18n.t('status.saveUserFailed', { error: hiveFailure(outcome.user)! }));
   }
-  if (disabledStateError) {
-    errors.push(`${i18n.t('status.disabledStateFailed')}: ${disabledStateError}`);
-  }
+  const sidecarProblem = sidecarMessage(outcome.sidecar);
+
+  const nextSavedSys = sysApplied ? [...sysPaths] : savedSys;
+  const nextSavedUser = userApplied ? [...userPaths] : savedUser;
 
   if (errors.length > 0) {
-    const partial =
-      sysTouched ||
-      userTouched ||
-      Boolean(pendingSys) ||
-      Boolean(pendingUser) ||
-      Boolean(disabledStateError);
+    const partial = sysApplied || userApplied;
     const message = i18n.t('status.saveFailure', { details: errors.join('; ') });
     return {
       result: partial ? { kind: 'partial', message } : { kind: 'failure', message },
       savedSys: nextSavedSys,
       savedUser: nextSavedUser,
-      pendingSys: nextPendingSys,
-      pendingUser: nextPendingUser,
+      pendingSys: null,
+      pendingUser: null,
       statusMessage: message,
     };
   }
+
+  // 注册表侧全部成功。若 sidecar 异常，结果仍是 success，但状态栏**必须**提示
+  // （不能静默：用户应知道「注册表已生效、快照未落盘，下次自动补写」）。
+  const statusMessage = sidecarProblem
+    ? `${i18n.t('status.saved')} — ${i18n.t('status.disabledStateFailed')}: ${sidecarProblem}`
+    : i18n.t('status.saved');
 
   return {
     result: { kind: 'success' },
@@ -208,6 +193,23 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
     savedUser: nextSavedUser,
     pendingSys: null,
     pendingUser: null,
-    statusMessage: backupFailed ? i18n.t('status.saved_without_backup') : i18n.t('status.saved'),
+    statusMessage,
   };
+}
+
+/** 该 hive 是否成功写入（`ApplyOutcome` 的 `applied`）。 */
+function hiveApplied(outcome: ApplyOutcome['system']): boolean {
+  return outcome === 'applied';
+}
+
+/** 该 hive 的失败文案（非 `failed` 时返回 `null`）。 */
+function hiveFailure(outcome: ApplyOutcome['system']): string | null {
+  return typeof outcome === 'object' && 'failed' in outcome ? outcome.failed.message : null;
+}
+
+/** sidecar 异常文案（`saved` 时返回 `null`）。 */
+function sidecarMessage(outcome: ApplyOutcome['sidecar']): string | null {
+  if (outcome === 'saved') return null;
+  if ('pending' in outcome) return outcome.pending.message;
+  return outcome.failed.message;
 }

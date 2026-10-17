@@ -1,4 +1,5 @@
 use path_editor_core as core;
+use path_editor_core::service::{self, HiveOutcome, PathHiveWrite, SidecarOutcome};
 
 pub(crate) fn exit_err(msg: &str) -> ! {
     eprintln!("错误: {msg}");
@@ -43,59 +44,86 @@ pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
     }
 }
 
-type SaveFn = fn(Vec<String>) -> Result<(), String>;
-
-/// 乐观并发校验（读-比-写）+ 注册表写入（保守方案：保留在 CLI 层）。
+/// 把「完整有序条目」交给 core 的唯一保存编排，并按结果决定退出行为。
 ///
-/// F-08 的完整终态是把读-比-写下沉到 `core::service::apply_path_snapshot`
-/// 内部；本任务为避免大重构，先让服务层提供编排原语（注册表写入、广播、
-/// sidecar/pending 事务），校验留在 CLI。语义合并延后到 Wave 2 收口。
-pub(crate) fn verify_and_save(target: &str, original: &[String], new_list: Vec<String>) {
-    let reload = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
-    } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
+/// **Wave 3.0-B（D8/N2/N3）**：CLI 的 6 个写 PATH 入口全部经此函数收口到
+/// `core::service::save_path_with_sidecar`。此前各入口自行「读-比-写 + 备份 +
+/// sidecar + 广播」，与 GUI 侧构成两份分叉编排；现统一为单次 core 调用。
+///
+/// 参数：
+/// - `system` / `user`：`Some(entries)` 表示写该 hive，`None` 表示跳过。
+///
+/// **不传 `expected`（Wave 3.1，Task 3）**：CLI 是**单次进程**——每次命令重新
+/// `load_path_snapshot()`，若把刚读到的启用路径当期望值，则 `expected == current`
+/// **恒成立**，校验在 CLI 侧**从不因真实并发触发**（只可能因顺序差异误报，后者已由
+/// `check_expected` 的多重集修复消除）。故此处直接传 `expected: None`（跳过校验），
+/// **并由类型消除传 `Some` 的可能**（签名里没有该参数）。
+///
+/// ⚠️ **何时应改回**：若 CLI 未来变为「读一次、多次写」的批处理模式（例如一个进程内
+/// 连续执行多条写命令），就出现了真实的「加载→保存」窗口，届时应把 `expected` 加回
+/// 签名并传入。GUI 侧的并发校验（`expected` 来自界面加载时的 `_savedSys`）不受影响。
+///
+/// 退出行为（与 Wave 1 一致）：
+/// - 任一 hive `Failed` → `exit_err`（退出码 **1**；**不**用 3，3 专属 `env --revision`）；
+/// - sidecar 为 `Pending` / `Failed` → 打印「注册表已写入」提示并 `exit_err`；
+/// - 全部成功 → 静默返回（广播已由 core 内部完成）。
+pub(crate) fn save_path_write(
+    system: Option<Vec<core::PathEntry>>,
+    user: Option<Vec<core::PathEntry>>,
+) {
+    let to_write = |entries: Vec<core::PathEntry>| PathHiveWrite {
+        entries,
+        expected: None,
     };
-    if reload != original {
-        exit_err("注册表已被其他进程修改，请重新执行操作");
+    let outcome = service::save_path_with_sidecar(system.map(to_write), user.map(to_write))
+        .unwrap_or_else(|e| exit_core_error(&e));
+
+    // 逐 hive 报告失败（best-effort 多 hive：一个失败不掩盖另一个的成功）。
+    for (label, hive_outcome) in [("系统", &outcome.system), ("用户", &outcome.user)] {
+        if let HiveOutcome::Failed(e) = hive_outcome {
+            exit_err(&format!("{} PATH 写入失败: {}", label, e.message));
+        }
     }
-    let save: SaveFn = if target == "system" {
-        core::registry::save_system_paths
-    } else {
-        core::registry::save_user_paths
-    };
-    save(new_list).unwrap_or_else(|e| exit_err(&e));
+
+    match outcome.sidecar {
+        SidecarOutcome::Saved => {}
+        SidecarOutcome::Pending(e) => exit_err(&sidecar_failure_message(&e.message, true)),
+        SidecarOutcome::Failed(e) => exit_err(&format!(
+            "{}\n（待补写状态记录失败，请手工核对）",
+            sidecar_failure_message(&e.message, false)
+        )),
+    }
 }
 
+/// 加载当前快照 → 对目标 hive 施加 `f` → 经 [`save_path_write`] 保存。
+///
+/// Wave 3.0-B（N2）：收口到 core 单一编排；广播、备份、sidecar 提交全部由 core 承担。
+/// **Wave 3.1**：不再计算 `expected`（CLI 单次进程无并发窗口，见 [`save_path_write`]）。
 pub(crate) fn load_and_save(
     system: bool,
     f: impl FnOnce(Vec<core::PathEntry>) -> Vec<core::PathEntry>,
 ) {
     let target = ensure_single_target(system, false);
-    flush_pending_snapshot();
     let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
 
     if target == "system" {
-        let original = enabled_paths(&snapshot.system);
         let entries = f(snapshot.system);
-        verify_and_save(target, &original, enabled_paths(&entries));
-        persist_snapshot(Some(entries), None);
+        save_path_write(Some(entries), None);
     } else {
-        let original = enabled_paths(&snapshot.user);
         let entries = f(snapshot.user);
-        verify_and_save(target, &original, enabled_paths(&entries));
-        persist_snapshot(None, Some(entries));
+        save_path_write(None, Some(entries));
     }
 }
 
-/// 加载、检查索引、操作、验证、保存的通用模式。索引基于完整快照（含禁用项）。
+/// 加载、检查索引、操作、保存的通用模式。索引基于完整快照（含禁用项）。
+///
+/// 与 [`load_and_save`] 同属 Wave 3.0-B 收口：单次 core 调用，广播下沉 core。
 pub(crate) fn load_operate_save(
     system: bool,
     index: usize,
     operate: impl FnOnce(Vec<core::PathEntry>, usize) -> (Vec<core::PathEntry>, String),
 ) {
     let target = ensure_single_target(system, false);
-    flush_pending_snapshot();
     let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     let entries = if target == "system" {
         snapshot.system
@@ -106,25 +134,14 @@ pub(crate) fn load_operate_save(
         exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", entries.len()));
     }
 
-    let original = enabled_paths(&entries);
     let (new_entries, message) = operate(entries, index);
-    verify_and_save(target, &original, enabled_paths(&new_entries));
     if target == "system" {
-        persist_snapshot(Some(new_entries), None);
+        save_path_write(Some(new_entries), None);
     } else {
-        persist_snapshot(None, Some(new_entries));
+        save_path_write(None, Some(new_entries));
     }
 
     println!("{message}");
-    core::system::broadcast_env_change();
-}
-
-pub(crate) fn enabled_paths(entries: &[core::PathEntry]) -> Vec<String> {
-    entries
-        .iter()
-        .filter(|entry| entry.enabled)
-        .map(|entry| entry.path.clone())
-        .collect()
 }
 
 #[allow(dead_code)] // 兼容后续 CLI 调试/导出使用；生产路径统一保存完整快照。
@@ -149,51 +166,6 @@ pub(crate) fn sidecar_failure_message(err: &str, pending_ok: bool) -> String {
         format!(
             "注册表已写入，但快照保存失败: {err}\n且待补写状态记录失败，注册表与快照可能不一致，请手工核对"
         )
-    }
-}
-
-/// 注册表写入成功后提交完整有序快照，保持两个存储的一致性边界。
-///
-/// **保留同名同签名，函数体转调 `core::service::commit_sidecar_snapshot`**
-/// （W2-N3 推荐做法：6 个外部调用点 + 4 个内部调用点零改动）。
-/// pending 落盘、防御性清除等事务语义全部由服务层承担（F-08 迁移）。
-///
-/// 失败时不丢状态：服务层把待补写内容落到 pending 文件并按
-/// `SidecarOutcome::Pending` / `Failed` 诚实报告；本函数据此映射退出码 1
-/// 与 stderr 文案（策略层）。
-pub(crate) fn persist_snapshot(
-    system: Option<Vec<core::PathEntry>>,
-    user: Option<Vec<core::PathEntry>>,
-) {
-    match core::service::commit_sidecar_snapshot(system, user) {
-        Ok(outcome) => match outcome.sidecar {
-            core::service::SidecarOutcome::Saved => {}
-            core::service::SidecarOutcome::Pending(e) => {
-                exit_err(&sidecar_failure_message(&e.message, true))
-            }
-            core::service::SidecarOutcome::Failed(e) => exit_err(&format!(
-                "{}\n（待补写状态记录失败，请手工核对）",
-                sidecar_failure_message(&e.message, false)
-            )),
-        },
-        Err(e) => exit_err(&e.message),
-    }
-}
-
-/// 若存在上次未落盘的快照，先补写；成功即清除待补写状态。
-///
-/// **补写事务已下沉到 `core::service::retry_pending_path_state`（sidecar-only，
-/// 不触碰注册表）**；本函数只保留 CLI 策略层语义（W2-N1）：把服务的 `Err`
-/// 映射为 `eprintln!` 警告、不阻断当前命令——best-effort 行为与 Wave 1 一致。
-///
-/// **所有 PATH 写命令入口都必须先调用本函数**，否则陈旧 pending 会在后续任一
-/// flush 时把刚写入的注册表与 sidecar 双双覆盖回旧状态。现有调用点：
-/// `load_and_save` / `load_operate_save`（runtime.rs）、`cmd_import`
-/// （import_export.rs）、`profile_apply`（profile_ops.rs）、`cmd_toggle`
-/// （main.rs）。新增 PATH 写命令时必须同样在开头先调用本函数。
-pub(crate) fn flush_pending_snapshot() {
-    if let Err(e) = core::service::retry_pending_path_state() {
-        eprintln!("警告: 待补写快照仍未能落盘: {}", e.message);
     }
 }
 

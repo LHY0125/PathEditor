@@ -12,8 +12,6 @@
     "dir": ""
   },
   "path": {
-    "maxSystemLength": 32767,
-    "maxUserLength": 32767,
     "maxCombinedLength": 32767
   }
 }

@@ -151,10 +151,9 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
             user: [{ path: 'C:\\\\Users\\\\me\\\\AppData', enabled: true }]
           };
           case 'load_disabled_state': return [[], []];
-          case 'save_system_paths': return undefined;
-          case 'save_user_paths': return undefined;
           case 'save_disabled_state': return undefined;
           case 'save_path_snapshot': return undefined;
+          case 'save_path_with_sidecar': return { system: 'applied', user: 'applied', sidecar: 'saved' };
           case 'backup_registry': return 'C:\\\\backup\\\\path.txt';
           case 'broadcast_env_change': return undefined;
           case 'validate_path': return true;
@@ -163,9 +162,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'import_file': return [[], []];
           case 'export_path_entries': return '';
           case 'clean_path_entries': return [args?.entries ?? [], []];
-          case 'get_appdata_dir': return 'C:\\\\appdata';
-          case 'scan_conflicts': return [];
-          case 'scan_tools': return [];
           case 'scan_paths': return { conflicts: [], tools: [] };
           case 'list_profiles': return [];
           case 'save_profile': return undefined;

@@ -87,6 +87,97 @@ function parsePathSnapshot(value: unknown): PathSnapshot {
   };
 }
 
+/**
+ * 单个 hive 的写入请求（对应 core 的 `PathHiveWrite`）。
+ *
+ * - `entries`：待写入的完整条目（含 `enabled`）；
+ * - `expected`：乐观并发的期望当前值（**启用**路径）；`null` = 跳过校验。
+ */
+export interface PathEntryWrite {
+  entries: PathEntry[];
+  expected: string[] | null;
+}
+
+/** 单个 hive 的应用结果（对应 core 的 `HiveOutcome`）。 */
+export type HiveOutcome =
+  | 'applied'
+  | 'skipped'
+  | { failed: { code: ErrorCode; operation: string; message: string } };
+
+/** sidecar 快照的落盘结果（对应 core 的 `SidecarOutcome`）。 */
+export type SidecarOutcome =
+  | 'saved'
+  | { pending: { code: ErrorCode; operation: string; message: string } }
+  | { failed: { code: ErrorCode; operation: string; message: string } };
+
+/** 一次 PATH 应用（注册表 + sidecar）的整体结果（对应 core 的 `ApplyOutcome`）。 */
+export interface ApplyOutcome {
+  system: HiveOutcome;
+  user: HiveOutcome;
+  sidecar: SidecarOutcome;
+}
+
+/** 校验单个 hive 结果（`'applied' | 'skipped' | { failed }`）。 */
+function parseHiveOutcome(value: unknown, label: string): HiveOutcome {
+  if (value === 'applied' || value === 'skipped') return value;
+  if (isRecord(value) && 'failed' in value) {
+    const f = value.failed;
+    if (!isRecord(f) || typeof f.code !== 'string' || typeof f.message !== 'string') {
+      throw new Error(`${label} 的 failed 形状无效`);
+    }
+    return {
+      failed: {
+        code: f.code as ErrorCode,
+        operation: typeof f.operation === 'string' ? f.operation : '',
+        message: f.message,
+      },
+    };
+  }
+  throw new Error(`${label} 返回了无效的 hive 结果契约`);
+}
+
+/** 校验 sidecar 结果（`'saved' | { pending } | { failed }`）。 */
+function parseSidecarOutcome(value: unknown): SidecarOutcome {
+  if (value === 'saved') return value;
+  if (isRecord(value) && 'pending' in value) {
+    const p = value.pending;
+    if (!isRecord(p) || typeof p.code !== 'string' || typeof p.message !== 'string') {
+      throw new Error('sidecar.pending 形状无效');
+    }
+    return {
+      pending: {
+        code: p.code as ErrorCode,
+        operation: typeof p.operation === 'string' ? p.operation : '',
+        message: p.message,
+      },
+    };
+  }
+  if (isRecord(value) && 'failed' in value) {
+    const f = value.failed;
+    if (!isRecord(f) || typeof f.code !== 'string' || typeof f.message !== 'string') {
+      throw new Error('sidecar.failed 形状无效');
+    }
+    return {
+      failed: {
+        code: f.code as ErrorCode,
+        operation: typeof f.operation === 'string' ? f.operation : '',
+        message: f.message,
+      },
+    };
+  }
+  throw new Error('save_path_with_sidecar 返回了无效的 sidecar 契约');
+}
+
+/** 运行时校验 `save_path_with_sidecar` 的完整返回形状。 */
+function parseApplyOutcome(value: unknown): ApplyOutcome {
+  if (!isRecord(value)) throw new Error('save_path_with_sidecar 返回了无效的跨层契约');
+  return {
+    system: parseHiveOutcome(value.system, 'save_path_with_sidecar.system'),
+    user: parseHiveOutcome(value.user, 'save_path_with_sidecar.user'),
+    sidecar: parseSidecarOutcome(value.sidecar),
+  };
+}
+
 function parsePathCapabilities(value: unknown): PathCapabilities {
   if (
     !isRecord(value) ||
@@ -395,14 +486,22 @@ export const backend = {
       parseStringArray(result[1], 'load_disabled_state.user'),
     ] as [string[], string[]];
   },
-  saveSystemPaths: (paths: string[], original: string[]) =>
-    invoke<void>('save_system_paths', { paths, original }),
-  saveUserPaths: (paths: string[], original: string[]) =>
-    invoke<void>('save_user_paths', { paths, original }),
   saveDisabledState: (system: string[], user: string[]) =>
     invoke<void>('save_disabled_state', { system, user }),
   savePathSnapshot: (system: PathEntry[] | null, user: PathEntry[] | null) =>
     invoke<void>('save_path_snapshot', { system, user }),
+  /**
+   * 唯一的「保存 PATH + sidecar」编排入口（Wave 3.0-B，F-08 收口）。
+   *
+   * core 侧负责：写前备份、乐观并发校验（`expected`）、顺序写（system→user）、
+   * 广播、sidecar/pending 事务。GUI 只传数据并映射结果。
+   *
+   * @returns 经 `parseApplyOutcome` 运行时校验的 `ApplyOutcome`。
+   */
+  savePathWithSidecar: async (request: {
+    system: PathEntryWrite | null;
+    user: PathEntryWrite | null;
+  }) => parseApplyOutcome(await invoke<unknown>('save_path_with_sidecar', request)),
   checkAdmin: () => invoke<boolean>('check_admin'),
   getPathCapabilities: async () =>
     parsePathCapabilities(await invoke<unknown>('get_path_capabilities')),

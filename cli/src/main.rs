@@ -13,8 +13,8 @@ use profile_ops::{
     profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
 };
 use runtime::{
-    ensure_single_target, exit_err, exit_persist_error, flush_pending_snapshot, load_and_save,
-    load_operate_save, persist_snapshot, verify_and_save,
+    ensure_single_target, exit_err, exit_persist_error, load_and_save, load_operate_save,
+    save_path_write,
 };
 use scan_ops::{cmd_check_admin, cmd_conflicts, cmd_scan};
 
@@ -365,7 +365,7 @@ fn cmd_add(path: String, system: bool, user: bool) {
         "用户"
     };
     println!("已添加到{} PATH: {path}", label);
-    core::system::broadcast_env_change();
+    // 广播已由 core（save_path_with_sidecar_io）完成。
 }
 
 fn cmd_remove(index: usize, system: bool) {
@@ -404,7 +404,7 @@ fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
     });
     let dir = if up { "上移" } else { "下移" };
     println!("{dir} {steps} 格完成");
-    core::system::broadcast_env_change();
+    // 广播已由 core 完成。
 }
 
 fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
@@ -421,10 +421,7 @@ fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
     if clean_usr {
         clean_one("user", dry_run, json_out);
     }
-
-    if !dry_run && !json_out {
-        core::system::broadcast_env_change();
-    }
+    // 广播已由 core 完成（各 hive 写成功时各自广播）；dry-run/json 不写，故不广播。
 }
 
 fn clean_one(target: &str, dry_run: bool, json_out: bool) {
@@ -456,7 +453,20 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
         }
     } else {
         let kept_count = kept.len();
-        verify_and_save(target, &list, kept);
+        // N9：`kept` 是 `clean_paths` 输出的**启用**路径（`Vec<String>`），
+        // 构造 `PathEntry` 时只能落成 `enabled: true`。这是等价的——输入本就是
+        // 「当前启用路径」，清理不涉及禁用项（禁用项在 `disabled.json` 快照里）。
+        let entries: Vec<core::PathEntry> = kept
+            .iter()
+            .map(|p| core::PathEntry {
+                path: p.clone(),
+                enabled: true,
+            })
+            .collect();
+        // D14（行为变化）：收口到 `save_path_write` 后**顺带提交 sidecar 快照**——
+        // 此前 `clean` 只写注册表、不落快照，导致 `disabled.json` 陈旧（已修）。
+        // Wave 3.1：不传 expected（CLI 无并发窗口，见 `save_path_write`）。
+        save_path_write(Some(entries), None);
         println!(
             "{label} PATH 清理完成：移除 {} 条，保留 {} 条",
             removed.len(),
@@ -472,7 +482,6 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
 
 fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
     let target = ensure_single_target(system, user);
-    flush_pending_snapshot();
     let mut snapshot =
         core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
     let entries = if target == "system" {
@@ -484,27 +493,16 @@ fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
         exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", entries.len()));
     }
 
-    let original: Vec<String> = entries
-        .iter()
-        .filter(|entry| entry.enabled)
-        .map(|entry| entry.path.clone())
-        .collect();
+    // Wave 3.1：不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
     entries[index].enabled = enable;
-
-    let new_list: Vec<String> = entries
-        .iter()
-        .filter(|entry| entry.enabled)
-        .map(|entry| entry.path.clone())
-        .collect();
-    verify_and_save(target, &original, new_list);
-
     let path = entries[index].path.clone();
+
+    // 收口到 core 单一编排（含备份/sidecar/广播）。
     if target == "system" {
-        persist_snapshot(Some(snapshot.system), None);
+        save_path_write(Some(snapshot.system), None);
     } else {
-        persist_snapshot(None, Some(snapshot.user));
+        save_path_write(None, Some(snapshot.user));
     }
-    core::system::broadcast_env_change();
     let action = if enable { "启用" } else { "禁用" };
     println!("已{action}: {path}");
 }

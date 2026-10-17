@@ -59,7 +59,8 @@
 - `core/src/registry/env_var.rs`：`update_env_var` / `create_env_var` /
   `delete_env_var` / `update_env_var_force` / `delete_env_var_force` 的
   公开 API 层（`*_in_store` 注入核心不含广播）。
-- `core/src/service.rs:207`：`save_path_with_sidecar` 任一 hive 写成功后广播。
+- `core/src/service.rs`：`save_path_with_sidecar` 任一 hive 写成功后广播
+  （符号名为准；行号随重构易漂移，此条曾在 2026-10-17 Wave 3.0-B 校正）。
 
 要按 brief 的替身方案断言「成功路径调用广播、失败/冲突路径不调用」，
 需要把广播抽成可注入端口（trait 或闭包参数）后，用记录式替身验证

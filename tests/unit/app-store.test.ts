@@ -250,21 +250,31 @@ describe('savePaths', () => {
   });
 
   it('保存成功', async () => {
-    mockedInvoke.mockResolvedValue(undefined);
+    // Wave 3.0-B：单次 `save_path_with_sidecar` 调用（取代旧的
+    // backup_registry + save_*_paths + save_path_snapshot 序列）。
+    mockedInvoke.mockResolvedValueOnce({
+      system: 'applied',
+      user: 'applied',
+      sidecar: 'saved',
+    });
+
     const result = await useAppStore.getState().savePaths();
     expect(result).toEqual({ kind: 'success' });
     const s = useAppStore.getState();
     expect(s.isSaving).toBe(false);
     expect(s.isModified).toBe(false);
     expect(s.statusMessage).toBe('保存成功');
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(mockedInvoke.mock.calls[0][0]).toBe('save_path_with_sidecar');
   });
 
   it('部分失败时报告具体 hive 并保留草稿', async () => {
-    mockedInvoke
-      .mockResolvedValueOnce(undefined) // backup_registry
-      .mockResolvedValueOnce(undefined) // save_system_paths
-      .mockRejectedValueOnce('权限不足') // save_user_paths
-      .mockResolvedValueOnce(undefined); // save_path_snapshot
+    // system 成功、user 失败（best-effort 多 hive 的 partial 形态）。
+    mockedInvoke.mockResolvedValueOnce({
+      system: 'applied',
+      user: { failed: { code: 'io', operation: 'write_hive_registry', message: '权限不足' } },
+      sidecar: 'saved',
+    });
 
     const result = await useAppStore.getState().savePaths();
     expect(result.kind).toBe('partial');
@@ -275,32 +285,26 @@ describe('savePaths', () => {
     expect(s.isModified).toBe(true);
   });
 
-  it('禁用状态写入失败后保留 dirty，并在重试时只补写 sidecar', async () => {
-    mockedInvoke
-      .mockResolvedValueOnce(undefined) // backup_registry
-      .mockResolvedValueOnce(undefined) // save_system_paths
-      .mockResolvedValueOnce(undefined) // save_user_paths
-      .mockResolvedValueOnce(undefined) // broadcast_env_change
-      .mockRejectedValueOnce('磁盘写入失败'); // save_path_snapshot
+  it('sidecar 落 pending 时报告成功，但状态栏给出非阻断提示', async () => {
+    // 注册表两 hive 都写成功，但 sidecar 落 pending。
+    //
+    // **语义（复审裁断 ④）**：注册表已生效 ⇒ 保存**成功**（不是 partial）；
+    // 但快照未落盘**必须提示**（静默持久化失败是回归）。补写由 core 的磁盘
+    // pending 机制在下次命令时承担（D6），故 GUI store 不携带 `_pendingSys/User`。
+    mockedInvoke.mockResolvedValueOnce({
+      system: 'applied',
+      user: 'applied',
+      sidecar: { pending: { code: 'io', operation: 'commit_sidecar', message: '磁盘写入失败' } },
+    });
 
-    const first = await useAppStore.getState().savePaths();
-    expect(first.kind).toBe('partial');
-    let state = useAppStore.getState();
-    expect(state.isModified).toBe(true);
-    expect(state._pendingSys?.map((entry) => entry.path)).toEqual(['A']);
-    expect(state._pendingUser?.map((entry) => entry.path)).toEqual(['B']);
-
-    mockedInvoke.mockReset();
-    mockedInvoke.mockResolvedValueOnce(undefined); // 只重试 save_path_snapshot
-
-    const second = await useAppStore.getState().savePaths();
-    expect(second).toEqual({ kind: 'success' });
-    state = useAppStore.getState();
-    expect(state.isModified).toBe(false);
-    expect(state._pendingSys).toBeNull();
+    const result = await useAppStore.getState().savePaths();
+    expect(result).toEqual({ kind: 'success' }); // 注册表已写成功
+    const state = useAppStore.getState();
+    expect(state.isModified).toBe(false); // 草稿已全部落注册表
+    expect(state.statusMessage).toContain('磁盘写入失败'); // 非阻断提示必须出现
+    expect(state._pendingSys).toBeNull(); // pending 在 core 磁盘，不在 store
     expect(state._pendingUser).toBeNull();
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
-    expect(mockedInvoke.mock.calls[0][0]).toBe('save_path_snapshot');
   });
   it('isSaving 守卫：并发第二次调用直接返回', async () => {
     let resolveAll: (v: unknown) => void;

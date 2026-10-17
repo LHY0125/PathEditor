@@ -5,16 +5,18 @@
 //! `src/services/path-session.ts` 的完整切换延后到 Wave 2 收口（保守方案，
 //! 见 task-5-report.md）。
 
-use path_editor_core::service::{self, ApplyOutcome};
-use path_editor_core::{service as svc, PathEntry};
+use path_editor_core::service::{self, ApplyOutcome, PathHiveWrite};
+use path_editor_core::PathEntry;
 
 /// 同时写注册表与 sidecar（best-effort 多 hive，partial 语义按 hive 分字段）。
+///
+/// 每个 hive 传 [`PathHiveWrite`]（含 `expected` 用于乐观并发校验）。
 #[tauri::command]
 pub fn save_path_with_sidecar(
-    system: Option<Vec<PathEntry>>,
-    user: Option<Vec<PathEntry>>,
+    system: Option<PathHiveWrite>,
+    user: Option<PathHiveWrite>,
 ) -> Result<ApplyOutcome, String> {
-    svc::save_path_with_sidecar(system, user).map_err(|e| e.message)
+    service::save_path_with_sidecar(system, user).map_err(|e| e.message)
 }
 
 /// 把单 hive 的 PATH 写入注册表并落盘快照；未触及的另一 hive 为 `Skipped`。

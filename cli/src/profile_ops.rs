@@ -1,4 +1,4 @@
-use crate::runtime::{exit_err, exit_persist_error, persist_snapshot, verify_and_save};
+use crate::runtime::{exit_persist_error, save_path_write};
 use path_editor_core as core;
 
 pub(crate) fn profile_list(json_out: bool) {
@@ -43,28 +43,11 @@ pub(crate) fn profile_load(name: String) {
 }
 
 pub(crate) fn profile_apply(name: String) {
-    super::runtime::flush_pending_snapshot();
     let data = core::profiles::load_profile(&name).unwrap_or_else(|e| exit_persist_error(&e));
-    let new_sys: Vec<String> = data
-        .sys
-        .iter()
-        .filter(|entry| entry.enabled)
-        .map(|entry| entry.path.clone())
-        .collect();
-    let new_usr: Vec<String> = data
-        .user
-        .iter()
-        .filter(|entry| entry.enabled)
-        .map(|entry| entry.path.clone())
-        .collect();
+    // 双 hive 一次提交（core 内顺序 system → user，含备份/sidecar/广播）。
+    // Wave 3.1：不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
+    save_path_write(Some(data.sys), Some(data.user));
 
-    let orig_sys = core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e));
-    let orig_usr = core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e));
-    verify_and_save("system", &orig_sys, new_sys);
-    verify_and_save("user", &orig_usr, new_usr);
-    persist_snapshot(Some(data.sys), Some(data.user));
-
-    core::system::broadcast_env_change();
     println!("配置文件 \"{name}\" 已写入注册表。");
 }
 

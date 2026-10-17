@@ -4,8 +4,7 @@ import { AnalyzeDialog } from '../../src/components/dialogs/AnalyzeDialog';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn((cmd: string) => {
-    if (cmd === 'scan_conflicts') return Promise.resolve([]);
-    if (cmd === 'scan_tools') return Promise.resolve([]);
+    if (cmd === 'scan_paths') return Promise.resolve({ conflicts: [], tools: [] });
     return Promise.resolve(undefined);
   }),
 }));

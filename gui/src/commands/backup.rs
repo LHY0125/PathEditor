@@ -6,10 +6,6 @@ use path_editor_core::error::CoreError;
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
     backup::backup_registry(custom_dir)
 }
-#[tauri::command]
-pub fn get_appdata_dir() -> String {
-    backup::get_appdata_dir()
-}
 
 /// 立即创建一份环境变量备份，返回备份文件路径。
 ///
