@@ -1,0 +1,394 @@
+<style>
+  .mk {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      'Microsoft YaHei',
+      sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  .mk-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+  }
+  .mk-logo {
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background: var(--logo);
+  }
+  .mk-ver {
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-tab {
+    padding: 4px 10px;
+    border-radius: var(--r);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .mk-tab.on {
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+    font-weight: 500;
+  }
+  .mk-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-search {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 4px 9px;
+    color: var(--faint);
+    min-width: 130px;
+  }
+  .mk-btn {
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--fg);
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .mk-btn.pri {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+    font-weight: 500;
+  }
+  .mk-btn.gh {
+    background: transparent;
+    border-color: transparent;
+  }
+  .mk-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 3px;
+  }
+  .mk-spacer {
+    flex: 1;
+  }
+  .mk-table {
+    background: var(--surface);
+  }
+  .mk-head {
+    display: flex;
+    padding: 6px 14px;
+    color: var(--faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 14px;
+    border-bottom: 1px solid var(--rowline);
+    font-size: 12px;
+  }
+  .mk-idx {
+    width: 26px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-chk {
+    width: 18px;
+  }
+  .mk-chk i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .mk-path {
+    flex: 1;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+  }
+  .mk-status {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .mk-invalid {
+    color: var(--err);
+  }
+  .mk-dup {
+    color: var(--warn);
+  }
+  .mk-off {
+    color: var(--faint);
+    text-decoration: line-through;
+  }
+  .mk-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .light {
+    --r: 8px;
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e4e4e7;
+    --rowline: #f4f4f5;
+    --fg: #18181b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --accent: #6366f1;
+    --accent-bg: #eef2ff;
+    --accent-fg: #4f46e5;
+    --logo: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --err: #dc2626;
+    --warn: #d97706;
+  }
+  .mk-shell {
+    border-radius: 10px;
+  }
+</style>
+
+<h2>布局结构 —— 18 个按钮怎么排</h2>
+<p class="subtitle">
+  先看使用频率分类，再看三种落地方案。所有方案都用统一几何（8px）+ 浅色材质，方便聚焦结构差异。
+</p>
+
+<div class="section">
+  <div class="label">操作频率分层（依据：改动语义）</div>
+  <div
+    style="
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.9;
+    "
+  >
+    <b style="color: #16a34a">高频（每轮编辑都用）</b>：新建 · 编辑 · 删除 · 上移 · 下移 · 撤销 ·
+    重做<br />
+    <b style="color: #2563eb">一次性（保存/放弃）</b>：保存 · 取消<br />
+    <b style="color: #7c3aed">批量导入导出</b>：导入 · 导出<br />
+    <b>低频工具</b>：清理无效 · 配置方案 · 冲突分析<br />
+    <b style="color: #6b7280">元操作（非业务流程）</b>：帮助 · 语言 · 深色模式
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">方案一 · 分层工具栏（推荐）</div>
+  <div class="mk light mk-shell">
+    <div class="mk-top">
+      <div class="mk-brand">
+        <div class="mk-logo"></div>
+        PathEditor
+      </div>
+      <span class="mk-ver">v5.1.5</span>
+    </div>
+    <div class="mk-tabs">
+      <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+      ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+    </div>
+    <div class="mk-tools">
+      <div class="mk-search">搜索路径…</div>
+      <div class="mk-sep"></div>
+      <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+      ><span class="mk-btn">删除</span>
+      <div class="mk-sep"></div>
+      <span class="mk-btn gh">↑</span><span class="mk-btn gh">↓</span>
+      <div class="mk-sep"></div>
+      <span class="mk-btn gh">↶</span><span class="mk-btn gh">↷</span>
+      <div class="mk-spacer"></div>
+      <span class="mk-btn">导入</span><span class="mk-btn">导出</span>
+      <span class="mk-btn pri">保存</span>
+      <span class="mk-btn gh">⋯</span>
+    </div>
+    <div class="mk-table">
+      <div class="mk-head">
+        <div class="mk-idx">#</div>
+        <div class="mk-chk"></div>
+        <div class="mk-path">路径</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">1</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path">C:\Windows\System32</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">2</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path">C:\Program Files\nodejs\</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">3</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path mk-invalid">D:\missing\bin</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">4</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+      </div>
+    </div>
+    <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+  </div>
+  <p class="subtitle" style="margin-top: 10px">
+    <b>一行搞定</b>：搜索 → 编辑动作组 → 排序组 → 撤销组 →（右推）导入导出 → 保存 → ⋯菜单。<br />
+    <b>规则</b>：高频用文字，中频用图标，低频进 ⋯ 菜单。保存永远在最右、永远有强调色。
+  </p>
+</div>
+
+<div class="section">
+  <div class="label">方案二 · 图标主导（紧凑）</div>
+  <div class="mk light mk-shell">
+    <div class="mk-top">
+      <div class="mk-brand">
+        <div class="mk-logo"></div>
+        PathEditor
+      </div>
+      <span class="mk-ver">v5.1.5</span>
+    </div>
+    <div class="mk-tabs">
+      <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+      ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+    </div>
+    <div class="mk-tools">
+      <div class="mk-search">搜索路径…</div>
+      <div class="mk-sep"></div>
+      <span class="mk-btn gh">＋</span><span class="mk-btn gh">✎</span
+      ><span class="mk-btn gh">🗑</span> <span class="mk-btn gh">↑</span
+      ><span class="mk-btn gh">↓</span> <span class="mk-btn gh">↶</span
+      ><span class="mk-btn gh">↷</span>
+      <div class="mk-spacer"></div>
+      <span class="mk-btn gh">⋯</span>
+      <span class="mk-btn pri">保存</span>
+    </div>
+    <div class="mk-table">
+      <div class="mk-head">
+        <div class="mk-idx">#</div>
+        <div class="mk-chk"></div>
+        <div class="mk-path">路径</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">1</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path">C:\Windows\System32</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">2</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path">C:\Program Files\nodejs\</div>
+      </div>
+      <div class="mk-row">
+        <div class="mk-idx">3</div>
+        <div class="mk-chk"><i></i></div>
+        <div class="mk-path mk-invalid">D:\missing\bin</div>
+      </div>
+    </div>
+    <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+  </div>
+  <p class="subtitle" style="margin-top: 10px">
+    极致紧凑，工具栏只占一行且极窄。<b>代价</b>：图标要全部自绘（无图标库依赖），且可发现性下降 ——
+    新用户得悬停才知道 🗑 是删除还是清空。
+  </p>
+</div>
+
+<div class="section">
+  <div class="label">方案三 · 右侧操作栏（垂直）</div>
+  <div class="mk light mk-shell">
+    <div class="mk-top">
+      <div class="mk-brand">
+        <div class="mk-logo"></div>
+        PathEditor
+      </div>
+      <span class="mk-ver">v5.1.5</span>
+    </div>
+    <div class="mk-tabs">
+      <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+      ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+    </div>
+    <div style="display: flex">
+      <div style="flex: 1">
+        <div class="mk-tools"><div class="mk-search" style="flex: 1">搜索路径…</div></div>
+        <div class="mk-table">
+          <div class="mk-head">
+            <div class="mk-idx">#</div>
+            <div class="mk-chk"></div>
+            <div class="mk-path">路径</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">1</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Windows\System32</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">2</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">3</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-invalid">D:\missing\bin</div>
+          </div>
+        </div>
+      </div>
+      <div
+        style="
+          width: 96px;
+          border-left: 1px solid var(--border);
+          background: var(--surface);
+          padding: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        "
+      >
+        <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+        ><span class="mk-btn">删除</span> <span class="mk-btn gh">↑ 上移</span
+        ><span class="mk-btn gh">↓ 下移</span>
+        <div style="flex: 1"></div>
+        <span class="mk-btn pri" style="text-align: center">保存</span>
+      </div>
+    </div>
+    <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+  </div>
+  <p class="subtitle" style="margin-top: 10px">
+    工具栏回归"只放搜索"，所有动作进右侧栏。<b>代价</b>：横向空间被吃掉
+    96px，路径本来就长，会更容易被截断。
+  </p>
+</div>

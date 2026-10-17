@@ -44,6 +44,11 @@ CLAUDE.md
 # Review wave diff snapshots (regenerable, kept local only)
 review-*.diff
 
+# superpowers 会话运行时状态（每次会话都变，且 .last-token / server-info 含本地服务 token）
+.superpowers/brainstorm/.last-port
+.superpowers/brainstorm/.last-token
+.superpowers/brainstorm/*/state/
+
 # Platform
 e2e/debug-screenshot.png
 target/

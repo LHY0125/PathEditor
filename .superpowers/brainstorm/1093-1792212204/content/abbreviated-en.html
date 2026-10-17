@@ -1,0 +1,174 @@
+<style>
+  .bar {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      sans-serif;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border-bottom: 1px solid #e4e4e7;
+    width: 800px;
+    box-sizing: border-box;
+    color: #18181b;
+  }
+  .bar .search {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 4px 9px;
+    color: #a1a1aa;
+  }
+  .bar .b {
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    background: #fff;
+    padding: 4px 9px;
+    white-space: nowrap;
+  }
+  .bar .g {
+    border-color: transparent;
+    background: transparent;
+  }
+  .bar .p {
+    background: #6366f1;
+    color: #fff;
+    border-color: transparent;
+    font-weight: 500;
+  }
+  .bar .s {
+    width: 1px;
+    height: 18px;
+    background: #e4e4e7;
+    margin: 0 3px;
+  }
+  .bar .sp {
+    flex: 1;
+  }
+  .wrap {
+    width: 800px;
+    box-sizing: border-box;
+    padding: 10px;
+    border: 1px dashed #16a34a;
+    color: #15803d;
+    font-size: 11px;
+    font-family: system-ui;
+  }
+  .label2 {
+    font-family: system-ui;
+    font-size: 12px;
+    color: #71717a;
+    margin: 18px 0 6px;
+  }
+  .tbl {
+    border-collapse: collapse;
+    font-size: 13px;
+    font-family: system-ui;
+    margin-top: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  .tbl th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+  }
+</style>
+
+<h2>英文简写方案 —— 800px 实测</h2>
+<p class="subtitle">全部按 800px 真实宽度。绿色虚线框 = 800px 边界，内容全在框内即通过。</p>
+
+<div class="label2">① 中文版（新建/编辑/删除/上移/下移/撤销/重做/导入/导出/保存）</div>
+<div class="wrap">
+  <div class="bar">
+    <span class="b" style="flex: 0 0 130px">搜索路径…</span><span class="s"></span>
+    <span class="b">新建</span><span class="b">编辑</span><span class="b">删除</span
+    ><span class="s"></span> <span class="b">上移</span><span class="b">下移</span
+    ><span class="s"></span> <span class="b">撤销</span><span class="b">重做</span>
+    <span class="sp"></span>
+    <span class="b">导入</span><span class="b">导出</span><span class="b p">保存</span
+    ><span class="b">⋯</span>
+  </div>
+</div>
+
+<div class="label2">② 英文版 · 简写（New/Edit/Del/Up/Down/Undo/Redo/Import/Export/Save）</div>
+<div class="wrap">
+  <div class="bar">
+    <span class="b" style="flex: 0 0 130px">Search…</span><span class="s"></span>
+    <span class="b">New</span><span class="b">Edit</span><span class="b">Del</span
+    ><span class="s"></span> <span class="b">Up</span><span class="b">Down</span
+    ><span class="s"></span> <span class="b">Undo</span><span class="b">Redo</span>
+    <span class="sp"></span>
+    <span class="b">Import</span><span class="b">Export</span><span class="b p">Save</span
+    ><span class="b">⋯</span>
+  </div>
+</div>
+
+<div class="label2">③ 英文版 · 更激进简写（Del→Delete 保留语义，Up/Down 用符号）</div>
+<div class="wrap">
+  <div class="bar">
+    <span class="b" style="flex: 0 0 130px">Search…</span><span class="s"></span>
+    <span class="b">New</span><span class="b">Edit</span><span class="b">Delete</span
+    ><span class="s"></span> <span class="b g">↑ Up</span><span class="b g">↓ Down</span
+    ><span class="s"></span> <span class="b g">↶</span><span class="b g">↷</span>
+    <span class="sp"></span>
+    <span class="b">Import</span><span class="b">Export</span><span class="b p">Save</span
+    ><span class="b">⋯</span>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 2rem">
+  <div class="label">定稿对照</div>
+  <table class="tbl">
+    <tr>
+      <th>位置</th>
+      <th>中文</th>
+      <th>英文</th>
+    </tr>
+    <tr>
+      <td>搜索框占位</td>
+      <td>搜索路径…</td>
+      <td>Search…</td>
+    </tr>
+    <tr>
+      <td>编辑组</td>
+      <td>新建 / 编辑 / 删除</td>
+      <td>New / Edit / Delete</td>
+    </tr>
+    <tr>
+      <td>排序组</td>
+      <td>上移 / 下移</td>
+      <td>Up / Down</td>
+    </tr>
+    <tr>
+      <td>撤销组</td>
+      <td>撤销 / 重做</td>
+      <td>Undo / Redo</td>
+    </tr>
+    <tr>
+      <td>批量</td>
+      <td>导入 / 导出</td>
+      <td>Import / Export</td>
+    </tr>
+    <tr>
+      <td>主操作</td>
+      <td><b>保存</b>（现为「确定」）</td>
+      <td><b>Save</b>（现为「OK」）</td>
+    </tr>
+    <tr>
+      <td>⋯ 菜单</td>
+      <td>清理无效 / 分析 / 配置 / 深色模式 / 语言 / 帮助 / 取消并关闭</td>
+      <td>Clean / Analyze / Profiles / Dark / Language / Help / Cancel</td>
+    </tr>
+  </table>
+  <p class="subtitle" style="margin-top: 10px">
+    三版全部放得下。② 号最平衡：每个词仍可读，没有靠符号猜含义。
+  </p>
+</div>

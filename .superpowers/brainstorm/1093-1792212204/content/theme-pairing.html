@@ -1,0 +1,397 @@
+<style>
+  .mk {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      'Microsoft YaHei',
+      sans-serif;
+    font-size: 13px;
+    border-radius: var(--shell-r, 10px);
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    width: 100%;
+  }
+  .mk-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+  }
+  .mk-logo {
+    width: 18px;
+    height: 18px;
+    border-radius: calc(var(--r) + 1px);
+    background: var(--logo);
+  }
+  .mk-ver {
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-tab {
+    padding: 4px 10px;
+    border-radius: var(--r);
+    color: var(--muted);
+  }
+  .mk-tab.on {
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+    font-weight: 500;
+  }
+  .mk-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-search {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 4px 9px;
+    color: var(--faint);
+  }
+  .mk-btn {
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--fg);
+    white-space: nowrap;
+  }
+  .mk-btn.pri {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+    font-weight: 500;
+    box-shadow: var(--glow);
+  }
+  .mk-table {
+    background: var(--surface);
+  }
+  .mk-head {
+    display: flex;
+    padding: 6px 14px;
+    color: var(--faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 14px;
+    border-bottom: 1px solid var(--rowline);
+  }
+  .mk-idx {
+    width: 26px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-chk {
+    width: 18px;
+  }
+  .mk-chk i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--r) - 2px);
+  }
+  .mk-path {
+    flex: 1;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+  }
+  .mk-status {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .mk-invalid {
+    color: var(--err);
+  }
+  .mk-dup {
+    color: var(--warn);
+  }
+  .mk-off {
+    color: var(--faint);
+    text-decoration: line-through;
+  }
+
+  /* 浅色 — 中性现代（A 的骨架） */
+  .lightA {
+    --shell-r: 10px;
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e4e4e7;
+    --rowline: #f4f4f5;
+    --fg: #18181b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --accent: #6366f1;
+    --accent-bg: #eef2ff;
+    --accent-fg: #4f46e5;
+    --logo: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --glow: none;
+    --err: #dc2626;
+    --warn: #d97706;
+  }
+
+  /* 深色 — 玻璃深色（B 的材质） */
+  .darkB {
+    --shell-r: 12px;
+    --bg: linear-gradient(160deg, #15151d, #0d0d12);
+    --surface: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.09);
+    --rowline: rgba(255, 255, 255, 0.05);
+    --fg: #f4f4f6;
+    --muted: #8b8b96;
+    --faint: #63636e;
+    --accent: #7c6cff;
+    --accent-bg: rgba(124, 108, 255, 0.16);
+    --accent-fg: #b3a8ff;
+    --logo: linear-gradient(135deg, #7c6cff, #ff6b9d);
+    --glow: 0 0 18px rgba(124, 108, 255, 0.5);
+    --err: #ff6b6b;
+    --warn: #ffb454;
+  }
+
+  /* 同一套几何，只换 token — 圆角 8px 折中 */
+  .lightG {
+    --shell-r: 10px;
+    --r: 8px;
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e4e4e7;
+    --rowline: #f4f4f5;
+    --fg: #18181b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --accent: #6366f1;
+    --accent-bg: #eef2ff;
+    --accent-fg: #4f46e5;
+    --logo: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --glow: none;
+    --err: #dc2626;
+    --warn: #d97706;
+  }
+  .darkG {
+    --shell-r: 10px;
+    --r: 8px;
+    --bg: linear-gradient(160deg, #15151d, #0d0d12);
+    --surface: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.09);
+    --rowline: rgba(255, 255, 255, 0.05);
+    --fg: #f4f4f6;
+    --muted: #8b8b96;
+    --faint: #63636e;
+    --accent: #7c6cff;
+    --accent-bg: rgba(124, 108, 255, 0.16);
+    --accent-fg: #b3a8ff;
+    --logo: linear-gradient(135deg, #7c6cff, #ff6b9d);
+    --glow: 0 0 18px rgba(124, 108, 255, 0.5);
+    --err: #ff6b6b;
+    --warn: #ffb454;
+  }
+  .lightA .mk-tab,
+  .lightA .mk-btn,
+  .lightA .mk-search {
+    --r: 6px;
+  }
+  .darkB .mk-tab,
+  .darkB .mk-btn,
+  .darkB .mk-search {
+    --r: 9px;
+  }
+  .lightA .mk-chk i,
+  .darkB .mk-chk i {
+    --r: 6px;
+  }
+  .darkB .mk-chk i {
+    --r: 6px;
+  }
+</style>
+
+<h2>你的选择：浅色 = 中性现代，深色 = 玻璃深色</h2>
+<p class="subtitle">
+  这个组合可行。但有一个前提要先确认：两种模式必须共用"骨架"。下面第 1 组是实际效果对比，第 2
+  组是几何取舍。
+</p>
+
+<div class="section">
+  <div class="label">1 · 实际效果（左浅色 / 右深色）</div>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">浅色 · 中性现代 mode="light"</div>
+      <div class="mockup-body" style="padding: 0">
+        <div class="mk lightA">
+          <div class="mk-top">
+            <div class="mk-brand">
+              <div class="mk-logo"></div>
+              PathEditor
+            </div>
+            <span class="mk-ver">v5.1.5</span>
+          </div>
+          <div class="mk-tabs">
+            <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+            ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+          </div>
+          <div class="mk-tools">
+            <div class="mk-search">搜索路径…</div>
+            <span class="mk-btn">新建</span><span class="mk-btn pri">保存</span>
+          </div>
+          <div class="mk-table">
+            <div class="mk-head">
+              <div class="mk-idx">#</div>
+              <div class="mk-chk"></div>
+              <div class="mk-path">路径</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">1</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path">C:\Windows\System32</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">2</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path">C:\Program Files\nodejs\</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">3</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path mk-invalid">D:\missing\bin</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">4</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">5</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path mk-off">C:\old\tool</div>
+            </div>
+          </div>
+          <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">深色 · 玻璃深色 mode="dark"</div>
+      <div class="mockup-body" style="padding: 0">
+        <div class="mk darkB">
+          <div class="mk-top">
+            <div class="mk-brand">
+              <div class="mk-logo"></div>
+              PathEditor
+            </div>
+            <span class="mk-ver">v5.1.5</span>
+          </div>
+          <div class="mk-tabs">
+            <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+            ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+          </div>
+          <div class="mk-tools">
+            <div class="mk-search">搜索路径…</div>
+            <span class="mk-btn">新建</span><span class="mk-btn pri">保存</span>
+          </div>
+          <div class="mk-table">
+            <div class="mk-head">
+              <div class="mk-idx">#</div>
+              <div class="mk-chk"></div>
+              <div class="mk-path">路径</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">1</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path">C:\Windows\System32</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">2</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path">C:\Program Files\nodejs\</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">3</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path mk-invalid">D:\missing\bin</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">4</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+            </div>
+            <div class="mk-row">
+              <div class="mk-idx">5</div>
+              <div class="mk-chk"><i></i></div>
+              <div class="mk-path mk-off">C:\old\tool</div>
+            </div>
+          </div>
+          <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">2 · 几何取舍 —— 两种模式的圆角要不要统一？</div>
+  <div class="options">
+    <div class="option" data-choice="split" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>各随其形：浅色 6px，深色 9px</h3>
+        <p>
+          保留 A/B
+          各自的圆角。深色玻璃感靠大圆角成立，浅色克制靠小圆角成立。代价：切换主题时控件形状会变，像换了皮肤。
+        </p>
+      </div>
+    </div>
+    <div class="option" data-choice="unify" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>统一 8px 折中（推荐）</h3>
+        <p>
+          一套几何，两种材质。深色仍是半透明+辉光，浅色仍是白底细边，但控件形状一致。切换主题时布局不跳动
+          —— "同一款产品，两种光线"。
+        </p>
+        <div class="mk lightG" style="margin-top: 8px">
+          <div class="mk-tabs">
+            <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+            ><span class="mk-tab">全部变量</span>
+          </div>
+          <div class="mk-tools">
+            <span class="mk-btn">新建</span><span class="mk-btn pri">保存</span
+            ><span class="mk-btn">删除</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor v5.1.4 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
+PathEditor v5.1.6 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -44,12 +44,16 @@ Cargo workspace 分为 `core`、`gui`、`cli` 三个 crate，前端通过 Tauri 
 ```text
 PathEditor/
 ├── core/src/                    # Rust 核心库（零 Tauri 依赖）
-│   ├── registry.rs              # HKLM/HKCU PATH 读写、清理、长度校验
+│   ├── registry/                # 注册表访问统一入口（path/access/env_var/conflict 子模块）
+│   ├── service.rs               # 保存编排：save_path_with_sidecar / apply_path_snapshot
 │   ├── capabilities.rs          # 按 hive 探测 PathCapabilities
 │   ├── system.rs                # 权限、路径验证、变量展开、环境广播
-│   ├── disabled.rs              # 完整快照、禁用状态、旧格式兼容
+│   ├── disabled.rs              # 完整快照、禁用状态、旧格式兼容、pending 磁盘文件
 │   ├── env_var.rs               # 通用环境变量契约与保留/保护/敏感判定
 │   ├── path_entry.rs            # PathEntry / PathSnapshot 契约
+│   ├── error.rs                 # 结构化 CoreError / ErrorCode
+│   ├── reg_store.rs             # 注册表值类型读写（EnvHiveStore 端口）
+│   ├── persist.rs               # 持久化文件解析与损坏隔离
 │   ├── scanner.rs               # scan_paths 单次枚举、冲突和工具清单
 │   ├── profiles.rs              # 配置保存/加载/重命名/删除
 │   ├── fs.rs                    # 受限文件读取、导入导出
@@ -62,7 +66,7 @@ PathEditor/
 │   ├── profile_ops.rs           # profile 子命令
 │   └── scan_ops.rs              # 冲突、扫描、权限检查
 ├── src/                         # React 前端
-│   ├── core/                    # 纯逻辑，零 React/Tauri 依赖（path-manager、env-var、undo-redo…）
+│   ├── core/                    # 纯逻辑，零 React/Tauri 依赖（env-var、path-entry、undo-redo…）
 │   ├── services/backend.ts      # 唯一 IPC 适配入口 + 运行时形状校验
 │   ├── services/path-session.ts # 保存计划前置（权限预检 + 组合长度软提醒 + 文案映射）
 │   ├── store/                   # Zustand：app-store / env-store / theme-store
@@ -95,17 +99,18 @@ PathEditor/
 | Command                                                                                 | 参数 / 返回值                                        | 说明                                                                                         |
 | --------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `load_system_paths` / `load_user_paths`                                                 | `() -> Result<Vec<String>, String>`                  | 读取注册表原始路径                                                                           |
-| `save_system_paths` / `save_user_paths`                                                 | `(paths, original?) -> Result<(), String>`           | 可选乐观并发校验；外部修改时拒绝覆盖                                                         |
+| `save_path_with_sidecar`                                                                | `(system?, user?) -> Result<ApplyOutcome, String>`   | **唯一保存编排**：写前备份 + 乐观并发校验 + 顺序写 system→user + 广播 + sidecar 事务         |
+| `apply_path_snapshot` / `apply_profile`                                                 | 快照 / 配置名                                        | 服务层事务编排（GUI 与 CLI 共用）                                                            |
+| `retry_pending_path_state`                                                              | `() -> Result<(), String>`                           | 补写上次注册表成功但快照失败的 pending 状态                                                  |
 | `clean_path_entries`                                                                    | `Vec<PathEntry> -> (kept, removed)`                  | 统一清理语义，展开变量后检查目录                                                             |
 | `get_path_capabilities`                                                                 | `() -> PathCapabilities`                             | 按 hive 返回读写能力                                                                         |
 | `check_admin` / `validate_path` / `expand_env_vars` / `broadcast_env_change`            | 系统工具接口                                         | 权限、目录验证、变量展开、环境通知                                                           |
 | `load_path_snapshot`                                                                    | `() -> Result<PathSnapshot, String>`                 | 合并注册表、禁用状态和有序快照                                                               |
 | `save_path_snapshot`                                                                    | `(system?, user?) -> Result<(), String>`             | 保存完整有序快照，`None` 保留对应 hive                                                       |
 | `load_disabled_state` / `save_disabled_state`                                           | 旧版字符串接口                                       | 仅用于兼容                                                                                   |
-| `import_file` / `export_path_entries`                                                   | 文件路径 / `PathEntry` + 格式                        | Rust 统一导入导出                                                                            |
+| `import_file` / `export_path_entries` / `read_text_file`                                | 文件路径 / `PathEntry` + 格式                        | Rust 统一导入导出与受限文本读取                                                              |
 | `scan_paths`                                                                            | `(paths, query) -> ScanResult`                       | 一次枚举生成冲突和工具清单                                                                   |
-| `scan_conflicts` / `scan_tools`                                                         | 兼容包装                                             | 分别返回冲突或工具清单                                                                       |
-| `backup_registry` / `get_appdata_dir`                                                   | 备份和目录查询                                       | 备份当前注册表值                                                                             |
+| `backup_registry`                                                                       | `() -> Result<String, String>`                       | 备份当前注册表 PATH 值                                                                       |
 | `list_profiles` / `save_profile` / `load_profile` / `delete_profile` / `rename_profile` | 配置 CRUD                                            | 配置保存 `PathEntry[]`                                                                       |
 | `list_all_env_vars`                                                                     | `() -> Result<EnvVarSnapshot, CoreError>`            | 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）                                       |
 | `reveal_env_var`                                                                        | `(hive, name) -> Result<RevealedValue, CoreError>`   | 按需读取单个变量明文及读取时的 revision；`Unsupported` 类型返回 `CoreError`                  |
@@ -117,7 +122,9 @@ PathEditor/
 | `preview_env_backup`                                                                    | `(file) -> Result<RestorePreview, CoreError>`        | 读取备份并计算差异（纯读）。先做路径来源校验；对不可解析文件会经 persist 层重命名隔离        |
 | `restore_env_backup`                                                                    | `(file, force) -> Result<RestoreOutcome, CoreError>` | 执行恢复。未提权时打开 HKLM 必然失败，恒返回 `permissionDenied`；GUI 只提示需管理员          |
 
-> 服务层命令 `apply_path_snapshot` / `save_path_with_sidecar` / `retry_pending_path_state` / `apply_profile` 已在 `gui/src/commands/service.rs` 注册，供 CLI/服务层事务编排使用，**GUI 前端暂未接线**（`path-session.ts` 仍走旧编排，见开发回执未覆盖项）。
+> 服务层命令 `apply_path_snapshot` / `save_path_with_sidecar` / `retry_pending_path_state` / `apply_profile` 定义在 `gui/src/commands/service.rs`，**GUI 前端已接线**（`path-session.ts` 经 `backend.savePathWithSidecar` 调用）；CLI 的 6 个 PATH 写入口也统一经 `save_path_with_sidecar`。
+>
+> 已退役的 IPC 命令：`save_system_paths` / `save_user_paths`（由 `save_path_with_sidecar` 取代）、`scan_conflicts` / `scan_tools`（由 `scan_paths` 取代）、`get_appdata_dir`（前端零调用）。对应的 core 函数（`scanner::scan_conflicts` / `scan_tools`、`backup::get_appdata_dir`）**仍保留**，被内部使用。
 
 ## CLI 命令
 
@@ -192,15 +199,16 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 
 ## 版本号升级清单
 
-当前版本为 `5.1.4`。升级时至少检查：
+当前版本为 `5.1.6`。升级时至少检查：
 
-| 文件                  | 字段                            |
-| --------------------- | ------------------------------- |
-| `package.json`        | `version`                       |
-| `package-lock.json`   | `version`（`npm install` 同步） |
-| `Cargo.toml`          | `[workspace.package] version`   |
-| `gui/tauri.conf.json` | `version`、窗口 `title`         |
-| `README.md`           | 版本徽章和安装包说明            |
+| 文件                  | 字段                                                            |
+| --------------------- | --------------------------------------------------------------- |
+| `package.json`        | `version`                                                       |
+| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）             |
+| `Cargo.toml`          | `[workspace.package] version`                                   |
+| `Cargo.lock`          | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
+| `gui/tauri.conf.json` | `version`、窗口 `title`                                         |
+| `README.md`           | 版本徽章和安装包说明                                            |
 
 其他位置通常从 `package.json` 或 `env!("CARGO_PKG_VERSION")` 动态读取，不要手工制造第二套版本源。
 
@@ -217,12 +225,12 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 git push origin main
 
 # 4. 打 annotated tag 并推送 —— 这一步触发 CI
-git tag -a v5.1.4 -m "PathEditor v5.1.4" -m "- 变更要点..."
-git push origin v5.1.4
+git tag -a v5.1.6 -m "PathEditor v5.1.6" -m "- 变更要点..."
+git push origin v5.1.6
 
 # 5. 等 CI 跑完，用 gh 确认结果
 gh run list --limit 3
-gh release view v5.1.4
+gh release view v5.1.6
 ```
 
 **推送 tag 后不要做任何事，等 CI 完成。** 本地构建、手动创建 Release 都是重复劳动，且会与 CI 冲突。
@@ -245,7 +253,7 @@ gh release view v5.1.4
 $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)"
 ```
 
-匹配 `## 5.1.4` 或 `## 5.1.4 (2026-09-23)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
+匹配 `## 5.1.6` 或 `## 5.1.6 (2026-10-17)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
 
 所以发版前**必须在 CHANGELOG.md 顶部写好当前版本段落**，小节标题沿用最近几版的中文风格（`### 新增` / `### 变更` / `### 修复` / `### 说明`）。
 

@@ -1,0 +1,131 @@
+<style>
+  .bar {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      sans-serif;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border-bottom: 1px solid #e4e4e7;
+    width: 800px;
+    box-sizing: border-box;
+    color: #18181b;
+  }
+  .bar .search {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 4px 9px;
+    color: #a1a1aa;
+    flex: 0 0 120px;
+  }
+  .bar .b {
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    background: #fff;
+    padding: 4px 9px;
+    white-space: nowrap;
+  }
+  .bar .g {
+    border-color: transparent;
+    background: transparent;
+  }
+  .bar .p {
+    background: #6366f1;
+    color: #fff;
+    border-color: transparent;
+    font-weight: 500;
+  }
+  .bar .s {
+    width: 1px;
+    height: 18px;
+    background: #e4e4e7;
+    margin: 0 3px;
+  }
+  .bar .sp {
+    flex: 1;
+  }
+  .wrap {
+    width: 800px;
+    box-sizing: border-box;
+    padding: 10px;
+    border: 1px dashed #dc2626;
+    color: #dc2626;
+    font-size: 11px;
+    font-family: system-ui;
+  }
+  .label2 {
+    font-family: system-ui;
+    font-size: 12px;
+    color: #71717a;
+    margin: 18px 0 6px;
+  }
+</style>
+
+<h2>800px 最窄窗口 —— 一行放得下吗？</h2>
+<p class="subtitle">下面全部按 800px 真实宽度渲染。虚线框标出 800px 边界，内容一旦超出就看得见。</p>
+
+<div class="label2">中文（新建/编辑/删除/上移/下移/撤销/重做/导入/导出/保存）</div>
+<div class="wrap">
+  <div class="bar">
+    <span class="b">搜索路径…</span><span class="s"></span> <span class="b">新建</span
+    ><span class="b">编辑</span><span class="b">删除</span><span class="s"></span>
+    <span class="b">上移</span><span class="b">下移</span><span class="s"></span>
+    <span class="b">撤销</span><span class="b">重做</span>
+    <span class="sp"></span>
+    <span class="b">导入</span><span class="b">导出</span><span class="b p">确定</span
+    ><span class="b">⋯</span>
+  </div>
+</div>
+
+<div class="label2">
+  英文（New/Edit/Delete/Move Up/Move Down/Undo/Redo/Import/Export/OK）— 明显更宽
+</div>
+<div class="wrap">
+  <div class="bar">
+    <span class="b">Search…</span><span class="s"></span> <span class="b">New</span
+    ><span class="b">Edit</span><span class="b">Delete</span><span class="s"></span>
+    <span class="b">Move Up</span><span class="b">Move Down</span><span class="s"></span>
+    <span class="b">Undo</span><span class="b">Redo</span>
+    <span class="sp"></span>
+    <span class="b">Import</span><span class="b">Export</span><span class="b p">OK</span
+    ><span class="b">⋯</span>
+  </div>
+</div>
+
+<div class="label2">英文 + 搜框缩到 96px + 导入/导出收进 ⋯（推荐折中）</div>
+<div class="wrap">
+  <div class="bar">
+    <span class="b" style="flex: 0 0 96px; padding: 4px 8px">Search…</span><span class="s"></span>
+    <span class="b g">＋</span><span class="b g">✎</span><span class="b g">🗑</span
+    ><span class="s"></span> <span class="b g">↑</span><span class="b g">↓</span
+    ><span class="s"></span> <span class="b g">↶</span><span class="b g">↷</span>
+    <span class="sp"></span>
+    <span class="b p">Save</span><span class="b">⋯</span>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 2rem">
+  <div class="label">结论</div>
+  <div
+    style="
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.9;
+    "
+  >
+    <b>中文全文字版</b>：800px 下刚好放得下，但余量为零 —— 任何字号/缩放变化就会换行。<br />
+    <b>英文全文字版</b>：放不下，必然换行。<br />
+    <b>图标混合版</b>：两种语言都稳定放得下，且余量充足。<br />
+    <b style="color: #b45309">→ 我的建议：高频动作用图标 + 悬停提示，但"新建/编辑/删除"保留文字</b
+    >（它们是核心动作，可发现性优先），排序/撤销重做用图标。
+  </div>
+</div>

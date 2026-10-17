@@ -1,0 +1,396 @@
+<style>
+  .mk {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      'Microsoft YaHei',
+      sans-serif;
+    font-size: 13px;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 14px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  .mk-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+  }
+  .mk-logo {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: var(--logo);
+  }
+  .mk-ver {
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-tab {
+    padding: 4px 10px;
+    border-radius: var(--pill);
+    color: var(--muted);
+  }
+  .mk-tab.on {
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+    font-weight: 500;
+  }
+  .mk-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-search {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--pill);
+    padding: 4px 9px;
+    color: var(--faint);
+  }
+  .mk-btn {
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--pill);
+    background: var(--surface);
+    color: var(--fg);
+    white-space: nowrap;
+  }
+  .mk-btn.pri {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+    font-weight: 500;
+    box-shadow: var(--glow);
+  }
+  .mk-table {
+    background: var(--surface);
+  }
+  .mk-head {
+    display: flex;
+    padding: 6px 14px;
+    color: var(--faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 14px;
+    border-bottom: 1px solid var(--rowline);
+  }
+  .mk-idx {
+    width: 26px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-chk {
+    width: 18px;
+  }
+  .mk-chk i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  .mk-path {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .mk-status {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .mk-invalid {
+    color: var(--err);
+  }
+  .mk-dup {
+    color: var(--warn);
+  }
+  .mk-off {
+    color: var(--faint);
+    text-decoration: line-through;
+  }
+
+  /* A — 中性现代 */
+  .mkA {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e4e4e7;
+    --rowline: #f4f4f5;
+    --fg: #18181b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --accent: #6366f1;
+    --accent-bg: #eef2ff;
+    --accent-fg: #4f46e5;
+    --pill: 6px;
+    --mono: ui-monospace, Consolas, monospace;
+    --logo: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --glow: none;
+    --err: #dc2626;
+    --warn: #d97706;
+  }
+  /* B — 玻璃深色 */
+  .mkB {
+    --bg: linear-gradient(160deg, #15151d, #0d0d12);
+    --surface: rgba(255, 255, 255, 0.035);
+    --border: rgba(255, 255, 255, 0.08);
+    --rowline: rgba(255, 255, 255, 0.05);
+    --fg: #f4f4f6;
+    --muted: #8b8b96;
+    --faint: #63636e;
+    --accent: #7c6cff;
+    --accent-bg: rgba(124, 108, 255, 0.16);
+    --accent-fg: #b3a8ff;
+    --pill: 9px;
+    --mono: ui-monospace, Consolas, monospace;
+    --logo: linear-gradient(135deg, #7c6cff, #ff6b9d);
+    --glow: 0 0 18px rgba(124, 108, 255, 0.5);
+    --err: #ff6b6b;
+    --warn: #ffb454;
+  }
+  /* C — 锐利工具 */
+  .mkC {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --border: #111111;
+    --rowline: #e5e5e5;
+    --fg: #0a0a0a;
+    --muted: #555555;
+    --faint: #8a8a8a;
+    --accent: #e5484d;
+    --accent-bg: #111111;
+    --accent-fg: #ffffff;
+    --pill: 2px;
+    --mono: 'Cascadia Mono', Consolas, monospace;
+    --logo: #111111;
+    --glow: none;
+    --err: #e5484d;
+    --warn: #b45309;
+  }
+</style>
+
+<h2>三种视觉方向</h2>
+<p class="subtitle">
+  同一个界面（PathEditor
+  主视图）在三种设计语言下的样子。点击选中你偏好的方向，或直接在终端告诉我你的想法。
+</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>中性现代 · Linear 风</h3>
+      <p>
+        近白/近黑中性灰，低饱和靛蓝强调色，细边框、紧凑、克制。安全、耐看、像 2026 年的专业工具。
+      </p>
+      <div class="mk mkA">
+        <div class="mk-top">
+          <div class="mk-brand">
+            <div class="mk-logo"></div>
+            PathEditor
+          </div>
+          <span class="mk-ver">v5.1.5</span>
+        </div>
+        <div class="mk-tabs">
+          <span class="mk-tab on">系统</span><span class="mk-tab">用户</span>
+          <span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+        </div>
+        <div class="mk-tools">
+          <div class="mk-search">搜索路径…</div>
+          <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+          ><span class="mk-btn">删除</span>
+          <span class="mk-btn pri">保存</span>
+        </div>
+        <div class="mk-table">
+          <div class="mk-head">
+            <div class="mk-idx">#</div>
+            <div class="mk-chk"></div>
+            <div class="mk-path">路径</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">1</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Windows\System32</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">2</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">3</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-invalid">D:\missing\bin</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">4</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">5</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-off">C:\old\tool</div>
+          </div>
+        </div>
+        <div class="mk-status"><span>10 条路径 · 已加载</span><span>● 未保存</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>玻璃深色 · Raycast 风</h3>
+      <p>深色半透明层叠、更大圆角、柔和辉光、鲜明紫粉强调色。有"产品感"和氛围，但深色优先。</p>
+      <div class="mk mkB">
+        <div class="mk-top">
+          <div class="mk-brand">
+            <div class="mk-logo"></div>
+            PathEditor
+          </div>
+          <span class="mk-ver">v5.1.5</span>
+        </div>
+        <div class="mk-tabs">
+          <span class="mk-tab on">系统</span><span class="mk-tab">用户</span>
+          <span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+        </div>
+        <div class="mk-tools">
+          <div class="mk-search">搜索路径…</div>
+          <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+          ><span class="mk-btn">删除</span>
+          <span class="mk-btn pri">保存</span>
+        </div>
+        <div class="mk-table">
+          <div class="mk-head">
+            <div class="mk-idx">#</div>
+            <div class="mk-chk"></div>
+            <div class="mk-path">路径</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">1</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Windows\System32</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">2</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">3</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-invalid">D:\missing\bin</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">4</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">5</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-off">C:\old\tool</div>
+          </div>
+        </div>
+        <div class="mk-status"><span>10 条路径 · 已加载</span><span>● 未保存</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>锐利工具 · 高对比风</h3>
+      <p>
+        黑白为主 + 红色强调，2px 直角、粗边框、等宽路径字体。像专业仪器，信息密度最高，个性最强。
+      </p>
+      <div class="mk mkC">
+        <div class="mk-top">
+          <div class="mk-brand">
+            <div class="mk-logo"></div>
+            PathEditor
+          </div>
+          <span class="mk-ver">v5.1.5</span>
+        </div>
+        <div class="mk-tabs">
+          <span class="mk-tab on">系统</span><span class="mk-tab">用户</span>
+          <span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+        </div>
+        <div class="mk-tools">
+          <div class="mk-search">搜索路径…</div>
+          <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+          ><span class="mk-btn">删除</span>
+          <span class="mk-btn pri">保存</span>
+        </div>
+        <div class="mk-table">
+          <div class="mk-head">
+            <div class="mk-idx">#</div>
+            <div class="mk-chk"></div>
+            <div class="mk-path">路径</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">1</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Windows\System32</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">2</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">3</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-invalid">D:\missing\bin</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">4</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">5</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-off">C:\old\tool</div>
+          </div>
+        </div>
+        <div class="mk-status"><span>10 条路径 · 已加载</span><span>● 未保存</span></div>
+      </div>
+    </div>
+  </div>
+</div>

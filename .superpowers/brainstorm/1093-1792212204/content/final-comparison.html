@@ -1,0 +1,423 @@
+<style>
+  .mk {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      'Microsoft YaHei',
+      sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .mk-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+  }
+  .mk-logo {
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background: var(--logo);
+  }
+  .mk-ver {
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-tab {
+    padding: 4px 10px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .mk-tab.on {
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+    font-weight: 500;
+  }
+  .mk-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .mk-search {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 9px;
+    color: var(--faint);
+    min-width: 130px;
+  }
+  .mk-btn {
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg);
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .mk-btn.pri {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+    font-weight: 500;
+    box-shadow: var(--glow);
+  }
+  .mk-btn.gh {
+    background: transparent;
+    border-color: transparent;
+  }
+  .mk-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 3px;
+  }
+  .mk-spacer {
+    flex: 1;
+  }
+  .mk-table {
+    background: var(--surface);
+  }
+  .mk-head {
+    display: flex;
+    padding: 6px 14px;
+    color: var(--faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+  .mk-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 14px;
+    border-bottom: 1px solid var(--rowline);
+    font-size: 12px;
+  }
+  .mk-idx {
+    width: 26px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .mk-chk {
+    width: 18px;
+  }
+  .mk-chk i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .mk-path {
+    flex: 1;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+  }
+  .mk-status {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .mk-invalid {
+    color: var(--err);
+  }
+  .mk-dup {
+    color: var(--warn);
+  }
+  .mk-off {
+    color: var(--faint);
+    text-decoration: line-through;
+  }
+
+  /* ⋯ 下拉菜单 */
+  .mk-menu {
+    position: absolute;
+    right: 10px;
+    top: calc(100% - 2px);
+    z-index: 20;
+    min-width: 190px;
+    background: var(--menu-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--menu-shadow);
+    padding: 5px;
+    backdrop-filter: blur(14px);
+  }
+  .mk-item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    display: flex;
+    justify-content: space-between;
+    color: var(--fg);
+  }
+  .mk-item:hover {
+    background: var(--menu-hover);
+  }
+  .mk-item .k {
+    color: var(--faint);
+    font-size: 11px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .mk-menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 2px;
+  }
+  .mk-menu-label {
+    padding: 4px 10px 2px;
+    font-size: 10.5px;
+    color: var(--faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .light {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e4e4e7;
+    --rowline: #f4f4f5;
+    --fg: #18181b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --accent: #6366f1;
+    --accent-bg: #eef2ff;
+    --accent-fg: #4f46e5;
+    --logo: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --glow: none;
+    --err: #dc2626;
+    --warn: #d97706;
+    --menu-bg: #ffffff;
+    --menu-hover: #f4f4f5;
+    --menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  }
+
+  .dark {
+    --bg: linear-gradient(160deg, #15151d, #0d0d12);
+    --surface: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.09);
+    --rowline: rgba(255, 255, 255, 0.05);
+    --fg: #f4f4f6;
+    --muted: #8b8b96;
+    --faint: #63636e;
+    --accent: #7c6cff;
+    --accent-bg: rgba(124, 108, 255, 0.16);
+    --accent-fg: #b3a8ff;
+    --logo: linear-gradient(135deg, #7c6cff, #ff6b9d);
+    --glow: 0 0 18px rgba(124, 108, 255, 0.5);
+    --err: #ff6b6b;
+    --warn: #ffb454;
+    --menu-bg: rgba(30, 30, 40, 0.92);
+    --menu-hover: rgba(255, 255, 255, 0.07);
+    --menu-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+</style>
+
+<h2>最终对照 —— 同一套结构，两种材质</h2>
+<p class="subtitle">上方左浅色 / 右深色，都展开了 ⋯ 菜单。下方是拆解说明。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">浅色 · 中性现代</div>
+    <div class="mockup-body" style="padding: 0">
+      <div class="mk light">
+        <div class="mk-top">
+          <div class="mk-brand">
+            <div class="mk-logo"></div>
+            PathEditor
+          </div>
+          <span class="mk-ver">v5.1.5</span>
+        </div>
+        <div class="mk-tabs">
+          <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+          ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+        </div>
+        <div class="mk-tools">
+          <div class="mk-search">搜索路径…</div>
+          <div class="mk-sep"></div>
+          <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+          ><span class="mk-btn">删除</span>
+          <div class="mk-sep"></div>
+          <span class="mk-btn gh">↑</span><span class="mk-btn gh">↓</span>
+          <div class="mk-sep"></div>
+          <span class="mk-btn gh">↶</span><span class="mk-btn gh">↷</span>
+          <div class="mk-spacer"></div>
+          <span class="mk-btn">导入</span><span class="mk-btn">导出</span>
+          <span class="mk-btn pri">保存</span>
+          <span class="mk-btn gh">⋯</span>
+          <div class="mk-menu">
+            <div class="mk-menu-label">维护</div>
+            <div class="mk-item"><span>清理无效路径</span><span class="k"></span></div>
+            <div class="mk-item"><span>冲突分析</span><span class="k"></span></div>
+            <div class="mk-item"><span>配置方案</span><span class="k">Ctrl+P</span></div>
+            <div class="mk-menu-sep"></div>
+            <div class="mk-menu-label">应用</div>
+            <div class="mk-item"><span>深色模式</span><span class="k">Ctrl+D</span></div>
+            <div class="mk-item"><span>切换语言</span><span class="k"></span></div>
+            <div class="mk-item"><span>帮助</span><span class="k">F1</span></div>
+            <div class="mk-menu-sep"></div>
+            <div class="mk-item"><span>取消并关闭</span><span class="k"></span></div>
+          </div>
+        </div>
+        <div class="mk-table">
+          <div class="mk-head">
+            <div class="mk-idx">#</div>
+            <div class="mk-chk"></div>
+            <div class="mk-path">路径</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">1</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Windows\System32</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">2</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">3</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-invalid">D:\missing\bin</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">4</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+          </div>
+        </div>
+        <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">深色 · 玻璃深色</div>
+    <div class="mockup-body" style="padding: 0">
+      <div class="mk dark">
+        <div class="mk-top">
+          <div class="mk-brand">
+            <div class="mk-logo"></div>
+            PathEditor
+          </div>
+          <span class="mk-ver">v5.1.5</span>
+        </div>
+        <div class="mk-tabs">
+          <span class="mk-tab on">系统</span><span class="mk-tab">用户</span
+          ><span class="mk-tab">全部变量</span><span class="mk-tab">合并预览</span>
+        </div>
+        <div class="mk-tools">
+          <div class="mk-search">搜索路径…</div>
+          <div class="mk-sep"></div>
+          <span class="mk-btn">新建</span><span class="mk-btn">编辑</span
+          ><span class="mk-btn">删除</span>
+          <div class="mk-sep"></div>
+          <span class="mk-btn gh">↑</span><span class="mk-btn gh">↓</span>
+          <div class="mk-sep"></div>
+          <span class="mk-btn gh">↶</span><span class="mk-btn gh">↷</span>
+          <div class="mk-spacer"></div>
+          <span class="mk-btn">导入</span><span class="mk-btn">导出</span>
+          <span class="mk-btn pri">保存</span>
+          <span class="mk-btn gh">⋯</span>
+          <div class="mk-menu">
+            <div class="mk-menu-label">维护</div>
+            <div class="mk-item"><span>清理无效路径</span><span class="k"></span></div>
+            <div class="mk-item"><span>冲突分析</span><span class="k"></span></div>
+            <div class="mk-item"><span>配置方案</span><span class="k">Ctrl+P</span></div>
+            <div class="mk-menu-sep"></div>
+            <div class="mk-menu-label">应用</div>
+            <div class="mk-item"><span>深色模式</span><span class="k">Ctrl+D</span></div>
+            <div class="mk-item"><span>切换语言</span><span class="k"></span></div>
+            <div class="mk-item"><span>帮助</span><span class="k">F1</span></div>
+            <div class="mk-menu-sep"></div>
+            <div class="mk-item"><span>取消并关闭</span><span class="k"></span></div>
+          </div>
+        </div>
+        <div class="mk-table">
+          <div class="mk-head">
+            <div class="mk-idx">#</div>
+            <div class="mk-chk"></div>
+            <div class="mk-path">路径</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">1</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Windows\System32</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">2</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path">C:\Program Files\nodejs\</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">3</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-invalid">D:\missing\bin</div>
+          </div>
+          <div class="mk-row">
+            <div class="mk-idx">4</div>
+            <div class="mk-chk"><i></i></div>
+            <div class="mk-path mk-dup">C:\Program Files\nodejs\</div>
+          </div>
+        </div>
+        <div class="mk-status"><span>10 条路径</span><span>● 未保存</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 2rem">
+  <div class="label">拆解</div>
+  <div
+    style="
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 2;
+    "
+  >
+    <b>材质分化（两套 token，一套几何）</b><br />
+    · 背景：浅色 <code>#fafafa</code> 纯色 / 深色
+    <code>linear-gradient(160deg,#15151d,#0d0d12)</code><br />
+    · 表面：浅色 <code>#ffffff</code> / 深色 <code>rgba(255,255,255,.04)</code> 半透明叠层<br />
+    · 边框：浅色 <code>#e4e4e7</code> 实线 / 深色
+    <code>rgba(255,255,255,.09)</code> 低透明度白线<br />
+    · 强调：<code>#6366f1</code> / <code>#7c6cff</code>（深色更亮并带辉光）<br />
+    · 菜单：浅色纯白+投影 / 深色毛玻璃 <code>backdrop-filter: blur(14px)</code><br />
+    <b style="display: inline-block; margin-top: 8px">几何统一</b>：所有控件 8px 圆角，行高
+    28px，间距 6px
+  </div>
+</div>
