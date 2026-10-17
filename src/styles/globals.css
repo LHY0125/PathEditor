@@ -85,6 +85,12 @@
   --app-menu-shadow: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px rgb(255 255 255 / 4%);
 }
 
+/* 深色主题的底色兜底：body 的渐变是唯一绘制者，此处让 --app-bg 真正可达 html 层，
+   避免未来把根元素挂到 html 或使用透明窗口时出现白闪。 */
+:root.dark {
+  background: var(--app-bg);
+}
+
 /* ─────────────────────────── 全局基础 ─────────────────────────── */
 
 html,
@@ -179,4 +185,48 @@ body {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* 按钮变体 */
+.btn-primary {
+  background: var(--app-accent);
+  border-color: transparent;
+  color: var(--app-accent-fg);
+  box-shadow: var(--app-accent-glow);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-secondary {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+  color: var(--app-fg);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--app-hover);
+  border-color: var(--app-border-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--app-fg-muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--app-hover);
+  color: var(--app-fg);
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--app-danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-danger) 12%, transparent);
 }
