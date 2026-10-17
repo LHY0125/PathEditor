@@ -1,4 +1,12 @@
-/** 手写内联 SVG 图标集 —— 不引入图标库依赖（spec N3）。 */
+/**
+ * 手写内联 SVG 图标集 —— 不引入图标库依赖（spec N3）。
+ *
+ * 模块状态：当前生产代码仅使用 `MoreIcon`（Menu 的 ⋯ 触发按钮）。
+ * `PlusIcon` / `PencilIcon` / `TrashIcon` / `ArrowUpIcon` / `ArrowDownIcon` 是为工具栏
+ * 规划的图标语言预留的 —— 工具栏改版最终选择了文字标签，点名因此未接线。
+ * 本波**刻意保留**并由 `tests/unit/icons.test.tsx` 覆盖，待后续波次决定采用或移除；
+ * 不要当作死代码顺手删除，也不要临时接线到工具栏。
+ */
 
 type IconProps = { className?: string };
 

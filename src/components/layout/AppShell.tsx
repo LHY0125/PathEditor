@@ -212,8 +212,10 @@ export function AppShell() {
             }}
             onHelp={() => setHelpOpen(true)}
             onLanguage={() => {
-              const current = localStorage.getItem('i18nextLng') || 'zh-CN';
-              i18n.changeLanguage(current === 'zh-CN' ? 'en' : 'zh-CN');
+              // 以 i18next 解析后的语言为准，不能读 localStorage 原始值：
+              // 检测器会缓存 'en-US' 这类区域变体，与 'zh-CN' 比较会得出错误结论。
+              const current = i18n.resolvedLanguage ?? i18n.language;
+              i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
             }}
             onProfiles={() => setProfilesOpen(true)}
             onAnalyze={() => setAnalyzeOpen(true)}

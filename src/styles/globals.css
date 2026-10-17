@@ -9,6 +9,7 @@
   /* 背景与表面 */
   --app-bg: #fafafa;
   --app-surface: #ffffff;
+  /* 预留：浮起表面，下一波次（行悬停/选中层次）启用；当前无引用，刻意保留 */
   --app-surface-raised: #ffffff;
   --app-border: #e4e4e7;
   --app-border-strong: #d4d4d8;
@@ -27,6 +28,7 @@
   --app-accent-glow: none;
 
   /* 行 */
+  /* 预留：偶数行底色，下一波次斑马纹启用；当前无引用，刻意保留 */
   --app-row-even: #ffffff;
   --app-row-odd: #fafafa;
   --app-row-selected: rgba(99, 102, 241, 0.1);
@@ -45,6 +47,7 @@
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 10px;
+  /* 预留：行高，下一波次统一表格/列表行高时启用；当前无引用，刻意保留 */
   --row-h: 28px;
   --gap: 6px;
 
