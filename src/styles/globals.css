@@ -16,6 +16,7 @@
   /* 文字 */
   --app-fg: #18181b;
   --app-fg-muted: #71717a;
+  --app-fg-subtle: #7e7e87;
   --app-fg-faint: #a1a1aa;
 
   /* 强调 */
@@ -64,6 +65,7 @@
 
   --app-fg: #f4f4f6;
   --app-fg-muted: #8b8b96;
+  --app-fg-subtle: #9a9aa2;
   --app-fg-faint: #63636e;
 
   --app-accent: #7c6cff;
@@ -298,8 +300,10 @@ body {
   color: var(--app-danger);
 }
 
+/* 快捷键提示比菜单项标签低一档：在前景色阶上位于 --app-fg-muted 与 --app-fg-faint 之间，
+   与菜单背景对比度实测 4.02:1（浅色）/ 4.17:1（深色），高于 3:1 的 UI 元素门槛。 */
 .menu-shortcut {
-  color: var(--app-fg-muted);
+  color: var(--app-fg-subtle);
   font-family: ui-monospace, Consolas, monospace;
   font-size: 11px;
 }
