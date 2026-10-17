@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
-import { btnClass, btnStyle } from '@/components/ui/buttons';
+import { Button } from '@/components/ui/Button';
 
 export function UndoRedoButtons() {
   const { t } = useTranslation();
@@ -18,22 +18,12 @@ export function UndoRedoButtons() {
 
   return (
     <div className="flex gap-1">
-      <button
-        className={btnClass}
-        style={btnStyle}
-        disabled={!canWrite || !undoRedo.canUndo()}
-        onClick={undo}
-      >
+      <Button variant="ghost" disabled={!canWrite || !undoRedo.canUndo()} onClick={undo}>
         {t('button.undo')}
-      </button>
-      <button
-        className={btnClass}
-        style={btnStyle}
-        disabled={!canWrite || !undoRedo.canRedo()}
-        onClick={redo}
-      >
+      </Button>
+      <Button variant="ghost" disabled={!canWrite || !undoRedo.canRedo()} onClick={redo}>
         {t('button.redo')}
-      </button>
+      </Button>
     </div>
   );
 }
