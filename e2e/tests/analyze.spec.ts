@@ -8,8 +8,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('打开分析对话框查看冲突和工具', async ({ page }) => {
-  // 点击分析按钮
-  await page.click('text=分析');
+  // 打开工具栏「更多操作」菜单，点击「冲突分析」
+  await page.getByRole('button', { name: '更多操作' }).click();
+  await page.getByRole('menuitem', { name: '冲突分析' }).click();
   await page.waitForTimeout(500);
 
   // 应显示冲突和工具两个标签

@@ -16,8 +16,8 @@ test('禁用路径后灰显并保存', async ({ page }) => {
   const row = page.getByTestId('path-row').first();
   await expect(row.getByTestId('path-text')).toHaveCSS('text-decoration-line', 'line-through');
 
-  // 点击"确定"保存
-  await page.click('text=确定');
+  // 点击工具栏「保存」
+  await page.getByRole('button', { name: '保存', exact: true }).click();
   await page.waitForTimeout(500);
   // 状态栏应显示"保存成功"
   await expect(page.locator('text=保存成功')).toBeVisible();

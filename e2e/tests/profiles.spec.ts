@@ -8,7 +8,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('打开配置管理对话框', async ({ page }) => {
-  await page.click('text=配置');
+  // 打开工具栏「更多操作」菜单，点击「配置方案」
+  await page.getByRole('button', { name: '更多操作' }).click();
+  await page.getByRole('menuitem', { name: '配置方案' }).click();
   await page.waitForTimeout(500);
   await expect(page.getByText('PATH 配置文件')).toBeVisible();
 });

@@ -41,8 +41,9 @@ test('搜索过滤后清理无效路径', async ({ page }) => {
   await page.waitForTimeout(300);
   await expect(page.getByTestId('path-row')).toHaveCount(3);
 
-  // 点击"一键清理"按钮
-  await page.click('text=一键清理');
+  // 打开工具栏「更多操作」菜单，点击「清理无效路径」
+  await page.getByRole('button', { name: '更多操作' }).click();
+  await page.getByRole('menuitem', { name: '清理无效路径' }).click();
   await page.waitForTimeout(300);
   // 清理由 Rust backend 统一执行；"invalid_path" 被移除，其余两条保留。
   await expect(page.getByTestId('path-row')).toHaveCount(2);
