@@ -1,25 +1,25 @@
 import { useTranslation } from 'react-i18next';
 import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
-import { btnClass, btnStyle } from '@/components/ui/buttons';
+import { Button } from '@/components/ui/Button';
 
 interface ActionButtonsProps {
   onNew: () => void;
   onEdit: () => void;
-  onBrowse: () => void;
   onDelete: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
-  onClean: () => void;
 }
 
+/**
+ * 主行编辑组 + 排序组。
+ * `onBrowse` 已移入 ⋯ 菜单（与「新建」同源，低频），`onClean` 同理。
+ */
 export function ActionButtons({
   onNew,
   onEdit,
-  onBrowse,
   onDelete,
   onMoveUp,
   onMoveDown,
-  onClean,
 }: ActionButtonsProps) {
   const { t } = useTranslation();
   const activeTab = useAppStore((s) => s.activeTab);
@@ -29,28 +29,33 @@ export function ActionButtons({
   const disabled = target === null || !canWriteTarget(isAdmin, pathCapabilities, target);
 
   return (
-    <div className="flex gap-1 flex-wrap">
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onNew}>
+    <>
+      <Button disabled={disabled} onClick={onNew}>
         {t('button.new')}
-      </button>
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onEdit}>
+      </Button>
+      <Button disabled={disabled} onClick={onEdit}>
         {t('button.edit')}
-      </button>
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onBrowse}>
-        {t('button.browse')}
-      </button>
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onDelete}>
+      </Button>
+      <Button variant="danger" disabled={disabled} onClick={onDelete}>
         {t('button.delete')}
-      </button>
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onMoveUp}>
+      </Button>
+      <span className="toolbar-sep" aria-hidden="true" />
+      <Button
+        variant="ghost"
+        disabled={disabled}
+        onClick={onMoveUp}
+        aria-label={t('button.moveUp')}
+      >
         {t('button.moveUp')}
-      </button>
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onMoveDown}>
+      </Button>
+      <Button
+        variant="ghost"
+        disabled={disabled}
+        onClick={onMoveDown}
+        aria-label={t('button.moveDown')}
+      >
         {t('button.moveDown')}
-      </button>
-      <button className={btnClass} style={btnStyle} disabled={disabled} onClick={onClean}>
-        {t('button.clean')}
-      </button>
-    </div>
+      </Button>
+    </>
   );
 }

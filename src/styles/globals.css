@@ -306,3 +306,51 @@ body {
   margin: 4px 2px;
   background: var(--app-border);
 }
+
+/* ── 工具栏（Task 6）────────────────────────────────────────── */
+
+.toolbar-search {
+  height: 28px;
+  width: 160px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius);
+  background: var(--app-surface);
+  color: var(--app-fg);
+  font-size: 12px;
+  outline: none;
+}
+
+.toolbar-search::placeholder {
+  color: var(--app-fg-faint);
+}
+
+.toolbar-search:focus {
+  border-color: var(--app-accent);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--app-border);
+  overflow: hidden;
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--app-border);
+  flex: 0 0 auto;
+}
+
+.dirty-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--app-accent-fg);
+  margin-left: 2px;
+}

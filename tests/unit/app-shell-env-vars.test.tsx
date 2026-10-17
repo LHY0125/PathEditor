@@ -251,6 +251,12 @@ describe('「全部变量」拖放早退（决策 3）', () => {
 });
 
 describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
+  // 关窗入口已收进工具栏 ⋯ 菜单（Task 6）：「取消并关闭」是 footer 条目，需先打开菜单。
+  function clickCancelAndClose(): void {
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消并关闭' }));
+  }
+
   it('仅有环境变量草稿时也弹异步确认，取消则不关窗', async () => {
     mockDialogConfirm(false);
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
@@ -258,7 +264,7 @@ describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
     useEnvStore.setState({ draft: new Map([['user:MY_TOKEN', 'secret']]) });
 
     render(<AppShell />);
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    clickCancelAndClose();
 
     await waitFor(() => expect(dialogConfirm).toHaveBeenCalledWith('有未保存的修改，确定退出吗？'));
     expect(closeSpy).not.toHaveBeenCalled();
@@ -270,7 +276,7 @@ describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
     useAppStore.setState({ isModified: true });
 
     render(<AppShell />);
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    clickCancelAndClose();
 
     await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
     expect(closeSpy).toHaveBeenCalled();
@@ -281,7 +287,7 @@ describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => undefined);
 
     render(<AppShell />);
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    clickCancelAndClose();
 
     expect(dialogConfirm).not.toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();

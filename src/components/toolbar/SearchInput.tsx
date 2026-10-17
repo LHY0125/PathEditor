@@ -28,12 +28,8 @@ export function SearchInput() {
       placeholder={t('dialog.search')}
       value={searchQuery}
       onChange={(e) => setSearchQuery(e.target.value)}
-      className="px-3 py-1 text-sm rounded border outline-none w-56"
-      style={{
-        backgroundColor: 'var(--app-list-bg)',
-        color: 'var(--app-fg)',
-        borderColor: 'var(--app-border)',
-      }}
+      aria-label={t('dialog.search')}
+      className="toolbar-search"
     />
   );
 }

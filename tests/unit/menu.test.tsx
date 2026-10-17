@@ -100,4 +100,14 @@ describe('Menu', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(document.activeElement).toBe(trigger);
   });
+
+  it('选择条目不导航时，焦点仍回到触发按钮（不死在 body）', () => {
+    const onSelect = vi.fn();
+    render(<Menu groups={makeGroups(onSelect)} triggerAriaLabel="更多操作" />);
+    const trigger = screen.getByRole('button', { name: '更多操作' });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: /清理无效路径/ }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(trigger);
+  });
 });

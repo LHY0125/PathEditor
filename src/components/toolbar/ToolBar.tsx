@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
-import { btnClass, btnStyle } from '@/components/ui/buttons';
+import { Button } from '@/components/ui/Button';
 import { SearchInput } from './SearchInput';
 import { ActionButtons } from './ActionButtons';
 import { UndoRedoButtons } from './UndoRedoButtons';
+import { ToolbarMenu } from './ToolbarMenu';
 
 interface ToolBarProps {
   onNew: () => void;
@@ -24,6 +25,7 @@ interface ToolBarProps {
   onProfiles: () => void;
 }
 
+/** 单行分层工具栏：搜索 │ 编辑 │ 排序 │ 撤销 ...推... 批量 │ 保存 │ ⋯ */
 export function ToolBar(props: ToolBarProps) {
   const { t } = useTranslation();
   const isAdmin = useAppStore((s) => s.isAdmin);
@@ -34,59 +36,40 @@ export function ToolBar(props: ToolBarProps) {
   const canWrite = target === null ? false : canWriteTarget(isAdmin, pathCapabilities, target);
 
   return (
-    <div className="space-y-2 pb-2 border-b" style={{ borderColor: 'var(--app-border)' }}>
-      {/* 第一行: 搜索 + 系统按钮 */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <SearchInput />
-        <div className="flex-1" />
-        <UndoRedoButtons />
-        <button className={btnClass} style={btnStyle} disabled={!canWrite} onClick={props.onImport}>
-          {t('button.import')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onExport}>
-          {t('button.export')}
-        </button>
-        <button
-          className={btnClass}
-          style={{
-            ...btnStyle,
-            backgroundColor: isModified ? '#2563eb' : btnStyle.backgroundColor,
-            color: isModified ? '#fff' : btnStyle.color,
-          }}
-          disabled={!canWrite}
-          onClick={props.onSave}
-        >
-          {t('button.save')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onCancel}>
-          {t('button.cancel')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onHelp}>
-          {t('button.help')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onLanguage}>
-          {t('button.language')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onAnalyze}>
-          {t('button.analyze')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onProfiles}>
-          {t('button.profiles')}
-        </button>
-        <button className={btnClass} style={btnStyle} onClick={props.onDarkMode}>
-          {t('button.darkMode')}
-        </button>
-      </div>
-
-      {/* 第二行: CRUD 操作 */}
+    <div className="toolbar" data-testid="toolbar">
+      <SearchInput />
+      <span className="toolbar-sep" aria-hidden="true" />
       <ActionButtons
         onNew={props.onNew}
         onEdit={props.onEdit}
-        onBrowse={props.onBrowse}
         onDelete={props.onDelete}
         onMoveUp={props.onMoveUp}
         onMoveDown={props.onMoveDown}
+      />
+      <span className="toolbar-sep" aria-hidden="true" />
+      <UndoRedoButtons />
+      <div className="flex-1" />
+      <Button disabled={!canWrite} onClick={props.onImport}>
+        {t('button.import')}
+      </Button>
+      <Button onClick={props.onExport}>{t('button.export')}</Button>
+      <Button variant="primary" disabled={!canWrite} onClick={props.onSave}>
+        {t('button.savePath')}
+        {/* H3：用 aria-hidden 而非 aria-label —— 后者会改变按钮的可访问名称，
+            使 getByRole('button', { name: '保存' }) 的精确匹配失效。 */}
+        {isModified && (
+          <span className="dirty-dot" aria-hidden="true" title={t('status.modified')} />
+        )}
+      </Button>
+      <ToolbarMenu
+        onBrowse={props.onBrowse}
         onClean={props.onClean}
+        onAnalyze={props.onAnalyze}
+        onProfiles={props.onProfiles}
+        onLanguage={props.onLanguage}
+        onDarkMode={props.onDarkMode}
+        onHelp={props.onHelp}
+        onCancel={props.onCancel}
       />
     </div>
   );

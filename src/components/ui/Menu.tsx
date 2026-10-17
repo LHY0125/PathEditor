@@ -65,9 +65,11 @@ export function Menu({ groups, triggerLabel, triggerAriaLabel, footer }: MenuPro
   }, [open, close]);
 
   // 条目点击：先关面板，再执行回调
+  // 焦点交还触发按钮：否则被点掉的条目把焦点带进 <body>，键盘用户丢失位置。
+  // 对会打开对话框/切换主题的条目同样成立 —— 这两类动作都会移动或重建焦点。
   const handleItem = (item: MenuItemDef) => {
     if (item.disabled) return;
-    setOpen(false);
+    close();
     item.onSelect();
   };
 
