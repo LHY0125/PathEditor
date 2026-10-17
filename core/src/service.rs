@@ -136,7 +136,7 @@ pub enum SidecarOutcome {
     Failed(CoreError),
 }
 
-/// 一次 PATH ��用（注册表 + sidecar）的整体结果。
+/// 一次 PATH 应用（注册表 + sidecar）的整体结果。
 ///
 /// **按 hive 分字段**：多 hive 应用必须能同时表达「系统成功 / 用户失败」
 /// 这种 partial 结果（评审 W2-B1），单个 `registry: HiveOutcome` 字段装不下。
