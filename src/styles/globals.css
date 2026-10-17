@@ -317,10 +317,13 @@ body {
 
 /* ── 工具栏（Task 6）────────────────────────────────────────── */
 
+/* 搜索框是工具栏中唯一可让出空间的元素：窄窗口下弹性压缩，
+   保证所有操作按钮的单行标签完整可读；空间充足时仍保持 160px */
 .toolbar-search {
   height: 28px;
   width: 160px;
-  flex: 0 0 auto;
+  flex: 0 1 160px;
+  min-width: 96px;
   padding: 0 10px;
   border: 1px solid var(--app-border);
   border-radius: var(--radius);
