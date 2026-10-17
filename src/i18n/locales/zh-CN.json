@@ -97,7 +97,19 @@
     "lightMode": "浅色模式",
     "language": "语言",
     "retry": "重试",
-    "close": "关闭"
+    "close": "关闭",
+    "savePath": "保存",
+    "cancelAndClose": "取消并关闭"
+  },
+  "menu": {
+    "label": "更多操作",
+    "maintenance": "维护",
+    "application": "应用",
+    "clean": "清理无效路径",
+    "analyze": "冲突分析",
+    "profiles": "配置方案",
+    "language": "切换语言",
+    "help": "帮助"
   },
   "merge": {
     "system": "系统",

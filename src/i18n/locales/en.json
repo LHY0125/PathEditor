@@ -97,7 +97,19 @@
     "lightMode": "Light Mode",
     "language": "Language",
     "retry": "Retry",
-    "close": "Close"
+    "close": "Close",
+    "savePath": "Save",
+    "cancelAndClose": "Cancel"
+  },
+  "menu": {
+    "label": "More actions",
+    "maintenance": "Maintenance",
+    "application": "Application",
+    "clean": "Clean invalid",
+    "analyze": "Analyze",
+    "profiles": "Profiles",
+    "language": "Language",
+    "help": "Help"
   },
   "merge": {
     "system": "System",
