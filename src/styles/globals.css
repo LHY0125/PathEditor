@@ -264,7 +264,7 @@ body {
   font-size: 10.5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--app-fg-faint);
+  color: var(--app-fg-muted);
 }
 
 .menu-item {
@@ -286,8 +286,11 @@ body {
   background: var(--app-hover);
 }
 
+/* 禁用态：用 --app-fg-muted（达到 AA 对比度）+ 透明度衰减表达禁用语义，
+   --app-fg-faint 仅作非文字背景用。 */
 .menu-item:disabled {
-  color: var(--app-fg-faint);
+  color: var(--app-fg-muted);
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -296,7 +299,7 @@ body {
 }
 
 .menu-shortcut {
-  color: var(--app-fg-faint);
+  color: var(--app-fg-muted);
   font-family: ui-monospace, Consolas, monospace;
   font-size: 11px;
 }
@@ -320,10 +323,6 @@ body {
   color: var(--app-fg);
   font-size: 12px;
   outline: none;
-}
-
-.toolbar-search::placeholder {
-  color: var(--app-fg-faint);
 }
 
 .toolbar-search:focus {
@@ -457,7 +456,9 @@ body {
 .path-text {
   flex: 1;
   min-width: 0;
-  padding: 0 8px;
+  /* 纵向留白：行高固定 28px（含 1px 下边框），12px 文字 + 5px 上下内边距
+     使内容在行内垂直居中且不溢出。 */
+  padding: 5px 8px;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
   color: var(--app-fg);
@@ -498,6 +499,7 @@ body {
   top: 0;
   z-index: 10;
   display: flex;
+  padding: 6px 14px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
