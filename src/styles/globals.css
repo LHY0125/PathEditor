@@ -345,3 +345,168 @@ body {
   background: var(--app-border);
   flex: 0 0 auto;
 }
+
+/* ── 布局与表格视图（Task 7）──────────────────────────────────
+   本轮追加的规则全部落在本节；上方规则（含 .toolbar-search 的占位符色）
+   由 Task 6 定义，这里只做必要的可访问性订正。 */
+
+/* 根容器：纵向铺满窗口（原 AppShell 内联样式） */
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--app-bg);
+  color: var(--app-fg);
+}
+
+/* 标题栏 */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--app-border);
+  flex: 0 0 auto;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titlebar-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--app-accent), var(--app-accent-text));
+}
+
+.titlebar-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 版本号是文字：用 --app-fg-muted（浅色 4.63:1 / 深色 5.75:1），
+   不用 --app-fg-faint（2.46:1 / 3.27:1，不满足 WCAG AA）。 */
+.titlebar-version {
+  font-size: 11px;
+  color: var(--app-fg-muted);
+}
+
+/* 主界面 Tab 栏（按钮本体样式见 .tab-pill） */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--app-border);
+  flex: 0 0 auto;
+}
+
+/* 状态栏 */
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px;
+  font-size: 12px;
+  user-select: none;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-fg);
+  flex: 0 0 auto;
+}
+
+.statusbar-warn {
+  color: var(--app-warning);
+}
+
+.statusbar-muted {
+  color: var(--app-fg-muted);
+}
+
+/* 虚拟滚动行。
+   交替底色由逻辑索引 data-odd 决定，不能用 :nth-child(odd)：
+   虚拟滚动只渲染可视窗口内的节点，伪类奇偶会随滚动跳变而闪烁。 */
+.path-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+
+.path-row[data-odd='true'] {
+  background: var(--app-row-odd);
+}
+
+.path-row:hover {
+  background: var(--app-hover);
+}
+
+.path-row.is-selected {
+  background: var(--app-row-selected);
+}
+
+.path-text {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  color: var(--app-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-row[data-state='invalid'] .path-text {
+  color: var(--app-danger);
+}
+
+.path-row[data-state='dup'] .path-text {
+  color: var(--app-warning);
+}
+
+.path-row[data-state='off'] .path-text {
+  color: var(--app-disabled-fg);
+  text-decoration: line-through;
+}
+
+/* 合并预览的附加列 */
+.merge-source {
+  width: 64px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+.merge-head {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* 表格表头。表头是文字：用 --app-fg-muted，不用 --app-fg-faint。 */
+.path-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-fg-muted);
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+}
+
+/* 可访问性订正：Task 6 的占位符色 --app-fg-faint 对比度不足，改为 --app-fg-muted */
+.toolbar-search::placeholder {
+  color: var(--app-fg-muted);
+}

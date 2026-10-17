@@ -97,10 +97,7 @@ export function PathTable({ tabId }: PathTableProps) {
 
   return (
     <div ref={parentRef} className="flex-1 overflow-auto relative" data-testid="path-table">
-      <div
-        className="sticky top-0 z-10 flex text-left text-xs uppercase"
-        style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
-      >
+      <div className="path-table-head">
         <div className="w-8 px-2 py-1">#</div>
         <div className="w-6 px-1 py-1"></div>
         <div className="px-2 py-1 flex-1">{t('table.path')}</div>
@@ -117,44 +114,35 @@ export function PathTable({ tabId }: PathTableProps) {
           const { path, index, enabled } = filtered[rowIdx];
           const v = validations[rowIdx];
           const isSelected = selectedIndices.includes(index);
-          let textColor = 'var(--app-fg)';
-          if (v.state === 'invalid') textColor = '#dc3545';
-          else if (v.isDuplicate) textColor = '#fd7e14';
-          else if (v.state === 'unknown') textColor = 'var(--app-fg)';
 
-          let textDecoration = 'none';
-          let opacity = 1;
-          if (v.state === 'pending') opacity = 0.65;
-          if (!enabled) {
-            textColor = '#6b7280';
-            textDecoration = 'line-through';
-            opacity = 0.6;
-          }
+          // 行状态只走一条优先级链：禁用 > 无效 > 重复 > 正常。
+          // 颜色由 globals.css 按 [data-state] 提供，组件内不再出现色值。
+          const rowState = !enabled
+            ? 'off'
+            : v.state === 'invalid'
+              ? 'invalid'
+              : v.isDuplicate
+                ? 'dup'
+                : 'ok';
 
           return (
             <div
               key={virtualRow.key}
               data-testid="path-row"
               data-path={path}
+              data-state={rowState}
+              // H1：交替底色按逻辑索引决定 —— 虚拟滚动只渲染可视窗口，
+              // :nth-child(odd) 的奇偶取决于「当前渲染了哪些节点」，滚动时会跳变闪烁。
+              data-odd={rowIdx % 2 === 1}
               onClick={(e) => handleClick(index, e)}
               onDoubleClick={() => handleDoubleClick(index)}
-              className="cursor-pointer select-none flex items-center absolute top-0 left-0 w-full"
+              className={`path-row${isSelected ? ' is-selected' : ''}`}
               style={{
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
-                backgroundColor: isSelected
-                  ? 'var(--app-select-row)'
-                  : rowIdx % 2 === 0
-                    ? 'var(--app-list-bg)'
-                    : 'var(--app-list-alt)',
               }}
             >
-              <div
-                className="w-8 px-2 py-0.5 text-xs opacity-50"
-                style={{ color: 'var(--app-fg)' }}
-              >
-                {index + 1}
-              </div>
+              <div className="w-8 px-2 py-0.5 text-xs opacity-50">{index + 1}</div>
               <div className="w-6 px-1 py-0.5 flex items-center">
                 <input
                   type="checkbox"
@@ -169,8 +157,7 @@ export function PathTable({ tabId }: PathTableProps) {
               </div>
               <div
                 data-testid="path-text"
-                className="px-2 py-0.5 text-sm truncate flex-1"
-                style={{ color: textColor, textDecoration, opacity }}
+                className="path-text"
                 title={expandedCache.get(path) || undefined}
               >
                 {path}

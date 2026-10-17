@@ -55,7 +55,7 @@ export function EnvVarTable({
     initialRect: { width: 800, height: 600 },
   });
 
-  /** 行内小操作按钮：与工具栏描边按钮同风格，尺寸收窄以适配行高。 */
+  /** 行内小操作按钮：复用按钮原语的 ghost 变体，尺寸收窄以适配行高。 */
   const rowBtn =
     'px-1.5 text-xs rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 
@@ -69,11 +69,8 @@ export function EnvVarTable({
           </button>
         )}
       </div>
-      {/* sticky 大写表头，与 PathTable 同规范 */}
-      <div
-        className="sticky top-0 z-10 flex text-left text-xs uppercase"
-        style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
-      >
+      {/* sticky 大写表头，与 PathTable 共用 .path-table-head 规范 */}
+      <div className="path-table-head">
         <div className="w-8 px-2 py-1">#</div>
         <div className="px-2 py-1 flex-1">{t('envVar.name')}</div>
         <div className="px-2 py-1 flex-[2]">{t('envVar.value')}</div>
@@ -102,23 +99,15 @@ export function EnvVarTable({
                 data-env-var-key={key}
                 data-index={rowIdx}
                 onClick={() => onSelect?.(meta)}
-                className="cursor-pointer select-none flex items-center absolute top-0 left-0 w-full"
+                // 交替底色按逻辑索引（H1），选中态由 .is-selected 覆盖
+                data-odd={rowIdx % 2 === 1}
+                className={`path-row${isSelected ? ' is-selected' : ''}`}
                 style={{
                   height: `${virtualRow.size}px`,
                   transform: `translateY(${virtualRow.start}px)`,
-                  backgroundColor: isSelected
-                    ? 'var(--app-select-row)'
-                    : rowIdx % 2 === 0
-                      ? 'var(--app-list-bg)'
-                      : 'var(--app-list-alt)',
                 }}
               >
-                <div
-                  className="w-8 px-2 py-0.5 text-xs opacity-50"
-                  style={{ color: 'var(--app-fg)' }}
-                >
-                  {rowIdx + 1}
-                </div>
+                <div className="w-8 px-2 py-0.5 text-xs opacity-50">{rowIdx + 1}</div>
                 <div className="px-2 py-0.5 text-sm truncate flex-1" title={meta.name}>
                   {meta.name}
                 </div>

@@ -7,12 +7,12 @@ export function TitleBar() {
   const isAdmin = useAppStore((s) => s.isAdmin);
 
   return (
-    <header
-      className="flex items-center justify-between px-4 py-2 border-b select-none"
-      style={{ borderColor: 'var(--app-border)' }}
-    >
-      <h1 className="text-lg font-semibold">{isAdmin ? t('app.name') : t('app.nameReadonly')}</h1>
-      <span className="text-sm opacity-60">v{version}</span>
+    <header className="titlebar">
+      <div className="titlebar-brand">
+        <span className="titlebar-logo" aria-hidden="true" />
+        <h1 className="titlebar-title">{isAdmin ? t('app.name') : t('app.nameReadonly')}</h1>
+      </div>
+      <span className="titlebar-version">v{version}</span>
     </header>
   );
 }

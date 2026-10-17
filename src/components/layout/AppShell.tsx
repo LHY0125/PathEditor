@@ -146,27 +146,25 @@ export function AppShell() {
   };
 
   return (
-    <div
-      className="flex flex-col h-screen"
-      style={{ backgroundColor: 'var(--app-bg)', color: 'var(--app-fg)' }}
-    >
+    <div className="app-root">
       <TitleBar />
 
-      <div className="flex border-b px-4" style={{ borderColor: 'var(--app-border)' }}>
+      <nav className="tabs" aria-label={t('app.name')}>
         {tabConfig.map((tab) => (
           <button
             key={tab.id}
+            type="button"
+            data-active={activeTab === tab.id}
             onClick={() => {
               setActiveTab(tab.id);
               setSelectedIndices([]);
             }}
-            className={`px-4 py-1.5 text-sm font-medium transition-colors ${activeTab === tab.id ? 'tab-active' : 'opacity-60'}`}
-            style={{ color: activeTab === tab.id ? '#3b82f6' : 'var(--app-fg)' }}
+            className="tab-pill text-xs"
           >
             {tab.label}
           </button>
         ))}
-      </div>
+      </nav>
 
       <div className="px-4 py-2">
         {/* 「全部变量」使用独立工具栏：PATH 的上移/下移/清理/导入/导出对其语义不成立。 */}

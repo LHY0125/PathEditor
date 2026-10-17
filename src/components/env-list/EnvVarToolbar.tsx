@@ -74,8 +74,7 @@ export function EnvVarToolbar({
         value={searchQuery}
         onChange={(e) => onSearchChange(e.target.value)}
         placeholder={t('envVar.search')}
-        className="px-2 py-1 text-sm rounded border w-48"
-        style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
+        className="toolbar-search"
       />
       <div className="ml-auto flex items-center gap-1">
         {FILTERS.map((filter) => (

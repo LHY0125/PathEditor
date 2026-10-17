@@ -45,10 +45,7 @@ export function MergePreview() {
 
   return (
     <div ref={parentRef} className="flex-1 overflow-auto relative">
-      <div
-        className="sticky top-0 z-10 flex text-left text-xs uppercase"
-        style={{ backgroundColor: 'var(--app-list-alt)', color: 'var(--app-fg)' }}
-      >
+      <div className="path-table-head merge-head">
         <div className="w-10 px-2 py-1">#</div>
         <div className="px-2 py-1 flex-1">{t('dialog.pathLabel')}</div>
         <div className="w-16 px-2 py-1">{t('merge.source')}</div>
@@ -63,29 +60,18 @@ export function MergePreview() {
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const rowIdx = virtualRow.index;
           const { path, enabled, source, displayIndex } = allPaths[rowIdx];
-          const textColor = enabled ? 'var(--app-fg)' : '#6b7280';
-          const textDecoration = enabled ? 'none' : 'line-through';
-          const opacity = enabled ? 1 : 0.6;
 
           return (
             <div
               key={`${source}-${displayIndex}`}
-              className="flex items-center absolute top-0 left-0 w-full"
-              style={{
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-                backgroundColor: rowIdx % 2 === 0 ? 'var(--app-list-bg)' : 'var(--app-list-alt)',
-                color: 'var(--app-fg)',
-              }}
+              // 与 PathTable 同规则：交替底色按逻辑索引，不用 :nth-child（H1）
+              data-state={enabled ? 'ok' : 'off'}
+              data-odd={rowIdx % 2 === 1}
+              className="path-row"
             >
               <div className="w-10 px-2 py-0.5 text-xs opacity-50">{rowIdx + 1}</div>
-              <div
-                className="px-2 py-0.5 text-sm flex-1 truncate"
-                style={{ color: textColor, textDecoration, opacity }}
-              >
-                {path}
-              </div>
-              <div className="w-16 px-2 py-0.5 text-xs opacity-60">{source}</div>
+              <div className="path-text">{path}</div>
+              <div className="merge-source">{source}</div>
             </div>
           );
         })}
