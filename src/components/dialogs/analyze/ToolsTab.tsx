@@ -18,12 +18,7 @@ export function ToolsTab({ groups, query, onQueryChange }: ToolsTabProps) {
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
         placeholder={t('analyze.searchPlaceholder')}
-        className="w-full px-3 py-1.5 text-sm rounded mb-3 border outline-none"
-        style={{
-          backgroundColor: 'var(--app-list-bg)',
-          color: 'var(--app-fg)',
-          borderColor: 'var(--app-border)',
-        }}
+        className="field-input w-full mb-3"
       />
       {groups.length === 0 ? (
         <EmptyHint text={t('analyze.noTools')} />
@@ -33,9 +28,10 @@ export function ToolsTab({ groups, query, onQueryChange }: ToolsTabProps) {
             <div
               className="text-xs font-mono py-1 px-2 rounded"
               style={{
-                backgroundColor: group.exists ? 'transparent' : 'rgba(239,68,68,0.1)',
-                color: group.exists ? 'var(--app-fg)' : '#ef4444',
-                opacity: group.exists ? 1 : 0.6,
+                backgroundColor: group.exists
+                  ? 'transparent'
+                  : 'color-mix(in srgb, var(--app-danger) 10%, transparent)',
+                color: group.exists ? 'var(--app-fg)' : 'var(--app-danger)',
               }}
             >
               {group.dir} {!group.exists && t('analyze.notExists')}
@@ -45,7 +41,7 @@ export function ToolsTab({ groups, query, onQueryChange }: ToolsTabProps) {
                 <span
                   key={exe}
                   className="text-xs font-mono px-1.5 py-0.5 rounded"
-                  style={{ backgroundColor: 'var(--app-list-bg)', color: 'var(--app-fg)' }}
+                  style={{ backgroundColor: 'var(--app-surface)', color: 'var(--app-fg)' }}
                 >
                   {exe}
                 </span>

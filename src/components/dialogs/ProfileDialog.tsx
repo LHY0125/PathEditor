@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
 import { ProfileDetail } from './profile/ProfileDetail';
 import { ProfileList } from './profile/ProfileList';
 import { useProfiles } from './profile/use-profiles';
@@ -15,10 +16,10 @@ export function ProfileDialog({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="flex flex-col" style={{ width: 680, maxHeight: '75vh' }}>
+      <div className="flex flex-col" style={{ width: 680, maxWidth: '100%', maxHeight: '75vh' }}>
         <div
-          className="flex items-center justify-between px-5 py-3 border-b"
-          style={{ borderColor: 'var(--app-border)' }}
+          className="flex items-center justify-between px-1 py-2"
+          style={{ borderBottom: '1px solid var(--app-border)' }}
         >
           <h2 className="text-base font-semibold">{t('profile.title')}</h2>
           <div className="flex gap-2 items-center">
@@ -27,29 +28,23 @@ export function ProfileDialog({ open, onClose }: Props) {
               value={profiles.newName}
               onChange={(event) => profiles.setNewName(event.target.value)}
               placeholder={t('profile.namePlaceholder')}
-              className="px-2 py-1 text-sm rounded border outline-none w-44"
-              style={{
-                backgroundColor: 'var(--app-list-bg)',
-                color: 'var(--app-fg)',
-                borderColor: 'var(--app-border)',
-              }}
+              className="field-input w-44"
             />
-            <button
-              className="px-3 py-1 text-sm rounded text-white"
-              style={{ backgroundColor: '#3b82f6' }}
+            <Button
+              variant="primary"
               disabled={profiles.saving || !profiles.newName.trim()}
               onClick={profiles.handleSave}
             >
               {t('profile.save')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
               onClick={onClose}
-              className="px-2 py-1 text-sm rounded hover:opacity-70 transition-opacity"
-              style={{ color: 'var(--app-fg)' }}
               title={t('button.close')}
+              aria-label={t('button.close')}
             >
               ✕
-            </button>
+            </Button>
           </div>
         </div>
 

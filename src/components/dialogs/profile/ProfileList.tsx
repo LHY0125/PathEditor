@@ -13,7 +13,7 @@ export function ProfileList({ profiles, selected, onSelect }: ProfileListProps) 
   return (
     <div className="w-48 border-r overflow-auto p-2" style={{ borderColor: 'var(--app-border)' }}>
       {profiles.length === 0 ? (
-        <div className="text-xs text-center py-6" style={{ opacity: 0.5 }}>
+        <div className="text-xs text-center py-6" style={{ color: 'var(--app-fg-subtle)' }}>
           {t('profile.noProfiles')}
         </div>
       ) : (
@@ -21,11 +21,8 @@ export function ProfileList({ profiles, selected, onSelect }: ProfileListProps) 
           <div
             key={profile.name}
             onClick={() => onSelect(profile.name)}
-            className="px-2 py-1.5 text-sm rounded cursor-pointer mb-0.5"
-            style={{
-              backgroundColor: selected === profile.name ? 'rgba(59,130,246,0.15)' : 'transparent',
-              color: selected === profile.name ? '#3b82f6' : 'var(--app-fg)',
-            }}
+            data-selected={selected === profile.name}
+            className="dialog-list-item px-2 py-1.5 text-xs mb-0.5"
           >
             {profile.name}
           </div>

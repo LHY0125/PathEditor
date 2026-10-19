@@ -20,22 +20,20 @@ export function AnalyzeDialog({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="flex flex-col" style={{ width: 680, maxHeight: '75vh' }}>
+      <div className="flex flex-col" style={{ width: 680, maxWidth: '100%', maxHeight: '75vh' }}>
         <div
-          className="flex items-center justify-between px-5 py-3 border-b"
-          style={{ borderColor: 'var(--app-border)' }}
+          className="flex items-center justify-between px-1 py-2"
+          style={{ borderBottom: '1px solid var(--app-border)' }}
         >
           <h2 className="text-base font-semibold">{t('analyze.title')}</h2>
           <div className="flex gap-1">
             {(['conflicts', 'tools'] as TabType[]).map((tabId) => (
               <button
                 key={tabId}
+                type="button"
+                data-active={tab === tabId}
+                className="tab-pill text-xs"
                 onClick={() => setTab(tabId)}
-                className="px-3 py-1 text-sm rounded transition-colors"
-                style={{
-                  backgroundColor: tab === tabId ? '#3b82f6' : 'transparent',
-                  color: tab === tabId ? '#fff' : 'var(--app-fg)',
-                }}
               >
                 {tabId === 'conflicts' ? t('analyze.conflicts') : t('analyze.tools')}
               </button>
@@ -43,16 +41,16 @@ export function AnalyzeDialog({ open, onClose }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-3">
           {loading ? (
             <div
-              className="flex items-center justify-center py-12 text-sm"
-              style={{ color: 'var(--app-fg)', opacity: 0.6 }}
+              className="flex items-center justify-center py-12 text-xs"
+              style={{ color: 'var(--app-fg-muted)' }}
             >
               {t('analyze.scanning')}
             </div>
           ) : error ? (
-            <div className="text-center py-12 text-sm text-red-500">
+            <div className="text-center py-12 text-xs" style={{ color: 'var(--app-danger)' }}>
               {t('analyze.error')}: {error}
             </div>
           ) : tab === 'conflicts' ? (

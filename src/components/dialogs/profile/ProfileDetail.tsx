@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import type { PathEntry } from '@/core/path-entry';
 import type { ProfileData } from '@/services/backend';
 
@@ -30,7 +31,7 @@ export function ProfileDetail({
   if (!data) {
     return (
       <div className="flex-1 p-3 overflow-auto">
-        <div className="text-center py-10 text-sm" style={{ opacity: 0.4 }}>
+        <div className="text-center py-10 text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
           {hasProfiles ? t('profile.selectProfile') : t('profile.noProfiles')}
         </div>
       </div>
@@ -40,34 +41,22 @@ export function ProfileDetail({
   return (
     <div className="flex-1 p-3 overflow-auto">
       <div className="flex items-center gap-2 mb-3">
-        <span className="font-semibold text-sm">{data.name}</span>
-        <span className="text-xs" style={{ opacity: 0.5 }}>
+        <span className="font-semibold text-xs">{data.name}</span>
+        <span className="text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
           {data.modified}
         </span>
       </div>
 
       <div className="flex gap-1.5 mb-3">
-        <button
-          className="px-3 py-1 text-xs rounded text-white"
-          style={{ backgroundColor: '#3b82f6' }}
-          onClick={onApply}
-        >
+        <Button size="sm" variant="primary" onClick={onApply}>
           {t('profile.apply')}
-        </button>
-        <button
-          className="px-3 py-1 text-xs rounded"
-          style={{ backgroundColor: 'var(--app-list-bg)', color: 'var(--app-fg)' }}
-          onClick={onRenameOpen}
-        >
+        </Button>
+        <Button size="sm" onClick={onRenameOpen}>
           {t('profile.rename')}
-        </button>
-        <button
-          className="px-3 py-1 text-xs rounded text-white"
-          style={{ backgroundColor: '#ef4444' }}
-          onClick={() => onDelete(data.name)}
-        >
+        </Button>
+        <Button size="sm" variant="danger" onClick={() => onDelete(data.name)}>
           {t('profile.delete')}
-        </button>
+        </Button>
       </div>
 
       {renameOpen && (
@@ -76,20 +65,11 @@ export function ProfileDetail({
             type="text"
             value={renameValue}
             onChange={(event) => onRenameValueChange(event.target.value)}
-            className="px-2 py-1 text-xs rounded border outline-none"
-            style={{
-              backgroundColor: 'var(--app-list-bg)',
-              color: 'var(--app-fg)',
-              borderColor: 'var(--app-border)',
-            }}
+            className="field-input text-xs"
           />
-          <button
-            className="px-2 py-1 text-xs rounded text-white"
-            style={{ backgroundColor: '#3b82f6' }}
-            onClick={onRename}
-          >
+          <Button size="sm" variant="primary" onClick={onRename}>
             {t('button.save')}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -103,11 +83,11 @@ function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
   const { t } = useTranslation();
   return (
     <div className="mb-2">
-      <div className="text-xs font-medium mb-1" style={{ opacity: 0.7 }}>
+      <div className="text-xs font-medium mb-1" style={{ color: 'var(--app-fg-muted)' }}>
         {title}
       </div>
       {paths.length === 0 ? (
-        <div className="text-xs" style={{ opacity: 0.4 }}>
+        <div className="text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
           {t('profile.empty')}
         </div>
       ) : (
@@ -117,13 +97,17 @@ function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
               key={entry.path}
               className="text-xs font-mono px-2 py-0.5 rounded flex items-center gap-1.5"
               style={{
-                backgroundColor: 'var(--app-list-bg)',
-                color: entry.enabled ? 'var(--app-fg)' : '#ef4444',
+                backgroundColor: 'var(--app-surface)',
+                color: entry.enabled ? 'var(--app-fg)' : 'var(--app-danger)',
                 textDecoration: entry.enabled ? 'none' : 'line-through',
-                opacity: entry.enabled ? 1 : 0.5,
               }}
             >
-              <span style={{ color: entry.enabled ? '#22c55e' : '#ef4444', fontSize: 10 }}>
+              <span
+                style={{
+                  color: entry.enabled ? 'var(--app-success)' : 'var(--app-danger)',
+                  fontSize: 10,
+                }}
+              >
                 {entry.enabled ? '●' : '○'}
               </span>
               {entry.path}
