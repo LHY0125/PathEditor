@@ -33,6 +33,7 @@
 | 文件                               | 职责                                                             |
 | ---------------------------------- | ---------------------------------------------------------------- |
 | `tests/unit/dialog-tokens.test.ts` | 静态守卫：扫描 `src/components/dialogs/`，禁止旧设施与硬编码色值 |
+| `e2e/tests/dialog-visual.spec.ts`  | 对话框视觉回归（Task 6）                                         |
 
 ### 修改
 
@@ -65,6 +66,8 @@
 
 - Modify: `src/styles/globals.css`
 - Modify: `src/components/ui/Modal.tsx`
+- Modify: `e2e/tests/crud-undo.spec.ts`
+- Modify: `e2e/tests/keyboard.spec.ts`
 - Test: `tests/unit/design-tokens.test.ts`
 
 **Interfaces:**
@@ -139,7 +142,7 @@ Expected: FAIL —— 「缺少 --app-success」与「缺少 .field-input」
 }
 
 .modal-surface {
-  max-width: 92vw;
+  max-width: 90vw;
   max-height: 85vh;
   overflow: auto;
   padding: 20px;
@@ -196,7 +199,30 @@ Expected: FAIL —— 「缺少 --app-success」与「缺少 .field-input」
 }
 ```
 
-- [ ] **Step 5: 重写 `Modal.tsx`**
+- [ ] **Step 5: 重写 `Modal.tsx`，并同步两处 E2E 选择器**
+
+````tsx
+**C2 —— 同步 E2E 选择器（必做，否则 crud-undo / keyboard 必红）**：
+
+`Modal` 外层类名由 Tailwind 的 `fixed inset-0 …` 改为 `.modal-overlay` 后，DOM 的 `class` 属性不再含 `fixed` / `inset-0`，而下列两条用例用的是**类名选择器**：
+
+```ts
+// e2e/tests/crud-undo.spec.ts:13
+await page.locator('.fixed.inset-0 input[type="text"]').fill('C:\\NewPath');
+// e2e/tests/keyboard.spec.ts:13
+await expect(page.locator('.fixed.inset-0 input[type="text"]')).toBeVisible();
+````
+
+两处都改为：
+
+```ts
+// e2e/tests/crud-undo.spec.ts:13
+await page.locator('.modal-overlay input[type="text"]').fill('C:\\NewPath');
+// e2e/tests/keyboard.spec.ts:13
+await expect(page.locator('.modal-overlay input[type="text"]')).toBeVisible();
+```
+
+> Playwright 的 `.fixed.inset-0` 只匹配 `class` 属性，不读计算样式 —— 换成 CSS 类后属性消失即失配。
 
 ```tsx
 import { useEffect, type ReactNode } from 'react';
@@ -312,7 +338,7 @@ export function PathEditDialog({
   return (
     <Modal open={open} onClose={onCancel}>
       <h2 className="text-base font-semibold mb-4">{title}</h2>
-      <label className="text-xs mb-2 block" style={{ color: 'var(--app-fg-muted)' }}>
+      <label className="mb-2 block" style={{ color: 'var(--app-fg-muted)' }}>
         {t('dialog.pathLabel')}
       </label>
       <input
@@ -460,7 +486,7 @@ interface NewEnvVarDialogProps {
   onConfirm: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
 }
 
-const labelClass = 'w-20 text-xs';
+const labelClass = 'w-20';
 const labelStyle = { color: 'var(--app-fg-muted)' };
 
 export function NewEnvVarDialog({
@@ -596,7 +622,7 @@ interface EditEnvVarDialogProps {
   onConfirm: (value: string, readRevision: string | null) => Promise<boolean>;
 }
 
-const labelClass = 'w-20 text-xs';
+const labelClass = 'w-20';
 const labelStyle = { color: 'var(--app-fg-muted)' };
 
 /**
@@ -749,7 +775,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
 - [ ] **Step 7: 运行类型检查与全部相关测试**
 
 Run: `npx tsc -b && npx vitest run`
-Expected: PASS（312 个测试全绿，与基线一致）
+Expected: PASS（313 个测试全绿，与基线一致）
 
 - [ ] **Step 8: 提交**
 
@@ -881,7 +907,6 @@ export function ToolsTab({ groups, query, onQueryChange }: ToolsTabProps) {
                   ? 'transparent'
                   : 'color-mix(in srgb, var(--app-danger) 10%, transparent)',
                 color: group.exists ? 'var(--app-fg)' : 'var(--app-danger)',
-                opacity: group.exists ? 1 : 0.6,
               }}
             >
               {group.dir} {!group.exists && t('analyze.notExists')}
@@ -1118,7 +1143,6 @@ function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
                 backgroundColor: 'var(--app-surface)',
                 color: entry.enabled ? 'var(--app-fg)' : 'var(--app-danger)',
                 textDecoration: entry.enabled ? 'none' : 'line-through',
-                opacity: entry.enabled ? 1 : 0.5,
               }}
             >
               <span
@@ -1220,12 +1244,12 @@ export function ProfileDialog({ open, onClose }: Props) {
 }
 ```
 
-- [ ] **Step 9: 运行类型检查与测试**
+- [ ] **Step 8: 运行类型检查与测试**
 
 Run: `npx tsc -b && npx vitest run`
 Expected: PASS
 
-- [ ] **Step 10: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add src/components/dialogs/AnalyzeDialog.tsx src/components/dialogs/analyze/ src/components/dialogs/ProfileDialog.tsx src/components/dialogs/profile/
@@ -1510,7 +1534,14 @@ function walk(dir: string): string[] {
 }
 
 const files = walk(ROOT);
-const read = (f: string) => readFileSync(f, 'utf8');
+/**
+ * 剥离注释后再匹配 —— 与 design-tokens.test.ts 的 B4 口径保持一致。
+ * 不剥离时，注释里写「原为 #3b82f6」这类说明会造成假红。
+ */
+const read = (f: string) =>
+  readFileSync(f, 'utf8')
+    .replace(//*[sS]*?*//g, '')
+    .replace(///.*$/gm, '');
 
 const LEGACY_TOKENS = ['--app-list-bg', '--app-list-alt', '--app-select-row'];
 const LEGACY_APIS = ['btnClass', 'btnStyle', 'tab-active'];
@@ -1574,21 +1605,24 @@ Expected: **FAIL** —— 「过渡别名 --app-list-bg 应已删除」
 --app-select-row: var(--app-row-selected);
 ```
 
-并删除 `.tab-active` 规则整块：
+并把 `globals.css:153` 的注释 `/* 主界面 Tab（对话框仍用 .tab-active，勿改其规则） */` 改为 `/* 主界面 Tab */` —— 该注释含 `tab-active` 字样，不改则验收 grep 必不空（测试剥注释会绿、验收不剥会红，口径必须一致）。
+
+再删除 `.tab-active` 规则整块：
 
 ```css
 /* 保留：对话框 EnvBackupPanel.tsx:61 依赖。
    有意偏离（H5）：色值由硬编码 #3b82f6 改为 var(--app-accent)。
-   结构（border-bottom: 2px）不变，仅色值跟随主题。 */
+   结构（border-bottom: 2px）不变，仅色值跟随主题。
+   理由：硬编码色在深色玻璃主题下与 --app-accent(#7c6cff) 不协调。 */
 .tab-active {
   border-bottom: 2px solid var(--app-accent);
   color: var(--app-accent);
 }
 ```
 
-- [ ] **Step 4: 从 `buttons.ts` 删除废弃导出**
+- [ ] **Step 4: 从 `buttons.ts` 删除废弃导出与随之无用的 import**
 
-删除文件末尾这两个导出（含各自的 JSDoc）：
+删除文件末尾这两个导出（含各自的 JSDoc），**并删除文件首行 `import type { CSSProperties } from 'react';`** —— 它唯一用途是 `btnStyle` 的类型标注，删后 `noUnusedLocals: true` 会报 TS6133：
 
 ```ts
 /**
@@ -1617,10 +1651,14 @@ export const btnClass =
 
 删除：
 
+整块删除（含空壳 `describe`，避免留下无意义结构）：
+
 ```ts
-it('btnClass / btnStyle 仍可用', () => {
-  expect(typeof btnClass).toBe('string');
-  expect(btnStyle).toHaveProperty('backgroundColor');
+describe('兼容导出', () => {
+  it('btnClass / btnStyle 仍可用', () => {
+    expect(typeof btnClass).toBe('string');
+    expect(btnStyle).toHaveProperty('backgroundColor');
+  });
 });
 ```
 
