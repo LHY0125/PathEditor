@@ -63,16 +63,15 @@ describe('设计 token 层', () => {
     }
   });
 
-  it('保留 R7 过渡别名（对话框 14 处引用）', () => {
+  it('过渡别名已随 Wave 4.1 删除', () => {
     for (const v of ['--app-list-bg', '--app-list-alt', '--app-select-row']) {
-      expect(declares(v), `缺少过渡别名 ${v}`).toBe(true);
+      expect(declares(v), `过渡别名 ${v} 应已删除`).toBe(false);
     }
-    // TODO 注释本身在 raw 里（已被 css 剥离），故查 raw
-    expect(raw).toContain('TODO(Wave 4.1)');
+    expect(raw).not.toContain('TODO(Wave 4.1)');
   });
 
-  it('保留 .tab-active（对话框依赖）并新增 .tab-pill', () => {
-    expect(css).toMatch(/\.tab-active\s*\{/);
+  it('.tab-active 已删除，.tab-pill 保留', () => {
+    expect(css).not.toMatch(/\.tab-active\s*\{/);
     expect(css).toMatch(/\.tab-pill\s*\{/);
   });
 

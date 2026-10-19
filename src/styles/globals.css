@@ -54,13 +54,6 @@
   /* 预留：行高，下一波次统一表格/列表行高时启用；当前无引用，刻意保留 */
   --row-h: 28px;
   --gap: 6px;
-
-  /* TODO(Wave 4.1)：以下为过渡别名 —— 对话框重做后删除。不得静默遗留。
-     引用方：dialogs/ 下 7 个文件共 14 处（NewEnvVarDialog 4、ProfileDetail 3、
-     EnvBackupPanel 2、ToolsTab 2、ProfileDialog 1、PathEditDialog 1、EditEnvVarDialog 1）。 */
-  --app-list-bg: var(--app-surface);
-  --app-list-alt: var(--app-row-odd);
-  --app-select-row: var(--app-row-selected);
 }
 
 :root.dark {
@@ -158,7 +151,7 @@ body {
 
 /* ─────────────────────────── 工具类 ─────────────────────────── */
 
-/* 主界面 Tab（对话框仍用 .tab-active，勿改其规则） */
+/* 主界面 Tab */
 .tab-pill {
   border-radius: var(--radius);
   padding: 4px 12px;
@@ -177,15 +170,6 @@ body {
   background: var(--app-accent-bg);
   color: var(--app-accent-text);
   font-weight: 500;
-}
-
-/* 保留：对话框 EnvBackupPanel.tsx:61 依赖。
-   有意偏离（H5）：色值由硬编码 #3b82f6 改为 var(--app-accent)。
-   结构（border-bottom: 2px）不变，仅色值跟随主题。
-   理由：硬编码色在深色玻璃主题下与 --app-accent(#7c6cff) 不协调。 */
-.tab-active {
-  border-bottom: 2px solid var(--app-accent);
-  color: var(--app-accent);
 }
 
 /* 深色浮层毛玻璃 */

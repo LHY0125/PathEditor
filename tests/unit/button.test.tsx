@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { Button } from '@/components/ui/Button';
-import { buttonVariants, btnClass, btnStyle } from '@/components/ui/buttons';
+import { buttonVariants } from '@/components/ui/buttons';
 
 // 本仓库未开启 vitest globals，RTL 的自动 cleanup 不会生效（同 env-var-toolbar.test.tsx）。
 afterEach(() => {
@@ -61,12 +61,5 @@ describe('Button', () => {
   it('primary 变体带强调底色', () => {
     render(<Button variant="primary">保存</Button>);
     expect(screen.getByRole('button').className).toContain('btn-primary');
-  });
-});
-
-describe('兼容导出', () => {
-  it('btnClass / btnStyle 仍可用', () => {
-    expect(typeof btnClass).toBe('string');
-    expect(btnStyle).toHaveProperty('backgroundColor');
   });
 });
