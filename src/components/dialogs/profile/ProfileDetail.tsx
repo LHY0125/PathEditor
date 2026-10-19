@@ -65,7 +65,7 @@ export function ProfileDetail({
             type="text"
             value={renameValue}
             onChange={(event) => onRenameValueChange(event.target.value)}
-            className="field-input text-xs"
+            className="field-input"
           />
           <Button size="sm" variant="primary" onClick={onRename}>
             {t('button.save')}

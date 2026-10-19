@@ -9,7 +9,7 @@
   /* 背景与表面 */
   --app-bg: #fafafa;
   --app-surface: #ffffff;
-  /* 预留：浮起表面，下一波次（行悬停/选中层次）启用；当前无引用，刻意保留 */
+  /* 预留：浮起表面；Wave 4.1 起由对话框 .modal-surface 使用 */
   --app-surface-raised: #ffffff;
   --app-border: #e4e4e7;
   --app-border-strong: #d4d4d8;
@@ -38,8 +38,9 @@
   --app-danger: #dc2626;
   --app-warning: #d97706;
   --app-disabled-fg: #a1a1aa;
-  /* Wave 4.1：对话框补一档「成功」（此前只有 danger/warning，对话框用 #22c55e 硬编码） */
-  --app-success: #16a34a;
+  /* Wave 4.1：对话框补一档「成功」（此前只有 danger/warning，对话框用 #22c55e 硬编码）。
+     浅色取 #15803d：白底 5.02:1 / #fafafa 4.81:1，满足 AA 4.5:1（旧值 #16a34a 仅 3.30:1） */
+  --app-success: #15803d;
   --app-overlay: rgb(0 0 0 / 40%);
   --app-dialog-shadow: 0 24px 64px rgb(0 0 0 / 16%), 0 4px 12px rgb(0 0 0 / 8%);
 

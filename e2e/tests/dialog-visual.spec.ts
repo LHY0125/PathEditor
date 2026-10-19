@@ -17,6 +17,10 @@ for (const c of CASES) {
     if (c.dark) await page.addInitScript(() => localStorage.setItem('darkMode', '1'));
     await page.goto('/');
 
+    // P4：先证明主题确实切换成功 —— 该判据在浅色/深色下取值相反，不会双向假绿。
+    const htmlClass = (await page.locator('html').getAttribute('class')) ?? '';
+    expect(htmlClass.includes('dark'), `html 类名应${c.dark ? '' : '不'}含 dark`).toBe(c.dark);
+
     await page.getByRole('button', { name: '新建' }).click();
     const surface = page.locator('.modal-surface');
     await expect(surface).toBeVisible();
@@ -26,8 +30,8 @@ for (const c of CASES) {
       return { background: s.backgroundColor, radius: s.borderRadius, padding: s.padding };
     });
 
-    // 背景必须不是透明（transparent 会让深色主题下文字不可读）
-    expect(styles.background).not.toBe('rgba(0, 0, 0, 0)');
+    // 表面色逐主题锁定 —— 每个取值只在对应主题下成立（浅色白 / 深色 92% 玻璃面）
+    expect(styles.background).toBe(c.dark ? 'rgba(30, 30, 40, 0.92)' : 'rgb(255, 255, 255)');
     // 圆角符合 --radius-lg（10px）
     expect(styles.radius).toBe('10px');
   });
