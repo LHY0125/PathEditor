@@ -1,3 +1,4 @@
+// M0 探针：DPAPI 加解密往返（一文件一测试，见 p1_open.rs 说明）。
 #![cfg(windows)]
 
 #[test]
@@ -7,14 +8,4 @@ fn dpapi_roundtrip() {
     assert_ne!(&cipher[..], &plain[..], "密文不能等于明文");
     let back = v6_sqlcipher_probe::dpapi::unprotect(&cipher).expect("CryptUnprotectData 失败");
     assert_eq!(back, plain);
-}
-
-#[test]
-fn dacl_api_symbols_compile() {
-    use windows_sys::Win32::Security::Authorization::{
-        GetNamedSecurityInfoW, SetNamedSecurityInfoW, SE_FILE_OBJECT,
-    };
-    let _ = SE_FILE_OBJECT;
-    let _ = GetNamedSecurityInfoW;
-    let _ = SetNamedSecurityInfoW;
 }

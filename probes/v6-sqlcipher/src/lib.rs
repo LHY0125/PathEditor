@@ -38,9 +38,17 @@ pub fn open_encrypted_with(
     Ok(conn)
 }
 
-/// 默认开启 cipher_memory_security 的便捷入口。
+/// 默认入口。
+///
+/// **cipher_memory_security 默认关闭**：M0 实测（2026-10-20）ON/OFF 在
+/// 「一文件一测试」下都能通过，性能也无显著差异（902 µs vs 931 µs）；
+/// 但测试日志出现 `VirtualLock() ... LastError=1453`（ERROR_NOT_ENOUGH_MEMORY），
+/// 说明测试进程里锁内存会失败。为避免把不可控的内存锁定引入 M1，
+/// 探针默认关闭；生产是否开启由 M1 单独评估（见 M0 结果文档 §五）。
+///
+/// **注意**：与「同进程第二个测试栈溢出」无关——那是独立问题，用一文件一测试解决。
 pub fn open_encrypted(path: &Path, key_hex: &str) -> rusqlite::Result<Connection> {
-    open_encrypted_with(path, key_hex, true)
+    open_encrypted_with(path, key_hex, false)
 }
 
 #[cfg(windows)]
