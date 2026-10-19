@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
 import { useEnvStore } from '@/store/env-store';
 import { findMetaByKey } from '@/core/env-var';
 
@@ -17,6 +18,9 @@ interface EditEnvVarDialogProps {
    */
   onConfirm: (value: string, readRevision: string | null) => Promise<boolean>;
 }
+
+const labelClass = 'w-20';
+const labelStyle = { color: 'var(--app-fg-muted)' };
 
 /**
  * 编辑环境变量值的弹窗。
@@ -101,18 +105,22 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
 
   return (
     <Modal open onClose={onCancel}>
-      <div className="flex flex-col gap-2 text-sm">
+      <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold mb-1">{t('envVar.editVarTitle')}</h2>
 
         <label className="flex items-center gap-2">
-          <span className="w-20">{t('envVar.newVarName')}</span>
-          <span className="flex-1 font-mono" title={name}>
+          <span className={labelClass} style={labelStyle}>
+            {t('envVar.newVarName')}
+          </span>
+          <span className="flex-1 font-mono text-xs" title={name}>
             {name}
           </span>
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="w-20">{t('envVar.newVarValue')}</span>
+          <span className={labelClass} style={labelStyle}>
+            {t('envVar.newVarValue')}
+          </span>
           <input
             autoFocus
             disabled={value === null}
@@ -123,33 +131,37 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
               // 实时镜像进草稿：真实输入纳入关窗确认（F-04）
               setDraftByKey(varKey, e.target.value);
             }}
-            className="flex-1 px-2 py-0.5 rounded border font-mono"
-            style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
+            className="field-input flex-1 font-mono"
           />
         </label>
 
-        {gone && <p className="text-yellow-500 text-xs">{t('envVar.varGone')}</p>}
-        {error && <p className="text-red-500 text-xs">{error}</p>}
+        {gone && (
+          <p className="text-xs" style={{ color: 'var(--app-warning)' }}>
+            {t('envVar.varGone')}
+          </p>
+        )}
+        {error && (
+          <p className="text-xs" style={{ color: 'var(--app-danger)' }}>
+            {error}
+          </p>
+        )}
 
         <div className="flex justify-end gap-2 mt-1">
-          <button
-            className="px-4 py-1.5 text-sm rounded border"
-            style={{ borderColor: 'var(--app-border)' }}
+          <Button
             onClick={() => {
               clearDraftByKey(varKey);
               onCancel();
             }}
           >
             {t('button.cancel')}
-          </button>
-          <button
-            className="px-4 py-1.5 text-sm rounded text-white"
-            style={{ backgroundColor: '#2563eb' }}
-            onClick={() => void submit()}
+          </Button>
+          <Button
+            variant="primary"
             disabled={submitting || value === null || meta === null}
+            onClick={() => void submit()}
           >
             {t('button.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

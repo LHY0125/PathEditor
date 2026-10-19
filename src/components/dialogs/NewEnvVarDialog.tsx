@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
 import { useEnvStore } from '@/store/env-store';
 import { validateVarName, type EnvHive, type EnvValueKind } from '@/core/env-var';
 
@@ -13,6 +14,9 @@ interface NewEnvVarDialogProps {
   /** 返回是否创建成功；失败时弹窗保留并显示 store 的错误消息。 */
   onConfirm: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
 }
+
+const labelClass = 'w-20';
+const labelStyle = { color: 'var(--app-fg-muted)' };
 
 export function NewEnvVarDialog({
   canWriteSystem,
@@ -46,16 +50,17 @@ export function NewEnvVarDialog({
 
   return (
     <Modal open onClose={onCancel}>
-      <div className="flex flex-col gap-2 text-sm">
+      <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold mb-1">{t('envVar.newVarTitle')}</h2>
 
         <label className="flex items-center gap-2">
-          <span className="w-20">{t('envVar.source')}</span>
+          <span className={labelClass} style={labelStyle}>
+            {t('envVar.source')}
+          </span>
           <select
             value={hive}
             onChange={(e) => setHive(e.target.value as EnvHive)}
-            className="px-1 py-0.5 rounded border"
-            style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
+            className="field-input"
           >
             <option value="user" disabled={!canWriteUser}>
               {t('merge.user')}
@@ -67,56 +72,52 @@ export function NewEnvVarDialog({
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="w-20">{t('envVar.newVarName')}</span>
+          <span className={labelClass} style={labelStyle}>
+            {t('envVar.newVarName')}
+          </span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="flex-1 px-2 py-0.5 rounded border"
-            style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
+            className="field-input flex-1"
           />
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="w-20">{t('envVar.newVarValue')}</span>
+          <span className={labelClass} style={labelStyle}>
+            {t('envVar.newVarValue')}
+          </span>
           <input
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            className="flex-1 px-2 py-0.5 rounded border"
-            style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
+            className="field-input flex-1"
           />
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="w-20">{t('envVar.newVarKind')}</span>
+          <span className={labelClass} style={labelStyle}>
+            {t('envVar.newVarKind')}
+          </span>
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value as EnvValueKind)}
-            className="px-1 py-0.5 rounded border"
-            style={{ backgroundColor: 'var(--app-list-bg)', borderColor: 'var(--app-border)' }}
+            className="field-input"
           >
             <option value="string">String</option>
             <option value="expandString">ExpandString</option>
           </select>
         </label>
 
-        {error && <p className="text-red-500 text-xs">{error}</p>}
+        {error && (
+          <p className="text-xs" style={{ color: 'var(--app-danger)' }}>
+            {error}
+          </p>
+        )}
 
         <div className="flex justify-end gap-2 mt-1">
-          <button
-            className="px-4 py-1.5 text-sm rounded border"
-            style={{ borderColor: 'var(--app-border)' }}
-            onClick={onCancel}
-          >
-            {t('button.cancel')}
-          </button>
-          <button
-            className="px-4 py-1.5 text-sm rounded text-white"
-            style={{ backgroundColor: '#2563eb' }}
-            onClick={() => void submit()}
-            disabled={submitting}
-          >
+          <Button onClick={onCancel}>{t('button.cancel')}</Button>
+          <Button variant="primary" disabled={submitting} onClick={() => void submit()}>
             {t('button.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>
