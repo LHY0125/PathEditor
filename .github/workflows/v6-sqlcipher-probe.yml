@@ -1,0 +1,42 @@
+name: v6-sqlcipher-probe
+
+on:
+  push:
+    branches: [main, "feat/**", "v6/**"]
+    paths:
+      - "probes/v6-sqlcipher/**"
+      - ".github/workflows/v6-sqlcipher-probe.yml"
+  pull_request:
+    paths:
+      - "probes/v6-sqlcipher/**"
+      - ".github/workflows/v6-sqlcipher-probe.yml"
+  # workflow_dispatch 只在 workflow 进入默认分支后可用；分支上用 push/PR 触发。
+
+jobs:
+  probe-msvc:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: probes/v6-sqlcipher
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use MSVC toolchain
+        shell: pwsh
+        working-directory: .
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+          rustup override set stable-x86_64-pc-windows-msvc
+          rustc -Vv
+
+      - name: Install NASM and Perl
+        shell: pwsh
+        working-directory: .
+        run: |
+          choco install nasm strawberryperl -y --no-progress
+          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+          nasm -v
+          perl --version
+
+      - name: Run probes (MSVC)
+        run: cargo +stable-x86_64-pc-windows-msvc test -- --nocapture

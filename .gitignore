@@ -53,6 +53,11 @@ review-*.diff
 e2e/debug-screenshot.png
 target/
 
+# v6 M0 探针构建产物与本机 Perl 模块补丁（可重新生成，不入库）
+probes/v6-sqlcipher/target/
+probes/v6-sqlcipher/target2/
+probes/v6-sqlcipher/perl5lib/
+
 # Archive
 *.zip
 *.7z

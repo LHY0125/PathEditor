@@ -5,6 +5,8 @@ members = [
     "gui",
     "cli",
 ]
+# v6 SQLCipher 风险探针是独立 crate，刻意不加入 workspace（M0 计划）
+exclude = ["probes/v6-sqlcipher"]
 
 [workspace.package]
 version = "5.1.7"
