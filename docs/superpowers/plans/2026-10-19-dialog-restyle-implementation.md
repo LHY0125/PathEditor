@@ -1825,4 +1825,34 @@ git commit -m "test(e2e): 新增对话框视觉回归"
 
 ## Execution Notes
 
-（留给开发窗口回填：偏离记录、未覆盖项、截图路径、质量门实际输出）
+（开发窗口回填，2026-10-19）
+
+### 偏离记录
+
+| #   | 计划原文                                                         | 实际                                                                           | 处理                                                                                                             |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| E1  | Task 5 Step 1 守卫测试的剥注释代码 `.replace(//*[sS]*?*//g, '')` | 修订稿传输中丢失了正则转义（`//` 成为行注释，TS 语法无效）                     | 按意图重写为 `.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')`，口径与 `design-tokens.test.ts` 一致 |
+| E2  | Task 6 Step 3 预期「单元测试 ≥ 315」                             | 实际 **320**（313 + 守卫 8 − 删除的兼容导出用例 1）                            | 高于下限，仅记录口径                                                                                             |
+| E3  | Task 1 Step 7 的 `npx vite build` + 截图                         | 用临时 Playwright spec（自动 build + preview）完成截图与计算样式断言，跑完删除 | 与 Global Constraints 的验证方式一致                                                                             |
+
+### 未覆盖项
+
+- **真机 Tauri / WebView2 窗口未单独验证**：本波视觉验证走 Playwright（Chromium）+ build；`backdrop-filter` 在 WebView2 155.0.4283.60 的可用性已在 Wave 5.1.7 真机验证，本轮沿用同一属性。
+- 150% / 200% 缩放下的对话框布局（spec 已登记为后续项）。
+- 亮度对比度未做自动化校验：D6 依据沿用 5.1.7 已建立的 `--app-fg-muted` / `--app-fg-subtle` 实测值。
+
+### 截图（job 临时目录，未进仓库）
+
+浅/深各 4 张：PathEditDialog、AnalyzeDialog、ProfileDialog、EnvBackupDialog（`$CLAUDE_JOB_DIR/tmp/wave41-shots/`）。逐张确认：无透明底、无低对比度文字、按钮层级正确（恢复为唯一 primary 于备份对话框内）。
+
+### 质量门实际输出
+
+- `npm run verify:all` **退出码 0**；E2E **41 passed**
+- 单元测试 **320 passed / 25 files**；覆盖率 **87.58%**（statements 85.81 / branches 75.72 / functions 88.8）
+- ESLint **0 error / 3 warning**（均为既有 `@tanstack/react-virtual` 的 `react-hooks/incompatible-library`）
+- Rust：core **227 passed**（2 ignored）、CLI **65 passed**
+- Task 5 Step 7 的四道验收 grep 全部为空（`exit=1`）
+
+### 测试数变化
+
+312（基线）→ 313（Task 1 新增工具类用例）→ 320（Task 5：+8 守卫、−1 兼容导出用例）。
