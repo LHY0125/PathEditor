@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEnvStore } from '@/store/env-store';
 import { displayValue, envVarKey, filterEnvVars } from '@/core/env-var';
+import { Button } from '@/components/ui/Button';
 import type { EnvVarMeta } from '@/core/env-var';
 
 interface EnvVarTableProps {
@@ -55,16 +56,14 @@ export function EnvVarTable({
     initialRect: { width: 800, height: 600 },
   });
 
-  /** 行内小操作按钮：复用按钮原语的 ghost 变体，尺寸收窄以适配行高。 */
-  const rowBtn =
-    'px-1.5 text-xs rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+  /** 行内小操作按钮：复用按钮原语的 ghost 变体，尺寸收窄以适配 28px 行高。 */
 
   return (
     <div className="flex flex-col h-full" data-testid="env-var-table">
-      <div className="flex items-center gap-2 px-2 py-1 text-xs opacity-70">
+      <div className="env-var-guide">
         <span>{t('envVar.pathGuide')}</span>
         {onGoToPath && (
-          <button className="underline" onClick={onGoToPath}>
+          <button type="button" className="env-var-guide-link" onClick={onGoToPath}>
             {t('envVar.pathGuideAction')}
           </button>
         )}
@@ -107,31 +106,27 @@ export function EnvVarTable({
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                <div className="w-8 px-2 py-0.5 text-xs opacity-50">{rowIdx + 1}</div>
-                <div className="px-2 py-0.5 text-sm truncate flex-1" title={meta.name}>
+                <div className="w-8 env-var-cell env-var-cell-dim">{rowIdx + 1}</div>
+                <div className="env-var-cell env-var-cell-mono flex-1" title={meta.name}>
                   {meta.name}
                 </div>
                 <div
-                  className="px-2 py-0.5 text-sm truncate flex-[2]"
+                  className="env-var-cell env-var-cell-mono flex-[2]"
                   title={displayValue(meta, revealedValue, t('envVar.unsupportedValue'))}
                 >
                   {displayValue(meta, revealedValue, t('envVar.unsupportedValue'))}
                 </div>
-                <div className="w-24 px-2 py-0.5 text-xs opacity-70">
+                <div className="w-24 env-var-cell env-var-cell-dim">
                   {t(TYPE_LABEL_KEY[meta.kind])}
                 </div>
-                <div className="w-14 px-2 py-0.5 text-xs opacity-70">
+                <div className="w-14 env-var-cell env-var-cell-dim">
                   {meta.hive === 'system' ? t('merge.system') : t('merge.user')}
                 </div>
-                <div className="w-44 px-2 py-0.5 flex items-center gap-1">
+                <div className="w-44 px-2 flex items-center gap-1">
                   {meta.sensitive && (
-                    <button
-                      className={rowBtn}
-                      style={{
-                        backgroundColor: 'var(--app-bg)',
-                        borderColor: 'var(--app-border)',
-                        color: 'var(--app-fg)',
-                      }}
+                    <Button
+                      size="sm"
+                      variant="ghost"
                       title={editHint(meta, revealedValue === null, t)}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -139,15 +134,11 @@ export function EnvVarTable({
                       }}
                     >
                       {revealedValue === null ? t('envVar.show') : t('envVar.hide')}
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    className={rowBtn}
-                    style={{
-                      backgroundColor: 'var(--app-bg)',
-                      borderColor: 'var(--app-border)',
-                      color: 'var(--app-fg)',
-                    }}
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     disabled={!meta.canEdit || (meta.sensitive && revealedValue === null)}
                     title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.edit')} ${meta.name}`}
@@ -157,14 +148,10 @@ export function EnvVarTable({
                     }}
                   >
                     {t('button.edit')}
-                  </button>
-                  <button
-                    className={rowBtn}
-                    style={{
-                      backgroundColor: 'var(--app-bg)',
-                      borderColor: 'var(--app-border)',
-                      color: 'var(--app-fg)',
-                    }}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     disabled={!meta.canDelete}
                     title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.delete')} ${meta.name}`}
@@ -174,7 +161,7 @@ export function EnvVarTable({
                     }}
                   >
                     {t('button.delete')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             );

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useEnvStore } from '@/store/env-store';
 import { envVarKey } from '@/core/env-var';
-import { btnClass, btnStyle } from '@/components/ui/buttons';
+import { Button } from '@/components/ui/Button';
 import type { EnvVarMeta, HiveFilter } from '@/core/env-var';
 
 interface EnvVarToolbarProps {
@@ -27,8 +27,9 @@ const FILTER_LABEL_KEY: Record<HiveFilter, string> = {
 /**
  * 环境变量专用工具栏。
  *
- * 刻意不复用 PATH 工具栏 —— PATH 的上移/下移/一键清理/导入/导出
- * 对普通变量语义不成立。
+ * 刻意不复用 PATH 工具栏的动作集合 —— PATH 的上移/下移/一键清理/导入/导出
+ * 对普通变量语义不成立。但**外观**与主工具栏完全一致（同为 .toolbar 布局、
+ * Button 原语、.tab-pill 过滤器），避免切换 Tab 时视觉跳变。
  */
 export function EnvVarToolbar({
   onCreate,
@@ -53,44 +54,42 @@ export function EnvVarToolbar({
   const canDelete = selected !== null && selected.canDelete;
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <button className={btnClass} style={btnStyle} onClick={onCreate}>
-        {t('envVar.newVar')}
-      </button>
-      <button className={btnClass} style={btnStyle} onClick={onEdit} disabled={!canEdit}>
+    <div className="toolbar" data-testid="env-var-toolbar">
+      <Button onClick={onCreate}>{t('envVar.newVar')}</Button>
+      <span className="toolbar-sep" aria-hidden="true" />
+      <Button disabled={!canEdit} onClick={onEdit}>
         {t('button.edit')}
-      </button>
-      <button className={btnClass} style={btnStyle} onClick={onDelete} disabled={!canDelete}>
+      </Button>
+      <Button variant="danger" disabled={!canDelete} onClick={onDelete}>
         {t('button.delete')}
-      </button>
-      <button className={btnClass} style={btnStyle} onClick={onRefresh}>
+      </Button>
+      <span className="toolbar-sep" aria-hidden="true" />
+      <Button variant="ghost" onClick={onRefresh}>
         {t('envVar.refresh')}
-      </button>
-      <button className={btnClass} style={btnStyle} onClick={onBackup}>
-        {t('envBackup.title')}
-      </button>
+      </Button>
+      <Button onClick={onBackup}>{t('envBackup.title')}</Button>
+      <div className="flex-1" />
       <input
         type="text"
         value={searchQuery}
         onChange={(e) => onSearchChange(e.target.value)}
         placeholder={t('envVar.search')}
+        aria-label={t('envVar.search')}
         className="toolbar-search"
       />
-      <div className="ml-auto flex items-center gap-1">
-        {FILTERS.map((filter) => (
-          <button
-            key={filter}
-            data-hive-filter={filter}
-            className={`px-3 py-1 text-sm rounded border transition-colors ${
-              hiveFilter === filter ? 'tab-active' : 'opacity-60'
-            }`}
-            style={btnStyle}
-            onClick={() => setHiveFilter(filter)}
-          >
-            {t(FILTER_LABEL_KEY[filter])}
-          </button>
-        ))}
-      </div>
+      <span className="toolbar-sep" aria-hidden="true" />
+      {FILTERS.map((filter) => (
+        <button
+          key={filter}
+          type="button"
+          data-hive-filter={filter}
+          data-active={hiveFilter === filter}
+          className="tab-pill text-xs"
+          onClick={() => setHiveFilter(filter)}
+        >
+          {t(FILTER_LABEL_KEY[filter])}
+        </button>
+      ))}
     </div>
   );
 }
