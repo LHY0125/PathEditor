@@ -25,16 +25,18 @@
 
 ## 二、探针结果
 
-| 探针                              | 本机（GNU）           | CI（MSVC） | 结论                                                                      |
-| --------------------------------- | --------------------- | ---------- | ------------------------------------------------------------------------- |
-| SQLCipher 打开 + `cipher_version` | ✅ PASS               | 待验证     | `cipher_version` 非空                                                     |
-| 错误密钥拒绝 + 原库存活           | ✅ PASS               | 待验证     | 错误密钥查询返回 Err；原库仍可正确打开                                    |
-| FTS5                              | ✅ PASS               | 待验证     | `sqlite_compileoption_used('ENABLE_FTS5')=1`，`MATCH` 命中                |
-| JSON1 (`json_valid`)              | ✅ PASS               | 待验证     | `json_valid('{"a":1}')=1`                                                 |
-| `sqlcipher_export`                | ✅ PASS               | 待验证     | ATTACH+export+DETACH 后新库可用同密钥读取                                 |
-| `VACUUM INTO` 加密性              | ✅ **encrypted=true** | 待验证     | 产物**已加密**（无 `SQLite format 3` 头）；见 §四                         |
-| DPAPI roundtrip                   | ✅ PASS               | 待验证     | `CryptProtectData`/`CryptUnprotectData` 往返一致                          |
-| DACL 符号                         | ✅ PASS               | 待验证     | `GetNamedSecurityInfoW`/`SetNamedSecurityInfoW`/`SE_FILE_OBJECT` 编译通过 |
+| 探针                              | 本机（GNU）       | CI（MSVC）        |
+| --------------------------------- | ----------------- | ----------------- |
+| SQLCipher 打开 + `cipher_version` | ✅ PASS           | ✅ PASS           |
+| 错误密钥拒绝 + 原库存活           | ✅ PASS           | ✅ PASS           |
+| FTS5                              | ✅ PASS           | ✅ PASS           |
+| JSON1 (`json_valid`)              | ✅ PASS           | ✅ PASS           |
+| `sqlcipher_export`                | ✅ PASS           | ✅ PASS           |
+| `VACUUM INTO` 加密性              | ✅ encrypted=true | ✅ encrypted=true |
+| DPAPI roundtrip                   | ✅ PASS           | ✅ PASS           |
+| DACL 符号                         | ✅ PASS           | ✅ PASS           |
+
+**CI 证据**：run `39293270137`（job `118199137605`），**11m4s，8/8 全绿**；MSVC 下 `VACUUM INTO` 同样 `encrypted=true`；`cipher_memory_security` ON 1.1715 ms / OFF 1.1498 ms（100 次查询，无显著差异）。
 
 **测试计数**：8 个测试文件，每个文件 1 个探针 = **8 个探针，24/24 稳定通过（3 轮）**。
 
@@ -150,17 +152,16 @@ cipher_memory_security=OFF: 100 queries in 931µs
 
 测试日志出现 `sqlcipher_mlock: VirtualLock() returned 0 LastError=1453`（`ERROR_NOT_ENOUGH_MEMORY`）——`cipher_memory_security=ON` 在测试进程锁内存失败。与栈溢出同属「测试进程资源受限」，**生产环境需 M1 验证**；ON/OFF 性能实测无差异（902 µs vs 931 µs），必要时可降级为 OFF。
 
-**待 CI 验证**：MSVC 构建下是否同样有此现象（MSVC 默认栈配置不同）。**这是 M0 留给 CI 的一个观察项。**
+**已由 CI 验证（run 39293270137，MSVC）**：同样需要「一文件一测试」；逐文件调用后 8/8 全绿。
 
 ---
 
 ## 六、未覆盖项（如实列出）
 
-- **CI（MSVC + NASM）未运行**：需要推送分支（`push`/`pull_request` 触发），**等待用户授权**。本机 GNU 结果不能替代 CI 结果。
 - **`VACUUM INTO` 在自定义 cipher 参数下的行为**未测（v6 用默认参数，已够）。
 - **性能基线**未做（冷启动、1 万快照、迁移耗时）——属 M1 范围。
 - **`sqlcipher_export` 的跨密钥导出**未测（只测了同密钥）。
-- 探针 `perl5lib/` 目录是**本机环境补丁**，不应进版本库（见 §七）。
+- **同进程多 SQLCipher 测试**：未解决，M1 必须沿用「一文件一测试」。
 
 ---
 
@@ -190,16 +191,17 @@ cipher_memory_security=OFF: 100 queries in 931µs
 
 ## 九、M0 放行判定
 
-| 门                              | 状态                              |
-| ------------------------------- | --------------------------------- |
-| SQLCipher 可构建（本机 GNU）    | ✅ **通过**（31分40秒，产物可用） |
-| SQLCipher 可加密 / 错误密钥拒绝 | ✅ 通过                           |
-| FTS5 / JSON1 可用               | ✅ 通过                           |
-| `sqlcipher_export` 可用         | ✅ 通过                           |
-| DPAPI 可用                      | ✅ 通过                           |
-| CI（MSVC）                      | ⏳ **待推送验证**                 |
+| 门                              | 状态                                  |
+| ------------------------------- | ------------------------------------- |
+| SQLCipher 可构建（本机 GNU）    | ✅ **通过**（31分40秒，产物可用）     |
+| SQLCipher 可构建（CI MSVC）     | ✅ **通过**（run 39293270137，11m4s） |
+| SQLCipher 可加密 / 错误密钥拒绝 | ✅ 双平台通过                         |
+| FTS5 / JSON1 可用               | ✅ 双平台通过                         |
+| `sqlcipher_export` 可用         | ✅ 双平台通过                         |
+| DPAPI 可用                      | ✅ 双平台通过                         |
+| 测试稳定性                      | ✅ 一文件一测试：本机 24/24、CI 8/8   |
 
-**本机结论：M0 绿灯，可进入 M1。** CI 一路待用户授权推送后补验；若 MSVC 出现构建或栈问题，按计划 §七 决策门处理。
+**M0 绿灯，放行 M1。** 约束：M1 的 DB 测试必须沿用「一文件一测试」。
 
 ---
 
