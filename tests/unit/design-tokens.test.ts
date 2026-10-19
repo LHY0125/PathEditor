@@ -37,6 +37,9 @@ describe('设计 token 层', () => {
       '--app-danger',
       '--app-warning',
       '--app-disabled-fg',
+      '--app-success',
+      '--app-overlay',
+      '--app-dialog-shadow',
     ]) {
       expect(declares(v), `缺少 ${v}`).toBe(true);
     }
@@ -45,6 +48,18 @@ describe('设计 token 层', () => {
   it('声明几何变量', () => {
     for (const v of ['--radius-sm', '--radius', '--radius-lg', '--row-h', '--gap']) {
       expect(declares(v), `缺少 ${v}`).toBe(true);
+    }
+  });
+
+  it('声明对话框专用工具类', () => {
+    for (const cls of [
+      '.field-input',
+      '.dialog-list-item',
+      '.btn-block',
+      '.modal-overlay',
+      '.modal-surface',
+    ]) {
+      expect(css.includes(cls), `缺少 ${cls}`).toBe(true);
     }
   });
 

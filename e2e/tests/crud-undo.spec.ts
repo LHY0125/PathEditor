@@ -10,7 +10,7 @@ test('添加路径后可撤销和重做', async ({ page }) => {
   // 点击"新建"按钮
   await page.click('text=新建');
   // 填入路径（对话框内自动聚焦的 input）
-  await page.locator('.fixed.inset-0 input[type="text"]').fill('C:\\\\NewPath');
+  await page.locator('.modal-overlay input[type="text"]').fill('C:\\\\NewPath');
   // 对话框确认按钮是"确认"
   await page.click('text=确认');
   // 路径应出现在列表中

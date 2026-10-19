@@ -6,6 +6,12 @@ interface ModalProps {
   children: ReactNode;
 }
 
+/**
+ * 对话框外壳。
+ *
+ * 视觉规格由 globals.css 的 .modal-overlay / .modal-surface 提供（Wave 4.1），
+ * 组件本身只管挂载与 Escape 关闭 —— 业务内容由调用方决定。
+ */
 export function Modal({ open, onClose, children }: ModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -19,16 +25,8 @@ export function Modal({ open, onClose, children }: ModalProps) {
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
-      onClick={onClose}
-    >
-      <div
-        className="rounded-lg p-6"
-        style={{ backgroundColor: 'var(--app-bg)', color: 'var(--app-fg)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-surface" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>

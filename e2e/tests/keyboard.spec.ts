@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 test('Ctrl+N 打开新建对话框', async ({ page }) => {
   await page.keyboard.press('Control+n');
   await page.waitForTimeout(300);
-  await expect(page.locator('.fixed.inset-0 input[type="text"]')).toBeVisible();
+  await expect(page.locator('.modal-overlay input[type="text"]')).toBeVisible();
 });
 
 test('Ctrl+F 聚焦搜索框', async ({ page }) => {

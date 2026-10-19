@@ -38,6 +38,10 @@
   --app-danger: #dc2626;
   --app-warning: #d97706;
   --app-disabled-fg: #a1a1aa;
+  /* Wave 4.1：对话框补一档「成功」（此前只有 danger/warning，对话框用 #22c55e 硬编码） */
+  --app-success: #16a34a;
+  --app-overlay: rgb(0 0 0 / 40%);
+  --app-dialog-shadow: 0 24px 64px rgb(0 0 0 / 16%), 0 4px 12px rgb(0 0 0 / 8%);
 
   /* 浮层 */
   --app-menu-bg: #ffffff;
@@ -85,6 +89,10 @@
   --app-danger: #ff6b6b;
   --app-warning: #ffb454;
   --app-disabled-fg: #63636e;
+  /* Wave 4.1：深色遮罩更重（40% 黑在深色背景上几乎看不出层次） */
+  --app-success: #4ade80;
+  --app-overlay: rgb(0 0 0 / 65%);
+  --app-dialog-shadow: 0 24px 64px rgb(0 0 0 / 60%), 0 0 0 1px rgb(255 255 255 / 6%);
 
   --app-menu-bg: rgb(30 30 40 / 92%);
   --app-menu-shadow: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px rgb(255 255 255 / 4%);
@@ -572,4 +580,73 @@ body {
 
 .env-var-guide-link:hover {
   color: var(--app-accent-text);
+}
+
+/* ── 对话框基础设施（Wave 4.1） ─────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-overlay);
+}
+
+.modal-surface {
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  background: var(--app-surface-raised);
+  color: var(--app-fg);
+  box-shadow: var(--app-dialog-shadow);
+  backdrop-filter: blur(14px);
+}
+
+/* 表单控件：对话框内 input / select 统一使用，替代内联颜色样式 */
+.field-input {
+  padding: 4px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius);
+  background: var(--app-surface);
+  color: var(--app-fg);
+  font-size: 13px;
+  outline: none;
+}
+
+.field-input:focus {
+  border-color: var(--app-accent);
+}
+
+.field-input::placeholder {
+  color: var(--app-fg-subtle);
+}
+
+/* 对话框内列表项（备份文件、配置方案共用） */
+.dialog-list-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  color: var(--app-fg);
+  cursor: pointer;
+}
+
+.dialog-list-item:hover {
+  background: var(--app-hover);
+}
+
+.dialog-list-item[data-selected='true'] {
+  background: var(--app-row-selected);
+  color: var(--app-accent-text);
+}
+
+/* 整行左对齐按钮：Button 的 BASE 是 justify-center，此处用未分层规则覆盖 */
+.btn-block {
+  width: 100%;
+  justify-content: flex-start;
 }
