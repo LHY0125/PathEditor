@@ -70,7 +70,7 @@ npm run verify:all                                       # 必须退出码 0
 
 ```css
 /* :root（浅色） */
---app-success: #16a34a;
+--app-success: #15803d;
 --app-overlay: rgb(0 0 0 / 40%);
 --app-dialog-shadow: 0 24px 64px rgb(0 0 0 / 16%), 0 4px 12px rgb(0 0 0 / 8%);
 
@@ -79,6 +79,8 @@ npm run verify:all                                       # 必须退出码 0
 --app-overlay: rgb(0 0 0 / 65%);
 --app-dialog-shadow: 0 24px 64px rgb(0 0 0 / 60%), 0 0 0 1px rgb(255 255 255 / 6%);
 ```
+
+> **审查轮修订（2026-10-19）**：浅色 `--app-success` 由 `#16a34a` 改为 `#15803d`。原因：`#16a34a` 在白底仅 **3.30:1**，不满足 WCAG AA（4.5:1），而它在 `EnvBackupPanel` 与 `ConflictsTab` 中用于正常字号文字；`#15803d` 实测 5.02:1（白）/ 4.81:1（`#fafafa`）。深色值 `#4ade80`（9.60:1）不变。
 
 **为什么新增 `--app-success`**：对话框用 `#22c55e` / `text-green-600` 表达「成功 / 有效」，而 token 层只有 `--app-danger` 与 `--app-warning`，缺一档。补 token 而不是继续硬编码。
 

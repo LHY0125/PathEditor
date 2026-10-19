@@ -113,7 +113,7 @@ Expected: FAIL —— 「缺少 --app-success」与「缺少 .field-input」
 在浅色 `:root` 块的 `--app-disabled-fg: #a1a1aa;` 之后插入：
 
 ```css
---app-success: #16a34a;
+--app-success: #15803d;
 --app-overlay: rgb(0 0 0 / 40%);
 --app-dialog-shadow: 0 24px 64px rgb(0 0 0 / 16%), 0 4px 12px rgb(0 0 0 / 8%);
 ```
@@ -1540,8 +1540,8 @@ const files = walk(ROOT);
  */
 const read = (f: string) =>
   readFileSync(f, 'utf8')
-    .replace(//*[sS]*?*//g, '')
-    .replace(///.*$/gm, '');
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
 
 const LEGACY_TOKENS = ['--app-list-bg', '--app-list-alt', '--app-select-row'];
 const LEGACY_APIS = ['btnClass', 'btnStyle', 'tab-active'];
