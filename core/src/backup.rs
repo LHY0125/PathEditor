@@ -382,8 +382,9 @@ fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError
         return Ok(Vec::new());
     }
 
-    // 只收集本功能生成的备份：前缀 env_backup_ + 后缀 .json，
+    // 只收集本功能生成的备份：前缀 env_backup_ + 后缀 .json 或 .pebak，
     // `.bak` / `.corrupt-*` 因后缀不同天然被排除。
+    // v6 D17：新备份写 `.pebak`，遗留 `.json` 仍参与轮换（否则旧明文永不过期）。
     let mut candidates: Vec<(String, PathBuf)> = Vec::new();
     let entries = std::fs::read_dir(dir).map_err(|e| {
         CoreError::new(
@@ -394,7 +395,11 @@ fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>, CoreError
     })?;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with("env_backup_") || !name.ends_with(".json") {
+        if !name.starts_with("env_backup_") {
+            continue;
+        }
+        let lower = name.to_ascii_lowercase();
+        if !lower.ends_with(".json") && !lower.ends_with(".pebak") {
             continue;
         }
         let path = entry.path();
