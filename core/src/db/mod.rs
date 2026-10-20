@@ -4,6 +4,7 @@
 //! 读-改-写必须带 `version` CAS。
 
 pub mod backups;
+pub mod compare;
 pub mod crypto;
 #[cfg(windows)]
 pub mod dacl;
