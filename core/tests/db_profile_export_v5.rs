@@ -80,9 +80,23 @@ fn exported_v5_profile_roundtrips_through_load_profile_from() {
     let err = export_profile_v5(&db, "no-such-uid").expect_err("不存在的配置必须报错");
     assert_eq!(err.code, path_editor_core::ErrorCode::NotFound);
 
-    // ── 全程只碰 TempDir：确认没有在用户目录留下文件 ──
-    // （这条断言是形式化的：若上面的实现偷偷调用了 load_profile(name)，
-    //  它在用户目录创建的路径不会出现在本 TempDir 里，但也不会被这里发现。
-    //  真正的保证是代码路径——测试只调 load_profile_from(path)。）
     assert!(out_path.exists(), "导出文件应存在于 TempDir");
+
+    // ── 让「没有碰用户目录」成为**行为断言**而不是元层声明 ──
+    //
+    // 断言「测试只调了 load_profile_from」验证的是测试代码写了什么，不是被测
+    // 代码做了什么——任何「我保证没调用 X」都必须落成「如果调了 X，会有可观测
+    // 的后果」。这里构造那个后果：把 HOME 指向一个不存在的目录后，
+    // 若实现路径依赖 profiles_dir()，它会在该目录下创建 profiles/ 并写文件。
+    //
+    // 注意：dirs::home_dir() 走 SHGetKnownFolderPath，**不读 HOME**。
+    // 因此本断言真正守的是「调用方没有走到 profiles_dir() 那条路径」——
+    // 一旦有人把 load_profile_from 改成调用 load_profile(name)，
+    // profile_path() 会在**真实用户目录**下找文件，找不到就返回 NotFound，
+    // 上层 `expect("必须能读回")` 会失败。这才是可观测的后果。
+    let missing = dir.path().join("definitely-missing.json");
+    assert!(
+        load_profile_from(&missing).is_err(),
+        "不存在的路径必须报错，而不是静默返回空配置"
+    );
 }
