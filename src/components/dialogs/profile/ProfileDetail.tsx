@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import type { PathEntry } from '@/core/path-entry';
-import type { ProfileData } from '@/services/backend';
+import type { ProfilePathsView } from '@/services/backend';
 
 interface ProfileDetailProps {
-  data: ProfileData | null;
+  data: ProfilePathsView | null;
   hasProfiles: boolean;
   renameOpen: boolean;
   renameValue: string;
@@ -43,7 +43,7 @@ export function ProfileDetail({
       <div className="flex items-center gap-2 mb-3">
         <span className="font-semibold text-xs">{data.name}</span>
         <span className="text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
-          {data.modified}
+          {new Date(data.updatedAt).toLocaleString()}
         </span>
       </div>
 
@@ -73,7 +73,10 @@ export function ProfileDetail({
         </div>
       )}
 
-      <PathSection title={`${t('merge.system')} PATH (${data.sys.length})`} paths={data.sys} />
+      <PathSection
+        title={`${t('merge.system')} PATH (${data.system.length})`}
+        paths={data.system}
+      />
       <PathSection title={`${t('merge.user')} PATH (${data.user.length})`} paths={data.user} />
     </div>
   );

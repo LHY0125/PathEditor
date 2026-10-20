@@ -222,3 +222,21 @@ pub fn open_default() -> Result<Db, CoreError> {
     let path = home.join("patheditor.db");
     Db::open_encrypted(&path, &crypto::key_hex(&material))
 }
+
+/// 打开默认库并确保 schema 与 v5 迁移就绪（CLI 用）。
+///
+/// 与 GUI 的 `setup_database` 等价，但**不做 pending 补写**——那是 GUI 启动
+/// 序列的职责（`retry_pending_path_state` 会写 `disabled.json`，CLI 单次命令
+/// 不该有这种副作用）。
+///
+/// 失败返回 `Err`：CLI 对需要 DB 的命令应据此报错退出（spec §8）。
+pub fn open_and_migrate() -> Result<Db, CoreError> {
+    let mut db = open_default()?;
+    db.migrate_to_current()?;
+    let home = crypto::config_dir();
+    // 迁移失败不阻断：库仍可用于新记录，旧文件等下次重试
+    if let Err(e) = migrate_v5::migrate_legacy(&mut db, &home) {
+        log::warn!("v5 文件迁移失败（继续）: {}", e.message);
+    }
+    Ok(db)
+}

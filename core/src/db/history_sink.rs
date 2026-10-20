@@ -20,18 +20,38 @@ use uuid::Uuid;
 ///
 /// 运行期借用冲突（同一 sink 上重入 `record`）会 panic —— 但调用链里
 /// `record` 只在服务层操作结束时调用一次，不存在重入路径。
-pub struct DbHistory<'a>(pub RefCell<&'a mut Db>);
+pub struct DbHistory<'a> {
+    db: RefCell<&'a mut Db>,
+    /// 本次操作关联的快照 uid（P0-2）。
+    ///
+    /// 由命令层在调用服务**之前**建好快照并传入——快照记录的是**操作前的状态**，
+    /// 因此恢复它等于撤销该操作（spec §6.1：「撤销/重做以『新快照 + 事件』表示」）。
+    ///
+    /// 事件自带的 `snapshot_uid` 优先；为 `None` 时用这里的值。
+    snapshot_uid: Option<String>,
+}
 
 impl<'a> DbHistory<'a> {
-    /// 构造：接管一个可变的 `Db` 引用。
+    /// 构造：接管一个可变的 `Db` 引用（不关联快照）。
     pub fn new(db: &'a mut Db) -> Self {
-        Self(RefCell::new(db))
+        Self {
+            db: RefCell::new(db),
+            snapshot_uid: None,
+        }
+    }
+
+    /// 构造并预绑定快照 uid：本次操作产生的事件都会指向它。
+    pub fn with_snapshot(db: &'a mut Db, snapshot_uid: Option<String>) -> Self {
+        Self {
+            db: RefCell::new(db),
+            snapshot_uid,
+        }
     }
 }
 
 impl HistorySink for DbHistory<'_> {
     fn record(&self, event: HistoryEvent) -> Result<(), CoreError> {
-        let mut guard = self.0.borrow_mut();
+        let mut guard = self.db.borrow_mut();
         // `guard` 是 `RefMut<&'a mut Db>`：`*guard` 是 `&mut Db`（不能移出），
         // `**guard` 是 `Db`，因此这里是对内层 `Db` 的**重借用**而非多余借用。
         let db = &mut **guard;
@@ -43,7 +63,12 @@ impl HistorySink for DbHistory<'_> {
         db.with_transaction(|tx| {
             // J-8：把快照 uid 解析成本地整数主键。找不到时写 NULL 而不是让整条
             // 事件失败 —— 事件本身仍有价值，不该因为快照被删就一并丢弃。
-            let snapshot_id: Option<i64> = match event.snapshot_uid.as_deref() {
+            // 事件自带的优先；否则用命令层预绑定的（P0-2）
+            let uid = event
+                .snapshot_uid
+                .as_deref()
+                .or(self.snapshot_uid.as_deref());
+            let snapshot_id: Option<i64> = match uid {
                 Some(uid) => tx
                     .query_row("SELECT id FROM snapshots WHERE uid = ?1", [uid], |r| {
                         r.get(0)

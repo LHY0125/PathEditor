@@ -2,21 +2,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
-import { backend, type ProfileData, type ProfileMeta } from '@/services/backend';
+import { backend, type ProfileView, type ProfilePathsView } from '@/services/backend';
 
 export function useProfiles(open: boolean, onClose: () => void) {
   const { t } = useTranslation();
-  const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
+  const [profiles, setProfiles] = useState<ProfileView[]>([]);
   const [newName, setNewName] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
-  const [selectedData, setSelectedData] = useState<ProfileData | null>(null);
+  const [selectedData, setSelectedData] = useState<ProfilePathsView | null>(null);
   const [saving, setSaving] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const prevOpen = useRef(false);
 
   const refreshProfiles = useCallback(async () => {
-    setProfiles(await backend.listProfiles());
+    setProfiles(await backend.profileList());
   }, []);
 
   useEffect(() => {
@@ -29,7 +29,14 @@ export function useProfiles(open: boolean, onClose: () => void) {
     setSaving(true);
     try {
       const { sysPaths, userPaths } = useAppStore.getState();
-      await backend.saveProfile(newName.trim(), sysPaths, userPaths);
+      // P0-1 方案 A：写 DB（快照 + profile 行同一事务），不再写 profiles/*.json
+      await backend.profileSave({
+        name: newName.trim(),
+        description: null,
+        tags: [],
+        system: sysPaths,
+        user: userPaths,
+      });
       setNewName('');
       await refreshProfiles();
     } finally {
@@ -39,7 +46,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
 
   const handleLoad = useCallback(async (name: string) => {
     setSelected(name);
-    setSelectedData(await backend.loadProfile(name));
+    setSelectedData(await backend.profilePaths(name));
   }, []);
 
   const handleApply = useCallback(async () => {
@@ -54,7 +61,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
       return;
     }
 
-    useAppStore.getState().replaceBothPaths(selectedData.sys, selectedData.user);
+    useAppStore.getState().replaceBothPaths(selectedData.system, selectedData.user);
     const result = await useAppStore.getState().savePaths();
     if (result.kind === 'success') {
       onClose();
@@ -78,7 +85,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
       if (!(await backend.confirmDialog(t('profile.deleteConfirm', { name })).catch(() => false))) {
         return;
       }
-      await backend.deleteProfile(name);
+      await backend.profileDeleteByName(name);
       if (selected === name) {
         setSelected(null);
         setSelectedData(null);
@@ -91,7 +98,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
   const handleRename = useCallback(async () => {
     if (!selected || !renameValue.trim()) return;
     const nextName = renameValue.trim();
-    await backend.renameProfile(selected, nextName);
+    await backend.profileRename(selected, nextName);
     setRenameOpen(false);
     setSelected(nextName);
     await refreshProfiles();

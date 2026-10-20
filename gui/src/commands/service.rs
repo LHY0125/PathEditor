@@ -33,6 +33,132 @@ fn with_history<T>(state: &State<'_, DbState>, f: impl FnOnce(&dyn HistorySink) 
     }
 }
 
+/// 与 [`with_history`] 相同，但**先建一份「操作前」快照**并把 uid 绑定给事件（P0-2）。
+///
+/// 为什么快照记录的是**操作前**的状态：spec §6.1 规定「撤销/重做以『新快照 + 事件』
+/// 表示」——恢复某个快照就等于回到那一刻。若快照记的是「即将写入的内容」，
+/// 恢复它等于什么都不做，撤销语义不成立。
+///
+/// `snapshot_of` 返回 `(system, user)` 的当前快照；返回 `None` 表示拿不到
+/// （例如注册表不可读），此时**照常执行操作**，只是事件不带快照 uid——
+/// 历史记录的价值不该因为快照建不出来而丢失。
+///
+/// **事务边界**：`insert_snapshot` 自带事务并先提交，服务层内部的 `record`
+/// 再开自己的事务。两者是**先后**关系而非嵌套（SQLite 不支持嵌套事务）。
+pub(super) fn with_history_and_snapshot<T>(
+    state: &State<'_, DbState>,
+    snapshot_of: impl FnOnce() -> Option<(Vec<PathEntry>, Vec<PathEntry>)>,
+    snapshot_of_after: impl FnOnce() -> Option<(Vec<PathEntry>, Vec<PathEntry>)>,
+    f: impl FnOnce(&dyn HistorySink) -> T,
+) -> T {
+    let Ok(mut guard) = state.0.lock() else {
+        log::warn!("历史库状态锁中毒，本次操作不记录历史");
+        return f(&NoopHistory);
+    };
+    let Some(db) = guard.as_mut() else {
+        return f(&NoopHistory);
+    };
+
+    // 建「操作前」快照。失败不阻断操作——历史是 sidecar 能力（spec D16）。
+    let snapshot_uid = match snapshot_of() {
+        Some((system, user)) => {
+            let snap = path_editor_core::db::history::NewSnapshot {
+                kind: path_editor_core::db::history::SnapshotKind::History,
+                source: path_editor_core::history::EventSource::Gui,
+                system,
+                user,
+                env: Vec::new(),
+                parent_uid: None,
+            };
+            match path_editor_core::db::history::insert_snapshot(db, snap) {
+                Ok(uid) => Some(uid),
+                Err(e) => {
+                    log::warn!("建快照失败（操作继续，事件将不带快照）: {}", e.message);
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
+    let result = f(&DbHistory::with_snapshot(db, snapshot_uid));
+
+    // 操作成功后，把「操作后」的状态记为**当前快照**（P1-4 的前置）。
+    //
+    // 与上面的「操作前」快照职责不同：
+    // - `snapshot_uid`（操作前）绑给事件 → 撤销时恢复它；
+    // - `current_snapshot_id`（操作后）→ 表示「现在 PATH 是什么」，是 `disabled.json`
+    //   停写后（spec §7.8 H7）DB 侧唯一的状态真相。
+    //
+    // 失败不阻断：当前状态建不出来不该让用户的操作失败（sidecar 语义）。
+    if let Some((system, user)) = snapshot_of_after() {
+        update_current_snapshot(db, system, user);
+    }
+
+    result
+}
+
+/// 把操作后的状态写成新快照并设为当前快照。
+///
+/// CAS 语义（spec D14）：先读 `app_state.version`，再带 version 更新；
+/// 失败说明有并发写——此时**放弃**而不是强行覆盖：历史仍然正确，
+/// 只是 `current_snapshot_id` 这一次没跟上。下一次操作会重新对齐。
+fn update_current_snapshot(
+    db: &mut path_editor_core::db::Db,
+    system: Vec<PathEntry>,
+    user: Vec<PathEntry>,
+) {
+    // 先留一份给读缓存（`system`/`user` 随后会被移进 `NewSnapshot`）
+    let system_for_cache = system.clone();
+    let user_for_cache = user.clone();
+    let snap = path_editor_core::db::history::NewSnapshot {
+        kind: path_editor_core::db::history::SnapshotKind::Current,
+        source: path_editor_core::history::EventSource::Gui,
+        system,
+        user,
+        env: Vec::new(),
+        parent_uid: None,
+    };
+    let uid = match path_editor_core::db::history::insert_snapshot(db, snap) {
+        Ok(uid) => uid,
+        Err(e) => {
+            log::warn!("建当前快照失败（不影响已完成的写入）: {}", e.message);
+            return;
+        }
+    };
+    let version = match path_editor_core::db::history::app_state_version(db) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("读取 app_state.version 失败: {}", e.message);
+            return;
+        }
+    };
+    match path_editor_core::db::history::set_current_snapshot(db, &uid, version) {
+        Ok(true) => {}
+        Ok(false) => log::warn!("current_snapshot_id 的 CAS 冲突（有并发写），本次不更新当前状态"),
+        Err(e) => log::warn!("更新 current_snapshot_id 失败: {}", e.message),
+    }
+
+    // 同步刷新 `disabled.rs` 的读缓存（D-1 方案 A）。
+    // 停写之后 `load_path_snapshot()` 从 DB 读，而加载器是 `Fn()` 且拿不到 `Db`，
+    // 靠进程级缓存桥接；写完不刷新会让读路径停留在旧状态。
+    crate::refresh_read_snapshot(system_for_cache, user_for_cache);
+}
+
+/// 读当前 PATH 快照（供建「操作前」快照用）。
+///
+/// 走 `disabled::load_path_snapshot`（注册表 + disabled.json 合并），
+/// 与 `save_path_with_sidecar` 写入的 sidecar 口径一致。
+pub(super) fn current_path_snapshot() -> Option<(Vec<PathEntry>, Vec<PathEntry>)> {
+    match path_editor_core::disabled::load_path_snapshot() {
+        Ok(s) => Some((s.system, s.user)),
+        Err(e) => {
+            log::warn!("读取当前 PATH 快照失败，本次事件不带快照: {}", e.message);
+            None
+        }
+    }
+}
+
 /// 同时写注册表与 sidecar（best-effort 多 hive，partial 语义按 hive 分字段）。
 ///
 /// 每个 hive 传 [`PathHiveWrite`]（含 `expected` 用于乐观并发校验）。
@@ -42,9 +168,12 @@ pub fn save_path_with_sidecar(
     user: Option<PathHiveWrite>,
     state: State<'_, DbState>,
 ) -> Result<ApplyOutcome, String> {
-    with_history(&state, |history| {
-        service::save_path_with_sidecar(system, user, history)
-    })
+    with_history_and_snapshot(
+        &state,
+        current_path_snapshot,
+        current_path_snapshot,
+        |history| service::save_path_with_sidecar(system, user, history),
+    )
     .map_err(|e| e.message)
 }
 
@@ -55,9 +184,12 @@ pub fn apply_path_snapshot(
     entries: Vec<PathEntry>,
     state: State<'_, DbState>,
 ) -> Result<ApplyOutcome, String> {
-    with_history(&state, |history| {
-        service::apply_path_snapshot(hive, entries, history)
-    })
+    with_history_and_snapshot(
+        &state,
+        current_path_snapshot,
+        current_path_snapshot,
+        |history| service::apply_path_snapshot(hive, entries, history),
+    )
     .map_err(|e| e.message)
 }
 

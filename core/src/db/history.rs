@@ -172,6 +172,16 @@ pub struct EventFilter {
     pub action: Option<String>,
     /// 按来源筛选
     pub source: Option<String>,
+    /// 按 hive 筛选（`system` / `user`）——P1-1
+    pub hive: Option<String>,
+    /// 按操作目标筛选（变量名等）——P1-1
+    pub target: Option<String>,
+    /// 按结果筛选（`success` / `partial` / `failure`）——P1-1
+    pub result: Option<String>,
+    /// 时间范围起点（含，Unix 毫秒）——P1-1
+    pub from_ms: Option<i64>,
+    /// 时间范围终点（含，Unix 毫秒）——P1-1
+    pub to_ms: Option<i64>,
 }
 
 impl Default for EventFilter {
@@ -181,6 +191,11 @@ impl Default for EventFilter {
             offset: 0,
             action: None,
             source: None,
+            hive: None,
+            target: None,
+            result: None,
+            from_ms: None,
+            to_ms: None,
         }
     }
 }
@@ -352,12 +367,30 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
 
     // WHERE 条件在两处必须完全一致，否则 total 与实际可分页内容不符。
     // 必须带 `e.` 前缀：`snapshots` 也有 `source` 列，JOIN 后裸列名是歧义的。
-    const WHERE: &str = "WHERE (?1 IS NULL OR e.action = ?1) AND (?2 IS NULL OR e.source = ?2)";
+    // P1-1：新增 hive / target / result / 时间范围四个维度（spec §6.1）。
+    const WHERE: &str = "WHERE (?1 IS NULL OR e.action = ?1)
+           AND (?2 IS NULL OR e.source = ?2)
+           AND (?3 IS NULL OR e.hive = ?3)
+           AND (?4 IS NULL OR e.target = ?4)
+           AND (?5 IS NULL OR e.result = ?5)
+           AND (?6 IS NULL OR e.created_at >= ?6)
+           AND (?7 IS NULL OR e.created_at <= ?7)";
+
+    // 参数顺序必须与 WHERE 里的 ?1..?7 一一对应
+    let filter_params = params![
+        filter.action,
+        filter.source,
+        filter.hive,
+        filter.target,
+        filter.result,
+        filter.from_ms,
+        filter.to_ms
+    ];
 
     let total: i64 = db
         .query_row_with(
             &format!("SELECT count(*) FROM events e {WHERE}"),
-            params![filter.action, filter.source],
+            filter_params,
             |r| r.get(0),
         )
         .map_err(|e| CoreError::new(e.code, "list_events", e.message))?;
@@ -366,10 +399,22 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
         "SELECT e.uid, e.created_at, e.source, e.action, e.hive, e.target, e.result, s.uid
          FROM events e LEFT JOIN snapshots s ON s.id = e.snapshot_id {WHERE}
          ORDER BY e.created_at DESC, e.id DESC
-         LIMIT ?3 OFFSET ?4"
+         LIMIT ?8 OFFSET ?9"
     ))?;
+    // 参数顺序：?1..?7 是 WHERE 的筛选条件，?8/?9 是分页
+    let page_params = params![
+        filter.action,
+        filter.source,
+        filter.hive,
+        filter.target,
+        filter.result,
+        filter.from_ms,
+        filter.to_ms,
+        limit,
+        offset
+    ];
     let items = stmt
-        .query_map(params![filter.action, filter.source, limit, offset], |r| {
+        .query_map(page_params, |r| {
             let action_s: String = r.get(3)?;
             let result_s: String = r.get(6)?;
             Ok(EventView {

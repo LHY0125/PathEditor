@@ -6,6 +6,7 @@
 use super::history::{insert_snapshot_tx, NewSnapshot};
 use super::{db_err, Db};
 use crate::error::{CoreError, ErrorCode};
+use crate::PathEntry;
 use rusqlite::{params, OptionalExtension, Transaction};
 use uuid::Uuid;
 
@@ -219,4 +220,81 @@ fn snapshot_id_by_uid(tx: &Transaction, uid: &str) -> Result<i64, CoreError> {
         |r| r.get(0),
     )
     .map_err(|e| db_err("find_snapshot", e))
+}
+
+/// 按**名称**读取未删除的配置（UI 用名称而非 uid 作标识）。
+pub fn get_profile_by_name(db: &Db, name: &str) -> Result<Option<ProfileView>, CoreError> {
+    Ok(list_profiles(db)?.into_iter().find(|p| p.name == name))
+}
+
+/// 按 uid 软删除（UI 用名称，故另提供 [`delete_profile_by_name`]）。
+pub fn delete_profile_by_name(db: &mut Db, name: &str) -> Result<bool, CoreError> {
+    let Some(p) = get_profile_by_name(db, name)? else {
+        return Ok(false);
+    };
+    delete_profile(db, &p.uid)
+}
+
+/// 按名称记录一次「配置被应用」。
+pub fn mark_profile_applied_by_name(db: &mut Db, name: &str) -> Result<bool, CoreError> {
+    let Some(p) = get_profile_by_name(db, name)? else {
+        return Ok(false);
+    };
+    mark_profile_applied(db, &p.uid)
+}
+
+/// 重命名配置。
+///
+/// 同名（未删除）已存在时返回 `NameExists` —— 与 `save_profile` 同一口径，
+/// 不静默覆盖。改名**不产生新 revision**（内容没变，只是标签变了）。
+pub fn rename_profile(db: &mut Db, old_name: &str, new_name: &str) -> Result<bool, CoreError> {
+    validate_name(new_name)?;
+    if old_name == new_name {
+        return Ok(false);
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    db.with_transaction(|tx| {
+        let taken: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM profiles WHERE name = ?1 AND deleted_at IS NULL",
+                params![new_name],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| db_err("rename_profile", e))?;
+        if taken.is_some() {
+            return Err(CoreError::new(
+                ErrorCode::NameExists,
+                "rename_profile",
+                format!("配置「{new_name}」已存在"),
+            ));
+        }
+        let changed = tx
+            .execute(
+                "UPDATE profiles SET name = ?1, updated_at = ?2, version = version + 1
+                 WHERE name = ?3 AND deleted_at IS NULL",
+                params![new_name, now, old_name],
+            )
+            .map_err(|e| db_err("rename_profile", e))?;
+        Ok(changed == 1)
+    })
+}
+
+/// 配置的 PATH 条目：`(system, user)`。
+///
+/// 提取成别名是为了避开 clippy 的 `type_complexity`（嵌套 `Vec` 的元组）。
+pub type ProfilePaths = (Vec<PathEntry>, Vec<PathEntry>);
+
+/// 读取配置最新版本对应的快照 PATH 条目（供 UI 预览与应用）。
+///
+/// 返回 `(system, user)`；配置不存在或没有 revision 时返回 `None`。
+pub fn profile_paths(db: &Db, name: &str) -> Result<Option<ProfilePaths>, CoreError> {
+    let Some(p) = get_profile_by_name(db, name)? else {
+        return Ok(None);
+    };
+    let Some(snapshot_uid) = p.snapshot_uid else {
+        return Ok(None);
+    };
+    let view = crate::db::history::get_snapshot(db, &snapshot_uid, false)?;
+    Ok(Some((view.system, view.user)))
 }

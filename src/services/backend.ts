@@ -511,12 +511,22 @@ export interface EventPage {
   total: number;
 }
 
-/** 事件列表筛选。 */
+/** 事件列表筛选（P1-1：补齐 spec §6.1 要求的全部维度）。 */
 export interface EventFilter {
   limit?: number;
   offset?: number;
   action?: string;
   source?: string;
+  /** `system` / `user` */
+  hive?: string;
+  /** 操作目标（变量名等） */
+  target?: string;
+  /** `success` / `partial` / `failure` */
+  result?: string;
+  /** 时间范围起点（含，Unix 毫秒） */
+  fromMs?: number;
+  /** 时间范围终点（含，Unix 毫秒） */
+  toMs?: number;
 }
 
 /** 快照中的一行环境变量（对应 core 的 `EnvValueRow`）。 */
@@ -783,13 +793,43 @@ export const backend = {
   cleanPathEntries: (entries: PathEntry[]) =>
     invoke<[PathEntry[], PathEntry[]]>('clean_path_entries', { entries }),
   scanPaths: (paths: string[], query = '') => invoke<ScanResult>('scan_paths', { paths, query }),
-  listProfiles: () => invoke<ProfileMeta[]>('list_profiles'),
-  saveProfile: (name: string, sys: PathEntry[], user: PathEntry[]) =>
-    invoke<void>('save_profile', { name, sys, user }),
-  loadProfile: (name: string) => invoke<ProfileData>('load_profile', { name }),
-  deleteProfile: (name: string) => invoke<void>('delete_profile', { name }),
-  renameProfile: (oldName: string, newName: string) =>
-    invoke<void>('rename_profile', { oldName, newName }),
+  /**
+   * 配置方案已迁到 DB（P0-1 方案 A）。
+   *
+   * **不再使用 v5 文件通路的 `list_profiles` / `save_profile` / …**：
+   * 那组命令读写的仍是 `~/.patheditor/profiles/*.json`，与 DB 是两个真相源。
+   * 迁移之后继续用它会让 DB 数据永久冻结（`migration_imports` 保证不重导）。
+   */
+  profileList: async () =>
+    parseProfileViewList(await parseCoreError(invoke<unknown>('profile_list')), 'profile_list'),
+  profileSave: async (request: ProfileSaveRequest) => {
+    const result = await parseCoreError(invoke<unknown>('profile_save', { request }));
+    if (typeof result !== 'string' || result.length === 0) {
+      throw new Error('profile_save 必须返回非空 uid');
+    }
+    return result;
+  },
+  profilePaths: async (name: string) => {
+    const result = await parseCoreError(invoke<unknown>('profile_paths', { name }));
+    return result === null ? null : parseProfilePathsView(result, 'profile_paths');
+  },
+  profileRename: async (oldName: string, newName: string) => {
+    const result = await parseCoreError(invoke<unknown>('profile_rename', { oldName, newName }));
+    if (typeof result !== 'boolean') throw new Error('profile_rename 必须返回布尔值');
+    return result;
+  },
+  profileDeleteByName: async (name: string) => {
+    const result = await parseCoreError(invoke<unknown>('profile_delete_by_name', { name }));
+    if (typeof result !== 'boolean') throw new Error('profile_delete_by_name 必须返回布尔值');
+    return result;
+  },
+  profileMarkAppliedByName: async (name: string) => {
+    const result = await parseCoreError(invoke<unknown>('profile_mark_applied_by_name', { name }));
+    if (typeof result !== 'boolean') {
+      throw new Error('profile_mark_applied_by_name 必须返回布尔值');
+    }
+    return result;
+  },
   listAllEnvVars: async () => parseEnvVarSnapshot(await invoke<unknown>('list_all_env_vars')),
   revealEnvVar: async (hive: EnvHive, name: string) =>
     parseRevealedValue(
@@ -866,15 +906,20 @@ export const backend = {
       await parseCoreError(invoke<unknown>('history_get_snapshot', { uid, reveal })),
       'history_get_snapshot',
     ),
+  /**
+   * 把历史快照恢复回注册表（P0-3）。
+   *
+   * **破坏性操作**：会覆盖当前 PATH。UI 必须先二次确认。
+   * 恢复走既有注册表编排（含写前备份），成功后追加新快照与新事件（append-only）。
+   */
+  historyRestoreSnapshot: async (uid: string) =>
+    parseApplyOutcome(await parseCoreError(invoke<unknown>('history_restore_snapshot', { uid }))),
   /** 读取当前快照；无当前快照或降级模式下返回 `null`。 */
   historyGetCurrent: async () => {
     const result = await parseCoreError(invoke<unknown>('history_get_current'));
     return result === null ? null : parseSnapshotView(result, 'history_get_current');
   },
-  /** 列出配置方案。 */
-  profileList: async () =>
-    parseProfileList(await parseCoreError(invoke<unknown>('profile_list')), 'profile_list'),
-  /** 软删除配置方案；返回是否真的删除了（已删除返回 false）。 */
+  /** 软删除配置方案（按 uid）；返回是否真的删除了（已删除返回 false）。 */
   profileDelete: async (uid: string) => {
     const result = await parseCoreError(invoke<unknown>('profile_delete', { uid }));
     if (typeof result !== 'boolean') throw new Error('profile_delete 必须返回布尔值');
@@ -890,3 +935,41 @@ export const backend = {
   backupList: async () =>
     parseBackupList(await parseCoreError(invoke<unknown>('backup_list')), 'backup_list'),
 };
+
+// ── 配置方案（DB 版，P0-1 方案 A） ────────────────────────
+
+/** 保存配置的入参（对应 Rust 的 `ProfileSaveRequest`）。 */
+export interface ProfileSaveRequest {
+  name: string;
+  description: string | null;
+  tags: string[];
+  system: PathEntry[];
+  user: PathEntry[];
+}
+
+/** 配置的 PATH 条目（对应 Rust 的 `ProfilePathsView`）。 */
+export interface ProfilePathsView {
+  name: string;
+  /** 最后更新时间（Unix 毫秒） */
+  updatedAt: number;
+  system: PathEntry[];
+  user: PathEntry[];
+}
+
+/** 校验 `profile_list` 的返回：`ProfileView[]`（见上面 `ProfileView` 接口）。 */
+function parseProfileViewList(value: unknown, label: string): ProfileView[] {
+  return parseProfileList(value, label);
+}
+
+/** 校验 `profile_paths` 的返回。 */
+function parseProfilePathsView(value: unknown, label: string): ProfilePathsView {
+  if (!isRecord(value) || typeof value.name !== 'string' || typeof value.updatedAt !== 'number') {
+    throw new Error(`${label} 返回了无效的配置路径契约`);
+  }
+  return {
+    name: value.name,
+    updatedAt: value.updatedAt,
+    system: parsePathEntries(value.system, `${label}.system`),
+    user: parsePathEntries(value.user, `${label}.user`),
+  };
+}

@@ -3,7 +3,15 @@
 //! **幂等**：以 `migration_imports(source_path, content_hash)` 判重（spec B3），
 //! 迁移可重跑而不会产生重复快照。
 //!
-//! **不动原件**：只读 + 登记导入记录；`.v5.bak` 归档与删除留给 M4（spec §7.4）。
+//! **不动原件**：只读 + 登记导入记录。
+//!
+//! **关于 `.v5.bak` 归档（P1-5 更正）**：spec §7.4 写的是「原件：保留为 `*.v5.bak`；
+//! 不自动删除」——它是**迁移规则本身**，不是对 M4 的授权。授权 M4 的是 §7.6
+//! 「清理 `env_backup_*.json`」。
+//!
+//! 本模块把归档一并推迟到 M4，理由是「不在迁移中改用户文件」——这是**实现取舍**，
+//! 不是 spec 的要求。此前这里写成「留给 M4（spec §7.4）」是**错误引用**，
+//! 会让读者以为 §7.4 授权了推迟。
 //!
 //! 迁移范围（spec §7.2）：
 //! - `disabled.json` → `snapshots(kind=current)` + `path_entries`
@@ -67,12 +75,30 @@ pub fn migrate_legacy_with(
     import_path_backups(db, home, &mut report)?;
 
     // 标记已完成 v5 迁移（app_state 可能尚无行，用 UPSERT 建立单行状态）
+    //
+    // **D-2 修正**：`current_snapshot_id` 必须取 `kind='current'` 的那条
+    // （由 `disabled.json` 导入），不能取「最后插入的」。
+    //
+    // 原实现用 `ORDER BY created_at DESC, id DESC LIMIT 1` —— 而导入顺序是
+    // disabled → profiles → env_backups → path_backups，最后插入的是备份快照。
+    // 那样 `current_snapshot_id` 会指向一份**备份**，而不是当前 PATH 状态。
+    //
+    // 用 `created_at DESC` 作为同 kind 内的次级排序：多次迁移时取最新的一条。
     db.with_transaction(|tx| {
         tx.execute(
             "INSERT INTO app_state (id, current_snapshot_id, version, migrated_v5, device_id, lamport)
-             VALUES (1, (SELECT id FROM snapshots ORDER BY created_at DESC, id DESC LIMIT 1),
+             VALUES (1,
+                     (SELECT id FROM snapshots
+                       WHERE kind = 'current'
+                       ORDER BY created_at DESC, id DESC LIMIT 1),
                      1, 1, ?1, 0)
-             ON CONFLICT(id) DO UPDATE SET migrated_v5 = 1",
+             ON CONFLICT(id) DO UPDATE SET
+               migrated_v5 = 1,
+               -- 只在仍为空时填入，避免覆盖运行时已维护的值
+               current_snapshot_id = COALESCE(
+                 app_state.current_snapshot_id,
+                 excluded.current_snapshot_id
+               )",
             rusqlite::params![uuid::Uuid::now_v7().to_string()],
         )
         .map_err(|e| db_err("mark_migrated", e))?;

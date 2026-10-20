@@ -257,6 +257,20 @@
       "restore": "Restore",
       "migration": "Migration",
       "sync": "Sync"
-    }
+    },
+    "restore": "Restore this snapshot",
+    "restoring": "Restoring…",
+    "restoreConfirm": "Restoring overwrites the current PATH (system and user). Continue?",
+    "restoreHint": "The current PATH is backed up automatically before restoring.",
+    "filterAction": "Filter by action",
+    "filterAllActions": "All actions",
+    "filterSource": "Filter by source",
+    "filterAllSources": "All sources",
+    "filterHive": "Filter by hive",
+    "filterAllHives": "All hives",
+    "undoLast": "Undo last operation",
+    "undoConfirm": "Undo restores the PATH to its state before that operation. Continue?",
+    "undoHint": "Cross-session undo: restored from history, survives restarts",
+    "undoNothing": "No undoable operation found"
   }
 }

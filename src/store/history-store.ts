@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { backend, type EventView, type SnapshotView } from '@/services/backend';
+import { backend, type EventFilter, type EventView, type SnapshotView } from '@/services/backend';
 import type { CoreError } from '@/core/env-var';
 
 /**
@@ -38,9 +38,18 @@ interface HistoryState {
   /** 当前选中的快照详情（含掩码后的值） */
   detail: SnapshotView | null;
   detailLoading: boolean;
+  /** 恢复操作进行中 */
+  restoring: boolean;
+  /** 当前筛选条件（P1-1：action / source / hive / result） */
+  filter: EventFilter;
   load: () => Promise<void>;
   selectEvent: (event: EventView) => Promise<void>;
   clearDetail: () => void;
+  restore: (uid: string) => Promise<void>;
+  /** 跨会话撤销：恢复最近一次可撤销操作前的快照（P1-7） */
+  undoLast: () => Promise<EventView | null>;
+  /** 设置筛选并重新加载（offset 归零） */
+  setFilter: (patch: Partial<EventFilter>) => Promise<void>;
 }
 
 const PAGE_SIZE = 50;
@@ -52,11 +61,17 @@ export const useHistoryStore = create<HistoryState>((set) => ({
   error: null,
   detail: null,
   detailLoading: false,
+  restoring: false,
+  filter: {},
 
   load: async () => {
     set({ loading: true, error: null });
     try {
-      const page = await backend.historyListEvents({ limit: PAGE_SIZE, offset: 0 });
+      const page = await backend.historyListEvents({
+        limit: PAGE_SIZE,
+        offset: 0,
+        ...useHistoryStore.getState().filter,
+      });
       set({ events: page.items, total: page.total, loading: false });
     } catch (e) {
       // 降级模式（code = database）也会走到这里：错误条幅依赖这条信息
@@ -88,11 +103,62 @@ export const useHistoryStore = create<HistoryState>((set) => ({
   },
 
   clearDetail: () => set({ detail: null }),
+
+  setFilter: async (patch: Partial<EventFilter>) => {
+    set({ filter: patch });
+    await useHistoryStore.getState().load();
+  },
+
+  /**
+   * 跨会话撤销：把「最近一次可撤销的操作」恢复到它执行前的状态（P1-7）。
+   *
+   * **不重建内存版的 `OpRecord`**：那是 UI 的即时栈（`UndoRedoManager`），
+   * 关掉进程就没了。跨会话撤销的正确形态是——事件流本身就是撤销栈：
+   * 每条事件在 P0-2 之后都指向「该操作执行前」的快照，
+   * 恢复那个快照就等于撤销该操作。
+   *
+   * 排除 `restore` 自身：撤销一条恢复记录会让用户困惑（"撤销我的撤销"）。
+   *
+   * 返回被撤销的事件；没有可撤销的记录时返回 `null`。
+   */
+  undoLast: async (): Promise<EventView | null> => {
+    const { events } = useHistoryStore.getState();
+    const target = events.find((e) => e.snapshotUid !== null && e.action !== 'restore');
+    if (!target || !target.snapshotUid) return null;
+    await useHistoryStore.getState().restore(target.snapshotUid);
+    return target;
+  },
+
+  /**
+   * 把当前选中的快照恢复回注册表（P0-3）。
+   *
+   * **破坏性操作**：调用方必须先二次确认。成功后重新加载列表——
+   * 恢复本身会追加一条新事件（append-only），列表需要刷新才看得到。
+   */
+  restore: async (uid: string) => {
+    set({ restoring: true, error: null });
+    try {
+      await backend.historyRestoreSnapshot(uid);
+      set({ restoring: false, detail: null });
+      await useHistoryStore.getState().load();
+    } catch (e) {
+      set({ restoring: false, error: errorMessage(e) });
+      throw e;
+    }
+  },
 }));
 
 /** 仅用于测试重置。 */
 export function resetHistoryStore(): void {
-  useHistoryStore.setState({ events: [], total: 0, loading: false, error: null, detail: null });
+  useHistoryStore.setState({
+    events: [],
+    total: 0,
+    loading: false,
+    error: null,
+    detail: null,
+    restoring: false,
+    filter: {},
+  });
 }
 
 /** 每页条数（与 core 的默认值一致）。 */

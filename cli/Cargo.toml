@@ -14,3 +14,5 @@ path = "src/main.rs"
 path-editor-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
+# 配置列表要展示本地时间（DB 存的是 Unix 毫秒）
+chrono = "0.4"

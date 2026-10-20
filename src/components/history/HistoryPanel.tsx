@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { backend } from '@/services/backend';
 import { useHistoryStore } from '@/store/history-store';
 import { SnapshotDetail } from './SnapshotDetail';
 
@@ -25,12 +26,46 @@ export function HistoryPanel() {
   const error = useHistoryStore((s) => s.error);
   const detail = useHistoryStore((s) => s.detail);
   const detailLoading = useHistoryStore((s) => s.detailLoading);
+  const restoring = useHistoryStore((s) => s.restoring);
   const load = useHistoryStore((s) => s.load);
   const selectEvent = useHistoryStore((s) => s.selectEvent);
+  const restore = useHistoryStore((s) => s.restore);
+  const filter = useHistoryStore((s) => s.filter);
+  const setFilter = useHistoryStore((s) => s.setFilter);
+  const undoLast = useHistoryStore((s) => s.undoLast);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * 恢复快照（破坏性：覆盖当前 PATH）。
+   *
+   * 二次确认走异步对话框；**IPC 失败按「取消」处理**（fail-closed），
+   * 绝不静默恢复——与仓库里其它破坏性操作同一口径。
+   */
+  /**
+   * 跨会话撤销（P1-7）：恢复最近一次可撤销操作前的快照。
+   *
+   * 与 `handleRestore` 同样走二次确认——它也是破坏性操作（覆盖当前 PATH）。
+   */
+  const handleUndo = async () => {
+    const confirmed = await backend.confirmDialog(t('history.undoConfirm')).catch(() => false);
+    if (!confirmed) return;
+    const undone = await undoLast().catch(() => null);
+    if (!undone) {
+      // 没有可撤销的记录：给出明确反馈而不是静默无反应
+      useHistoryStore.setState({ error: t('history.undoNothing') });
+    }
+  };
+
+  const handleRestore = async (uid: string) => {
+    const confirmed = await backend.confirmDialog(t('history.restoreConfirm')).catch(() => false);
+    if (!confirmed) return;
+    await restore(uid).catch(() => {
+      // 错误已由 store 写入 `error`，条幅会显示
+    });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -43,14 +78,69 @@ export function HistoryPanel() {
             {t('history.count', { total })}
           </span>
         </div>
-        <button
-          type="button"
-          className="toolbar-btn"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          {t('history.refresh')}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* P1-1：筛选下拉。core 与 IPC 已支持全部 5 个维度
+              （action/source/hive/target/时间范围），
+              这里先暴露最常用的 3 个；target 与时间范围留到 M2 的筛选面板。 */}
+          <select
+            className="field-input"
+            value={filter.action ?? ''}
+            onChange={(e) => void setFilter({ ...filter, action: e.target.value || undefined })}
+            aria-label={t('history.filterAction')}
+          >
+            <option value="">{t('history.filterAllActions')}</option>
+            <option value="save">{t('history.action.save')}</option>
+            <option value="apply">{t('history.action.apply')}</option>
+            <option value="restore">{t('history.action.restore')}</option>
+            <option value="import">{t('history.action.import')}</option>
+            <option value="envSet">{t('history.action.envSet')}</option>
+            <option value="envAdd">{t('history.action.envAdd')}</option>
+            <option value="envRemove">{t('history.action.envRemove')}</option>
+            <option value="undo">{t('history.action.undo')}</option>
+            <option value="redo">{t('history.action.redo')}</option>
+          </select>
+          <select
+            className="field-input"
+            value={filter.source ?? ''}
+            onChange={(e) => void setFilter({ ...filter, source: e.target.value || undefined })}
+            aria-label={t('history.filterSource')}
+          >
+            <option value="">{t('history.filterAllSources')}</option>
+            <option value="gui">{t('history.source.gui')}</option>
+            <option value="cli">{t('history.source.cli')}</option>
+            <option value="import">{t('history.source.import')}</option>
+            <option value="restore">{t('history.source.restore')}</option>
+            <option value="migration">{t('history.source.migration')}</option>
+            <option value="sync">{t('history.source.sync')}</option>
+          </select>
+          <select
+            className="field-input"
+            value={filter.hive ?? ''}
+            onChange={(e) => void setFilter({ ...filter, hive: e.target.value || undefined })}
+            aria-label={t('history.filterHive')}
+          >
+            <option value="">{t('history.filterAllHives')}</option>
+            <option value="system">{t('history.hiveSystem')}</option>
+            <option value="user">{t('history.hiveUser')}</option>
+          </select>
+          <button
+            type="button"
+            className="toolbar-btn"
+            onClick={() => void handleUndo()}
+            disabled={restoring || events.length === 0}
+            title={t('history.undoHint')}
+          >
+            {t('history.undoLast')}
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            {t('history.refresh')}
+          </button>
+        </div>
       </div>
 
       {/* 降级模式条幅：DB 不可用时历史不可用，但注册表编辑照常（spec D16） */}
@@ -136,7 +226,24 @@ export function HistoryPanel() {
               {t('history.detailLoading')}
             </p>
           )}
-          {!detailLoading && detail && <SnapshotDetail snapshot={detail} />}
+          {!detailLoading && detail && (
+            <>
+              <SnapshotDetail snapshot={detail} />
+              <div className="border-t px-3 py-2" style={{ borderColor: 'var(--app-border)' }}>
+                <button
+                  type="button"
+                  className="toolbar-btn w-full"
+                  disabled={restoring}
+                  onClick={() => void handleRestore(detail.uid)}
+                >
+                  {restoring ? t('history.restoring') : t('history.restore')}
+                </button>
+                <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+                  {t('history.restoreHint')}
+                </p>
+              </div>
+            </>
+          )}
           {!detailLoading && !detail && (
             <p className="px-3 py-4 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
               {t('history.pickOne')}

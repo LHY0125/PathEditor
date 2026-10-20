@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import type { ProfileMeta } from '@/services/backend';
+import type { ProfileView } from '@/services/backend';
 
 interface ProfileListProps {
-  profiles: ProfileMeta[];
+  profiles: ProfileView[];
   selected: string | null;
   onSelect: (name: string) => void;
 }

@@ -1,3 +1,18 @@
+//! v5 文件版配置命令（**已从 `invoke_handler` 下线**）。
+//!
+//! P0-1 方案 A 之后，配置方案统一走 DB（见 `commands::history` 的
+//! `profile_list` / `profile_save` / `profile_paths` / `profile_rename` /
+//! `profile_delete_by_name`）。本模块的命令**不再注册**，保留原因：
+//!
+//! 1. `core::profiles` 仍是 v5 兼容通路——`migrate_legacy` 读它，
+//!    spec §7.5 的「导出 v5 JSON」将来要用；
+//! 2. 命令函数本身是那套 API 的薄封装，删掉会让「v5 通路」在 GUI 侧失去入口，
+//!    将来做导出时还要重写。
+//!
+//! **不要重新注册它们**——那会让 GUI 重新写 `profiles/*.json`，
+//! 与 DB 形成第二个真相源（这正是 P0-1 要消除的）。
+#![allow(dead_code)]
+
 use path_editor_core::profiles;
 
 #[tauri::command]

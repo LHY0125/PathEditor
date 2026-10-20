@@ -257,6 +257,20 @@
       "restore": "恢复",
       "migration": "迁移",
       "sync": "同步"
-    }
+    },
+    "restore": "恢复到此快照",
+    "restoring": "正在恢复…",
+    "restoreConfirm": "恢复会覆盖当前 PATH（系统与用户）。确定继续吗？",
+    "restoreHint": "恢复前会自动备份当前 PATH。",
+    "filterAction": "按动作筛选",
+    "filterAllActions": "全部动作",
+    "filterSource": "按来源筛选",
+    "filterAllSources": "全部来源",
+    "filterHive": "按 hive 筛选",
+    "filterAllHives": "全部 hive",
+    "undoLast": "撤销上次操作",
+    "undoConfirm": "撤销会把 PATH 恢复到该操作执行前的状态。确定继续吗？",
+    "undoHint": "跨会话撤销：从历史记录恢复，进程重启后仍可用",
+    "undoNothing": "没有可撤销的操作记录"
   }
 }
