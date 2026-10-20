@@ -35,7 +35,10 @@
 
 - `profile_save` 的 IPC 命令未实现（需要同时传 PATH 条目 + 元数据，形状较重）—— 配置写入在 M1 仍走 v5 文件通路 + 迁移。
 - 历史面板只做「列表 + 预览」；恢复按钮、筛选、分页与 reveal 入口留到 M2。
-- 历史事件的 `snapshot_id` 暂未回填（`EventView` 不含 `snapshotUid`）。
+- 事件与快照的关联**字段已就位、链路已通，但服务层不填值**：`EventView` 含 `snapshotUid`，
+  `events.snapshot_id` 也会在记录时解析写入；但 4 个写命令当前传入的事件都不带快照 uid
+  （`save_path_with_sidecar` 不知道 DB 存在），所以该字段实际恒为 `null`，
+  历史面板的详情按钮因此为禁用状态。M2 接线。
 
 ## 5.1.7 (2026-10-17)
 

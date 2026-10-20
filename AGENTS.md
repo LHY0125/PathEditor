@@ -121,6 +121,15 @@ PathEditor/
 - v6 的 DB 是 **sidecar**，注册表仍是唯一真相源；数据库不可用时应用 fail-open（编辑照常、历史/同步降级）。
 - 设计与计划：`docs/superpowers/specs/2026-10-19-v6-sqlite-design.md`、`docs/superpowers/plans/2026-10-19-v6-sqlite-m1-plan.md`。
 
+### 为什么依赖 OpenSSL（构建成本来源）
+
+依赖链：`rusqlite → libsqlite3-sys → SQLCipher（C）→ OpenSSL（C）`。
+
+- **OpenSSL 的唯一作用**：给 SQLCipher 提供 AES-256、HMAC、PBKDF2 等密码学原语。项目**没有任何 TLS / 网络调用**，与「OpenSSL 漏洞」常见的 Web 攻击面不同。
+- `bundled-sqlcipher-vendored-openssl` 把 SQLCipher 与 OpenSSL 的 **C 源码**都打进 crate，构建时用 `cc` 编译。因此需要 `make`、`perl`（MSVC 下还需 NASM），首次编译约 31 分钟，二进制 +1–2 MB。
+- 选 `vendored` 是为了「不依赖用户机器上是否装了 OpenSSL、版本是否兼容」，代价是构建工具链与时间——这是有意的权衡，不要改成链接系统 OpenSSL。
+- 密钥：`~/.patheditor/keys/db.key.dpapi`，内容为 `version(1)+db_key(32)+hash_salt(16)`，整体经 DPAPI（**当前 Windows 用户**作用域）加密；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。详见 spec §5.1 与 M1 计划 Task 3。
+
 ## Tauri IPC 接口
 
 | Command                                                                                 | 参数 / 返回值                                        | 说明                                                                                         |
