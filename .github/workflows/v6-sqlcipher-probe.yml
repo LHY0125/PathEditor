@@ -1,0 +1,69 @@
+name: v6-sqlcipher-probe
+
+on:
+  push:
+    branches: [main, "feat/**", "v6/**"]
+    paths:
+      - "probes/v6-sqlcipher/**"
+      - ".github/workflows/v6-sqlcipher-probe.yml"
+  pull_request:
+    paths:
+      - "probes/v6-sqlcipher/**"
+      - ".github/workflows/v6-sqlcipher-probe.yml"
+  # workflow_dispatch 只在 workflow 进入默认分支后可用；分支上用 push/PR 触发。
+
+jobs:
+  probe-msvc:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: probes/v6-sqlcipher
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use MSVC toolchain
+        shell: pwsh
+        working-directory: .
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+          rustup override set stable-x86_64-pc-windows-msvc
+          rustc -Vv
+
+      - name: Install NASM and Perl
+        shell: pwsh
+        working-directory: .
+        run: |
+          choco install nasm strawberryperl -y --no-progress
+          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+          nasm -v
+          perl --version
+
+      - name: Run probes (MSVC) —— 每个测试文件单独进程
+        shell: pwsh
+        run: |
+          # SQLCipher 在同一进程内跑第二个测试会 STATUS_STACK_OVERFLOW
+          # （GNU 与 MSVC 均复现；--test-threads=1 无效；系统内存充足时仍复现）。
+          # 因此每个测试文件只放一个 #[test]，逐文件调用，每个文件一个进程。
+          # 见 M0 结果文档 §五。
+          $files = @(
+            'p1_open',
+            'p2_wrong_key',
+            'p3_fts_json',
+            'p4_export',
+            'p5_vacuum',
+            'p6_bench',
+            'p7_dpapi',
+            'p8_dacl'
+          )
+          $failed = @()
+          foreach ($f in $files) {
+            Write-Host "::group::$f"
+            cargo +stable-x86_64-pc-windows-msvc test --test $f -- --nocapture
+            if ($LASTEXITCODE -ne 0) { $failed += $f }
+            Write-Host "::endgroup::"
+          }
+          if ($failed.Count -gt 0) {
+            Write-Host "FAILED: $($failed -join '; ')"
+            exit 1
+          }
+          Write-Host "All probes passed."
