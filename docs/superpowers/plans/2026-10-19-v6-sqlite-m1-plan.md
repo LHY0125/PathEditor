@@ -586,6 +586,110 @@ git commit -m "feat(v6): Db 句柄与 v1 schema（SQLCipher、PRAGMA、版本迁
   - `pub fn load_or_create_key(home: &Path) -> Result<KeyMaterial, CoreError>`
   - `pub fn key_hex(m: &KeyMaterial) -> String`
 
+**密钥存储规格（spec §5.1，必须逐条实现）：**
+
+| 项       | 规定                                                                                    |
+| -------- | --------------------------------------------------------------------------------------- |
+| 路径     | `~/.patheditor/keys/db.key.dpapi`（`home.join("keys").join("db.key.dpapi")`）           |
+| 内容     | `version(1) + db_key(32) + hash_salt(16)` = 49 字节明文，整体 `CryptProtectData` 后落盘 |
+| 作用域   | **当前 Windows 用户**（`CRYPTPROTECT_UI_FORBIDDEN`）；换机/换用户不可解密               |
+| 首次创建 | **命名互斥量 `Local\PathEditor.KeyInit`** 串行化 + `create_new(true)` 原子创建          |
+| DACL     | **仅当前用户 + SYSTEM**；写完立即设置；启动时校验，过宽则告警（不自动改）               |
+| 失败语义 | 密钥丢失/DPAPI 不可用 → 明确报错，**不自动重建空库**（否则静默丢历史）                  |
+
+**为什么需要互斥量（不只是 `create_new`）：**
+
+`create_new(true)` 只保证「**谁先创建**」，不保证「**创建后完整**」。两个进程竞争时：
+
+```text
+进程 A: create_new 成功 → 开始 write_all（尚未 flush）
+进程 B: create_new 失败（AlreadyExists）→ read_key() → 读到半截/空 blob → 解析失败
+```
+
+所以必须用命名互斥量把「create_new + write + FlushFileBuffers」包成一个临界区：
+
+```rust
+// windows-sys: Win32_System_Threading::{CreateMutexW, WaitForSingleObject, ReleaseMutex}
+//              Win32_Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_ABANDONED}
+let name = w!("Local\\PathEditor.KeyInit");
+let mutex = unsafe { CreateMutexW(std::ptr::null(), 0, name) };
+if mutex.is_null() {
+    return Err(CoreError::new(ErrorCode::Crypto, "key_mutex", "无法创建密钥互斥量"));
+}
+let wait = unsafe { WaitForSingleObject(mutex, 5000) };
+if wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED {
+    unsafe { CloseHandle(mutex) };
+    return Err(CoreError::new(ErrorCode::Crypto, "key_mutex", "等待密钥互斥量超时"));
+}
+
+let result = (|| {
+    // 临界区内：先读已有密钥，再 create_new + write + flush
+    if let Some(k) = read_key(path)? { return Ok(k); }
+    create_key_locked(path)
+})();
+
+unsafe { ReleaseMutex(mutex); CloseHandle(mutex) };
+result
+```
+
+`create_key_locked` 在临界区内必须：
+
+```rust
+let mut f = match fs::OpenOptions::new().write(true).create_new(true).open(path) {
+    Ok(f) => f,
+    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        // 互斥量保证此时文件已写完整，可直接读
+        return read_key(path)?.ok_or_else(|| CoreError::new(
+            ErrorCode::Crypto, "create_key", "密钥文件已存在但无法读取"));
+    }
+    Err(e) => return Err(io_err("open_key")(e)),
+};
+f.write_all(&blob).map_err(io_err("write_key"))?;
+// 关键：flush 后文件才算完整，释放互斥量前必须完成
+f.sync_all().map_err(io_err("sync_key"))?;
+drop(f);
+set_key_dacl(path)?;   // 见下
+```
+
+**DACL 实现（spec §5.1 要求，计划早先遗漏）：**
+
+写完密钥后立即设置 DACL 为「仅当前用户 + SYSTEM」；失败则删除半成品并返回 `Crypto` 错误（不能留下权限过宽的文件）：
+
+```rust
+// windows-sys: Win32_Security_Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW
+//              Win32_Security::{SetFileSecurityW, DACL_SECURITY_INFORMATION}
+// 步骤：取当前进程用户 SID（OpenProcessToken + GetTokenInformation(TokenUser)）
+//      拼 SDDL `D:(A;;GA;;;SY)(A;;GA;;;<current-SID>)`
+//      ConvertStringSecurityDescriptorToSecurityDescriptorW → SetFileSecurityW
+fn set_key_dacl(path: &Path) -> Result<(), CoreError> { /* 见实施细节 */ }
+
+// **不要用 SetNamedSecurityInfoW**（原骨架写法，V-1 整改时纠正）：
+// 它要求把 DACL 指针单独传进 pdacl 参数；若按骨架的 `std::ptr::null()`
+// 传空，则**静默不设置 DACL**（不是报错）。而 NULL DACL 经
+// ConvertSecurityDescriptorToStringSecurityDescriptorW 序列化后的 SDDL 是
+// `D:PAI(NO_ACCESS_CONTROL)` —— 一个主体都不含，黑名单判据 `key_dacl_is_restricted`
+// 会判定为「受限」并返回 Ok(true)。
+//
+// 实测（审核窗口 2026-10-20）：
+//   MakeNull rc = 0
+//   ACL SDDL  = D:PAINO_ACCESS_CONTROL
+// 即这一版写法会产生**会打印「通过」的假绿灯**。SetFileSecurityW 直接接受整个
+// 安全描述符，语义上不可能出现这个错误。
+```
+
+**启动时校验 DACL**：`open_default()` 读一次 ACL，若包含「Everyone / Users / Authenticated Users」等非预期主体，写 `log::warn!` 并在 GUI 状态栏提示（**不自动修改**，避免误伤用户自建目录）。
+
+**为什么 DACL 不能省（DPAPI 已经绑了用户）：**
+
+这是**两个不同的威胁模型**，不能互相替代：
+
+| 威胁                                                   | DPAPI 能挡吗         | DACL 能挡吗 |
+| ------------------------------------------------------ | -------------------- | ----------- |
+| 同一台机器上的**另一个 Windows 用户**读取密钥内容      | ✅ 能（解不开 blob） | —           |
+| 另一个用户**删除或替换**密钥文件（DoS / 诱导重建空库） | ❌ 不能              | ✅ 能       |
+
+**Task 3 必须新增一个测试**：`key_dacl_is_restricted`——读取密钥文件 ACL，断言只有当前用户 SID 与 SYSTEM，不含 `Everyone`/`BUILTIN\Users`。
+
 - [ ] **Step 1: 写失败测试**
 
 `core/tests/db_key_lifecycle.rs`（**只此一个测试**）：
@@ -1534,8 +1638,35 @@ pub fn history_list_events(
 `gui/src/lib.rs` 的 `invoke_handler` 增加 11 个命令；启动时初始化 `DbState`：
 
 ```rust
-let db = path_editor_core::db::open_default().ok(); // 失败则 None → 降级模式
+// 启动序列（spec §7.1）：① pending 补写 ② schema 迁移 ③ v5 文件导入
+let db = match path_editor_core::db::open_default() {
+    Ok(mut db) => match setup_database(&mut db) {
+        Ok(()) => Some(db),
+        Err(e) => { log::error!("历史库初始化失败，进入降级模式: {}", e.message); None }
+    },
+    Err(e) => { log::warn!("历史库打开失败，进入降级模式: {}", e.message); None }
+};
 app.manage(DbState(Mutex::new(db)));
+```
+
+其中 `setup_database` 三步**缺一不可**（V-2 整改的教训：首版计划漏了第 ③ 步，
+导致 `migrate_legacy` 在生产中根本没有调用者，v5 文件永远不会被迁移）：
+
+```rust
+fn setup_database(db: &mut Db) -> Result<(), CoreError> {
+    // ① best-effort 补写 pending（失败只告警，不阻断启动）
+    if let Err(e) = service::retry_pending_path_state(&NoopHistory) {
+        log::warn!("启动时补写 pending 失败（继续启动）: {}", e.message);
+    }
+    // ② schema 建库/迁移
+    db.migrate_to_current()?;
+    // ③ v5 遗留文件一次性导入（幂等；失败只告警）
+    match migrate_v5::migrate_legacy(db, &crypto::config_dir()) {
+        Ok(r) => log::info!("v5 迁移：导入 {} 跳过 {} 失败 {}", r.imported, r.skipped, r.failed),
+        Err(e) => log::warn!("v5 文件迁移失败（继续启动）: {}", e.message),
+    }
+    Ok(())
+}
 ```
 
 `core/src/db/mod.rs` 增加：
@@ -1774,7 +1905,7 @@ git commit -m "feat(v6): 历史面板（时间线、快照预览、敏感值掩�
 **Files:**
 
 - Modify: `README.md`、`CHANGELOG.md`（v6.0.0 段落）
-- Create: `docs/审核和开发/2026.10.19/PathEditor-v6-M1-完成报告.md`
+- Create: `docs/审核和开发/YYYY.MM.DD/PathEditor-v6-M1-开发回执.md`（**命名遵循 `patheditor-two-window-flow` 的固定约定**：开发窗口产出「开发回执」，不是「完成报告」；J-1 更正）
 
 - [ ] **Step 1: 全量质量门**
 
@@ -1797,14 +1928,14 @@ done
 
 Expected: 全绿。
 
-- [ ] **Step 3: 写完成报告**
+- [ ] **Step 3: 写开发回执（不是「完成报告」）**
 
 记录：Task 完成度、偏离项、未覆盖项（FTS/统计/同步属 M2/M3）、质量门输出、`cargo metadata` 成员确认。
 
 - [ ] **Step 4: 提交**
 
 ```bash
-git add README.md CHANGELOG.md docs/审核和开发/2026.10.19/PathEditor-v6-M1-完成报告.md
+git add README.md CHANGELOG.md "docs/审核和开发/YYYY.MM.DD/PathEditor-v6-M1-开发回执.md"
 git commit -m "docs(v6): M1 完成报告与文档同步"
 ```
 
@@ -1838,22 +1969,42 @@ git commit -m "docs(v6): M1 完成报告与文档同步"
 
 开发窗口提出 **5 项阻塞 + 6 项高风险 + 1 项额外发现**，审核窗口逐条独立复核后**全部采纳**并已修订：
 
-| 项       | 问题                                                          | 处置                                                                |
-| -------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **B1**   | `db_err` 返回 `impl Fn` 传给 `map_err` 类型不匹配             | 改为二元函数 `db_err(op, e)`，调用处用闭包                          |
-| **B2**   | Task 4 与 Task 5 重复写事件                                   | `insert_snapshot` 不再写 events，统一由 `HistorySink` 负责          |
-| **B3**   | 迁移夹具缺 `schemaVersion` 信封                               | 补 `Versioned<T>` 正常路径 + 无版本头旧格式，两条都覆盖             |
-| **B4**   | `EnvBackupPayload::empty_for_test` 不存在                     | 改为显式构造 `EnvBackupPayload` / `EnvBackupHives` / `EnvBackupVar` |
-| **B5**   | `cargo test -p app_lib` 跑不起来（package 名是 `patheditor`） | 全部改为 `-p patheditor`                                            |
-| **H1**   | `EventPage.total` 无实现路径                                  | 补独立 `count(*)` 查询示例 + 测试断言 `limit=2` 时 `total=3`        |
-| **H2**   | `sensitive` 信任调用方                                        | 写入时由 core 用 `env_var::is_sensitive` 重新计算并覆盖             |
-| **H3**   | `content_hash` 不区分 hive                                    | 逐 hive 哈希 + 分隔符；`system=[A]` 与 `user=[A]` 哈希不同          |
-| **H4**   | `set_var` 进程级污染 + 无法真正重定向                         | `load_or_create_key(home: &Path)` 显式传路径，测试零 `set_var`      |
-| **H5**   | `HistorySink: Send + Sync` 与 `&mut Db` 冲突                  | trait 去掉 auto-trait 约束；跨线程留到 M3（`Mutex<Db>`）            |
-| **H6**   | `insert_snapshot` 自带事务，Task 6 无法嵌套                   | Task 4 提前提供 `insert_snapshot_tx(&Transaction, ...)`             |
-| **额外** | `retry_pending_path_state()` 无参数                           | Task 1 的 Files 补该签名改动，Task 8 依赖它                         |
+| 项         | 问题                                                          | 处置                                                                                      |
+| ---------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **B1**     | `db_err` 返回 `impl Fn` 传给 `map_err` 类型不匹配             | 改为二元函数 `db_err(op, e)`，调用处用闭包                                                |
+| **B2**     | Task 4 与 Task 5 重复写事件                                   | `insert_snapshot` 不再写 events，统一由 `HistorySink` 负责                                |
+| **B3**     | 迁移夹具缺 `schemaVersion` 信封                               | 补 `Versioned<T>` 正常路径 + 无版本头旧格式，两条都覆盖                                   |
+| **B4**     | `EnvBackupPayload::empty_for_test` 不存在                     | 改为显式构造 `EnvBackupPayload` / `EnvBackupHives` / `EnvBackupVar`                       |
+| **B5**     | `cargo test -p app_lib` 跑不起来（package 名是 `patheditor`） | 全部改为 `-p patheditor`                                                                  |
+| **H1**     | `EventPage.total` 无实现路径                                  | 补独立 `count(*)` 查询示例 + 测试断言 `limit=2` 时 `total=3`                              |
+| **H2**     | `sensitive` 信任调用方                                        | 写入时由 core 用 `env_var::is_sensitive` 重新计算并覆盖                                   |
+| **H3**     | `content_hash` 不区分 hive                                    | 逐 hive 哈希 + 分隔符；`system=[A]` 与 `user=[A]` 哈希不同                                |
+| **H4**     | `set_var` 进程级污染 + 无法真正重定向                         | `load_or_create_key(home: &Path)` 显式传路径，测试零 `set_var`                            |
+| **H5**     | `HistorySink: Send + Sync` 与 `&mut Db` 冲突                  | trait 去掉 auto-trait 约束；跨线程留到 M3（`Mutex<Db>`）                                  |
+| **H6**     | `insert_snapshot` 自带事务，Task 6 无法嵌套                   | Task 4 提前提供 `insert_snapshot_tx(&Transaction, ...)`                                   |
+| **额外**   | `retry_pending_path_state()` 无参数                           | Task 1 的 Files 补该签名改动，Task 8 依赖它                                               |
+| **补充-1** | 漏 spec §5.1 的**命名互斥量** `Local\PathEditor.KeyInit`      | Task 3 补互斥量 + `sync_all`；`create_new` 只保证谁先创建，不保证写完                     |
+| **补充-2** | 漏 spec §5.1 的 **DACL 限制与启动校验**                       | Task 3 补 `set_key_dacl`（仅当前用户 + SYSTEM）+ 启动告警 + `key_dacl_is_restricted` 测试 |
 
 > **未改动**：`PathEntry`/`EnvHive`/`ErrorCode::Internal` 导出、四处 `save_path_with_sidecar` 调用点、DDL 与 spec §4.1 逐表对应、`migration_imports` 复合主键、`.pebak` 头部 55 字节——开发窗口已核实正确。
+
+---
+
+## M1 复审整改裁断（2026-10-20）
+
+审核窗口在复审中确认三项整改真实落地，并补充三处计划侧的更正与三行裁断：
+
+| 项                         | 内容                                                                                                                                                                                                                                                                                                                                                  | 落点                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **V-1 判据盲区**           | `key_dacl_is_restricted` 用的是**黑名单**（`WD`/`BU`/`AU`/`BG`/`PS`）。NULL DACL 序列化为 `D:PAI(NO_ACCESS_CONTROL)`，一个主体都不含 → 黑名单全不命中 → **误判为受限**。且漏了 `;;;CO)`（CREATOR OWNER），任何具名 SID 形式也都不命中。**M2 应改为白名单判据**（只允许当前用户 SID + `SY`）。第一层 `set_key_dacl` 的写法本身是对的，所以本项不阻塞。 | Task 3 的 `key_dacl_is_restricted` |
+| **V-3 文件名时刻**         | `.pebak` 的文件名必须用**写入时刻**（`chrono::Local::now()`），不能用 `payload.captured_at`。`rotate_env_backups` 按文件名字典序降序保留前 `keep` 份——导入旧载荷时，用旧时间戳命名会让新文件排到最后、**当场被轮换删掉**（实测：25 份旧备份 + 1 份新备份，`keep=4` 时新文件消失）。                                                                   | Task 7 的 `write_env_backup_pebak` |
+| **J-7 app_state 建库即写** | `app_state` 单行必须在**建库事务内**写入（`INSERT OR IGNORE`，`device_id` 用 UUIDv7）。否则 `set_current_snapshot` 的 CAS `WHERE id = 1 AND version = ?` 匹配 0 行、**恒返回 false**，spec §十二 的「CAS 冲突返回 conflict」永远不可达。                                                                                                              | Task 2 的 `migrate_to_current`     |
+
+**另有三处计划侧缺陷已在本轮修订**：
+
+1. Task 12 的交付物名称 `M1-完成报告.md` → `M1-开发回执.md`（`patheditor-two-window-flow` 的固定约定）；
+2. Task 9 Step 4 的启动片段补上 `setup_database` 三步（pending → `migrate_to_current` → `migrate_legacy`）——首版计划漏了第 ③ 步，导致 `migrate_legacy` 在生产中没有调用者；
+3. Task 3 的 DACL 骨架 `SetNamedSecurityInfoW` → `SetFileSecurityW`，理由见该节内的对照说明。
 
 ---
 
