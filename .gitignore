@@ -53,6 +53,10 @@ review-*.diff
 e2e/debug-screenshot.png
 target/
 
+# v6 SQLCipher 探针：构建产物与本地 Perl 模块补丁不入库
+probes/v6-sqlcipher/target2/
+probes/v6-sqlcipher/perl5lib/
+
 # Archive
 *.zip
 *.7z

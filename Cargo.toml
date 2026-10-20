@@ -5,6 +5,9 @@ members = [
     "gui",
     "cli",
 ]
+# v6 SQLCipher 风险探针是独立 crate（需要 Perl/OpenSSL 构建链），
+# 刻意排除出 workspace，避免污染 `cargo test --workspace`
+exclude = ["probes/v6-sqlcipher"]
 
 [workspace.package]
 version = "5.1.7"
