@@ -298,5 +298,32 @@
     "eventsCount": "{{count}} 次操作",
     "topTargets": "最常改变的变量",
     "profileApplies": "配置应用次数"
+  },
+  "compare": {
+    "title": "快照对比",
+    "loading": "对比中…",
+    "close": "关闭",
+    "noChange": "无变化",
+    "moved": "{{path}}（第 {{from}} 位 → 第 {{to}} 位）",
+    "toggled": "{{path}}（已{{state}}）",
+    "enabled": "启用",
+    "disabled": "禁用",
+    "envNotAvailable": "环境变量对比将在 M3 提供",
+    "selectForCompare": "选择此快照用于对比",
+    "open": "对比选中项（{{count}}/2）",
+    "clearSelection": "清除选择"
+  },
+  "refs": {
+    "title": "「{{name}}」的引用关系",
+    "loading": "加载中…",
+    "close": "关闭",
+    "loadFailed": "引用图加载失败",
+    "dependentsTitle": "谁引用了它（删除会影响这些）",
+    "dependenciesTitle": "它依赖了谁（递归）",
+    "cyclesTitle": "循环引用",
+    "noDependents": "没有其它变量引用它",
+    "noDependencies": "它没有引用其它变量",
+    "noCycles": "未发现循环引用",
+    "depth": "第 {{depth}} 层"
   }
 }

@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { backend } from '@/services/backend';
 import { useHistoryStore } from '@/store/history-store';
+import { CompareDialog } from './CompareDialog';
 import { SnapshotDetail } from './SnapshotDetail';
 
 function formatTime(ms: number): string {
@@ -33,6 +34,11 @@ export function HistoryPanel() {
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
   const undoLast = useHistoryStore((s) => s.undoLast);
+
+  // Task 11：多选两个事件做对比（存的是 snapshotUid，不是事件 uid——
+  // 对比的对象是快照，而事件只是「哪两个快照可比」的入口）
+  const [compareSel, setCompareSel] = useState<string[]>([]);
+  const [comparePair, setComparePair] = useState<[string, string] | null>(null);
 
   useEffect(() => {
     void load();
@@ -158,6 +164,27 @@ export function HistoryPanel() {
         </div>
       )}
 
+      {/* 对比：勾选两个事件后启用。选中顺序决定 left/right（先选的作 left）。 */}
+      {compareSel.length > 0 && (
+        <div className="mb-2 flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            className="tab-pill"
+            disabled={compareSel.length !== 2}
+            onClick={() => {
+              if (compareSel.length === 2) {
+                setComparePair([compareSel[0], compareSel[1]]);
+              }
+            }}
+          >
+            {t('compare.open', { count: compareSel.length })}
+          </button>
+          <button type="button" className="tab-pill" onClick={() => setCompareSel([])}>
+            {t('compare.clearSelection')}
+          </button>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1 gap-3">
         {/* 时间线 */}
         <ul
@@ -178,7 +205,26 @@ export function HistoryPanel() {
             // 没有关联快照的事件不可点开详情：明确提示而不是让右栏空白
             const clickable = e.snapshotUid !== null;
             return (
-              <li key={e.uid}>
+              <li key={e.uid} className="flex items-start">
+                {/* 对比多选：复选框必须在按钮**外面**——不能嵌套交互元素。
+                    只有带 snapshotUid 的事件才能参与对比（对比的对象是快照）。 */}
+                {clickable && (
+                  <input
+                    type="checkbox"
+                    className="mt-2 ml-2 shrink-0"
+                    aria-label={t('compare.selectForCompare')}
+                    checked={compareSel.includes(e.snapshotUid as string)}
+                    onChange={() => {
+                      const uid = e.snapshotUid as string;
+                      setCompareSel((prev) =>
+                        prev.includes(uid)
+                          ? prev.filter((x) => x !== uid)
+                          : // 最多选两个：再选第三个时挤掉最早的那个
+                            [...prev, uid].slice(-2),
+                      );
+                    }}
+                  />
+                )}
                 <button
                   type="button"
                   className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-xs transition-colors"
@@ -251,6 +297,14 @@ export function HistoryPanel() {
           )}
         </div>
       </div>
+
+      {comparePair !== null && (
+        <CompareDialog
+          leftUid={comparePair[0]}
+          rightUid={comparePair[1]}
+          onClose={() => setComparePair(null)}
+        />
+      )}
     </div>
   );
 }

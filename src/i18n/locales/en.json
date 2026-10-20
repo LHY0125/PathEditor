@@ -298,5 +298,32 @@
     "eventsCount": "{{count}} operations",
     "topTargets": "Most changed variables",
     "profileApplies": "Profile applies"
+  },
+  "compare": {
+    "title": "Compare snapshots",
+    "loading": "Comparing…",
+    "close": "Close",
+    "noChange": "No changes",
+    "moved": "{{path}} (position {{from}} → {{to}})",
+    "toggled": "{{path}} (now {{state}})",
+    "enabled": "enabled",
+    "disabled": "disabled",
+    "envNotAvailable": "Environment variable comparison will be available in M3",
+    "selectForCompare": "Select this snapshot for comparison",
+    "open": "Compare selected ({{count}}/2)",
+    "clearSelection": "Clear selection"
+  },
+  "refs": {
+    "title": "References for \"{{name}}\"",
+    "loading": "Loading…",
+    "close": "Close",
+    "loadFailed": "Failed to load references",
+    "dependentsTitle": "Referenced by (deleting affects these)",
+    "dependenciesTitle": "Depends on (recursive)",
+    "cyclesTitle": "Circular references",
+    "noDependents": "No other variable references it",
+    "noDependencies": "It references no other variable",
+    "noCycles": "No circular references found",
+    "depth": "level {{depth}}"
   }
 }
