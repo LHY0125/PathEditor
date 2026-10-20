@@ -12,6 +12,7 @@ pub mod history_sink;
 pub mod migrate_v5;
 pub mod profiles;
 pub mod schema;
+pub mod search;
 
 #[cfg(windows)]
 pub mod dpapi;
