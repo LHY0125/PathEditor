@@ -204,8 +204,12 @@ pub fn index_snapshot_tx(tx: &Transaction, snapshot_id: i64) -> Result<(), CoreE
 ///
 /// 整个查询包成一对双引号，内部的双引号按 FTS5 规则翻倍。这样：
 /// - `C:\Program Files` → 一个 phrase，按原文匹配，不会被拆成 AND；
-/// - `"` → `""""`，是一个合法的空 phrase，不报语法错；
+/// - `"` → 外层一对引号 + 内部 `""` 转义，展开为 `""""`：一个**内容为一个双引号字符**
+///   的 phrase（不是空 phrase），语法合法，不报 `unterminated string`；
 /// - `a OR b` → 按字面量 `a OR b` 匹配，不触发布尔语法。
+///
+/// 为什么是这个写法而不是 `""` 空 phrase：空 phrase 匹配不到任何行，
+/// 而用户输入一个引号时，期望的是「搜含引号的内容」而不是「搜不到任何东西」。
 fn escape_query(q: &str) -> String {
     format!("\"{}\"", q.replace('"', "\"\""))
 }
