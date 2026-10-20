@@ -212,6 +212,12 @@ const ERROR_CODES: readonly ErrorCode[] = [
   'invalidValue',
   'io',
   'parse',
+  // v6：数据库/密钥/同步/迁移。降级模式（DB 不可用）的判定依赖这几个码，
+  // 漏加会让 parseCoreError 静默兜底成 internal，前端再也识别不出降级。
+  'database',
+  'crypto',
+  'sync',
+  'migration',
   'internal',
 ];
 
@@ -469,6 +475,261 @@ function parseBackupPath(value: unknown, label: string): string {
   return value;
 }
 
+// ── v6 历史契约 ─────────────────────────────────────────────
+
+/** 事件动作（对应 core 的 `EventAction`，serde camelCase）。 */
+export type EventAction =
+  | 'save'
+  | 'apply'
+  | 'restore'
+  | 'import'
+  | 'envSet'
+  | 'envAdd'
+  | 'envRemove'
+  | 'undo'
+  | 'redo';
+
+/** 事件结果（对应 core 的 `EventResult`）。 */
+export type EventResult = 'success' | 'partial' | 'failure';
+
+/** 单条事件（对应 core 的 `EventView`）。 */
+export interface EventView {
+  uid: string;
+  createdAt: number;
+  source: string;
+  action: EventAction;
+  hive: string | null;
+  target: string | null;
+  result: EventResult;
+}
+
+/** 一页事件（`total` 是满足条件的总行数，不是本页条数）。 */
+export interface EventPage {
+  items: EventView[];
+  total: number;
+}
+
+/** 事件列表筛选。 */
+export interface EventFilter {
+  limit?: number;
+  offset?: number;
+  action?: string;
+  source?: string;
+}
+
+/** 快照中的一行环境变量（对应 core 的 `EnvValueRow`）。 */
+export interface HistoryEnvValue {
+  hive: string;
+  name: string;
+  kind: string;
+  /** 敏感值在 reveal=false 时为 `null`。 */
+  value: string | null;
+  revision: string;
+  sensitive: boolean;
+  restorable: boolean;
+}
+
+/** 快照视图（对应 core 的 `SnapshotView`）。 */
+export interface SnapshotView {
+  uid: string;
+  createdAt: number;
+  kind: string;
+  system: PathEntry[];
+  user: PathEntry[];
+  env: HistoryEnvValue[];
+}
+
+/** 配置方案视图（对应 core 的 `ProfileView`）。 */
+export interface ProfileView {
+  uid: string;
+  name: string;
+  description: string | null;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  lastAppliedAt: number | null;
+  applyCount: number;
+  version: number;
+  snapshotUid: string | null;
+}
+
+/** 备份索引视图（对应 core 的 `BackupView`）。 */
+export interface BackupView {
+  uid: string;
+  kind: string;
+  createdAt: number;
+  contentHash: string;
+  sizeBytes: number;
+  filePath: string;
+  /** `.pebak`（DPAPI 加密）为 true，遗留 `.json` 为 false。 */
+  encrypted: boolean;
+  variableCount: number;
+}
+
+const EVENT_ACTIONS: readonly EventAction[] = [
+  'save',
+  'apply',
+  'restore',
+  'import',
+  'envSet',
+  'envAdd',
+  'envRemove',
+  'undo',
+  'redo',
+];
+const EVENT_RESULTS: readonly EventResult[] = ['success', 'partial', 'failure'];
+
+/** 校验 `EventPage` 契约；形状不合直接抛错，不做部分信任。 */
+export function parseEventPage(value: unknown): EventPage {
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.total !== 'number') {
+    throw new Error('history_list_events 返回了无效的分页契约');
+  }
+  const items = value.items.map((raw) => {
+    if (!isRecord(raw)) throw new Error('事件项形状无效');
+    const { uid, createdAt, source, hive, target } = raw;
+    const action = raw.action;
+    const result = raw.result;
+    if (typeof uid !== 'string' || typeof createdAt !== 'number') {
+      throw new Error('事件项 uid/createdAt 形状无效');
+    }
+    if (typeof source !== 'string') throw new Error('事件项 source 形状无效');
+    if (typeof action !== 'string' || !EVENT_ACTIONS.includes(action as EventAction)) {
+      throw new Error('事件项 action 非法');
+    }
+    if (typeof result !== 'string' || !EVENT_RESULTS.includes(result as EventResult)) {
+      throw new Error('事件项 result 非法');
+    }
+    return {
+      uid,
+      createdAt,
+      source,
+      action: action as EventAction,
+      hive: typeof hive === 'string' ? hive : null,
+      target: typeof target === 'string' ? target : null,
+      result: result as EventResult,
+    };
+  });
+  return { items, total: value.total };
+}
+
+/** 校验 `SnapshotView`；**不信任上游的 value 字段**，照契约原样收下后由 UI 决定掩码。 */
+export function parseSnapshotView(value: unknown, label = 'history'): SnapshotView {
+  if (!isRecord(value)) throw new Error(`${label} 返回了无效的快照契约`);
+  const { uid, createdAt, kind } = value;
+  if (typeof uid !== 'string' || typeof createdAt !== 'number' || typeof kind !== 'string') {
+    throw new Error(`${label} 的快照 uid/createdAt/kind 形状无效`);
+  }
+  if (!Array.isArray(value.env)) throw new Error(`${label} 的 env 必须是数组`);
+  const env = value.env.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.hive !== 'string' ||
+      typeof raw.name !== 'string' ||
+      typeof raw.kind !== 'string' ||
+      typeof raw.revision !== 'string' ||
+      typeof raw.sensitive !== 'boolean' ||
+      typeof raw.restorable !== 'boolean'
+    ) {
+      throw new Error(`${label} 的 env 条目形状无效`);
+    }
+    const v = raw.value;
+    if (v !== null && typeof v !== 'string') {
+      throw new Error(`${label} 的 env 值必须是字符串或 null`);
+    }
+    return {
+      hive: raw.hive,
+      name: raw.name,
+      kind: raw.kind,
+      value: v,
+      revision: raw.revision,
+      sensitive: raw.sensitive,
+      restorable: raw.restorable,
+    };
+  });
+  return {
+    uid,
+    createdAt,
+    kind,
+    system: parsePathEntries(value.system, `${label}.system`),
+    user: parsePathEntries(value.user, `${label}.user`),
+    env,
+  };
+}
+
+/** 校验 `ProfileView[]`。 */
+function parseProfileList(value: unknown, label: string): ProfileView[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须是数组`);
+  return value.map((raw) => {
+    if (!isRecord(raw)) throw new Error(`${label} 的条目形状无效`);
+    const { uid, name, description, tags, createdAt, updatedAt, lastAppliedAt } = raw;
+    if (
+      typeof uid !== 'string' ||
+      typeof name !== 'string' ||
+      typeof createdAt !== 'number' ||
+      typeof updatedAt !== 'number' ||
+      typeof raw.applyCount !== 'number' ||
+      typeof raw.version !== 'number'
+    ) {
+      throw new Error(`${label} 的条目字段形状无效`);
+    }
+    if (!Array.isArray(tags) || !tags.every((t) => typeof t === 'string')) {
+      throw new Error(`${label} 的 tags 必须是字符串数组`);
+    }
+    if (description !== null && typeof description !== 'string') {
+      throw new Error(`${label} 的 description 必须是字符串或 null`);
+    }
+    if (lastAppliedAt !== null && typeof lastAppliedAt !== 'number') {
+      throw new Error(`${label} 的 lastAppliedAt 必须是数字或 null`);
+    }
+    const snapshotUid = raw.snapshotUid;
+    if (snapshotUid !== null && typeof snapshotUid !== 'string') {
+      throw new Error(`${label} 的 snapshotUid 必须是字符串或 null`);
+    }
+    return {
+      uid,
+      name,
+      description,
+      tags: tags as string[],
+      createdAt,
+      updatedAt,
+      lastAppliedAt,
+      applyCount: raw.applyCount,
+      version: raw.version,
+      snapshotUid,
+    };
+  });
+}
+
+/** 校验 `BackupView[]`。 */
+function parseBackupList(value: unknown, label: string): BackupView[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须是数组`);
+  return value.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.uid !== 'string' ||
+      typeof raw.kind !== 'string' ||
+      typeof raw.createdAt !== 'number' ||
+      typeof raw.contentHash !== 'string' ||
+      typeof raw.sizeBytes !== 'number' ||
+      typeof raw.filePath !== 'string' ||
+      typeof raw.encrypted !== 'boolean' ||
+      typeof raw.variableCount !== 'number'
+    ) {
+      throw new Error(`${label} 的条目形状无效`);
+    }
+    return {
+      uid: raw.uid,
+      kind: raw.kind,
+      createdAt: raw.createdAt,
+      contentHash: raw.contentHash,
+      sizeBytes: raw.sizeBytes,
+      filePath: raw.filePath,
+      encrypted: raw.encrypted,
+      variableCount: raw.variableCount,
+    };
+  });
+}
+
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
   loadSystemPaths: async () =>
@@ -585,4 +846,44 @@ export const backend = {
     parseRestoreOutcome(
       await parseCoreError(invoke<unknown>('restore_env_backup', { file, force })),
     ),
+
+  // ── v6 历史（spec §3.2.1：细粒度命令，前端只做形状校验） ────────────
+
+  /** 列出历史事件（分页，服务端固定时间倒序）。 */
+  historyListEvents: async (filter?: EventFilter) =>
+    parseEventPage(await parseCoreError(invoke<unknown>('history_list_events', { filter }))),
+  /**
+   * 读取快照预览。
+   *
+   * `reveal = false`（默认）时敏感变量的 `value` 恒为 `null` —— 由 **Rust 侧**掩码，
+   * 前端不做「拿到明文再隐藏」的动作。需要明文必须显式传 `reveal: true`。
+   */
+  historyGetSnapshot: async (uid: string, reveal = false) =>
+    parseSnapshotView(
+      await parseCoreError(invoke<unknown>('history_get_snapshot', { uid, reveal })),
+      'history_get_snapshot',
+    ),
+  /** 读取当前快照；无当前快照或降级模式下返回 `null`。 */
+  historyGetCurrent: async () => {
+    const result = await parseCoreError(invoke<unknown>('history_get_current'));
+    return result === null ? null : parseSnapshotView(result, 'history_get_current');
+  },
+  /** 列出配置方案。 */
+  profileList: async () =>
+    parseProfileList(await parseCoreError(invoke<unknown>('profile_list')), 'profile_list'),
+  /** 软删除配置方案；返回是否真的删除了（已删除返回 false）。 */
+  profileDelete: async (uid: string) => {
+    const result = await parseCoreError(invoke<unknown>('profile_delete', { uid }));
+    if (typeof result !== 'boolean') throw new Error('profile_delete 必须返回布尔值');
+    return result;
+  },
+  /** 记录配置被应用（应用次数 +1）。注册表写入由 `applyProfile` 另行完成。 */
+  profileMarkApplied: async (uid: string) => {
+    const result = await parseCoreError(invoke<unknown>('profile_mark_applied', { uid }));
+    if (typeof result !== 'boolean') throw new Error('profile_mark_applied 必须返回布尔值');
+    return result;
+  },
+  /** 列出备份索引（`.pebak` 的变量数来自文件头，无需解密）。 */
+  backupList: async () =>
+    parseBackupList(await parseCoreError(invoke<unknown>('backup_list')), 'backup_list'),
 };

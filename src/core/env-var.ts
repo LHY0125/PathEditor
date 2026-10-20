@@ -54,6 +54,10 @@ export type ErrorCode =
   | 'invalidValue'
   | 'io'
   | 'parse'
+  | 'database'
+  | 'crypto'
+  | 'sync'
+  | 'migration'
   | 'internal';
 
 /** Rust `CoreError` 的前端契约（Tauri rejection 序列化形状）。 */
