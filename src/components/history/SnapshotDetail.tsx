@@ -5,7 +5,7 @@ interface Props {
   snapshot: SnapshotView;
 }
 
-/** 变量值区：敏感值在 Rust 侧已掩码��� `null`，这里只做「不可用」的呈现。 */
+/** 变量值区：敏感值在 Rust 侧已掩码为 `null`，这里只做「不可用」的呈现。 */
 function maskedOrValue(value: string | null, sensitive: boolean, emptyLabel: string): string {
   if (value !== null && value !== '') return value;
   return sensitive ? '••••••' : emptyLabel;
