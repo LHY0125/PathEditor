@@ -4,6 +4,7 @@ pub mod disabled;
 pub mod env_var;
 pub mod error;
 pub mod fs;
+pub mod history;
 pub mod path_entry;
 pub(crate) mod persist;
 pub mod profiles;

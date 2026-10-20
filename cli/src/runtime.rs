@@ -75,8 +75,12 @@ pub(crate) fn save_path_write(
         entries,
         expected: None,
     };
-    let outcome = service::save_path_with_sidecar(system.map(to_write), user.map(to_write))
-        .unwrap_or_else(|e| exit_core_error(&e));
+    let outcome = service::save_path_with_sidecar(
+        system.map(to_write),
+        user.map(to_write),
+        &core::history::NoopHistory,
+    )
+    .unwrap_or_else(|e| exit_core_error(&e));
 
     // 逐 hive 报告失败（best-effort 多 hive：一个失败不掩盖另一个的成功）。
     for (label, hive_outcome) in [("系统", &outcome.system), ("用户", &outcome.user)] {

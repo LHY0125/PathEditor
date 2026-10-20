@@ -18,6 +18,9 @@ use crate::backup;
 use crate::disabled;
 use crate::env_var::EnvHive;
 use crate::error::{CoreError, ErrorCode};
+use crate::history::{
+    EventAction, EventResult, EventSource, HistoryEvent, HistorySink, NoopHistory,
+};
 use crate::path_entry::PathEntry;
 use crate::profiles;
 use crate::registry;
@@ -305,14 +308,15 @@ fn commit_sidecar(system: Option<Vec<PathEntry>>, user: Option<Vec<PathEntry>>) 
 pub fn apply_path_snapshot(
     hive: EnvHive,
     entries: Vec<PathEntry>,
+    history: &dyn HistorySink,
 ) -> Result<ApplyOutcome, CoreError> {
     let write = PathHiveWrite {
         entries,
         expected: None,
     };
     match hive {
-        EnvHive::System => save_path_with_sidecar(Some(write), None),
-        EnvHive::User => save_path_with_sidecar(None, Some(write)),
+        EnvHive::System => save_path_with_sidecar(Some(write), None, history),
+        EnvHive::User => save_path_with_sidecar(None, Some(write), history),
     }
 }
 
@@ -326,8 +330,26 @@ pub fn apply_path_snapshot(
 pub fn save_path_with_sidecar(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
+    history: &dyn HistorySink,
 ) -> Result<ApplyOutcome, CoreError> {
-    save_path_with_sidecar_io(&RealPathHiveIo, system, user)
+    let outcome = save_path_with_sidecar_io(&RealPathHiveIo, system, user)?;
+    // 上报失败不阻断保存（历史是 sidecar 能力，spec D16 fail-open）。
+    if let Err(e) = history.record(HistoryEvent {
+        source: EventSource::Gui,
+        action: EventAction::Save,
+        hive: None,
+        target: None,
+        changed_fields: vec!["path_entries".to_string()],
+        before_revision: None,
+        after_revision: None,
+        result: match (&outcome.system, &outcome.user) {
+            (HiveOutcome::Failed(_), _) | (_, HiveOutcome::Failed(_)) => EventResult::Partial,
+            _ => EventResult::Success,
+        },
+    }) {
+        log::warn!("历史写入失败（保存已成功）: {}", e.message);
+    }
+    Ok(outcome)
 }
 
 /// [`save_path_with_sidecar`] 的核心编排：读写经 `io` 注入（生产传 [`RealPathHiveIo`]，
@@ -349,7 +371,9 @@ pub(crate) fn save_path_with_sidecar_io(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
 ) -> Result<ApplyOutcome, CoreError> {
-    if let Err(e) = retry_pending_path_state() {
+    // pending 补写是本次保存的前置内部步骤，不再单独记事件——否则一次保存
+    // 会产生两条事件（Task 1 的 B2 口径：事件由最外层操作负责）。
+    if let Err(e) = retry_pending_path_state(&NoopHistory) {
         // pending 补写是 best-effort：失败不阻断本次写入，只告警（W2-N1 分层）。
         log::warn!("补写上次待落盘快照失败: {}", e.message);
     }
@@ -430,7 +454,7 @@ pub(crate) fn save_path_with_sidecar_io(
 ///
 /// 本函数返回 `Result` 是诚实报告（W2-N1）；CLI 策略层把 `Err` 映射为
 /// 警告、不阻断当前命令。
-pub fn retry_pending_path_state() -> Result<ApplyOutcome, CoreError> {
+pub fn retry_pending_path_state(history: &dyn HistorySink) -> Result<ApplyOutcome, CoreError> {
     let pending = disabled::load_pending_path_snapshot()
         .map_err(|e| core_err(e.code, "retry_pending_path_state", e.message))?;
     let Some(pending) = pending else {
@@ -445,6 +469,20 @@ pub fn retry_pending_path_state() -> Result<ApplyOutcome, CoreError> {
         .map_err(|e| core_err(e.code, "retry_pending_path_state", e.message))?;
     // 清除失败不阻断：pending 是幂等整份快照，下次补写重放同样内容（Wave 1 语义）。
     let _ = disabled::clear_pending_path_snapshot();
+
+    // 补写也是一次可追溯的操作，记一条事件（失败不阻断）。
+    if let Err(e) = history.record(HistoryEvent {
+        source: EventSource::Gui,
+        action: EventAction::Save,
+        hive: None,
+        target: None,
+        changed_fields: vec!["pending_retry".to_string()],
+        before_revision: None,
+        after_revision: None,
+        result: EventResult::Success,
+    }) {
+        log::warn!("补写历史失败（pending 已补写）: {}", e.message);
+    }
 
     Ok(ApplyOutcome {
         system: HiveOutcome::Skipped,
@@ -475,7 +513,7 @@ pub fn commit_sidecar_snapshot(
 ///
 /// 内部完成：best-effort 补写 pending → 读取配置 → 写注册表 → 广播 →
 /// 落 sidecar。配置不存在或名称非法返回 `Err`（诚实报告）。
-pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError> {
+pub fn apply_profile(name: &str, history: &dyn HistorySink) -> Result<ApplyOutcome, CoreError> {
     let data =
         profiles::load_profile(name).map_err(|e| core_err(e.code, "apply_profile", e.message))?;
     save_path_with_sidecar(
@@ -487,6 +525,7 @@ pub fn apply_profile(name: &str) -> Result<ApplyOutcome, CoreError> {
             entries: data.user,
             expected: None,
         }),
+        history,
     )
 }
 
@@ -917,7 +956,7 @@ mod tests {
         disabled::save_pending_path_snapshot(Some(sys), Some(usr)).unwrap();
         assert!(disabled::has_pending_path_snapshot());
 
-        let outcome = retry_pending_path_state().unwrap();
+        let outcome = retry_pending_path_state(&NoopHistory).unwrap();
         assert!(matches!(outcome.system, HiveOutcome::Skipped));
         assert!(matches!(outcome.user, HiveOutcome::Skipped));
         assert!(matches!(outcome.sidecar, SidecarOutcome::Saved));
@@ -930,7 +969,7 @@ mod tests {
     #[test]
     fn apply_profile_missing_reports_error() {
         // 配置不存在 → Err（诚实报告），不触碰注册表
-        let result = apply_profile("__svc_no_such_profile__");
+        let result = apply_profile("__svc_no_such_profile__", &NoopHistory);
         assert!(result.is_err());
     }
 }
