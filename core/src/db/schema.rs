@@ -4,7 +4,7 @@
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
 /// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
 /// v1 全量 DDL（与 spec §4.1 一致）。
 ///
@@ -120,6 +120,46 @@ CREATE TABLE migration_imports (
   content_hash TEXT NOT NULL,
   imported_at  INTEGER NOT NULL,
   PRIMARY KEY (source_path, content_hash)
+);
+"#;
+
+/// v2 增量 DDL：M2 的派生表（可随时重建，不是真相源）。
+///
+/// **逐字照抄 spec §4.1**（`2026-10-19-v6-sqlite-design.md`）。这是唯一一处
+/// 「照抄权威文档」的地方，不要发挥——列名与类型必须与 spec 完全一致。
+///
+/// 四张表的性质（spec §4.2 第 5 条）：
+/// - `scan_runs`：冲突扫描历史，**不是派生表**（是真实记录，无法从别处重建）；
+/// - `var_references` / `daily_stats` / `search_fts`：派生表，必须能从
+///   `snapshots` / `events` / `path_entries` 完整重建。
+pub const DDL_V2: &str = r#"
+CREATE TABLE scan_runs (
+  id             INTEGER PRIMARY KEY,
+  uid            TEXT NOT NULL UNIQUE,
+  created_at     INTEGER NOT NULL,
+  conflicts_json TEXT NOT NULL,
+  tools_json     TEXT NOT NULL
+);
+CREATE INDEX idx_scan_runs_time ON scan_runs(created_at);
+
+CREATE TABLE var_references (
+  snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+  from_hive   TEXT NOT NULL,
+  from_name   TEXT NOT NULL,
+  to_name     TEXT NOT NULL,
+  PRIMARY KEY (snapshot_id, from_hive, from_name, to_name)
+);
+
+CREATE TABLE daily_stats (
+  day        TEXT PRIMARY KEY,
+  path_items INTEGER NOT NULL,
+  env_items  INTEGER NOT NULL,
+  events     INTEGER NOT NULL,
+  conflicts  INTEGER NOT NULL
+);
+
+CREATE VIRTUAL TABLE search_fts USING fts5(
+  content, kind, ref_uid, tokenize='unicode61'
 );
 "#;
 

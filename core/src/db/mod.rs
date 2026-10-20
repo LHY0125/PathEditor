@@ -102,14 +102,23 @@ impl Db {
                     rusqlite::params![uuid::Uuid::now_v7().to_string()],
                 )
                 .map_err(|e| db_err("seed_app_state", e))?;
-                // 用 execute_batch 而非 pragma_update：后者在事务内的生效行为
-                // 依赖 rusqlite 版本，PRAGMA 语句本身是确定生效的。
-                tx.execute_batch(&format!(
-                    "PRAGMA user_version = {}",
-                    schema::CURRENT_SCHEMA_VERSION
-                ))
-                .map_err(|e| db_err("set_version", e))?;
             }
+            // v2：M2 的派生表（scan_runs / var_references / daily_stats / search_fts）
+            if current < 2 {
+                tx.execute_batch(schema::DDL_V2)
+                    .map_err(|e| db_err("ddl_v2", e))?;
+            }
+            // 版本号写在**所有分支之后**：v1→v2 的升级路径同样要落版本，
+            // 写在 `if current < 1` 内部会让升级后 user_version 仍停在 1，
+            // 下次启动重复执行 DDL_V2（表已存在 → 报错）。
+            //
+            // 用 execute_batch 而非 pragma_update：后者在事务内的生效行为
+            // 依赖 rusqlite 版本，PRAGMA 语句本身是确定生效的。
+            tx.execute_batch(&format!(
+                "PRAGMA user_version = {}",
+                schema::CURRENT_SCHEMA_VERSION
+            ))
+            .map_err(|e| db_err("set_version", e))?;
             Ok(())
         })
     }
