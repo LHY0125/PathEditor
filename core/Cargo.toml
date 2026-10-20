@@ -13,4 +13,24 @@ log = "0.4"
 winreg = "0.52"
 dirs = "5"
 chrono = "0.4"
-windows-sys = { version = "0.61.2", features = ["Win32_System_Environment", "Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = [
+  "Win32_System_Environment",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Cryptography",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Memory",
+  "Win32_System_Threading",
+] }
+# v6 M1：SQLCipher 全库加密。M0 已在 GNU/MSVC 双平台验证此 feature 组合。
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
+# content_hash：仅用于去重/判等，不是安全边界（spec H5）
+blake3 = "1"
+uuid = { version = "1", features = ["v7"] }
+# OS 熵源：显式声明而非依赖传递依赖的 API
+getrandom = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

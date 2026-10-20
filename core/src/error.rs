@@ -31,6 +31,14 @@ pub enum ErrorCode {
     Io,
     /// 解析失败（JSON/注册表解码）
     Parse,
+    /// 数据库打开/查询/事务失败（v6）
+    Database,
+    /// 密钥/解密失败（v6）
+    Crypto,
+    /// 同步包/合并冲突（v6）
+    Sync,
+    /// v5 迁移与库版本问题（v6）
+    Migration,
     /// 兜底
     Internal,
 }
@@ -75,12 +83,14 @@ impl CoreError {
         self
     }
 
-    /// CLI 退出码映射：冲突 3，其余 1。
+    /// CLI 退出码映射：冲突 3，加密/密钥 5，其余 1。
+    ///
+    /// spec §8：4 预留给同步/合并冲突（M3），当前 `Sync` 仍映射为 1。
     pub fn exit_code(&self) -> i32 {
-        if self.code == ErrorCode::Conflict {
-            3
-        } else {
-            1
+        match self.code {
+            ErrorCode::Conflict => 3,
+            ErrorCode::Crypto => 5,
+            _ => 1,
         }
     }
 }

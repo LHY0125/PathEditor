@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod capabilities;
+pub mod db;
 pub mod disabled;
 pub mod env_var;
 pub mod error;

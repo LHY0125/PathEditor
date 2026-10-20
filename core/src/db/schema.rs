@@ -1,0 +1,124 @@
+//! Schema DDL 与版本迁移。
+//!
+//! **启动只读 `user_version`；只在建库/迁移事务内写**（spec §3.3 B2）。
+//! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
+
+/// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+/// v1 全量 DDL（与 spec §4.1 一致）。
+///
+/// 注意 `app_state` 引用 `snapshots(id)`，因此 `snapshots` 必须先建。
+pub const DDL_V1: &str = r#"
+CREATE TABLE snapshots (
+  id           INTEGER PRIMARY KEY,
+  uid          TEXT NOT NULL UNIQUE,
+  created_at   INTEGER NOT NULL,
+  source       TEXT NOT NULL,
+  kind         TEXT NOT NULL,
+  reason       TEXT,
+  content_hash TEXT NOT NULL,
+  parent_id    INTEGER REFERENCES snapshots(id),
+  note         TEXT,
+  updated_at   INTEGER NOT NULL,
+  deleted_at   INTEGER
+);
+CREATE INDEX idx_snapshots_time ON snapshots(created_at);
+CREATE INDEX idx_snapshots_hash ON snapshots(content_hash);
+
+CREATE TABLE app_state (
+  id                  INTEGER PRIMARY KEY CHECK (id = 1),
+  current_snapshot_id INTEGER REFERENCES snapshots(id),
+  version             INTEGER NOT NULL DEFAULT 1,
+  migrated_v5         INTEGER NOT NULL DEFAULT 0,
+  device_id           TEXT NOT NULL,
+  lamport             INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE path_entries (
+  snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+  hive        TEXT NOT NULL CHECK (hive IN ('system','user')),
+  position    INTEGER NOT NULL,
+  path        TEXT NOT NULL,
+  enabled     INTEGER NOT NULL,
+  PRIMARY KEY (snapshot_id, hive, position)
+);
+CREATE INDEX idx_path_entries_path ON path_entries(path);
+
+CREATE TABLE env_values (
+  snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+  hive        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  value       TEXT,
+  revision    TEXT NOT NULL,
+  sensitive   INTEGER NOT NULL DEFAULT 0,
+  restorable  INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (snapshot_id, hive, name),
+  CHECK (lower(name) <> 'path')
+);
+
+CREATE TABLE events (
+  id              INTEGER PRIMARY KEY,
+  uid             TEXT NOT NULL UNIQUE,
+  created_at      INTEGER NOT NULL,
+  source          TEXT NOT NULL,
+  action          TEXT NOT NULL,
+  hive            TEXT,
+  target          TEXT,
+  changed_fields  TEXT,
+  before_revision TEXT,
+  after_revision  TEXT,
+  result          TEXT NOT NULL,
+  error_code      TEXT,
+  snapshot_id     INTEGER REFERENCES snapshots(id),
+  device_id       TEXT NOT NULL
+);
+CREATE INDEX idx_events_time   ON events(created_at);
+CREATE INDEX idx_events_target ON events(target, created_at);
+
+CREATE TABLE profiles (
+  id              INTEGER PRIMARY KEY,
+  uid             TEXT NOT NULL UNIQUE,
+  name            TEXT NOT NULL,
+  description     TEXT,
+  tags            TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  last_applied_at INTEGER,
+  apply_count     INTEGER NOT NULL DEFAULT 0,
+  version         INTEGER NOT NULL DEFAULT 1,
+  deleted_at      INTEGER
+);
+CREATE UNIQUE INDEX uq_profiles_name_active ON profiles(name) WHERE deleted_at IS NULL;
+
+CREATE TABLE profile_revisions (
+  id          INTEGER PRIMARY KEY,
+  uid         TEXT NOT NULL UNIQUE,
+  profile_id  INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  version     INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  snapshot_id INTEGER NOT NULL REFERENCES snapshots(id),
+  UNIQUE (profile_id, version)
+);
+
+CREATE TABLE backups (
+  id           INTEGER PRIMARY KEY,
+  uid          TEXT NOT NULL UNIQUE,
+  kind         TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  content_hash TEXT NOT NULL,
+  size_bytes   INTEGER NOT NULL,
+  file_path    TEXT NOT NULL,
+  snapshot_id  INTEGER REFERENCES snapshots(id),
+  deleted_at   INTEGER
+);
+CREATE INDEX idx_backups_kind_time ON backups(kind, created_at);
+
+CREATE TABLE migration_imports (
+  source_path  TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  imported_at  INTEGER NOT NULL,
+  PRIMARY KEY (source_path, content_hash)
+);
+"#;
