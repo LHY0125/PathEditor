@@ -243,7 +243,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 | 文件                  | 字段                                                            |
 | --------------------- | --------------------------------------------------------------- |
 | `package.json`        | `version`                                                       |
-| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）             |
+| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）              |
 | `Cargo.toml`          | `[workspace.package] version`                                   |
 | `Cargo.lock`          | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
 | `gui/tauri.conf.json` | `version`、窗口 `title`                                         |

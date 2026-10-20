@@ -13,9 +13,7 @@
     ],
     "*.md": [
       "prettier --write"
-    ],
-    "CLAUDE.md": [],
-    "AGENTS.md": []
+    ]
   },
   "scripts": {
     "dev": "vite",
