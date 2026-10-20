@@ -8,7 +8,8 @@
     "system": "系统 PATH",
     "user": "用户 PATH",
     "allVars": "全部变量",
-    "merged": "合并预览"
+    "merged": "合并预览",
+    "history": "历史记录"
   },
   "envBackup": {
     "title": "环境变量备份与恢复",

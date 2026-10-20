@@ -20,6 +20,7 @@ import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { EnvBackupDialog } from '@/components/dialogs/EnvBackupDialog';
+import { HistoryPanel } from '@/components/history/HistoryPanel';
 import { useEnvStore } from '@/store/env-store';
 import { backend } from '@/services/backend';
 import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
@@ -131,6 +132,7 @@ export function AppShell() {
     { id: 'user', label: t('tab.user') },
     { id: 'allVars', label: t('tab.allVars') },
     { id: 'merged', label: t('tab.merged') },
+    { id: 'history', label: t('tab.history') },
   ];
 
   /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
@@ -249,6 +251,8 @@ export function AppShell() {
       >
         {activeTab === 'merged' ? (
           <MergePreview />
+        ) : activeTab === 'history' ? (
+          <HistoryPanel />
         ) : activeTab === 'allVars' ? (
           <EnvVarTable
             searchQuery={envSearch}

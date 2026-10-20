@@ -8,7 +8,8 @@
     "system": "System PATH",
     "user": "User PATH",
     "allVars": "All Variables",
-    "merged": "Merge Preview"
+    "merged": "Merge Preview",
+    "history": "History"
   },
   "envBackup": {
     "title": "Environment Variable Backup & Restore",

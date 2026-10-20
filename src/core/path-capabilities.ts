@@ -1,6 +1,6 @@
 import { TargetType } from './undo-redo';
 
-export type TabId = 'system' | 'user' | 'allVars' | 'merged';
+export type TabId = 'system' | 'user' | 'allVars' | 'merged' | 'history';
 
 export interface PathCapabilities {
   canReadSystem: boolean;
