@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor v5.1.6 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json`。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -37,9 +37,18 @@ npm run verify                      # 前端 + Rust 全量质量门
 npm run verify:all                  # verify + Playwright E2E
 ```
 
+跑单个测试：
+
+```powershell
+npx vitest run tests/unit/<file>.test.ts          # 单个前端测试文件
+npx vitest run -t "<test name>"                   # 按测试名过滤
+cargo test -p <crate> <test_name>                 # 单个 Rust 测试
+cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins）
+```
+
 ## 架构与模块边界
 
-Cargo workspace 分为 `core`、`gui`、`cli` 三个 crate，前端通过 Tauri IPC 调用 GUI command。
+Cargo workspace 分为 `core`、`gui`、`cli` 三个 crate，前端通过 Tauri IPC 调用 GUI command。`probes/v6-sqlcipher` 是 v6 探针 crate，**刻意排除在 workspace 之外**（见 `Cargo.toml` 的 `exclude`）。
 
 ```text
 PathEditor/
@@ -76,6 +85,7 @@ PathEditor/
 ├── tests/unit/                  # Vitest 测试
 ├── tests/fixtures/              # 跨 Rust/TS 契约夹具
 ├── e2e/tests/                   # Playwright 测试（mock IPC）
+├── probes/v6-sqlcipher/         # v6 SQLCipher 探针（不在 workspace；M0 证据）
 ├── docs/superpowers/specs/      # 特性设计文档（YYYY-MM-DD-*-design.md）
 ├── docs/superpowers/plans/      # 实施计划（YYYY-MM-DD-*-implementation.md）
 └── docs/审核和开发/YYYY.MM.DD/  # 审核与开发记录
@@ -93,6 +103,23 @@ PathEditor/
 - 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`（FNV-1a 散列 `name+type+value`），在**同一 core 调用内**完成「读→算→比对→校验→写」。GUI 与 CLI 共用该契约，前端与 CLI 都**不得**自行实现并发校验。冲突判定**只认 `CoreError.code`（serde camelCase）**：前端判 `err.code === 'conflict'`，CLI 经 `CoreError::exit_code()` 判定；`[E_CONFLICT]` 消息前缀（`core::registry::conflict_message()`）仅为过渡期展示文本（保留给旧文本路径），不是判定机制。
 - Windows 注册表无 CAS，读-比-写是两次独立注册表调用，仍有毫秒级竞态窗口。revision 校验缩小影响，不能完全消除 TOCTOU —— 文档与注释须如实措辞，不要宣称原子性。
 - `.codegraph/` 存在时，优先使用 CodeGraph 理解符号和调用路径，再决定是否读取文件。
+
+## 设计系统（5.1.7 起）
+
+- 语义 token 全部在 `src/styles/globals.css` 的 `:root` 与 `:root.dark`；组件**只允许**使用 `--app-*` 语义变量，禁止硬编码色值。
+- 主界面控件类：`.toolbar` / `.toolbar-sep` / `.toolbar-search` / `.tab-pill`。
+- 对话框控件类：`.modal-overlay` / `.modal-surface` / `.field-input` / `.dialog-list-item` / `.btn-block`。
+- 按钮统一使用 `src/components/ui/Button.tsx`（`buttonVariants` 在本仓库内解析变体）；`btnClass` / `btnStyle` 已在 Wave 4.1 删除，不要再引用。
+- **陷阱**：上述工具类是**未分层规则**，会覆盖 Tailwind `@layer utilities`。给同一元素追加 Tailwind 工具类（如 `text-xs`）前，必须先确认它会不会被覆盖——`field-input text-xs` 曾是一个永不生效的死类名。
+- 对话框的视觉规格由 CSS 类承载，`Modal.tsx` 只负责挂载与 Escape 关闭；改视觉时改 `globals.css`，不要往组件里塞内联样式。
+
+## v6 SQLite 存储
+
+- **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内跑第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU 与 MSVC 均已复现，`--test-threads=1` 无效）；CI 逐文件调用。依据：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md` §5.3。
+- `probes/v6-sqlcipher` 是 M0 探针 crate，**刻意不在 workspace members**（`Cargo.toml` 的 `exclude`）；`target/`、`target2/`、`perl5lib/` 已加入 `.gitignore`。
+- `cipher_memory_security` 默认 **OFF**：M0 实测 ON 在受限进程里 `VirtualLock` 失败（`ERROR_NOT_ENOUGH_MEMORY`），且 ON/OFF 性能无显著差异。
+- v6 的 DB 是 **sidecar**，注册表仍是唯一真相源；数据库不可用时应用 fail-open（编辑照常、历史/同步降级）。
+- 设计与计划：`docs/superpowers/specs/2026-10-19-v6-sqlite-design.md`、`docs/superpowers/plans/2026-10-19-v6-sqlite-m1-plan.md`。
 
 ## Tauri IPC 接口
 
@@ -125,6 +152,8 @@ PathEditor/
 > 服务层命令 `apply_path_snapshot` / `save_path_with_sidecar` / `retry_pending_path_state` / `apply_profile` 定义在 `gui/src/commands/service.rs`，**GUI 前端已接线**（`path-session.ts` 经 `backend.savePathWithSidecar` 调用）；CLI 的 6 个 PATH 写入口也统一经 `save_path_with_sidecar`。
 >
 > 已退役的 IPC 命令：`save_system_paths` / `save_user_paths`（由 `save_path_with_sidecar` 取代）、`scan_conflicts` / `scan_tools`（由 `scan_paths` 取代）、`get_appdata_dir`（前端零调用）。对应的 core 函数（`scanner::scan_conflicts` / `scan_tools`、`backup::get_appdata_dir`）**仍保留**，被内部使用。
+>
+> v6 将新增 `history_*` / `profile_*` / `backup_*` 命令（细粒度 IPC，每命令一方法 + 运行时形状校验）；设计见 spec §3.2.1，尚未实现。
 
 ## CLI 命令
 
@@ -191,6 +220,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 ## 测试与质量门
 
 - TypeScript 使用 Vitest + jsdom，测试放在 `tests/unit/*.test.ts` 或 `*.test.tsx`；行为变化必须有回归测试。跑单个文件：`npx vitest run tests/unit/<file>.test.ts`；按名字过滤：`npx vitest run -t "<name>"`。
+- **一文件一测试**（v6 SQLCipher）：见上文「v6 SQLite 存储」。
 - Playwright 测试放在 `e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程，不等同于真实 Tauri 集成验证。
 - Rust 测试放在模块内或 workspace test target，运行 `cargo test --workspace`。CLI 单测需 `--bins`（见上），跑单个测试：`cargo test -p <crate> <name>`。
 - 覆盖率门槛为 80% 行覆盖；`npm run verify` 依次执行 Prettier、ESLint、构建、覆盖率、`cargo fmt`、Clippy 和 Rust 测试。提交前优先运行 `npm run verify:all`。
@@ -199,12 +229,12 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 
 ## 版本号升级清单
 
-当前版本为 `5.1.6`。升级时至少检查：
+当前版本以 `package.json` 的 `version` 为准。升级时至少检查：
 
 | 文件                  | 字段                                                            |
 | --------------------- | --------------------------------------------------------------- |
 | `package.json`        | `version`                                                       |
-| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）             |
+| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）              |
 | `Cargo.toml`          | `[workspace.package] version`                                   |
 | `Cargo.lock`          | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
 | `gui/tauri.conf.json` | `version`、窗口 `title`                                         |
@@ -225,12 +255,12 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 git push origin main
 
 # 4. 打 annotated tag 并推送 —— 这一步触发 CI
-git tag -a v5.1.6 -m "PathEditor v5.1.6" -m "- 变更要点..."
-git push origin v5.1.6
+git tag -a v<VERSION> -m "PathEditor v<VERSION>" -m "- 变更要点..."
+git push origin v<VERSION>
 
 # 5. 等 CI 跑完，用 gh 确认结果
 gh run list --limit 3
-gh release view v5.1.6
+gh release view v<VERSION>
 ```
 
 **推送 tag 后不要做任何事，等 CI 完成。** 本地构建、手动创建 Release 都是重复劳动，且会与 CI 冲突。
@@ -253,7 +283,7 @@ gh release view v5.1.6
 $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)"
 ```
 
-匹配 `## 5.1.6` 或 `## 5.1.6 (2026-10-17)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
+匹配 `## <VERSION>` 或 `## <VERSION> (YYYY-MM-DD)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
 
 所以发版前**必须在 CHANGELOG.md 顶部写好当前版本段落**，小节标题沿用最近几版的中文风格（`### 新增` / `### 变更` / `### 修复` / `### 说明`）。
 
