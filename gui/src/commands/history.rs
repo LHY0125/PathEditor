@@ -71,7 +71,11 @@ pub fn from_request(req: Option<EventFilterRequest>) -> EventFilter {
 }
 
 /// 从共享状态取 DB；降级模式返回结构化错误。
-fn with_db<T>(
+///
+/// `pub(crate)` 供 `commands::m2` 复用——**不要复制第二份**：
+/// 锁中毒与降级（`DbState::None`）的判定必须在一处，否则两个模块会对
+/// 「什么算降级」产生分歧。
+pub(crate) fn with_db<T>(
     state: &State<'_, DbState>,
     op: &'static str,
     f: impl FnOnce(&Db) -> Result<T, CoreError>,
@@ -86,8 +90,8 @@ fn with_db<T>(
     f(db)
 }
 
-/// 从共享状态取可变 DB（写入路径）。
-fn with_db_mut<T>(
+/// 从共享状态取可变 DB（写入路径）。`pub(crate)` 供 `commands::m2` 复用。
+pub(crate) fn with_db_mut<T>(
     state: &State<'_, DbState>,
     op: &'static str,
     f: impl FnOnce(&mut Db) -> Result<T, CoreError>,

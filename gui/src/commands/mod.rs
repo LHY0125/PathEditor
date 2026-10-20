@@ -3,6 +3,7 @@ pub mod disabled;
 pub mod env_var;
 pub mod fs;
 pub mod history;
+pub mod m2;
 pub mod profiles;
 pub mod registry;
 pub mod scanner;

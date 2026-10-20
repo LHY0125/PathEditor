@@ -743,6 +743,366 @@ function parseBackupList(value: unknown, label: string): BackupView[] {
   });
 }
 
+/* ────────────────────────── M2：检索 / 统计 / 对比 / 引用图 ────────────────────────── */
+
+/** 一条搜索命中（对应 core 的 `db::search::SearchHit`）。 */
+export interface SearchHit {
+  /** 来源类型：`path` / `envName` / `profile` */
+  kind: string;
+  /** 指向对象（快照 uid 带 `#hive` 后缀，或配置 uid） */
+  refUid: string;
+  /** 高亮片段（FTS5 `snippet()`，命中处用 `[]` 包裹） */
+  snippet: string;
+  /** 排名，越小越相关 */
+  rank: number;
+}
+
+/** 单日统计点。 */
+export interface DailyPoint {
+  /** `YYYY-MM-DD` */
+  day: string;
+  pathItems: number;
+  envItems: number;
+  events: number;
+  conflicts: number;
+}
+
+/** 最常改变的变量。 */
+export interface TargetCount {
+  target: string;
+  count: number;
+}
+
+/** 配置应用统计。 */
+export interface ProfileApply {
+  name: string;
+  applyCount: number;
+  lastAppliedAt: number | null;
+}
+
+/**
+ * 统计面板数据。
+ *
+ * **口径**：`days` 是**历史**序列（某天的 `pathItems` 是「那天最后一次保存时的
+ * 条目数」）；`currentPathItems` / `currentAvgLen` 是**现在**的状态。
+ * UI 必须分开显示，否则用户会把「今天最后一次保存」误读成「当前」。
+ */
+export interface Dashboard {
+  days: DailyPoint[];
+  topTargets: TargetCount[];
+  profileApplies: ProfileApply[];
+  currentAvgLen: number;
+  currentPathItems: number;
+}
+
+/** 顺序变化的一条。 */
+export interface ReorderEntry {
+  path: string;
+  leftIndex: number;
+  rightIndex: number;
+}
+
+/** 启用状态变化的一条。 */
+export interface ToggleEntry {
+  path: string;
+  leftEnabled: boolean;
+  rightEnabled: boolean;
+}
+
+/** 单侧（system 或 user）的 PATH 差异。 */
+export interface PathDiff {
+  added: PathEntry[];
+  removed: PathEntry[];
+  reordered: ReorderEntry[];
+  toggled: ToggleEntry[];
+}
+
+/**
+ * 对比结果（N-8：system 与 user **分开**）。
+ *
+ * `env_*` 三字段本轮**恒为空数组**（T-3）——UI 必须显示
+ * 「环境变量对比将在 M3 提供」，而不是让用户以为「env 没变化」。
+ */
+export interface CompareResult {
+  system: PathDiff;
+  user: PathDiff;
+  envAdded: string[];
+  envRemoved: string[];
+  envModified: string[];
+}
+
+/** 一条引用边。 */
+export interface RefEdge {
+  fromHive: string;
+  fromName: string;
+  toName: string;
+  depth: number;
+}
+
+/** 一次扫描记录。 */
+export interface ScanRunView {
+  uid: string;
+  createdAt: number;
+  conflicts: string[];
+  toolCount: number;
+}
+
+/** 「首次出现」。 */
+export interface FirstSeen {
+  conflict: string;
+  runUid: string;
+  seenAt: number;
+}
+
+/** 「最近出现」。 */
+export interface LastSeen {
+  conflict: string;
+  runUid: string;
+  seenAt: number;
+}
+
+/** 两次扫描的差异。 */
+export interface ScanRunDiff {
+  appeared: string[];
+  disappeared: string[];
+  persistent: string[];
+  lastSeen: LastSeen[];
+  firstSeen: FirstSeen[];
+}
+
+const isStringArray = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** 校验 `SearchHit[]`。 */
+export function parseSearchHits(value: unknown, label = 'search'): SearchHit[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须返回数组`);
+  return value.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.kind !== 'string' ||
+      typeof raw.refUid !== 'string' ||
+      typeof raw.snippet !== 'string' ||
+      typeof raw.rank !== 'number'
+    ) {
+      throw new Error(`${label} 的命中项形状无效`);
+    }
+    return {
+      kind: raw.kind,
+      refUid: raw.refUid,
+      snippet: raw.snippet,
+      rank: raw.rank,
+    };
+  });
+}
+
+/** 校验 `Dashboard`。 */
+export function parseDashboard(value: unknown, label = 'stats_dashboard'): Dashboard {
+  if (!isRecord(value)) throw new Error(`${label} 返回了无效的统计契约`);
+  if (!Array.isArray(value.days)) throw new Error(`${label} 的 days 必须是数组`);
+  const days = value.days.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.day !== 'string' ||
+      typeof raw.pathItems !== 'number' ||
+      typeof raw.envItems !== 'number' ||
+      typeof raw.events !== 'number' ||
+      typeof raw.conflicts !== 'number'
+    ) {
+      throw new Error(`${label} 的 days 条目形状无效`);
+    }
+    return {
+      day: raw.day,
+      pathItems: raw.pathItems,
+      envItems: raw.envItems,
+      events: raw.events,
+      conflicts: raw.conflicts,
+    };
+  });
+  if (!Array.isArray(value.topTargets)) throw new Error(`${label} 的 topTargets 必须是数组`);
+  const topTargets = value.topTargets.map((raw) => {
+    if (!isRecord(raw) || typeof raw.target !== 'string' || typeof raw.count !== 'number') {
+      throw new Error(`${label} 的 topTargets 条目形状无效`);
+    }
+    return { target: raw.target, count: raw.count };
+  });
+  if (!Array.isArray(value.profileApplies)) {
+    throw new Error(`${label} 的 profileApplies 必须是数组`);
+  }
+  const profileApplies = value.profileApplies.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.name !== 'string' ||
+      typeof raw.applyCount !== 'number' ||
+      (raw.lastAppliedAt !== null && typeof raw.lastAppliedAt !== 'number')
+    ) {
+      throw new Error(`${label} 的 profileApplies 条目形状无效`);
+    }
+    return {
+      name: raw.name,
+      applyCount: raw.applyCount,
+      lastAppliedAt: raw.lastAppliedAt,
+    };
+  });
+  if (typeof value.currentAvgLen !== 'number' || typeof value.currentPathItems !== 'number') {
+    throw new Error(`${label} 的 current* 字段必须是数字`);
+  }
+  return {
+    days,
+    topTargets,
+    profileApplies,
+    currentAvgLen: value.currentAvgLen,
+    currentPathItems: value.currentPathItems,
+  };
+}
+
+/** 校验单侧 `PathDiff`。 */
+function parsePathDiff(value: unknown, label: string): PathDiff {
+  if (!isRecord(value)) throw new Error(`${label} 必须是对象`);
+  if (!Array.isArray(value.reordered)) throw new Error(`${label}.reordered 必须是数组`);
+  if (!Array.isArray(value.toggled)) throw new Error(`${label}.toggled 必须是数组`);
+  const reordered = value.reordered.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.path !== 'string' ||
+      typeof raw.leftIndex !== 'number' ||
+      typeof raw.rightIndex !== 'number'
+    ) {
+      throw new Error(`${label}.reordered 条目形状无效`);
+    }
+    return { path: raw.path, leftIndex: raw.leftIndex, rightIndex: raw.rightIndex };
+  });
+  const toggled = value.toggled.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.path !== 'string' ||
+      typeof raw.leftEnabled !== 'boolean' ||
+      typeof raw.rightEnabled !== 'boolean'
+    ) {
+      throw new Error(`${label}.toggled 条目形状无效`);
+    }
+    return {
+      path: raw.path,
+      leftEnabled: raw.leftEnabled,
+      rightEnabled: raw.rightEnabled,
+    };
+  });
+  return {
+    added: parsePathEntries(value.added, `${label}.added`),
+    removed: parsePathEntries(value.removed, `${label}.removed`),
+    reordered,
+    toggled,
+  };
+}
+
+/** 校验 `CompareResult`（N-8：双 hive 都必须存在）。 */
+export function parseCompareResult(value: unknown, label = 'compare_snapshots'): CompareResult {
+  if (!isRecord(value)) throw new Error(`${label} 返回了无效的对比契约`);
+  // 缺 system 或 user 一律报错：只比一侧是本轮修掉的 N-8 缺陷，
+  // 不能让后端退回旧形状而前端静默接受
+  if (value.system === undefined || value.user === undefined) {
+    throw new Error(`${label} 必须同时返回 system 与 user 两侧`);
+  }
+  // 逐个校验并**收窄类型**：TS 不会把循环内守卫的结果带到 return，
+  // 因此这里先取回局部变量、逐个断言，再放进返回值。
+  const envAdded = value.envAdded;
+  const envRemoved = value.envRemoved;
+  const envModified = value.envModified;
+  if (!isStringArray(envAdded)) throw new Error(`${label}.envAdded 必须是字符串数组`);
+  if (!isStringArray(envRemoved)) throw new Error(`${label}.envRemoved 必须是字符串数组`);
+  if (!isStringArray(envModified)) throw new Error(`${label}.envModified 必须是字符串数组`);
+  return {
+    system: parsePathDiff(value.system, `${label}.system`),
+    user: parsePathDiff(value.user, `${label}.user`),
+    envAdded,
+    envRemoved,
+    envModified,
+  };
+}
+
+/** 校验 `RefEdge[]`。 */
+export function parseRefEdges(value: unknown, label = 'refs'): RefEdge[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须返回数组`);
+  return value.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.fromHive !== 'string' ||
+      typeof raw.fromName !== 'string' ||
+      typeof raw.toName !== 'string' ||
+      typeof raw.depth !== 'number'
+    ) {
+      throw new Error(`${label} 的引用边形状无效`);
+    }
+    return {
+      fromHive: raw.fromHive,
+      fromName: raw.fromName,
+      toName: raw.toName,
+      depth: raw.depth,
+    };
+  });
+}
+
+/** 校验 `string[][]`（引用环）。 */
+export function parseCycleList(value: unknown, label = 'refs_cycles'): string[][] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须返回数组`);
+  return value.map((raw) => {
+    if (!isStringArray(raw)) throw new Error(`${label} 的每个环必须是字符串数组`);
+    return raw;
+  });
+}
+
+/** 校验 `ScanRunView[]`。 */
+export function parseScanRuns(value: unknown, label = 'scan_history_list'): ScanRunView[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须返回数组`);
+  return value.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.uid !== 'string' ||
+      typeof raw.createdAt !== 'number' ||
+      typeof raw.toolCount !== 'number' ||
+      !isStringArray(raw.conflicts)
+    ) {
+      throw new Error(`${label} 的扫描记录形状无效`);
+    }
+    return {
+      uid: raw.uid,
+      createdAt: raw.createdAt,
+      conflicts: raw.conflicts,
+      toolCount: raw.toolCount,
+    };
+  });
+}
+
+/** 校验 `ScanRunDiff`。 */
+export function parseScanRunDiff(value: unknown, label = 'scan_history_diff'): ScanRunDiff {
+  if (!isRecord(value)) throw new Error(`${label} 返回了无效的 diff 契约`);
+  const appeared = value.appeared;
+  const disappeared = value.disappeared;
+  const persistent = value.persistent;
+  if (!isStringArray(appeared)) throw new Error(`${label}.appeared 必须是字符串数组`);
+  if (!isStringArray(disappeared)) throw new Error(`${label}.disappeared 必须是字符串数组`);
+  if (!isStringArray(persistent)) throw new Error(`${label}.persistent 必须是字符串数组`);
+  if (!Array.isArray(value.lastSeen)) throw new Error(`${label}.lastSeen 必须是数组`);
+  if (!Array.isArray(value.firstSeen)) throw new Error(`${label}.firstSeen 必须是数组`);
+  const parseSeen = (raw: unknown, kind: string) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.conflict !== 'string' ||
+      typeof raw.runUid !== 'string' ||
+      typeof raw.seenAt !== 'number'
+    ) {
+      throw new Error(`${label}.${kind} 条目形状无效`);
+    }
+    return { conflict: raw.conflict, runUid: raw.runUid, seenAt: raw.seenAt };
+  };
+  return {
+    appeared,
+    disappeared,
+    persistent,
+    lastSeen: value.lastSeen.map((r: unknown) => parseSeen(r, 'lastSeen')),
+    firstSeen: value.firstSeen.map((r: unknown) => parseSeen(r, 'firstSeen')),
+  };
+}
+
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
   loadSystemPaths: async () =>
@@ -968,6 +1328,101 @@ export const backend = {
   /** 列出备份索引（`.pebak` 的变量数来自文件头，无需解密）。 */
   backupList: async () =>
     parseBackupList(await parseCoreError(invoke<unknown>('backup_list')), 'backup_list'),
+
+  /* ────────────────────── M2：检索 / 统计 / 对比 / 引用图 / 冲突历史 ────────────────────── */
+
+  /**
+   * FTS5 全文检索。
+   *
+   * **空查询由后端直接返回空数组**（见 `core::db::search::search`），
+   * 前端不应依赖这一点来省请求——搜索框为空时 UI 也不该发起调用
+   * （Task 10 的要求），两层各守一次。
+   *
+   * 查询串由 Rust 侧做 FTS5 转义，前端传原始用户输入即可。
+   */
+  search: async (query: string, limit = 50) =>
+    parseSearchHits(await parseCoreError(invoke<unknown>('search', { query, limit })), 'search'),
+
+  /** 统计面板数据；`days` 缺省 30。 */
+  statsDashboard: async (days = 30) =>
+    parseDashboard(
+      await parseCoreError(invoke<unknown>('stats_dashboard', { days })),
+      'stats_dashboard',
+    ),
+
+  /** 全量重建 `daily_stats`（Task 12 启动接线与调试用）。 */
+  statsRebuild: async () => {
+    const n = await parseCoreError(invoke<unknown>('stats_rebuild'));
+    if (typeof n !== 'number') throw new Error('stats_rebuild 必须返回数字');
+    return n;
+  },
+
+  /** 比较两个快照（N-8：system 与 user 分开返回）。 */
+  compareSnapshots: async (leftUid: string, rightUid: string) =>
+    parseCompareResult(
+      await parseCoreError(invoke<unknown>('compare_snapshots', { leftUid, rightUid })),
+      'compare_snapshots',
+    ),
+
+  /** 谁引用了 `name`（反向边）。 */
+  refsDependents: async (name: string) =>
+    parseRefEdges(
+      await parseCoreError(invoke<unknown>('refs_dependents', { name })),
+      'refs_dependents',
+    ),
+
+  /** `name` 传递依赖了谁（递归）。 */
+  refsDependencies: async (name: string) =>
+    parseRefEdges(
+      await parseCoreError(invoke<unknown>('refs_dependencies', { name })),
+      'refs_dependencies',
+    ),
+
+  /** 引用环列表。 */
+  refsCycles: async () =>
+    parseCycleList(await parseCoreError(invoke<unknown>('refs_cycles')), 'refs_cycles'),
+
+  /** 全量重建引用图（Task 12 启动接线与调试用）。 */
+  refsRebuild: async () => {
+    const n = await parseCoreError(invoke<unknown>('refs_rebuild'));
+    if (typeof n !== 'number') throw new Error('refs_rebuild 必须返回数字');
+    return n;
+  },
+
+  /** 全量重建 FTS 索引（Task 12 启动接线与调试用）。 */
+  searchRebuild: async () => {
+    const n = await parseCoreError(invoke<unknown>('search_rebuild'));
+    if (typeof n !== 'number') throw new Error('search_rebuild 必须返回数字');
+    return n;
+  },
+
+  /** 列出最近的扫描记录。 */
+  scanHistoryList: async (limit = 50) =>
+    parseScanRuns(
+      await parseCoreError(invoke<unknown>('scan_history_list', { limit })),
+      'scan_history_list',
+    ),
+
+  /** 比较两次扫描。 */
+  scanHistoryDiff: async (aUid: string, bUid: string) =>
+    parseScanRunDiff(
+      await parseCoreError(invoke<unknown>('scan_history_diff', { aUid, bUid })),
+      'scan_history_diff',
+    ),
+
+  /**
+   * 记录一次扫描，返回 uid。
+   *
+   * `conflictsJson` / `toolsJson` 由调用方序列化后传入——core 侧不解析
+   * `ScanResult`，这样命令对 `scan_paths` 的形状变化免疫。
+   */
+  scanHistoryRecord: async (conflictsJson: string, toolsJson = '[]') => {
+    const uid = await parseCoreError(
+      invoke<unknown>('scan_history_record', { conflictsJson, toolsJson }),
+    );
+    if (typeof uid !== 'string') throw new Error('scan_history_record 必须返回字符串');
+    return uid;
+  },
 };
 
 // ── 配置方案（DB 版，P0-1 方案 A） ────────────────────────
