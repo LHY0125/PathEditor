@@ -1,5 +1,42 @@
 # Changelog
 
+## 未发布（v6.0.0 里程碑）
+
+### M1 存储与历史（开发中）
+
+在 core 内建立 **SQLCipher 加密数据库**，把 PATH 快照与操作事件持久化，并把配置方案与备份索引迁入 DB。**注册表仍是唯一真相源**，DB 是 sidecar（spec D16 fail-open）。
+
+> ⚠️ **本里程碑不含 FTS5 检索、统计仪表盘、N 路对比、引用图与跨设备同步** —— 那些属于 M2/M3。
+
+#### 新增
+
+- **`HistorySink` 服务接缝**（`core/src/history.rs`）：`save_path_with_sidecar` / `apply_path_snapshot` / `retry_pending_path_state` / `apply_profile` 增加 `history: &dyn HistorySink` 参数。测试与无 DB 场景注入 `NoopHistory`，生产注入 `DbHistory`。**不要求 `Send + Sync`**（M1 为同步单线程调用；跨线程留到 M3）。
+- **数据库句柄**（`core/src/db/mod.rs`）：`Db::open_encrypted` / `with_transaction`（`BEGIN IMMEDIATE`）/ `schema_version` / `migrate_to_current` / `open_default`。启动只读 `user_version`，只有建库/迁移事务内写。
+- **schema v1**（`core/src/db/schema.rs`）：`snapshots` / `app_state` / `path_entries` / `env_values` / `events` / `profiles` / `profile_revisions` / `backups` / `migration_imports`，与 spec §4.1 逐表对应。
+- **DPAPI 密钥生命周期**（`core/src/db/crypto.rs`）：`<home>/keys/db.key.dpapi`，内容为 `version + db_key(32) + hash_salt(16)` 的 DPAPI 密文。首次创建用命名互斥量 `Local\PathEditor.KeyInit` + `create_new(true)` 原子创建，**不使用「先 exists() 再写」**。
+- **快照与事件读写**（`core/src/db/history.rs`）：`insert_snapshot` / `insert_snapshot_tx` / `list_events`（独立 `count(*)` 提供 `total`）/ `get_snapshot`（`reveal=false` 掩码）/ `current_snapshot` / `set_current_snapshot`（`version` CAS）。
+- **配置方案入 DB**（`core/src/db/profiles.rs`）：标签/描述/应用次数/最后应用时间；软删除后允许同名重建（部分唯一索引）。
+- **`.pebak` 加密备份**（`core/src/db/backups.rs`）：55 字节明文头（magic + version + 时间 + 变量数 + 明文长度 + `payload_hash`）+ DPAPI 加密正文。**列表与索引只读头，不解密**。遗留 `.json` 仍可一次性读取（带明文警告）。
+- **v5 迁移**（`core/src/db/migrate_v5.rs`）：`disabled.json` / `profiles/*.json` / `env_backup_*.json` / `path_backup_*.txt` 一次性导入；`migration_imports(source_path, content_hash)` 保证幂等；**原件只读、不改名、不删除**。
+- **IPC 命令**：`history_list_events` / `history_get_snapshot` / `history_get_current` / `profile_list` / `profile_delete` / `profile_mark_applied` / `backup_list`；DB 不可用时返回 `code = database`。
+- **前端**：`backend.ts` 新增对应的 `parseXxx` 形状校验；`history-store.ts` + `HistoryPanel` + `SnapshotDetail`（敏感值默认掩码）；新增「历史记录」标签页。
+
+#### 变更
+
+- **`ErrorCode` 新增** `Database` / `Crypto` / `Sync` / `Migration`（serde camelCase）。前端 `ErrorCode` 联合类型与 `parseCoreError` 白名单**同步扩充** —— 否则降级模式的判定会被静默兜底成 `internal`。
+- **CLI 退出码**：`Crypto` 映射为 **5**（spec §8）；`Conflict` 仍为 3；4 预留给 M3 的同步冲突。
+- **`cipher_memory_security` 默认 OFF**：M0 实测 ON 在受限进程里 `VirtualLock` 失败，且 ON/OFF 性能无显著差异（902 µs vs 931 µs）。
+
+#### 测试约定
+
+- **一文件一测试**：同一进程内跑第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU/MSVC 均已复现，`--test-threads=1` 无效）。DB 测试文件各含**唯一**一个 `#[test]`。
+
+#### 已知限制
+
+- `profile_save` 的 IPC 命令未实现（需要同时传 PATH 条目 + 元数据，形状较重）—— 配置写入在 M1 仍走 v5 文件通路 + 迁移。
+- 历史面板只做「列表 + 预览」；恢复按钮、筛选、分页与 reveal 入口留到 M2。
+- 历史事件的 `snapshot_id` 暂未回填（`EventView` 不含 `snapshotUid`）。
+
 ## 5.1.7 (2026-10-17)
 
 本版重做 **GUI 视觉与信息架构**：工具栏从「两行 18 个同权重按钮」收口为**单行分层工具栏 + ⋯ 菜单**，浅色主题改为中性现代、深色主题改为玻璃质感，并建立单一的设计 token 层。**Rust / CLI / IPC 契约零改动**，仅前端。
