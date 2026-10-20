@@ -125,7 +125,7 @@ description: PathEditor 审核窗口工作流程。当用户宣告「你是审�
 - 组件与 Store 是否**只经 `src/services/backend.ts`** 调 IPC，没有直调 `invoke`
 - `src/core/` 是否零 React / Tauri 依赖
 - 错误判定是否只认 `[E_CONFLICT]` **前缀**，没有靠中文文案做控制流
-- `AGENTS.md` 与 `CLAUDE.md` 是否字节级一致
+- `AGENTS.md` 与 `CLAUDE.md` 的差异是否**有意的**（两者不要求逐字节一致；但若声称已同步，须用字节级比较验证，不能用 `cmp` / `prettier --check`）
 - Conventional Commits 是否合规
 - 是否有**死导出**、行文与实现不符的注释（例如把「读后写」写成「原子操作」）
 

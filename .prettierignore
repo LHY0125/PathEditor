@@ -8,8 +8,3 @@ test-results
 coverage
 Cargo.lock
 package-lock.json
-# CLAUDE.md 与 AGENTS.md 必须字节级一致（仓库硬约束）。
-# Prettier 会按自己的规则重排表格与行尾，使两份文件产生差异，
-# 因此这两份文件必须排除在自动格式化之外。
-CLAUDE.md
-AGENTS.md

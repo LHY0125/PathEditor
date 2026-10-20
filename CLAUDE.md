@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # PathEditor 开发指南
 
-> 本文件是开发窗口的仓库说明；更新后同步复制为根目录 `AGENTS.md`，两份文件应保持一致。
+> 本文件是开发窗口的仓库说明。`AGENTS.md` 是同一份内容的副本，**不要求逐字节一致**：仓库约束的改动可以只落在其中一份，另一份按需同步。
 
 ## 项目概述
 
@@ -126,7 +126,7 @@ PathEditor/
 依赖链：`rusqlite → libsqlite3-sys → SQLCipher（C）→ OpenSSL（C）`。
 
 - **OpenSSL 的唯一作用**：给 SQLCipher 提供 AES-256、HMAC、PBKDF2 等密码学原语。项目**没有任何 TLS / 网络调用**，与「OpenSSL 漏洞」常见的 Web 攻击面不同。
-- `bundled-sqlcipher-vendored-openssl` 把 SQLCipher 与 OpenSSL 的 **C 源码**都打进 crate，构建时用 `cc` 编译。因此需要 `make`、`perl`（MSVC 下还需 NASM），首次编译约 31 分钟，二进制 +1–2 MB。
+- `bundled-sqlcipher-vendored-openssl` 把 SQLCipher 与 OpenSSL 的 **C 源码**都打进 crate，构建时用 `cc` 编译。因此需要 `make`、`perl`（MSVC 下还需 NASM），首次全量编译约 45 分钟，二进制 +1–2 MB。
 - 选 `vendored` 是为了「不依赖用户机器上是否装了 OpenSSL、版本是否兼容」，代价是构建工具链与时间——这是有意的权衡，不要改成链接系统 OpenSSL。
 - 密钥：`~/.patheditor/keys/db.key.dpapi`，内容为 `version(1)+db_key(32)+hash_salt(16)`，整体经 DPAPI（**当前 Windows 用户**作用域）加密；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。详见 spec §5.1 与 M1 计划 Task 3。
 
@@ -235,6 +235,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 - 覆盖率门槛为 80% 行覆盖；`npm run verify` 依次执行 Prettier、ESLint、构建、覆盖率、`cargo fmt`、Clippy 和 Rust 测试。提交前优先运行 `npm run verify:all`。
 - 代码风格：UTF-8、CRLF；TS 2 空格，Rust/TOML 4 空格；Prettier 使用单引号、尾逗号和 100 列。
 - 从仓库根目录跑 `npm test` 时，`vitest.config.ts` 的 `exclude` 必须包含 `.claude/**`——否则会扫到 `.claude/worktrees/` 下嵌套 worktree 的 e2e 文件并大面积假失败。
+- **测试不得触碰用户真实目录**。`dirs::home_dir()` 走 `SHGetKnownFolderPath(FOLDERID_Profile)` 读注册表，**`HOME` 与 `USERPROFILE` 两个环境变量都不读**——`config_dir()` 无法被任何环境变量重定向。因此凡是走它的测试（密钥、备份、数据库），必须**显式传路径**（`load_or_create_key(&tempdir)`、`write_env_backup_to_with_key(dir, payload, &material)`），不能在测试里调用会内部走 `config_dir()` 的入口（`backup_env_vars()`、`open_default()`）。只有 `PATHEDITOR_BACKUP_DIR` 这类项目自定义变量是可重定向的。
 
 ## 版本号升级清单
 
@@ -243,7 +244,7 @@ patheditor env restore   <FILE> [--dry-run] [--force] [--json]
 | 文件                  | 字段                                                            |
 | --------------------- | --------------------------------------------------------------- |
 | `package.json`        | `version`                                                       |
-| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）              |
+| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）             |
 | `Cargo.toml`          | `[workspace.package] version`                                   |
 | `Cargo.lock`          | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
 | `gui/tauri.conf.json` | `version`、窗口 `title`                                         |
