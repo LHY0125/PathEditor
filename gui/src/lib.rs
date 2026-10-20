@@ -257,6 +257,7 @@ pub fn run() {
             commands::history::history_list_events,
             commands::history::history_get_snapshot,
             commands::history::history_get_current,
+            commands::history::history_reveal_env_value,
             commands::history::profile_list,
             commands::history::profile_delete,
             commands::history::profile_mark_applied,

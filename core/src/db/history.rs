@@ -550,6 +550,43 @@ pub fn app_state_version(db: &Db) -> Result<i64, CoreError> {
     .map_err(|e| CoreError::new(e.code, "app_state_version", e.message))
 }
 
+/// 显式 reveal 一个历史快照里的 env 变量值（spec §3.2.1，M1 欠账 P2-1）。
+///
+/// **为什么是独立函数而不是 `get_snapshot(reveal=true)`**：
+/// 掩码必须是默认行为；「看明文」应当是一次**显式、可审计**的动作，
+/// 而不是某个批量查询的副作用。GUI 侧对应一条独立的 IPC 命令。
+///
+/// 返回 `NotFound` 的三种情况，调用方无需区分细节（都表示「没有可 reveal 的值」）：
+/// - 快照不存在；
+/// - 该 `(hive, name)` 在快照里不存在；
+/// - 变量 `restorable = 0`（`Unsupported` 类型，库里 `value` 恒为 NULL）。
+///
+/// 敏感变量**同样返回明文**——调用方已经通过「调用本函数」表达了显式意图，
+/// 再拦一次只会让「显示」按钮点了没反应。掩码的责任在读路径（[`get_snapshot`]）。
+pub fn reveal_env_value(db: &Db, uid: &str, hive: &str, name: &str) -> Result<String, CoreError> {
+    let row: Option<Option<String>> = db
+        .query_row_optional(
+            "SELECT e.value
+               FROM env_values e
+               JOIN snapshots s ON s.id = e.snapshot_id
+              WHERE s.uid = ?1 AND s.deleted_at IS NULL
+                AND e.hive = ?2 AND e.name = ?3 AND e.restorable = 1",
+            params![uid, hive, name],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .map_err(|e| CoreError::new(e.code, "reveal_env_value", e.message))?;
+
+    match row {
+        Some(Some(v)) => Ok(v),
+        // 行存在但 value 为 NULL：Data 不一致（restorable=1 却没值），按 NotFound 处理
+        Some(None) | None => Err(CoreError::new(
+            ErrorCode::NotFound,
+            "reveal_env_value",
+            format!("历史快照中没有可读取的变量值: {hive}\\{name}"),
+        )),
+    }
+}
+
 /// 组装快照视图（PATH 条目 + 环境变量）。
 fn load_snapshot_view(
     db: &Db,

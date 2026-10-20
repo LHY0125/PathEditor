@@ -271,6 +271,9 @@
     "undoLast": "撤销上次操作",
     "undoConfirm": "撤销会把 PATH 恢复到该操作执行前的状态。确定继续吗？",
     "undoHint": "跨会话撤销：从历史记录恢复，进程重启后仍可用",
-    "undoNothing": "没有可撤销的操作记录"
+    "undoNothing": "没有可撤销的操作记录",
+    "reveal": "显示",
+    "revealing": "读取中…",
+    "revealFailed": "无法读取该变量的值"
   }
 }

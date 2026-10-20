@@ -131,6 +131,28 @@ pub fn history_get_current(state: State<'_, DbState>) -> Result<Option<SnapshotV
     with_db(&state, "history_get_current", history::current_snapshot)
 }
 
+/// 显式 reveal 一个历史快照里的环境变量值（M1 欠账 P2-1）。
+///
+/// **独立命令**：与 `history_get_snapshot` 分离，让「掩码」成为默认，
+/// 「看明文」成为一次可审计的显式动作（spec §3.2.1）。
+///
+/// 与 `history_get_snapshot(reveal=true)` 的区别：后者是**批量**揭示，
+/// 前者是**单个变量**的显式请求。GUI 上对应的是每个被掩码变量旁的「显示」按钮。
+///
+/// 返回 `NotFound` 表示：快照/变量不存在，或该变量是 `Unsupported` 类型
+/// （`restorable = 0`，库里没有值可读）。
+#[tauri::command]
+pub fn history_reveal_env_value(
+    uid: String,
+    hive: String,
+    name: String,
+    state: State<'_, DbState>,
+) -> Result<String, CoreError> {
+    with_db(&state, "history_reveal_env_value", |db| {
+        history::reveal_env_value(db, &uid, &hive, &name)
+    })
+}
+
 /// 列出配置方案。
 #[tauri::command]
 pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreError> {

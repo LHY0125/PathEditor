@@ -271,6 +271,9 @@
     "undoLast": "Undo last operation",
     "undoConfirm": "Undo restores the PATH to its state before that operation. Continue?",
     "undoHint": "Cross-session undo: restored from history, survives restarts",
-    "undoNothing": "No undoable operation found"
+    "undoNothing": "No undoable operation found",
+    "reveal": "Show",
+    "revealing": "Loading…",
+    "revealFailed": "Could not read this value"
   }
 }

@@ -919,6 +919,27 @@ export const backend = {
     const result = await parseCoreError(invoke<unknown>('history_get_current'));
     return result === null ? null : parseSnapshotView(result, 'history_get_current');
   },
+  /**
+   * 显式 reveal 一个历史快照里的环境变量值（Task 7 / M1 欠账 P2-1）。
+   *
+   * 与 `historyGetSnapshot(uid, true)` 的区别：后者是**批量**揭示，
+   * 前者是**单个变量**的显式请求（UI 上每个被掩码变量旁的「显示」按钮）。
+   *
+   * **调用方不得把返回值写入 store** —— 明文进入持久状态会泄漏到
+   * DevTools / 状态快照。只在该次渲染的局部 state 里持有。
+   *
+   * `restorable = 0` 的变量（`Unsupported` 类型）没有值，Rust 侧返回
+   * `NotFound`，前端应显示「此类型不支持查看」而不是空串。
+   */
+  historyRevealEnvValue: async (uid: string, hive: string, name: string): Promise<string> => {
+    const result = await parseCoreError(
+      invoke<unknown>('history_reveal_env_value', { uid, hive, name }),
+    );
+    if (typeof result !== 'string') {
+      throw new Error('history_reveal_env_value 必须返回字符串');
+    }
+    return result;
+  },
   /** 软删除配置方案（按 uid）；返回是否真的删除了（已删除返回 false）。 */
   profileDelete: async (uid: string) => {
     const result = await parseCoreError(invoke<unknown>('profile_delete', { uid }));
