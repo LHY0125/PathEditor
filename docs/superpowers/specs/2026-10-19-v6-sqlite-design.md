@@ -99,6 +99,65 @@ core/src/
 - 所有写事务：`BEGIN IMMEDIATE`；读-改-写带 `version` CAS；冲突返回 `CoreError.code = conflict`。
 - **服务层接缝（H1）**：定义 `HistorySink` trait（`record(&self, event: HistoryEvent) -> Result<(), CoreError>`）。测试/无 DB 场景用 `NoopHistory`，生产用 `DbHistory`；`save_path_with_sidecar` 等调用点增加一个 `history: &dyn HistorySink` 参数，既有测试传 `&NoopHistory`，行为不变。**禁止全局单例**。
 
+### 3.2.1 IPC 边界（前端如何访问 DB）
+
+**选择：细粒度 IPC（方案 A）**。每个查询/写入是一个独立 `#[tauri::command]`，前端经 `backend.ts` 的同名方法调用；**不做**「一次返回整块面板数据」的聚合命令，也**不**让前端拼 SQL。
+
+理由：
+
+- 与现有 20+ 个 IPC 命令的风格一致（`list_profiles` / `scan_paths` / `reveal_env_var` …）；
+- 每个命令可独立做**运行时形状校验**与单元测试，符合仓库「不靠 TS 断言」的既有约束；
+- 聚合视图是**前端组合**，不是后端职责；后端只保证每个原语正确。
+
+**命名与形状约定**：
+
+| 规则   | 说明                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| 命令名 | `snake_case`；历史相关一律以 `history_` 前缀（如 `history_list_events`）                                                  |
+| 参数   | 单个结构体参数（`{ filter: ... }`），避免位置参数在 Tauri 下的序列化歧义                                                  |
+| 返回   | 结构体（`serde(rename_all = "camelCase")`），与 `EnvVarMeta` 等既有契约一致                                               |
+| 错误   | `Result<T, CoreError>`；前端 `parseCoreError` 统一处理，`code` 是唯一判定依据                                             |
+| 校验   | `backend.ts` 每个方法返回前调用 `parseXxx(await invoke<unknown>(...))`，**禁止**直接 `invoke<T>` 后当 `T` 用              |
+| 敏感值 | **任何历史命令默认不返回明文**；需要明文时走独立的 `history_reveal_env_value(uid, hive, name)`，语义对齐 `reveal_env_var` |
+
+**M1 命令清单**（最小集；M2/M3 另加）：
+
+```text
+history_list_events(filter)        -> EventPage          # 分页、时间倒序
+history_get_snapshot(uid)          -> SnapshotView       # 敏感值掩码
+history_restore_snapshot(uid)      -> RestoreOutcome
+history_list_snapshots(filter)     -> SnapshotPage
+history_get_current()              -> SnapshotView | null
+profile_list(filter)               -> ProfileView[]      # 含 tags/lastAppliedAt/applyCount
+profile_save(request)              -> ProfileView
+profile_apply(uid)                 -> ApplyOutcome
+profile_delete(uid)                -> void
+profile_export_v5(uid, path)       -> void
+backup_list(filter)                -> BackupView[]       # 含 encrypted / variableCount
+```
+
+**明细规则**：
+
+1. **分页**：所有列表命令接受 `{ limit, offset }`，默认 50 / 0，上限 500；`EventPage` 含 `total`。
+2. **排序**：服务端固定（事件按 `created_at DESC, id DESC`；快照按同口径），**不接受前端传排序字段**——避免 SQL 注入面与语义漂移。
+3. **掩码**：`SnapshotView` 中敏感变量 `value` 恒为 `null` 且带 `sensitive: true`；只有 `history_reveal_env_value` 返回明文，且必须在 GUI 里显式点击。
+4. **恢复**：`history_restore_snapshot` 不接收「部分字段」；整快照交给既有注册表编排，成功后追加新快照与事件（append-only）。
+5. **DB 不可用（B7）**：所有 `history_*` / `profile_*` / `backup_*` 命令在降级模式下返回 `CoreError { code: database | crypto }`；**注册表编辑命令不受影响**。GUI 据此显示降级条幅。
+6. **禁止**：`sqlite_*` / `db_*` 之类暴露底层语义的命令名；前端不得出现 SQL 字符串。
+
+**前端调用示例**（`backend.ts` 风格）：
+
+```ts
+historyListEvents: async (filter: EventFilter) =>
+  parseEventPage(await parseCoreError(invoke<unknown>('history_list_events', { filter }))),
+```
+
+**测试要求**：
+
+- 每个 `parseXxx` 有对应的形状测试（缺字段/类型错/未知 code）；
+- 每个命令的 core 层有独立测试（一文件一测试，见 M0 §5.3）；
+- E2E 只覆盖 3–4 条主路径（历史面板、恢复、配置应用），其余靠单元测试。
+
 ### 3.3 数据库位置与 PRAGMA
 
 ```text
@@ -109,7 +168,7 @@ core/src/
 
 ```sql
 PRAGMA key = "x'<hex>'";
-PRAGMA cipher_memory_security = ON;
+PRAGMA cipher_memory_security = OFF;  -- M0 实测：ON 在受限进程里 VirtualLock 失败；默认 OFF（见下）
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;
@@ -117,6 +176,8 @@ PRAGMA busy_timeout = 5000;
 ```
 
 **版本流程（B2）**：启动 `PRAGMA user_version` 只读；0 = 新库（建库事务写 1）；小于当前 = 迁移事务内逐级升级；大于当前 = 拒绝启动（文件由更新版本写入）。**启动序列中不得出现写 `user_version` 的语句**。
+
+**`cipher_memory_security`（M0 实测修正）**：M0 在测试进程里观察到 `VirtualLock() ... LastError=1453`（`ERROR_NOT_ENOUGH_MEMORY`），且 ON/OFF 性能无显著差异（GNU 902 µs vs 931 µs；MSVC 1.1715 ms vs 1.1498 ms）。**生产默认值由 M1 决定**：先按 `OFF` 实现并观察 GUI/CLI 运行期是否出现锁内存失败；若稳定则保持 OFF（更快、无锁定失败风险），若安全评审要求 ON 则显式开启并记录。**spec 不把 ON 写成硬性要求。**
 
 启动验收：`PRAGMA cipher_version` 非空；`SELECT count(*) FROM sqlite_master` 可执行；错误密钥必须失败且不产生半开库。
 
@@ -346,7 +407,7 @@ CREATE TABLE daily_stats (
 - **首次创建（H4）**：用 `Local\PathEditor.KeyInit` 命名互斥量串行化；密钥文件以 `create_new(true)` 原子创建；已存在时读取并校验 DPAPI blob，失败有界重试。**禁止「先 exists() 再写」的 TOCTOU**。
 - 密钥文件 DACL：仅当前用户 + SYSTEM；启动时校验，权限过宽则告警（不自动修改）。
 - 启动：`CryptUnprotectData` → `PRAGMA key` → `cipher_version` 校验。
-- `cipher_memory_security`（M3）：M0 实测冷启动/查询开销；若明显，降级为可选配置。
+- `cipher_memory_security`（M3）：**已由 M0 实测并决定默认 OFF**（ON/OFF 性能无显著差异，且 ON 在受限进程里 `VirtualLock` 失败）。若 M1 运行期出现安全问题再评估开启。
 - 失败：密钥丢失/DPAPI 不可用 → **明确报错，不自动重建空库**（否则会静默丢失历史）。
 - 密钥轮换：v6.0.0 不做（Tier 3 之后）；文档登记。
 - 备份：`sqlcipher_export`（ATTACH + KEY）生成加密副本；**禁止直接复制 `.db`**（WAL 未 checkpoint 会丢事务）。
