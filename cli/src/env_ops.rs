@@ -554,6 +554,18 @@ pub(crate) fn cmd_env_remove(
 pub(crate) fn cmd_env_backup(json_out: bool) {
     match core::backup::backup_env_vars() {
         Ok(path) => {
+            // N-2：production 路径优先写 .pebak；回落明文时 core 只 log::warn!，
+            // 而 CLI 没有日志后端——必须在这里明说。
+            if path
+                .extension()
+                .map(|e| !e.eq_ignore_ascii_case("pebak"))
+                .unwrap_or(true)
+            {
+                eprintln!(
+                    "警告: 本次写的是**明文** .json 备份（无法获取 DPAPI 密钥）。\
+                     该文件含环境变量明文，建议修复密钥问题后重新备份。"
+                );
+            }
             if json_out {
                 println!("{}", serde_json::json!({ "path": path.to_string_lossy() }));
             } else {
@@ -613,9 +625,18 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     let path = core::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
 
     if dry_run {
-        // v6 D17：统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`（明文警告）
-        let payload =
-            core::backup::read_env_backup_from(&path).unwrap_or_else(|e| exit_core_error(&e));
+        // v6 D17：统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`
+        let (payload, format) = core::backup::read_env_backup_with_format(&path)
+            .unwrap_or_else(|e| exit_core_error(&e));
+        // N-2：CLI 没有日志后端，core 的 `log::warn!` 到这里会被丢弃。
+        // 明文警告必须走 stderr 才真的可见（README 承诺的就是这一条）。
+        if format == core::backup::BackupFormat::LegacyPlaintext {
+            eprintln!(
+                "警告: {} 是遗留明文备份（v6 起的备份为 DPAPI 加密的 .pebak）。\
+                 恢复后建议重新执行 `patheditor env backup` 生成加密副本。",
+                path.display()
+            );
+        }
         let preview =
             core::backup::preview_restore(&payload).unwrap_or_else(|e| exit_core_error(&e));
         if json_out {
@@ -639,6 +660,20 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     eprintln!("提示: 恢复不会自动备份当前状态。如需留还原点，请先执行:");
     eprintln!("  patheditor backup       # 备份当前 PATH");
     eprintln!("  patheditor env backup   # 备份当前全部环境变量");
+
+    // N-2：明文警告必须在**写入之前**说——恢复完再提示就晚了。
+    // 这里只看扩展名（不解析内容），代价为零。
+    if path
+        .extension()
+        .map(|e| !e.eq_ignore_ascii_case("pebak"))
+        .unwrap_or(true)
+    {
+        eprintln!(
+            "警告: {} 是遗留明文备份（v6 起的备份为 DPAPI 加密的 .pebak）。\
+             恢复后建议重新执行 `patheditor env backup` 生成加密副本。",
+            path.display()
+        );
+    }
 
     let outcome =
         core::backup::restore_env_backup_from(&path, force).unwrap_or_else(|e| exit_core_error(&e));
@@ -1579,6 +1614,46 @@ mod tests {
         assert_eq!(
             with_force, preview,
             "dry-run 的预览必须与 force 无关（E3），加 --force 后输出应完全相同"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **N-2 回归守卫**：`env restore --dry-run` 读遗留明文 `.json` 时，
+    /// 明文警告必须出现在 **stderr**。
+    ///
+    /// 这条测试的存在理由：core 里原本只有 `log::warn!`，而 CLI **没有日志后端**
+    /// （`grep set_logger cli/` 零命中），所以那条警告在 CLI 下是空操作——
+    /// README 承诺的「会提示明文警告」在当时并不成立。
+    /// 若将来有人把 `eprintln!` 改回 `log::warn!`，本用例会失败。
+    #[test]
+    fn env_restore_warns_about_legacy_plaintext_on_stderr() {
+        let dir = temp_dir("restore_legacy_warn");
+        // 手工造一份**遗留明文**备份（不是 `env backup` 生成的 .pebak）
+        let legacy = dir.join("env_backup_20260101_000000_000.json");
+        std::fs::write(
+            &legacy,
+            r#"{"schemaVersion":1,"capturedAt":1700000000000,"hives":{"system":[],"user":[]}}"#,
+        )
+        .unwrap();
+
+        let out = std::process::Command::new(cli_bin())
+            .arg("env")
+            .arg("restore")
+            .arg(&legacy)
+            .arg("--dry-run")
+            .env("PATHEDITOR_BACKUP_DIR", &dir)
+            .output()
+            .expect("启动 env restore 失败");
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("遗留明文备份"),
+            "读遗留 .json 必须在 stderr 提示明文风险（N-2）: stderr={stderr:?}"
+        );
+        assert!(
+            stderr.contains("pebak"),
+            "提示必须说明 v6 的加密格式是 .pebak: stderr={stderr:?}"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

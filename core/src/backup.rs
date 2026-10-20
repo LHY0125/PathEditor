@@ -1059,6 +1059,44 @@ pub fn read_env_backup_from(path: &Path) -> Result<EnvBackupPayload, CoreError> 
     read_env_backup_any(path)
 }
 
+/// 备份文件的格式。用于让调用方**明确告知用户**当前读的是明文还是密文。
+///
+/// **N-2 整改的背景**：core 里这些提示原本只写 `log::warn!`，而 CLI 没有
+/// 初始化日志后端（`grep set_logger cli/` 零命中），所有 `log::warn!` 在 CLI 下
+/// 都是空操作。README 承诺的「遗留 `.json` 会提示明文警告」因此不成立。
+///
+/// 库不该直接 `eprintln!`（会污染 GUI 的 stdout/stderr），正确做法是把
+/// 「发生了什么」作为返回值交给调用方，由 GUI 记日志、CLI 打印到 stderr。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupFormat {
+    /// DPAPI 加密的 `.pebak`
+    Encrypted,
+    /// 遗留明文 `.json`
+    LegacyPlaintext,
+}
+
+/// 读取备份 + 告知其格式。
+///
+/// 生产入口（CLI `env restore` / GUI 预览）应使用本函数而非
+/// [`read_env_backup_from`]，以便把明文警告真正呈现给用户。
+pub fn read_env_backup_with_format(
+    path: &Path,
+) -> Result<(EnvBackupPayload, BackupFormat), CoreError> {
+    let is_pebak = path
+        .extension()
+        .map(|e| e.eq_ignore_ascii_case("pebak"))
+        .unwrap_or(false);
+    let payload = read_env_backup_from(path)?;
+    Ok((
+        payload,
+        if is_pebak {
+            BackupFormat::Encrypted
+        } else {
+            BackupFormat::LegacyPlaintext
+        },
+    ))
+}
+
 /// **仅供测试**：把载荷写成 `.pebak` 到给定目录（用本机默认密钥）。
 ///
 /// 生产写入走 [`write_env_backup_to`]（自动取密钥并轮换）。本函数存在的理由：
@@ -2638,7 +2676,7 @@ mod tests {
         with_temp_backup_dir(|dir| {
             let payload = payload_with(vec![backup_var("JAVA_HOME", "C:\\jdk17", REG_SZ)]);
 
-            // 加���路径：直接调底层读入口并用**同一把**密钥读回
+            // 加密路径：直接调底层读入口并用**同一把**密钥读回
             // （`read_env_backup_any` 走 config_dir()，那是另一把密钥——
             //  salt 不同 → payload_hash 必然不匹配，这是正确的拒绝行为）。
             let key_dir = tempfile::TempDir::new().unwrap();
