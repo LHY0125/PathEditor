@@ -613,7 +613,9 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     let path = core::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
 
     if dry_run {
-        let payload = core::backup::read_env_backup(&path).unwrap_or_else(|e| exit_core_error(&e));
+        // v6 D17：统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`（明文警告）
+        let payload =
+            core::backup::read_env_backup_from(&path).unwrap_or_else(|e| exit_core_error(&e));
         let preview =
             core::backup::preview_restore(&payload).unwrap_or_else(|e| exit_core_error(&e));
         if json_out {
@@ -1309,15 +1311,29 @@ mod tests {
             files.contains(&"env_backup_00000000_000000_000.json"),
             "损坏文件也必须出现在列表里: {files:?}"
         );
-        // 列表不解析内容，所以变量数恒为 0（契约字段 variableCount）；
-        // 大小来自 stat，必须与磁盘上的真实字节数一致（含那个损坏文件）。
+        // 列表不解析内容。`.pebak` 的变量数来自**文件头**（spec §5.3 允许，
+        // 不触发解密）；`.json` 仍恒为 0（S5：解析会让单个损坏文件拖垮整份列表）。
         for item in list.as_array().unwrap() {
-            assert_eq!(
-                item["variableCount"].as_u64(),
-                Some(0),
-                "variableCount 恒为 0（列表不解析内容）: {item}"
-            );
             let file = item["file"].as_str().unwrap();
+            let is_pebak = file.to_ascii_lowercase().ends_with(".pebak");
+            if !is_pebak {
+                assert_eq!(
+                    item["variableCount"].as_u64(),
+                    Some(0),
+                    "遗留 .json 的 variableCount 恒为 0（列表不解析内容）: {item}"
+                );
+            }
+            // encrypted 标志必须与扩展名一致
+            assert_eq!(
+                item["encrypted"].as_bool(),
+                Some(is_pebak),
+                "encrypted 必须与文件格式一致: {item}"
+            );
+            assert_eq!(
+                item["format"].as_str(),
+                Some(if is_pebak { "pebak" } else { "json" }),
+                "format 必须与文件格式一致: {item}"
+            );
             let expected = std::fs::metadata(dir.join(file)).unwrap().len();
             assert_eq!(
                 item["sizeBytes"].as_u64(),
@@ -1357,9 +1373,10 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names.len(), 1, "目录里应恰好一份备份: {names:?}");
+        // v6 D17：生产产物是 DPAPI 加密的 .pebak（spec §7.9 第 1 条）
         assert!(
-            names[0].starts_with("env_backup_") && names[0].ends_with(".json"),
-            "备份文件命名必须符合 env_backup_*.json: {names:?}"
+            names[0].starts_with("env_backup_") && names[0].ends_with(".pebak"),
+            "备份文件命名必须符合 env_backup_*.pebak: {names:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1433,38 +1450,41 @@ mod tests {
     /// 不足时返回 `None`，由调用方显式失败而不是静默跳过。
     fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         let source = make_backup(dir);
-        let raw = std::fs::read_to_string(&source).expect("读取备份失败");
-        let mut value: serde_json::Value = serde_json::from_str(&raw).expect("备份必须是合法 JSON");
+        // v6 D17：生产备份是 DPAPI 加密的 `.pebak`，不能当 JSON 读。
+        // 用核心库的统一读入口解密（密钥来自本机 ~/.patheditor —— 测试进程里
+        // `env backup` 刚写过同一把密钥），改完再用同一个写入口重新加密。
+        let payload = core::backup::read_env_backup_from(&source).ok()?;
 
-        let user = value["hives"]["user"].as_array()?.clone();
+        let user = payload.hives.user;
         if user.len() < 4 {
             return None;
         }
         // user[0] 刻意不入 patched → 注册表有、备份无 → Removed（恰 1 条）
-        let mut patched: Vec<serde_json::Value> = user[3..].to_vec();
+        let mut patched: Vec<core::backup::EnvBackupVar> = user[3..].to_vec();
         // user[1]、user[2]：revision 换成不可能匹配的值 → Conflict（恰 2 条）
         for index in [1, 2] {
             let mut conflicted = user[index].clone();
-            conflicted["revision"] = serde_json::json!("ffffffffffffffff");
+            conflicted.revision = "ffffffffffffffff".to_string();
             patched.push(conflicted);
         }
         // 3 个注册表中不存在的名字 → Added（恰 3 条）
         for suffix in ["A", "B", "C"] {
-            patched.push(serde_json::json!({
-                "name": format!("PATHEDITOR_T7_ABSENT_VAR_9F3{suffix}"),
-                "kind": "string",
-                "value": "absent",
-                "revision": "0000000000000000",
-            }));
+            patched.push(core::backup::EnvBackupVar {
+                name: format!("PATHEDITOR_T7_ABSENT_VAR_9F3{suffix}"),
+                kind: core::EnvValueKind::String,
+                value: "absent".to_string(),
+                revision: "0000000000000000".to_string(),
+            });
         }
 
-        value["hives"]["user"] = serde_json::Value::Array(patched);
-        let fixture = dir.join("env_backup_t7_fixture.json");
-        std::fs::write(
-            &fixture,
-            serde_json::to_string_pretty(&value).expect("序列化夹具失败"),
-        )
-        .expect("写入夹具失败");
+        let fixture_payload = core::backup::EnvBackupPayload {
+            captured_at: payload.captured_at,
+            hives: core::backup::EnvBackupHives {
+                system: payload.hives.system,
+                user: patched,
+            },
+        };
+        let fixture = core::backup::write_env_backup_for_test(dir, &fixture_payload)?;
         // 夹具文件名不带时间戳，避免被后续 `env backups` 的排序断言干扰
         let _ = std::fs::remove_file(&source);
         Some(fixture)

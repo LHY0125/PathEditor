@@ -118,9 +118,13 @@ pub fn write_env_backup_pebak(
             format!("创建备份目录失败: {e}"),
         )
     })?;
+    // 文件名用**写入时刻**，不是 `payload.captured_at`。
+    // 后者是「这份数据是什么时候采集的」——导入历史载荷时它可能很旧，
+    // 用旧时间戳命名会让新文件立刻被轮换当作「最旧的」删掉（实测：
+    // 25 份旧备份 + 1 份 captured_at=2026-01 的新备份，keep=4 时新文件当场消失）。
     let path = dir.join(format!(
         "env_backup_{}.pebak",
-        timestamp_suffix(payload.captured_at)
+        chrono::Local::now().format("%Y%m%d_%H%M%S_%3f")
     ));
     let tmp = dir.join(format!(".{}.tmp", Uuid::now_v7()));
     std::fs::write(&tmp, &out).map_err(|e| {
@@ -459,17 +463,6 @@ fn hex32(bytes: &[u8; 32]) -> String {
         let _ = write!(s, "{b:02x}");
     }
     s
-}
-
-/// 备份文件名的时间后缀（本地时间，可读且稳定）。
-fn timestamp_suffix(captured_at: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(captured_at)
-        .map(|t| {
-            t.with_timezone(&chrono::Local)
-                .format("%Y%m%d_%H%M%S%3f")
-                .to_string()
-        })
-        .unwrap_or_else(|| captured_at.to_string())
 }
 
 /// 把明文载荷的变量按 hive 展开（供迁移复用）。

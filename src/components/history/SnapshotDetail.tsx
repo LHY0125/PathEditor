@@ -5,10 +5,10 @@ interface Props {
   snapshot: SnapshotView;
 }
 
-/** 变量值区：敏感值在 Rust 侧已掩码为 `null`，这里只做「不可用」的呈现。 */
-function maskedOrValue(value: string | null, sensitive: boolean): string {
+/** 变量值区：敏感值在 Rust 侧已掩码��� `null`，这里只做「不可用」的呈现。 */
+function maskedOrValue(value: string | null, sensitive: boolean, emptyLabel: string): string {
   if (value !== null && value !== '') return value;
-  return sensitive ? '••••••' : '（空）';
+  return sensitive ? '••••••' : emptyLabel;
 }
 
 /**
@@ -20,6 +20,7 @@ function maskedOrValue(value: string | null, sensitive: boolean): string {
  */
 export function SnapshotDetail({ snapshot }: Props) {
   const { t } = useTranslation();
+  const empty = t('history.emptyValue');
 
   const pathSection = (label: string, entries: SnapshotView['system']) => (
     <section className="mb-3">
@@ -28,7 +29,7 @@ export function SnapshotDetail({ snapshot }: Props) {
       </h4>
       {entries.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
-          {t('history.noEntries', '无')}
+          {t('history.noEntries')}
         </p>
       ) : (
         <ol className="space-y-0.5">
@@ -58,16 +59,16 @@ export function SnapshotDetail({ snapshot }: Props) {
         </p>
       </div>
 
-      {pathSection(t('history.systemPath', '系统 PATH'), snapshot.system)}
-      {pathSection(t('history.userPath', '用户 PATH'), snapshot.user)}
+      {pathSection(t('history.systemPath'), snapshot.system)}
+      {pathSection(t('history.userPath'), snapshot.user)}
 
       <section>
         <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
-          {t('history.envVars', '环境变量')}（{snapshot.env.length}）
+          {t('history.envVars')}（{snapshot.env.length}）
         </h4>
         {snapshot.env.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
-            {t('history.noEntries', '无')}
+            {t('history.noEntries')}
           </p>
         ) : (
           <ul className="space-y-1">
@@ -82,9 +83,9 @@ export function SnapshotDetail({ snapshot }: Props) {
                     <span
                       className="rounded px-1"
                       style={{ background: 'var(--app-warning)', color: 'var(--app-accent-fg)' }}
-                      title={t('history.maskedTitle', '敏感值默认掩码')}
+                      title={t('history.maskedTitle')}
                     >
-                      {t('history.masked', '已掩码')}
+                      {t('history.masked')}
                     </span>
                   )}
                 </span>
@@ -93,7 +94,7 @@ export function SnapshotDetail({ snapshot }: Props) {
                   style={{ color: 'var(--app-fg-muted)' }}
                   title={v.value ?? ''}
                 >
-                  {maskedOrValue(v.value, v.sensitive)}
+                  {maskedOrValue(v.value, v.sensitive, empty)}
                 </span>
               </li>
             ))}

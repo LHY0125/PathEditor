@@ -501,6 +501,8 @@ export interface EventView {
   hive: string | null;
   target: string | null;
   result: EventResult;
+  /** 本次操作产生的快照 uid；`null` 表示没有关联快照（无法查看详情）。 */
+  snapshotUid: string | null;
 }
 
 /** 一页事件（`total` 是满足条件的总行数，不是本页条数）。 */
@@ -607,6 +609,7 @@ export function parseEventPage(value: unknown): EventPage {
       hive: typeof hive === 'string' ? hive : null,
       target: typeof target === 'string' ? target : null,
       result: result as EventResult,
+      snapshotUid: typeof raw.snapshotUid === 'string' ? raw.snapshotUid : null,
     };
   });
   return { items, total: value.total };

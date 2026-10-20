@@ -346,6 +346,9 @@ pub fn save_path_with_sidecar(
             (HiveOutcome::Failed(_), _) | (_, HiveOutcome::Failed(_)) => EventResult::Partial,
             _ => EventResult::Success,
         },
+        // 保存操作的快照由调用方（GUI/CLI）在拿到 uid 后另行关联；
+        // 本服务函数不知道 DB，因此留 None。
+        snapshot_uid: None,
     }) {
         log::warn!("历史写入失败（保存已成功）: {}", e.message);
     }
@@ -480,6 +483,7 @@ pub fn retry_pending_path_state(history: &dyn HistorySink) -> Result<ApplyOutcom
         before_revision: None,
         after_revision: None,
         result: EventResult::Success,
+        snapshot_uid: None,
     }) {
         log::warn!("补写历史失败（pending 已补写）: {}", e.message);
     }

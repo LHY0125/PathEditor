@@ -122,3 +122,17 @@ CREATE TABLE migration_imports (
   PRIMARY KEY (source_path, content_hash)
 );
 "#;
+
+/// 建库时写入 `app_state` 单行（J-7）。
+///
+/// **为什么必须在建库时写**：`app_state` 若为空，
+/// - `app_state_version()` 无行可读 → 返回错误；
+/// - `set_current_snapshot()` 的 CAS `WHERE id = 1 AND version = ?` 匹配 0 行
+///   → **恒返回 `false`**，spec §十二 的「CAS 冲突返回 conflict」永远不可达；
+/// - `DbHistory::record` 只能用 `COALESCE(..., 'local')` 兜底 `device_id`。
+///
+/// `device_id` 在 Rust 侧生成一次（UUIDv7），此后不再变更 —— M3 的同步以它区分设备。
+/// 用 `INSERT OR IGNORE` 保证重复调用幂等（已有行时不覆盖真实 device_id）。
+pub const SEED_APP_STATE_SQL: &str = "INSERT OR IGNORE INTO app_state
+       (id, current_snapshot_id, version, migrated_v5, device_id, lamport)
+     VALUES (1, NULL, 1, 0, ?1, 0)";

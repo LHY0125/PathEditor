@@ -214,5 +214,49 @@
   },
   "help": {
     "content": "PathEditor v{{version}} — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
+  },
+  "history": {
+    "title": "History",
+    "count": "{{total}} total",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "empty": "No history yet",
+    "pickOne": "Select a record to preview its snapshot",
+    "detailLoading": "Loading snapshot…",
+    "unavailable": "History unavailable (degraded mode): {{message}}",
+    "editingStillWorks": "Environment variable editing is unaffected.",
+    "noEntries": "None",
+    "systemPath": "System PATH",
+    "userPath": "User PATH",
+    "envVars": "Environment variables",
+    "masked": "Masked",
+    "maskedTitle": "Sensitive values are masked by default",
+    "partial": "partial",
+    "failure": "failed",
+    "hiveSystem": "System",
+    "hiveUser": "User",
+    "emptyValue": "(empty)",
+    "degradedTitle": "History unavailable",
+    "degradedDetail": "The history database could not be opened; running in degraded mode",
+    "degradedHint": "Environment variable editing is unaffected; restart to retry",
+    "action": {
+      "save": "Save PATH",
+      "apply": "Apply profile",
+      "restore": "Restore snapshot",
+      "import": "Import",
+      "envSet": "Edit variable",
+      "envAdd": "Create variable",
+      "envRemove": "Delete variable",
+      "undo": "Undo",
+      "redo": "Redo"
+    },
+    "source": {
+      "gui": "GUI",
+      "cli": "CLI",
+      "import": "File import",
+      "restore": "Restore",
+      "migration": "Migration",
+      "sync": "Sync"
+    }
   }
 }

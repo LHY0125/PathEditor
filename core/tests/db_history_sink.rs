@@ -24,6 +24,7 @@ fn db_history_records_events_and_counts_total() {
         before_revision: None,
         after_revision: Some("rev1".into()),
         result: EventResult::Success,
+        snapshot_uid: None,
     };
 
     // 逐条记录（每次借用同一 Db）

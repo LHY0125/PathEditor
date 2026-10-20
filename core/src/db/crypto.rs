@@ -118,6 +118,17 @@ fn create_key(path: &Path) -> Result<KeyMaterial, CoreError> {
         Ok(mut f) => {
             f.write_all(&blob).map_err(|e| io_err("write_key", e))?;
             f.sync_all().map_err(|e| io_err("sync_key", e))?;
+            // 写完立即加固 DACL（spec §5.1）：失败则删除半成品——宁可不留密钥文件，
+            // 也不能留下权限过宽的它（另一个用户可替换 → 历史永久不可读）。
+            drop(f);
+            if let Err(e) = super::dacl::set_key_dacl(path) {
+                let _ = fs::remove_file(path);
+                return Err(CoreError::new(
+                    ErrorCode::Crypto,
+                    "create_key",
+                    format!("设置密钥文件权限失败，已删除半成品: {}", e.message),
+                ));
+            }
             Ok(material)
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {

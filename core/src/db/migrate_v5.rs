@@ -53,6 +53,7 @@ pub fn migrate_legacy(db: &mut Db, home: &Path) -> Result<MigrationReport, CoreE
 /// 执行迁移并上报事件（GUI/CLI 注入 `DbHistory` 时使用）。
 ///
 /// **调用方必须先完成 pending 补写**（spec §7.1 启动序列第一步），见模块文档。
+/// 生产入口是 `gui/src/lib.rs` 的 `setup_database()`。
 pub fn migrate_legacy_with(
     db: &mut Db,
     home: &Path,
@@ -95,6 +96,8 @@ pub fn migrate_legacy_with(
         } else {
             EventResult::Success
         },
+        // 迁移是批量导入，没有单一「产生的快照」
+        snapshot_uid: None,
     });
 
     Ok(report)

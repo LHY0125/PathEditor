@@ -312,7 +312,39 @@ pub fn collect_env_backup() -> Result<EnvBackupPayload, CoreError> {
 ///   **注意轮换失败这一路**：此时新备份文件**已经在磁盘上**，返回值只表示
 ///   「保留策略未能执行」，**不等于**备份未落盘。调用方措辞须按此理解。
 pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<PathBuf, CoreError> {
-    write_env_backup_to_with_keep(dir, payload, env_backup_keep())
+    // v6 D17：优先写 DPAPI 加密的 `.pebak`。只有拿不到密钥时（降级模式/
+    // 密钥文件不可用）才回落明文 `.json` —— 那条路径**必须**留下明确日志，
+    // 因为它是「磁盘上新增了一个明文敏感文件」。
+    match crate::db::crypto::load_or_create_key(&crate::db::crypto::config_dir()) {
+        Ok(material) => write_env_backup_to_with_key(dir, payload, &material),
+        Err(e) => {
+            log::warn!(
+                "无法获取加密密钥（{}），本次回落为明文 .json 备份。\
+                 这是降级路径，建议尽快修复密钥问题。",
+                e.message
+            );
+            write_env_backup_to_with_keep(dir, payload, env_backup_keep())
+        }
+    }
+}
+
+/// 用**显式传入的密钥**写加密备份。
+///
+/// 这是给测试用的入口：生产 `write_env_backup_to` 从 `config_dir()` 取密钥，
+/// 而测试无法安全地重定向那个目录（`dirs::home_dir()` 在 Windows 上读
+/// `USERPROFILE`，设 `HOME` 无效）。
+///
+/// **不要**在测试里调用 `write_env_backup_to` 来验证 `.pebak` 行为 ——
+/// 它会写出真实的 `~/.patheditor/keys/db.key.dpapi`。
+pub fn write_env_backup_to_with_key(
+    dir: &Path,
+    payload: &EnvBackupPayload,
+    material: &crate::db::crypto::KeyMaterial,
+) -> Result<PathBuf, CoreError> {
+    let path = crate::db::backups::write_env_backup_pebak(dir, payload, material)?;
+    rotate_env_backups(dir, env_backup_keep())?;
+    log::info!("env 备份已加密保存到: {}", path.display());
+    Ok(path)
 }
 
 /// [`write_env_backup_to`] 的实现体，保留份数由调用方显式注入。
@@ -495,7 +527,7 @@ pub struct EnvBackupInfo {
     /// 默认目录通常绝对（`~/.patheditor/backups/`），但 `PATHEDITOR_BACKUP_DIR`
     /// 若被设成相对路径则不是。调用方需绝对路径时须自行解析。
     pub path: String,
-    /// 文件名去掉 `env_backup_` 前缀与 `.json` 后缀后的中缀。
+    /// 文件名去掉 `env_backup_` 前缀与扩展名（`.json` / `.pebak`）后的中缀。
     ///
     /// 本工具自己生成的文件形如 `env_backup_<YYYYMMDD>_<HHMMSS>_<毫秒3位>.json`，
     /// 此时中缀即时间戳；但本字段只做前后缀裁剪、**不校验格式**——对
@@ -507,10 +539,14 @@ pub struct EnvBackupInfo {
     pub size_bytes: u64,
     /// 备份中的变量条数。
     ///
-    /// **恒为 0：列表不解析内容（S5 / J4 裁断）** —— 变量数只能靠解析 JSON 得到，
-    /// 一旦解析，单个损坏文件就会让列表整体失败。字段保留是为了保持契约稳定，
-    /// 调用方**不得**把它当作真实计数使用。
+    /// - `.pebak`：从**文件头**读出（spec §5.3「列表：变量数从文件头读取，不解密」）；
+    /// - `.json`：**恒为 0**——列表不解析内容（S5 / J4 裁断），一旦解析，
+    ///   单个损坏文件就会让列表整体失败。
     pub variable_count: u64,
+    /// 是否为 DPAPI 加密的 `.pebak`（spec §7.9：列表带 `encrypted` 标志）。
+    pub encrypted: bool,
+    /// 文件格式：`"pebak"` / `"json"`（spec §7.9：`--json` 输出新增 `format` 字段）。
+    pub format: String,
 }
 
 /// 备份文件大小上限：正常备份几十 KB，超过 1 MiB 说明不是本工具产物。
@@ -540,24 +576,42 @@ pub fn list_env_backups_in(dir: &Path) -> Result<Vec<EnvBackupInfo>, CoreError> 
     let mut infos = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with("env_backup_") || !name.ends_with(".json") {
+        // v6 D17：列表同时覆盖 `.pebak`（新）与 `.json`（遗留，spec §7.9）
+        let lower = name.to_ascii_lowercase();
+        if !name.starts_with("env_backup_") {
             continue;
         }
+        let (encrypted, ext_len) = if lower.ends_with(".pebak") {
+            (true, ".pebak".len())
+        } else if lower.ends_with(".json") {
+            (false, ".json".len())
+        } else {
+            continue;
+        };
         let path = entry.path();
         let Ok(meta) = entry.metadata() else { continue };
         if !meta.is_file() {
             continue;
         }
-        let timestamp = name
-            .trim_start_matches("env_backup_")
-            .trim_end_matches(".json")
-            .to_string();
+        // 中缀 = 去掉前缀与后缀后的部分（时间戳）
+        let stem = &name[..name.len() - ext_len];
+        let timestamp = stem.trim_start_matches("env_backup_").to_string();
+        // `.pebak` 的变量数从**文件头**读（不解密，spec §5.3）；`.json` 仍不解析（S5 裁断）
+        let variable_count = if encrypted {
+            crate::db::backups::read_pebak_header(&path)
+                .map(|h| h.variable_count as u64)
+                .unwrap_or(0)
+        } else {
+            0
+        };
         infos.push(EnvBackupInfo {
             file: name,
             path: path.to_string_lossy().into_owned(),
             timestamp,
             size_bytes: meta.len(),
-            variable_count: 0, // 不解析内容：见 S5
+            variable_count,
+            encrypted,
+            format: if encrypted { "pebak" } else { "json" }.to_string(),
         });
     }
 
@@ -598,11 +652,15 @@ pub fn validate_backup_path(path: &str) -> Result<PathBuf, CoreError> {
             )
         })?;
 
-    if p.extension().map(|e| e != "json").unwrap_or(true) {
+    // v6 D17：允许 `.pebak`（DPAPI 加密）与遗留 `.json`（明文）。
+    if p.extension()
+        .map(|e| e != "json" && e != "pebak")
+        .unwrap_or(true)
+    {
         return Err(CoreError::new(
             ErrorCode::InvalidValue,
             "restore_env_backup",
-            format!("备份文件必须是 .json: {path}"),
+            format!("备份文件必须是 .json 或 .pebak: {path}"),
         ));
     }
 
@@ -964,6 +1022,60 @@ pub fn preview_restore(payload: &EnvBackupPayload) -> Result<RestorePreview, Cor
     preview_restore_in_stores(&sys, &usr, payload)
 }
 
+/// 读取任意格式的 env 备份：`.pebak` 解密，`.json` 明文兼容。
+///
+/// 这是 `backup.rs` 内部的**统一读入口**——生产路径（预览、恢复）都走它，
+/// 保证「新备份能读、旧备份也能读」。委托给 [`crate::db::backups::read_env_backup_any`]，
+/// 因为 DPAPI 密钥与 `.pebak` 头部解析都在那一层。
+///
+/// **`.pebak` 但密钥不可用**时返回 `Crypto` 错误（spec §7.9：换机/换用户 → exit 5），
+/// 不会静默回落明文读取（那会给出错误的「文件不存在」类提示）。
+fn read_env_backup_any(path: &Path) -> Result<EnvBackupPayload, CoreError> {
+    let is_pebak = path
+        .extension()
+        .map(|e| e.eq_ignore_ascii_case("pebak"))
+        .unwrap_or(false);
+    if !is_pebak {
+        // 遗留明文路径：给一次明确警告（spec §7.9「后者给明文警告」）
+        log::warn!(
+            "读取遗留明文备份 {}：v6 起的备份是 DPAPI 加密的 .pebak",
+            path.display()
+        );
+        return read_env_backup(path);
+    }
+    let home = crate::db::crypto::config_dir();
+    let material = crate::db::crypto::load_or_create_key(&home)?;
+    crate::db::backups::read_env_backup_any(path, &material)
+}
+
+/// 读取任意格式的 env 备份（**公开入口**）：`.pebak` 解密，`.json` 明文兼容。
+///
+/// 生产路径（`preview_restore_file` / 恢复）与 CLI 测试夹具都走它，
+/// 保证「新备份能读、旧备份也能读」。
+///
+/// **`.pebak` 但密钥不可用**时返回 `Crypto` 错误（spec §7.9：换机/换用户 → exit 5），
+/// 不会静默回落明文读取（那会给出错误的「文件不存在」类提示）。
+pub fn read_env_backup_from(path: &Path) -> Result<EnvBackupPayload, CoreError> {
+    read_env_backup_any(path)
+}
+
+/// **仅供测试**：把载荷写成 `.pebak` 到给定目录（用本机默认密钥）。
+///
+/// 生产写入走 [`write_env_backup_to`]（自动取密钥并轮换）。本函数存在的理由：
+/// CLI 的夹具需要「改过的载荷 → 可被 CLI 读回」这一步，而测试进程
+/// 里的 CLI 子进程与主进程用的是同一把 `~/.patheditor` 密钥。
+///
+/// **不要在生产代码里调用**：它跳过轮换，且失败只返回 `None`。
+#[doc(hidden)]
+pub fn write_env_backup_for_test(dir: &Path, payload: &EnvBackupPayload) -> Option<PathBuf> {
+    let key = crate::db::crypto::load_or_create_key(&crate::db::crypto::config_dir()).ok()?;
+    let path = crate::db::backups::write_env_backup_pebak(dir, payload, &key).ok()?;
+    // 固定文件名，避免被列表排序断言干扰
+    let fixed = dir.join("env_backup_t7_fixture.pebak");
+    std::fs::rename(&path, &fixed).ok()?;
+    Some(fixed)
+}
+
 /// 从文件读取备份后计算差异（GUI 确认弹窗用）。
 ///
 /// # Returns
@@ -971,7 +1083,7 @@ pub fn preview_restore(payload: &EnvBackupPayload) -> Result<RestorePreview, Cor
 /// - `Err(CoreError)` — 读取/解析备份失败（见 [`read_env_backup`]），
 ///   或打开注册表键/枚举失败（见 [`preview_restore`]）
 pub fn preview_restore_file(path: &Path) -> Result<RestorePreview, CoreError> {
-    let payload = read_env_backup(path)?;
+    let payload = read_env_backup_any(path)?;
     preview_restore(&payload)
 }
 
@@ -1096,7 +1208,7 @@ fn restore_in_stores(
     path: &Path,
     force: bool,
 ) -> Result<RestoreOutcome, CoreError> {
-    let payload = read_env_backup(path)?;
+    let payload = read_env_backup_any(path)?;
     let preview = preview_restore_in_stores(sys, usr, &payload)?;
 
     // K3：默认模式下任何冲突都中止，且不做任何写入。
@@ -1523,8 +1635,17 @@ mod tests {
     /// 落盘文件必须带 schemaVersion 信封，且能被读回（往返一致）。
     #[test]
     fn write_env_backup_round_trips_through_versioned_envelope() {
+        // **行为变更（v6 D17）**：生产入口现在写 DPAPI 加密的 `.pebak`，
+        // 「带 schemaVersion 信封的明文 JSON」这一形态不再是生产产物。
+        // 本测试原本断言 `extension == json` 与内容含 schemaVersion；
+        // 改成断言「生产入口写的是 .pebak」+「遗留 .json 仍可读」两条，
+        // 因为后者才是现在仍成立的兼容承诺。
         with_temp_backup_dir(|dir| {
-            let path = write_env_backup_to(dir, &sample_payload()).expect("写备份失败");
+            // 加密路径：显式传密钥（不碰真实 ~/.patheditor/keys/）
+            let key_dir = tempfile::TempDir::new().unwrap();
+            let key = crate::db::crypto::load_or_create_key(key_dir.path()).unwrap();
+            let path =
+                write_env_backup_to_with_key(dir, &sample_payload(), &key).expect("写备份失败");
             assert!(path.exists());
             assert!(
                 path.file_name()
@@ -1533,17 +1654,17 @@ mod tests {
                     .starts_with("env_backup_"),
                 "文件名必须以 env_backup_ 开头"
             );
-            assert_eq!(path.extension().unwrap(), "json");
+            assert_eq!(path.extension().unwrap(), "pebak", "生产产物必须是 .pebak");
 
-            let content = std::fs::read_to_string(&path).unwrap();
-            assert!(
-                content.contains("\"schemaVersion\""),
-                "必须带 schemaVersion 信封（复用 persist::Versioned）"
-            );
-            assert!(content.contains("JAVA_HOME"));
-
-            let back: Versioned<EnvBackupPayload> = serde_json::from_str(&content).unwrap();
-            assert_eq!(back.inner, sample_payload());
+            // 遗留明文格式仍然可读（spec §7.9 的兼容承诺）
+            let legacy = dir.join("env_backup_20260101_000000_000.json");
+            let versioned = Versioned {
+                schema_version: PERSIST_SCHEMA_VERSION,
+                inner: sample_payload(),
+            };
+            std::fs::write(&legacy, serde_json::to_string(&versioned).unwrap()).unwrap();
+            let back = read_env_backup(&legacy).expect("遗留 .json 必须仍可读");
+            assert_eq!(back, sample_payload());
         });
     }
 
@@ -1728,7 +1849,12 @@ mod tests {
         std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
         std::env::set_var("PATHEDITOR_CONFIG_FILE", &cfg);
 
-        // 预置 25 份旧备份，走生产入口写 1 份：稳态应为 keep=4 份
+        // 预置 25 份旧备份（遗留明文格式），走同一条轮换路径写 1 份：
+        // 稳态应为 keep=4 份。
+        //
+        // 用 `write_env_backup_to_with_key` 而非 `write_env_backup_to`：
+        // 后者会真的去读写 `~/.patheditor/keys/`（`config_dir()` 基于
+        // `dirs::home_dir()`，不受环境变量重定向）。
         for i in 0..25 {
             std::fs::write(
                 dir.join(format!("env_backup_202601{:02}_120000_000.json", i)),
@@ -1736,16 +1862,17 @@ mod tests {
             )
             .unwrap();
         }
-        let written = write_env_backup_to(&dir, &sample_payload()).expect("写备份失败");
+        let key_dir = tempfile::TempDir::new().unwrap();
+        let key = crate::db::crypto::load_or_create_key(key_dir.path()).unwrap();
+        let written =
+            write_env_backup_to_with_key(&dir, &sample_payload(), &key).expect("写备份失败");
         assert!(written.exists(), "刚写入的备份必须保留");
 
+        // 轮换同时覆盖 .json 与 .pebak（v6 D17），因此按前缀计数
         let count = std::fs::read_dir(&dir)
             .unwrap()
             .flatten()
-            .filter(|e| {
-                let n = e.file_name().to_string_lossy().into_owned();
-                n.starts_with("env_backup_") && n.ends_with(".json")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("env_backup_"))
             .count();
 
         std::env::remove_var("PATHEDITOR_BACKUP_DIR");
@@ -2510,10 +2637,25 @@ mod tests {
     fn read_env_backup_round_trips_and_quarantines_corrupt() {
         with_temp_backup_dir(|dir| {
             let payload = payload_with(vec![backup_var("JAVA_HOME", "C:\\jdk17", REG_SZ)]);
-            let path = write_env_backup_to(dir, &payload).expect("写备份失败");
 
-            let back = read_env_backup(&path).expect("读备份失败");
+            // 加���路径：直接调底层读入口并用**同一把**密钥读回
+            // （`read_env_backup_any` 走 config_dir()，那是另一把密钥——
+            //  salt 不同 → payload_hash 必然不匹配，这是正确的拒绝行为）。
+            let key_dir = tempfile::TempDir::new().unwrap();
+            let key = crate::db::crypto::load_or_create_key(key_dir.path()).unwrap();
+            let path = write_env_backup_to_with_key(dir, &payload, &key).expect("写备份失败");
+            let back = crate::db::backups::read_env_backup_any(&path, &key).expect("读备份失败");
             assert_eq!(back, payload, "读回的载荷必须与写入的一致");
+
+            // 遗留明文路径也必须仍可读（spec §7.9 兼容承诺）
+            let legacy = dir.join("env_backup_20260101_000000_000.json");
+            let versioned = Versioned {
+                schema_version: PERSIST_SCHEMA_VERSION,
+                inner: payload.clone(),
+            };
+            std::fs::write(&legacy, serde_json::to_string(&versioned).unwrap()).unwrap();
+            let back = read_env_backup(&legacy).expect("遗留 .json 必须仍可读");
+            assert_eq!(back, payload);
 
             // 损坏文件：读失败、code=Parse，且被隔离成 .corrupt-*
             let corrupt = dir.join("env_backup_20260101_000000_000.json");

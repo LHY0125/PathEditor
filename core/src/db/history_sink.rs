@@ -6,7 +6,7 @@ use super::history::{action_str, result_str, source_str};
 use super::Db;
 use crate::error::{CoreError, ErrorCode};
 use crate::history::{HistoryEvent, HistorySink};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use std::cell::RefCell;
 use uuid::Uuid;
 
@@ -41,11 +41,23 @@ impl HistorySink for DbHistory<'_> {
 
         // 事件行不携带任何明文值（spec D6）：只有字段名、revision 与结果。
         db.with_transaction(|tx| {
+            // J-8：把快照 uid 解析成本地整数主键。找不到时写 NULL 而不是让整条
+            // 事件失败 —— 事件本身仍有价值，不该因为快照被删就一并丢弃。
+            let snapshot_id: Option<i64> = match event.snapshot_uid.as_deref() {
+                Some(uid) => tx
+                    .query_row("SELECT id FROM snapshots WHERE uid = ?1", [uid], |r| {
+                        r.get(0)
+                    })
+                    .optional()
+                    .map_err(|e| super::db_err("record_find_snapshot", e))?,
+                None => None,
+            };
+
             tx.execute(
                 "INSERT INTO events
                    (uid, created_at, source, action, hive, target, changed_fields,
-                    before_revision, after_revision, result, device_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                    before_revision, after_revision, result, snapshot_id, device_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                          COALESCE((SELECT device_id FROM app_state WHERE id = 1), 'local'))",
                 params![
                     Uuid::now_v7().to_string(),
@@ -61,6 +73,7 @@ impl HistorySink for DbHistory<'_> {
                     event.before_revision,
                     event.after_revision,
                     result_str(event.result),
+                    snapshot_id,
                 ],
             )
             .map_err(|e| CoreError::new(ErrorCode::Database, "record", e.to_string()))?;

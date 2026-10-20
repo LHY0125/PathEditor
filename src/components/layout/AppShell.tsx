@@ -6,6 +6,7 @@ import i18n from '@/i18n';
 import { TargetType } from '@/core/undo-redo';
 import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
+import { DegradedBanner } from './DegradedBanner';
 import { ToolBar } from '@/components/toolbar/ToolBar';
 import { PathTable } from '@/components/path-list/PathTable';
 import { MergePreview } from '@/components/path-list/MergePreview';
@@ -150,6 +151,8 @@ export function AppShell() {
   return (
     <div className="app-root">
       <TitleBar />
+      {/* spec §7.10：降级条幅必须常驻，与当前标签页无关 */}
+      <DegradedBanner />
 
       <nav className="tabs" aria-label={t('app.name')}>
         {tabConfig.map((tab) => (

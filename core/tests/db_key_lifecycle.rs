@@ -39,4 +39,13 @@ fn key_is_created_once_and_persists_across_reloads() {
         Db::open_encrypted(&db_path, &key_hex(&d)).is_err(),
         "用另一份密钥必须打不开"
     );
+
+    // V-1：密钥文件 DACL 必须只授权当前用户 + SYSTEM（spec §5.1）。
+    // 计划把这个断言放在 db_key_lifecycle 里；但它不触碰 SQLCipher，
+    // 因此与「一文件一测试」的 SQLCipher 约束无关，可以同文件。
+    let key_path = dir.path().join("keys").join("db.key.dpapi");
+    assert!(
+        path_editor_core::db::dacl::key_dacl_is_restricted(&key_path).unwrap(),
+        "密钥文件 DACL 必须仅授权当前用户与 SYSTEM"
+    );
 }

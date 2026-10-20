@@ -2,6 +2,42 @@ mod commands;
 
 use tauri::Manager;
 
+/// 启动时的数据库初始化序列（spec §7.1 / §7.2）。
+///
+/// 拆成独立函数而不是塞进 `setup` 闭包：`setup` 的返回值是 `Result<(), Box<dyn Error>>`，
+/// 把错误类型收窄成 `CoreError` 才能在这里做分步日志，也便于将来加启动自检。
+fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_core::CoreError> {
+    // ① best-effort 补写 pending。失败只告警：它代表的是上一次操作遗留的
+    //    「注册表已写、快照未落盘」，补不上也不该阻止本次启动。
+    if let Err(e) =
+        path_editor_core::service::retry_pending_path_state(&path_editor_core::history::NoopHistory)
+    {
+        log::warn!("启动时补写 pending 失败（继续启动）: {}", e.message);
+    }
+
+    // ② schema 建库/迁移
+    db.migrate_to_current()?;
+
+    // ③ v5 遗留文件一次性导入（幂等：migration_imports 保证重跑不重复）
+    let home = path_editor_core::db::crypto::config_dir();
+    match path_editor_core::db::migrate_v5::migrate_legacy(db, &home) {
+        Ok(report) => {
+            if report.imported > 0 || report.failed > 0 {
+                log::info!(
+                    "v5 文件迁移完成：导入 {}，跳过 {}，失败 {}",
+                    report.imported,
+                    report.skipped,
+                    report.failed
+                );
+            }
+        }
+        // 迁移失败不阻断启动：DB 仍可用于新记录，旧文件保持原样等下次重试
+        Err(e) => log::warn!("v5 文件迁移失败（继续启动）: {}", e.message),
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -17,15 +53,19 @@ pub fn run() {
 
             // v6 M1：打开历史库。失败时进入降级模式（spec D16 fail-open）：
             // 注册表编辑照常，history_*/profile_*/backup_* 命令返回 database 错误。
+            //
+            // 启动序列（spec §7.1）：
+            //   ① best-effort 补写 pending（注册表已写、快照未落盘的 gap）
+            //   ② 建库/迁移 schema
+            //   ③ 首次启动时把 v5 遗留文件导入 DB（幂等，可重跑）
             let db = match path_editor_core::db::open_default() {
-                Ok(mut db) => {
-                    if let Err(e) = db.migrate_to_current() {
-                        log::error!("历史库 schema 迁移失败，进入降级模式: {}", e.message);
+                Ok(mut db) => match setup_database(&mut db) {
+                    Ok(()) => Some(db),
+                    Err(e) => {
+                        log::error!("历史库初始化失败，进入降级模式: {}", e.message);
                         None
-                    } else {
-                        Some(db)
                     }
-                }
+                },
                 Err(e) => {
                     log::warn!("历史库打开失败，进入降级模式: {}", e.message);
                     None

@@ -203,6 +203,11 @@ pub struct EventView {
     pub target: Option<String>,
     /// 结果
     pub result: EventResult,
+    /// 本次操作产生的快照 uid（J-8）。
+    ///
+    /// `None` 表示该事件没有关联快照（例如纯查询类事件），或快照已被删除。
+    /// 前端据此决定是否允许点击查看详情。
+    pub snapshot_uid: Option<String>,
 }
 
 /// 一页事件。
@@ -346,20 +351,21 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
     let offset = filter.offset as i64;
 
     // WHERE 条件在两处必须完全一致，否则 total 与实际可分页内容不符。
-    const WHERE: &str = "WHERE (?1 IS NULL OR action = ?1) AND (?2 IS NULL OR source = ?2)";
+    // 必须带 `e.` 前缀：`snapshots` 也有 `source` 列，JOIN 后裸列名是歧义的。
+    const WHERE: &str = "WHERE (?1 IS NULL OR e.action = ?1) AND (?2 IS NULL OR e.source = ?2)";
 
     let total: i64 = db
         .query_row_with(
-            &format!("SELECT count(*) FROM events {WHERE}"),
+            &format!("SELECT count(*) FROM events e {WHERE}"),
             params![filter.action, filter.source],
             |r| r.get(0),
         )
         .map_err(|e| CoreError::new(e.code, "list_events", e.message))?;
 
     let mut stmt = db.prepare(&format!(
-        "SELECT uid, created_at, source, action, hive, target, result
-         FROM events {WHERE}
-         ORDER BY created_at DESC, id DESC
+        "SELECT e.uid, e.created_at, e.source, e.action, e.hive, e.target, e.result, s.uid
+         FROM events e LEFT JOIN snapshots s ON s.id = e.snapshot_id {WHERE}
+         ORDER BY e.created_at DESC, e.id DESC
          LIMIT ?3 OFFSET ?4"
     ))?;
     let items = stmt
@@ -374,6 +380,7 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
                 hive: r.get(4)?,
                 target: r.get(5)?,
                 result: result_from_str(&result_s),
+                snapshot_uid: r.get(7)?,
             })
         })
         .map_err(|e| db_err("list_events", e))?

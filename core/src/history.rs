@@ -7,10 +7,11 @@ use crate::env_var::EnvHive;
 use crate::error::CoreError;
 
 /// 事件来源。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EventSource {
     /// 图形界面
+    #[default]
     Gui,
     /// 命令行
     Cli,
@@ -25,10 +26,11 @@ pub enum EventSource {
 }
 
 /// 事件动作。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EventAction {
     /// 保存 PATH
+    #[default]
     Save,
     /// 应用配置方案
     Apply,
@@ -49,10 +51,11 @@ pub enum EventAction {
 }
 
 /// 事件结果。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EventResult {
     /// 完全成功
+    #[default]
     Success,
     /// 部分 hive 成功
     Partial,
@@ -61,7 +64,7 @@ pub enum EventResult {
 }
 
 /// 一次可记录的操作。**不得包含环境变量明文值**（spec D6）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HistoryEvent {
     /// 事件来源
     pub source: EventSource,
@@ -79,6 +82,12 @@ pub struct HistoryEvent {
     pub after_revision: Option<String>,
     /// 操作结果
     pub result: EventResult,
+    /// 本次操作产生的快照 uid。
+    ///
+    /// **J-8 整改**：没有它，历史面板点击事件后无法定位到快照——只能拿事件 uid
+    /// 去查快照，必然 `NotFound`，右侧详情恒空。
+    /// 由服务层在写完快照后回填；`None` 表示该操作没有产生快照（如纯查询类事件）。
+    pub snapshot_uid: Option<String>,
 }
 
 /// 历史写入端口。实现方负责持久化；调用方不感知存储形态。
@@ -115,6 +124,7 @@ mod tests {
             before_revision: None,
             after_revision: Some("abc".to_string()),
             result: EventResult::Success,
+            snapshot_uid: None,
         };
         assert!(sink.record(event).is_ok());
     }

@@ -5,6 +5,8 @@
 
 pub mod backups;
 pub mod crypto;
+#[cfg(windows)]
+pub mod dacl;
 pub mod history;
 pub mod history_sink;
 pub mod migrate_v5;
@@ -93,6 +95,13 @@ impl Db {
             if current < 1 {
                 tx.execute_batch(schema::DDL_V1)
                     .map_err(|e| db_err("ddl_v1", e))?;
+                // J-7：建库即写 app_state 单行。否则 `set_current_snapshot` 的
+                // CAS 永远匹配 0 行、恒返回 false（spec §十二 的 CAS 验收不可达）。
+                tx.execute(
+                    schema::SEED_APP_STATE_SQL,
+                    rusqlite::params![uuid::Uuid::now_v7().to_string()],
+                )
+                .map_err(|e| db_err("seed_app_state", e))?;
                 // 用 execute_batch 而非 pragma_update：后者在事务内的生效行为
                 // 依赖 rusqlite 版本，PRAGMA 语句本身是确定生效的。
                 tx.execute_batch(&format!(
@@ -191,6 +200,25 @@ pub(crate) fn db_err(op: &'static str, e: rusqlite::Error) -> CoreError {
 pub fn open_default() -> Result<Db, CoreError> {
     let home = crypto::config_dir();
     let material = crypto::load_or_create_key(&home)?;
+
+    // 启动时校验密钥文件 DACL（spec §5.1：过宽只告警，**不自动修改**——
+    // 避免误伤用户自建的目录权限）。
+    #[cfg(windows)]
+    {
+        let key_path = home.join("keys").join("db.key.dpapi");
+        match dacl::key_dacl_is_restricted(&key_path) {
+            Ok(true) => {}
+            Ok(false) => log::warn!(
+                "密钥文件 {} 的权限过宽（存在非当前用户/SYSTEM 的授权项）。\
+                 其它用户可能删除或替换它，导致历史永久不可读。\
+                 建议确保只有当前用户可访问该文件。",
+                key_path.display()
+            ),
+            // 读取 ACL 失败不影响打开库：这是告警而非门禁
+            Err(e) => log::warn!("无法校验密钥文件权限: {}", e.message),
+        }
+    }
+
     let path = home.join("patheditor.db");
     Db::open_encrypted(&path, &crypto::key_hex(&material))
 }
