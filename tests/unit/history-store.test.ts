@@ -4,6 +4,7 @@ vi.mock('@/services/backend', () => ({
   backend: {
     historyListEvents: vi.fn(async () => ({ items: [], total: 0 })),
     historyGetSnapshot: vi.fn(),
+    historyRestoreSnapshot: vi.fn(),
   },
 }));
 
@@ -99,5 +100,98 @@ describe('history store', () => {
 
     expect(backend.historyGetSnapshot).not.toHaveBeenCalled();
     expect(useHistoryStore.getState().detail).toBeNull();
+  });
+
+  describe('跨会话撤销（P1-7）', () => {
+    it('undoLast 恢复最近一次可撤销操作前的快照', async () => {
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [
+          event({ uid: 'e1', snapshotUid: 'snap-before-1' }),
+          event({ uid: 'e2', snapshotUid: 'snap-before-2' }),
+        ],
+        total: 2,
+      });
+      await useHistoryStore.getState().load();
+
+      (backend.historyRestoreSnapshot as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        system: 'applied',
+        user: 'applied',
+        sidecar: 'saved',
+      });
+      // restore 成功后 store 会重新 load，给一个空页避免二次 mock 缺失
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [],
+        total: 0,
+      });
+
+      const undone = await useHistoryStore.getState().undoLast();
+
+      expect(undone?.uid).toBe('e1');
+      // 必须恢复「最近一条」的**操作前**快照（P0-2 的语义）
+      expect(backend.historyRestoreSnapshot).toHaveBeenCalledWith('snap-before-1');
+    });
+
+    it('undoLast 跳过没有快照的事件', async () => {
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [
+          event({ uid: 'e1', snapshotUid: null }),
+          event({ uid: 'e2', snapshotUid: 'snap-2' }),
+        ],
+        total: 2,
+      });
+      await useHistoryStore.getState().load();
+
+      (backend.historyRestoreSnapshot as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        system: 'applied',
+        user: 'applied',
+        sidecar: 'saved',
+      });
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [],
+        total: 0,
+      });
+
+      const undone = await useHistoryStore.getState().undoLast();
+      expect(undone?.uid).toBe('e2');
+      expect(backend.historyRestoreSnapshot).toHaveBeenCalledWith('snap-2');
+    });
+
+    it('undoLast 跳过 restore 自身（不撤销撤销）', async () => {
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [
+          event({ uid: 'e1', action: 'restore', snapshotUid: 'snap-restore' }),
+          event({ uid: 'e2', action: 'save', snapshotUid: 'snap-save' }),
+        ],
+        total: 2,
+      });
+      await useHistoryStore.getState().load();
+
+      (backend.historyRestoreSnapshot as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        system: 'applied',
+        user: 'applied',
+        sidecar: 'saved',
+      });
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [],
+        total: 0,
+      });
+
+      const undone = await useHistoryStore.getState().undoLast();
+      // 跳过 restore，选 save 那条
+      expect(undone?.uid).toBe('e2');
+      expect(backend.historyRestoreSnapshot).toHaveBeenCalledWith('snap-save');
+    });
+
+    it('没有可撤销记录时返回 null 且不发起恢复', async () => {
+      (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        items: [event({ uid: 'e1', snapshotUid: null })],
+        total: 1,
+      });
+      await useHistoryStore.getState().load();
+
+      const undone = await useHistoryStore.getState().undoLast();
+      expect(undone).toBeNull();
+      expect(backend.historyRestoreSnapshot).not.toHaveBeenCalled();
+    });
   });
 });

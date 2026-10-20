@@ -163,11 +163,31 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'export_path_entries': return '';
           case 'clean_path_entries': return [args?.entries ?? [], []];
           case 'scan_paths': return { conflicts: [], tools: [] };
-          case 'list_profiles': return [];
-          case 'save_profile': return undefined;
-          case 'load_profile': return null;
-          case 'delete_profile': return undefined;
-          case 'rename_profile': return undefined;
+          // 配置方案（P0-1 方案 A：v5 文件命令已下线，只保留 DB 版）
+          case 'profile_list': return window.__profilesFixture ?? [];
+          case 'profile_save': return 'uid-fixture';
+          case 'profile_paths': return window.__profilePathsFixture ?? null;
+          case 'profile_rename': return true;
+          case 'profile_delete_by_name': return true;
+          case 'profile_mark_applied': return true;
+          case 'profile_mark_applied_by_name': return true;
+          // 历史（P0-2 / P0-3 / P1-1）
+          case 'history_list_events':
+            if (window.__historyDegraded) {
+              throw {
+                code: 'database',
+                operation: 'history_list_events',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '历史库不可用，当前处于降级模式'
+              };
+            }
+            return window.__historyPageFixture ?? { items: [], total: 0 };
+          case 'history_get_snapshot': return window.__snapshotFixture ?? null;
+          case 'history_get_current': return window.__snapshotFixture ?? null;
+          case 'history_restore_snapshot': return { system: 'applied', user: 'applied', sidecar: 'saved' };
+          case 'backup_list': return [];
           case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
           case 'reveal_env_var':
             // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）

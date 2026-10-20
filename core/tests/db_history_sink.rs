@@ -49,6 +49,7 @@ fn db_history_records_events_and_counts_total() {
             offset: 0,
             action: None,
             source: None,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -63,6 +64,7 @@ fn db_history_records_events_and_counts_total() {
             offset: 0,
             action: Some("apply".into()),
             source: None,
+            ..Default::default()
         },
     )
     .unwrap();

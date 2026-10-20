@@ -86,4 +86,36 @@ fn legacy_files_import_once_and_are_idempotent() {
     assert!(dir.path().join("disabled.json").exists());
     assert!(dir.path().join("profiles").join("Work.json").exists());
     assert!(dir.path().join("profiles").join("Legacy.json").exists());
+
+    // ── D-6：新装用户没有 disabled.json 时，迁移不产生 kind=current 快照 ──
+    //
+    // 这是**已知边界**，不是缺陷：建基线是启动序列（`setup_database` 的 ③b）
+    // 的职责，不是迁移的。此处把边界钉下来，避免将来有人误以为迁移会兜底。
+    {
+        let dir2 = TempDir::new().unwrap();
+        // 只放一个 profiles 文件，**不放 disabled.json**
+        std::fs::create_dir_all(dir2.path().join("profiles")).unwrap();
+        std::fs::write(
+            dir2.path().join("profiles").join("Only.json"),
+            r#"{"schemaVersion":1,"name":"Only","sys":[],"user":[],"created":"2026-01-01","modified":"2026-01-01"}"#,
+        )
+        .unwrap();
+
+        let key2 = load_or_create_key(dir2.path()).unwrap();
+        let mut db2 = Db::open_encrypted(&dir2.path().join("n.db"), &key_hex(&key2)).unwrap();
+        db2.migrate_to_current().unwrap();
+        migrate_legacy(&mut db2, dir2.path()).unwrap();
+
+        let has_current: i64 = db2
+            .query_row_with(
+                "SELECT count(*) FROM snapshots WHERE kind = 'current'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            has_current, 0,
+            "D-6：无 disabled.json 时迁移不产生 current 快照——建基线由启动序列负责"
+        );
+    }
 }
