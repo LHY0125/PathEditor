@@ -11,6 +11,7 @@ pub mod history;
 pub mod history_sink;
 pub mod migrate_v5;
 pub mod profiles;
+pub mod refs;
 pub mod schema;
 pub mod search;
 pub mod stats;
