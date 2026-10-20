@@ -186,7 +186,54 @@ git commit -m "feat(v6): schema v2 —— M2 派生表（scan_runs/var_reference
 
 - Create: `core/src/db/search.rs`
 - Modify: `core/src/db/mod.rs`（`pub mod search;`）
-- Test: `core/tests/db_search_fts.rs`
+- Test: `core/tests/db_search_fts.rs`、`core/tests/db_search_incremental.rs`（**两个文件各一个 `#[test]`**）
+
+**N-4：`index_snapshot_tx` 必须有独立测试。** 第一个文件测全量 `rebuild_index`，
+第二个文件测增量语义：
+
+```rust
+// 一文件一测试：见 M0 §5.3。
+// **N-4**：`index_snapshot_tx` 此前只有实现没有测试。
+use path_editor_core::db::crypto::{key_hex, load_or_create_key};
+use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
+use path_editor_core::db::search::{index_snapshot_tx, search};
+use path_editor_core::db::Db;
+use path_editor_core::history::EventSource;
+use path_editor_core::PathEntry;
+use tempfile::TempDir;
+
+#[test]
+fn incremental_index_is_idempotent_and_never_indexes_values() {
+    let dir = TempDir::new().unwrap();
+    let key = load_or_create_key(dir.path()).unwrap();
+    let mut db = Db::open_encrypted(&dir.path().join("i.db"), &key_hex(&key)).unwrap();
+    db.migrate_to_current().unwrap();
+
+    let uid = insert_snapshot(
+        &mut db,
+        NewSnapshot {
+            kind: SnapshotKind::Current,
+            source: EventSource::Gui,
+            system: vec![PathEntry { path: "C:\\INCREMENTAL_MARK".into(), enabled: true }],
+            user: vec![],
+            env: vec![],
+            parent_uid: None,
+        },
+    )
+    .unwrap();
+    let sid: i64 = db
+        .query_row_with("SELECT id FROM snapshots WHERE uid = ?1", [&uid], |r| r.get(0))
+        .unwrap();
+
+    // 增量索引两次：必须幂等（不产生重复行）
+    db.with_transaction(|tx| index_snapshot_tx(tx, sid)).unwrap();
+    db.with_transaction(|tx| index_snapshot_tx(tx, sid)).unwrap();
+
+    let hits = search(&db, "INCREMENTAL_MARK", 10).unwrap();
+    assert_eq!(hits.len(), 1, "重复索引必须幂等，实际 {} 条", hits.len());
+    assert_eq!(hits[0].kind, "path");
+}
+```
 
 **Interfaces:**
 
@@ -554,6 +601,29 @@ fn daily_stats_aggregates_events_and_is_rebuildable() {
     assert_eq!(d.days[0].events, 3, "当天 3 条事件");
     assert_eq!(d.days[0].path_items, 2, "当前快照 2 条 PATH");
 
+    // **N-4**：current_* 与 top_targets 必须有断言，否则它们接没接上都「测试全绿」
+    let current_items: i64 = db
+        .query_row_with(
+            "SELECT current_snapshot_id FROM app_state WHERE id = 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    // 当前快照已由上面的 insert_snapshot + 测试末尾的 set_current 建立；
+    // 若尚未建立，current_path_items 为 0——断言只在有 current 时才检查
+    if current_items != 0 {
+        assert_eq!(d.current_path_items, 2, "current_path_items 取当前快照");
+        assert!(d.current_avg_len > 0.0, "current_avg_len 必须算出来");
+    }
+
+    // top_targets：3 条事件的 target 都是 "Path"
+    assert!(!d.top_targets.is_empty(), "top_targets 必须有数据");
+    assert_eq!(d.top_targets[0].target, "Path");
+    assert_eq!(d.top_targets[0].count, 3);
+
+    // profile_applies：本测试没有配置，应为空
+    assert!(d.profile_applies.is_empty());
+
     // 可重建
     db.with_transaction(|tx| {
         tx.execute("DELETE FROM daily_stats", []).map_err(|e| {
@@ -618,7 +688,7 @@ pub struct Dashboard {
     pub top_targets: Vec<TargetCount>,
     /// 配置应用次数（直接读 M1 的 `profiles.apply_count`）
     pub profile_applies: Vec<ProfileApply>,
-    /// **当前**快照的 PATH 平均长度（M-2：与 `days` 的口径不同，见上）
+    /// **当前**快照的 PATH 平均长度（与 `days` 的口径不同，见上；口径讨论见 M-1）
     pub current_avg_len: f64,
     /// **当前**快照的 PATH 条目数
     pub current_path_items: i64,
@@ -1117,14 +1187,17 @@ git commit -m "feat(v6): %VAR% 引用图（解析/递归依赖/环检测）"
 
 - Create: `core/src/db/compare.rs`
 - Modify: `core/src/db/mod.rs`
-- Test: `core/tests/db_compare.rs`
+- Test: `core/tests/db_compare.rs`、`core/tests/db_compare_user_only.rs`（**两个文件，各一个 `#[test]`**——一文件一测试约束）
 
 **Interfaces:**
 
 - Consumes: `history::get_snapshot`
 - Produces:
   - `pub fn compare(db: &Db, left: &str, right: &str) -> Result<CompareResult, CoreError>`
-  - `pub struct CompareResult { pub path_added, path_removed, path_reordered, env_added, env_removed, env_modified }`
+  - `pub struct CompareResult { system: PathDiff, user: PathDiff, env_added, env_removed, env_modified }`
+    —— **N-8**：必须**分 hive** 返回。只比 `system` 会让「只有用户 PATH 变了」显示成「没有差异」，
+    而且不报错。
+  - `pub struct PathDiff { added: Vec<PathEntry>, removed: Vec<PathEntry>, reordered: Vec<ReorderEntry> }`
   - **T-3**：`env_added` / `env_removed` / `env_modified` 本轮**恒为空数组**，
     UI 必须显式显示「环境变量对比将在 M3 提供」。只有 PATH 结果而字段缺失时，
     用户会以为「env 没变化」，而不是「env 没对比」——空数组 + 显式文案比字段不存在诚实。
@@ -1143,38 +1216,100 @@ use path_editor_core::PathEntry;
 use tempfile::TempDir;
 
 #[test]
-fn compare_reports_added_removed_and_reorder() {
+fn compare_reports_both_hives_added_removed_and_reorder() {
     let dir = TempDir::new().unwrap();
     let key = load_or_create_key(dir.path()).unwrap();
     let mut db = Db::open_encrypted(&dir.path().join("c.db"), &key_hex(&key)).unwrap();
     db.migrate_to_current().unwrap();
 
-    let mk = |paths: &[&str]| NewSnapshot {
+    let mk = |sys: &[&str], usr: &[&str]| NewSnapshot {
         kind: SnapshotKind::History,
         source: EventSource::Gui,
-        system: paths
+        system: sys
             .iter()
             .map(|p| PathEntry { path: p.to_string(), enabled: true })
             .collect(),
-        user: vec![],
+        user: usr
+            .iter()
+            .map(|p| PathEntry { path: p.to_string(), enabled: true })
+            .collect(),
         env: vec![],
         parent_uid: None,
     };
 
-    let a = insert_snapshot(&mut db, mk(&["C:\\A", "C:\\B"])).unwrap();
-    let b = insert_snapshot(&mut db, mk(&["C:\\B", "C:\\A", "C:\\C"])).unwrap();
+    let a = insert_snapshot(&mut db, mk(&["C:\\A", "C:\\B"], &["C:\\U1"])).unwrap();
+    let b = insert_snapshot(
+        &mut db,
+        mk(&["C:\\B", "C:\\A", "C:\\C"], &["C:\\U1", "C:\\U2"]),
+    )
+    .unwrap();
 
     let r = compare(&db, &a, &b).unwrap();
-    assert_eq!(r.path_added.len(), 1, "C 是新增");
-    assert_eq!(r.path_added[0].path, "C:\\C");
-    assert!(r.path_removed.is_empty(), "没有删除");
-    assert!(!r.path_reordered.is_empty(), "A/B 顺序变了");
 
-    // 自比对：全为空
+    // system 侧
+    assert_eq!(r.system.added.len(), 1, "system 新增 C:\\C");
+    assert_eq!(r.system.added[0].path, "C:\\C");
+    assert!(r.system.removed.is_empty(), "system 没有删除");
+    assert!(!r.system.reordered.is_empty(), "system 的 A/B 顺序变了");
+
+    // user 侧（N-8：必须分开断言，只比 system 时这里会全空而不报错）
+    assert_eq!(r.user.added.len(), 1, "user 新增 C:\\U2");
+    assert_eq!(r.user.added[0].path, "C:\\U2");
+    assert!(r.user.removed.is_empty());
+    assert!(r.user.reordered.is_empty(), "user 顺序没变");
+
+    // env 三字段恒为空（T-3）
+    assert!(r.env_added.is_empty() && r.env_removed.is_empty() && r.env_modified.is_empty());
+
+    // 自比对：两侧都为空
     let same = compare(&db, &a, &a).unwrap();
-    assert!(same.path_added.is_empty() && same.path_removed.is_empty() && same.path_reordered.is_empty());
+    assert!(same.system.is_empty() && same.user.is_empty(), "自比对必须两侧都无差异");
 }
 ```
+
+**第二个测试文件 `core/tests/db_compare_user_only.rs`**（N-8 的直接回归，必须单独成文件）：
+
+```rust
+// 一文件一测试：见 M0 §5.3。
+// **N-8 的回归守卫**：只有 user 侧变化时，compare() 必须能发现。
+// 若 compare() 只比 system（首版实现），本测试会失败——这正是它存在的理由。
+use path_editor_core::db::compare::compare;
+use path_editor_core::db::crypto::{key_hex, load_or_create_key};
+use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
+use path_editor_core::db::Db;
+use path_editor_core::history::EventSource;
+use path_editor_core::PathEntry;
+use tempfile::TempDir;
+
+#[test]
+fn compare_detects_user_only_change() {
+    let dir = TempDir::new().unwrap();
+    let key = load_or_create_key(dir.path()).unwrap();
+    let mut db = Db::open_encrypted(&dir.path().join("c2.db"), &key_hex(&key)).unwrap();
+    db.migrate_to_current().unwrap();
+
+    let mk = |usr: &[&str]| NewSnapshot {
+        kind: SnapshotKind::History,
+        source: EventSource::Gui,
+        system: vec![PathEntry { path: "C:\\S".into(), enabled: true }],
+        user: usr
+            .iter()
+            .map(|p| PathEntry { path: p.to_string(), enabled: true })
+            .collect(),
+        env: vec![],
+        parent_uid: None,
+    };
+
+    let a = insert_snapshot(&mut db, mk(&["C:\\U1"])).unwrap();
+    let b = insert_snapshot(&mut db, mk(&["C:\\U1", "C:\\U2"])).unwrap();
+
+    let r = compare(&db, &a, &b).unwrap();
+    assert!(r.system.is_empty(), "system 未变");
+    assert_eq!(r.user.added.len(), 1, "user 的差异必须被发现（N-8）");
+}
+```
+
+````
 
 - [ ] **Step 2: 运行，确认失败**
 
@@ -1211,28 +1346,60 @@ pub struct ReorderEntry {
     pub right_index: usize,
 }
 
+/// 单侧（system 或 user）的 PATH 差异。
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathDiff {
+    /// right 有、left 无
+    pub added: Vec<PathEntry>,
+    /// left 有、right 无
+    pub removed: Vec<PathEntry>,
+    /// 两边都有但相对顺序变了
+    pub reordered: Vec<ReorderEntry>,
+}
+
+impl PathDiff {
+    /// 该侧是否完全无差异。UI 用它决定是否显示「无变化」。
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty() && self.reordered.is_empty()
+    }
+}
+
 /// 对比结果。
+///
+/// **N-8**：system 与 user **必须分开返回**。若只比 system，
+/// 「只有用户 PATH 变了」会被静默显示成「没有差异」——不报错，给错误结论。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompareResult {
-    /// right 有、left 无
-    pub path_added: Vec<PathEntry>,
-    /// left 有、right 无
-    pub path_removed: Vec<PathEntry>,
-    /// 两边都有但相对顺序变了
-    pub path_reordered: Vec<ReorderEntry>,
+    /// 系统 PATH 的差异
+    pub system: PathDiff,
+    /// 用户 PATH 的差异
+    pub user: PathDiff,
+    /// T-3：本轮恒为空，UI 必须显示「环境变量对比将在 M3 提供」
+    pub env_added: Vec<String>,
+    /// 同上
+    pub env_removed: Vec<String>,
+    /// 同上
+    pub env_modified: Vec<String>,
 }
 
 /// 比较两个快照（按 uid）。
 pub fn compare(db: &Db, left_uid: &str, right_uid: &str) -> Result<CompareResult, CoreError> {
-    // 对比只看 PATH；env 对比涉及掩码语义，留给 M2 的第二轮（见计划 §未覆盖项）
+    // 双 hive 都对比（N-8）；env 对比涉及掩码语义，推迟到 M3（见未覆盖项 #1）
     let left = history::get_snapshot(db, left_uid, false)?;
     let right = history::get_snapshot(db, right_uid, false)?;
-    Ok(compare_paths(&left.system, &right.system))
+    Ok(CompareResult {
+        system: compare_paths(&left.system, &right.system),
+        user: compare_paths(&left.user, &right.user),
+        env_added: Vec::new(),
+        env_removed: Vec::new(),
+        env_modified: Vec::new(),
+    })
 }
 
-/// 纯函数：对比两侧 PATH。
-pub fn compare_paths(left: &[PathEntry], right: &[PathEntry]) -> CompareResult {
+/// 纯函数：对比单侧 PATH。
+pub fn compare_paths(left: &[PathEntry], right: &[PathEntry]) -> PathDiff {
     let key = |p: &str| p.trim().to_lowercase();
 
     let left_map: HashMap<String, (usize, &PathEntry)> = left
@@ -1275,14 +1442,14 @@ pub fn compare_paths(left: &[PathEntry], right: &[PathEntry]) -> CompareResult {
     removed.sort_by(|a, b| key(&a.path).cmp(&key(&b.path)));
     reordered.sort_by_key(|r| r.right_index);
 
-    CompareResult {
-        path_added: added,
-        path_removed: removed,
-        path_reordered: reordered,
+    PathDiff {
+        added,
+        removed,
+        reordered,
     }
 }
 
-```
+````
 
 > **实现时删掉上面那行占位注释**，并去掉未使用的 `import`（否则 clippy `-D warnings` 会红）。
 
@@ -1315,8 +1482,9 @@ git commit -m "feat(v6): N 路快照对比（新增/删除/顺序变化）"
   - `pub fn record_run(db: &mut Db, conflicts_json: &str, tools_json: &str) -> Result<String, CoreError>`
   - `pub fn list_runs(db: &Db, limit: u32) -> Result<Vec<ScanRunView>, CoreError>`
   - `pub fn diff_runs(db: &Db, a: &str, b: &str) -> Result<ScanRunDiff, CoreError>`
-  - `pub struct ScanRunDiff { pub appeared: Vec<String>, pub disappeared: Vec<String>, pub persistent: Vec<String>, pub last_seen: Vec<LastSeen> }`
-  - `pub struct LastSeen { pub conflict: String, pub run_uid: String, pub seen_at: i64 }`（M-5）
+  - `pub struct ScanRunDiff { pub appeared: Vec<String>, pub disappeared: Vec<String>, pub persistent: Vec<String>, pub last_seen: Vec<LastSeen>, pub first_seen: Vec<FirstSeen> }`
+  - `pub struct LastSeen { pub conflict: String, pub run_uid: String, pub seen_at: i64 }`（M-5「最近出现」）
+  - `pub struct FirstSeen { pub conflict: String, pub run_uid: String, pub seen_at: i64 }`（**N-5「首次出现」**）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -1361,20 +1529,25 @@ Expected: FAIL — `scan_history` 模块不存在
   ⚠️ **不能嵌套事务**：`record_run` 用 `with_transaction` 写完后，再单独调 `rebuild_daily`。
 - `list_runs` 按 `created_at DESC, id DESC`。
 - `diff_runs` 解析两份 `conflicts_json`（`Vec<String>`），做三集合运算：`appeared` / `disappeared` / `persistent`，全部排序后返回。
-- **M-5「最近出现」**：spec §6.2 原文要求「首次出现/最近出现」。`last_seen` 字段承载后者——
-  对 `persistent` 里的每一项，从 `list_runs` 的历史里**倒序找第一条不含它的 run**，
-  它之后的那条就是「最近一次出现」。实现上遍历 `scan_runs` 即可，**不需要改表**。
-  若该冲突在最近一次运行里出现（即 `b`），`last_seen` 就是 `b` 本身。
+- **M-5「首次出现/最近出现」**：spec §6.2 原文要求两者，**必须都实现**（N-5 指出首版只做了后者）。
+  - `last_seen`：对 `persistent` 里的每一项，从历史里倒序找**最后一条包含它的 run**。
+  - `first_seen`：从历史里正序找**第一条包含它的 run**。
+    两者都遍历 `scan_runs` 即可，**不需要改表**；信息量相同但语义相反，缺一个都不满足 spec。
 
 **M-6 测试要求**：Step 1 的测试末尾**必须**再加一条断言，验证 `record_run` 真的触发了
 `daily_stats` 重建——否则「触发重建」这件事没有任何证据，接没接上都会「测试全绿」。
 
 ```rust
 // 在同一函数、同一个 db 上追加（不新开 SQLCipher 连接，不违反一文件一测试）
-let rows: i64 = db
+//
+// **N-6**：本断言验证的是「副作用发生了」（SUM 从 0 变非 0），
+// 不是「值正确」。原因：`daily_stats.conflicts` 的口径是「当日扫描次数」，
+// 两次 record_run 落在同一天时是 2；跨日时是 1+1。断言值会依赖运行时刻，
+// 不稳定。断言「大于 0 且随 run 数增长」才是稳定的判据。
+let sum: i64 = db
     .query_row_with("SELECT COALESCE(SUM(conflicts),0) FROM daily_stats", [], |r| r.get(0))
     .unwrap();
-assert!(rows >= 2, "record_run 必须触发 daily_stats 重建（M-6），实际 conflicts 合计 {rows}");
+assert!(sum >= 2, "record_run 必须触发 daily_stats 重建（M-6），实际 conflicts 合计 {sum}");
 ```
 
 - [ ] **Step 4: 运行，确认通过**
@@ -1467,24 +1640,41 @@ git commit -m "feat(v6): history_reveal_env_value —— 敏感值显式 reveal"
   用不到 `#[cfg(test)]` 的 temp 特判，照计划写成「export → 写文件 → `load_profile` 读回」
   会在 `C:\Users\<用户>\.patheditor\profiles\` 下留下测试文件。
 
-  **整改**：把路径解析与解析逻辑拆开——
+  **整改（N-1 修正版）：不要新写一份解析逻辑，直接复用已有的 `read_profile_file`。**
+
+  `core/src/profiles.rs:197` 已经有：
+
+  ```rust
+  fn read_profile_file(path: &std::path::Path) -> Result<ProfileData, CoreError> {
+      let versioned = read_versioned_file(path, "配置文件")?;
+      migrate(versioned, "配置文件")
+  }
+  ```
+
+  它做的正是「从路径读 + 版本迁移」。再写一个 `load_profile_from` 会把这段逻辑复制成两份，
+  将来版本迁移规则改动时必然分叉。
+
+  **正确改法**：把它提升为 `pub`，并让 `load_profile` 复用它——
 
   ```rust
   /// 从**指定路径**读取配置（供测试与 v5 导入使用，B-1）。
   ///
   /// [`load_profile`] 是「按名字算路径 + 调本函数」的薄封装。
-  /// 拆分理由：`profiles_dir()` 基于 `dirs::home_dir()`，无法重定向；
+  /// 拆分的理由：`profiles_dir()` 基于 `dirs::home_dir()`，无法重定向；
   /// 外部集成测试必须能指定路径，否则会写进用户真实配置目录。
+  ///
+  /// **不要**在本函数里再写一遍读文件 + 反序列化 + migrate ——
+  /// 那部分已经由 [`read_versioned_file`] + `migrate` 完成，
+  /// 复制会造成两份版本迁移逻辑。
   pub fn load_profile_from(path: &Path) -> Result<ProfileData, CoreError> {
       if !path.exists() {
-          return Err(CoreError::new(ErrorCode::NotFound, "load_profile", "配置文件不存在"));
+          return Err(CoreError::new(
+              ErrorCode::NotFound,
+              "load_profile",
+              format!("配置文件不存在: {}", path.display()),
+          ));
       }
-      let content = fs::read_to_string(path).map_err(|e| {
-          CoreError::new(ErrorCode::Io, "load_profile", format!("无法读取配置文件: {e}"))
-      })?;
-      serde_json::from_str::<Versioned<ProfileData>>(&content)
-          .map_err(|e| parse_error_quarantined(path, "配置文件", e))
-          .and_then(|v| migrate(v, "配置文件"))
+      read_profile_file(path)
   }
 
   /// 按名字读取配置（路径由 `profiles_dir()` 决定）。
@@ -1493,6 +1683,9 @@ git commit -m "feat(v6): history_reveal_env_value —— 敏感值显式 reveal"
       load_profile_from(&profile_path(name))
   }
   ```
+
+  **净效果**：`read_profile_file` 改一行可见性，`load_profile` 从 18 行缩到 4 行，
+  解析逻辑**仍只有一份**。这是 N-1 指出的「逐行重复将来会分叉」的正确解法。
 
   **这是 M1 遗留的可测性缺口**：`profiles.rs` 的所有读写都硬绑 `profiles_dir()`，
   导致任何依赖它的集成测试都无法隔离。本 Task 顺带修掉。
@@ -1588,18 +1781,25 @@ git commit -m "feat(v6): 快照对比与引用图 UI"
 
 **Files:**
 
-- Modify: `gui/src/lib.rs`、`cli/src/main.rs`
+- Modify: `gui/src/lib.rs`（**只改 GUI**；N-3：首版误写了 `cli/src/main.rs`，与未覆盖项 #2「CLI 不重建派生表」直接矛盾）
 - Test: `core/tests/db_derived_rebuild.rs`
 
-**要点**：三个派生表（`search_fts` / `daily_stats` / `var_references`）必须有明确的**重建时机**：
+**要点**：三个派生表（`search_fts` / `daily_stats` / `var_references`）必须有明确的**重建时机**。
+全部在 **GUI 启动序列**里做；CLI 不做（见下方未覆盖项）。
 
 | 派生表           | 何时重建                                                                      |
 | ---------------- | ----------------------------------------------------------------------------- |
 | `search_fts`     | 启动时若 `count(*) = 0` 则全量重建；每次写入快照后增量（`index_snapshot_tx`） |
-| `daily_stats`    | 启动时全量重建（成本是一次全表扫描，数据量小）                                |
-| `var_references` | 当前快照变化时重建（`update_current_snapshot` 之后）                          |
+| `daily_stats`    | 启动时全量重建（成本是一次全表扫描，数据量小；已加耗时日志见 T-1）            |
+| `var_references` | 启动时重建 + 当前快照变化时重建（`update_current_snapshot` 之后）             |
 
-**验收判据**：`db_derived_rebuild` 测试断言「清空三张派生表 → 重启序列 → 数据恢复」。
+**N-3 明确**：CLI 的写路径（`cli/src/runtime.rs`）用 `NoopHistory`，不碰 DB 的当前快照，
+因此 **CLI 不重建派生表**。后果是「CLI 改 PATH 后，GUI 的引用图/统计仍是旧的」——
+这是 M1 已登记的残余风险 R-02，**M2 不解决**（需要 CLI 也接 DB 的 current 快照，属范围扩张）。
+在 `setup_database` 的注释里写清这条，避免未来有人以为是 bug。
+
+**验收判据**：`db_derived_rebuild` 测试断言「清空三张派生表 → 跑一遍启动序列的重建逻辑 →
+数据恢复」。
 
 - [ ] **Step 1–5**（同标准 TDD 循环）
 
@@ -1701,6 +1901,59 @@ git commit -m "test(v6): 搜索与统计 E2E；文档同步"
 **对核对工具的肯定**：开发窗口在 §9 记录了一版作废稿——三条「阻塞项」是凭印象写的，
 逐字比对原文后**全部不成立**。这个自我更正比条目本身更有价值：它展示了一个可用的
 判据（「打开文件逐字比对」而不是「凭这类计划容易犯什么错」）。本计划后续修订也应遵守同一判据。
+
+---
+
+## 核对轮第二轮裁断（2026-10-20）
+
+开发窗口提交 `PathEditor-v6-M2-核对第二轮.md`（312 行），对第一轮 14 条裁断的落地做了复核，
+并新发现 8 条。审核窗口逐条复核后**全部采纳**。
+
+### 对第一轮 14 条的落地复核
+
+开发窗口的判定（9 条完全落地 / 5 条落地但有遗留）**成立**。遗留项已在本轮修掉：
+
+| 遗留                                   | 本轮处理                                                            |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| B-1 的实现逐行重复 `read_profile_file` | N-1：改为提升 `read_profile_file` 可见性 + 复用，解析逻辑仍只有一份 |
+| B-2 的 `current_*` 无测试              | N-4：Task 3 测试补断言                                              |
+| C-2 的 `index_snapshot_tx` 无测试      | N-4：新增 `db_search_incremental.rs`                                |
+| M-2 的编号误标在自己身上               | N-2：`current_avg_len` 的注释改为「口径讨论见 M-1」                 |
+| M-5 只做了「最近出现」                 | N-5：补 `first_seen`，spec 两个都要                                 |
+| T-3 的 `env_*` 只在 Interfaces 写了    | N-7：N-8 的修复已把三个字段写进代码块                               |
+
+### 第二轮 8 条（全部采纳）
+
+| 编号    | 主张                                                         | 复核                                                                 | 裁断                                                                                                                          |
+| ------- | ------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **N-8** | `compare()` 只比 `system`，user 侧静默丢弃                   | ✅ 成立。`compare_paths(&left.system, &right.system)`，user 从未参与 | **阻塞，已修**：`CompareResult` 改为 `{ system: PathDiff, user: PathDiff, env_* }`；新增 `db_compare_user_only.rs` 专门守这条 |
+| **N-1** | `load_profile_from` 与 `read_profile_file` 逐行重复          | ✅ 成立。`profiles.rs:197` 已有该逻辑                                | **阻塞，已修**：提升 `read_profile_file` 为 `pub`，不新写解析逻辑                                                             |
+| **N-7** | T-3 的 `env_*` 代码块没有                                    | ✅ 成立（与 C-1 同类）                                               | **已修**：见 N-8 的新 `CompareResult`                                                                                         |
+| **N-3** | Task 12 的 Files 写 `cli/src/main.rs`，与未覆盖项 #2 矛盾    | ✅ 成立                                                              | **已修**：删掉 cli，并写明「CLI 不重建派生表」的理由                                                                          |
+| **N-4** | `index_snapshot_tx` / `current_*` / `top_targets` 无测试断言 | ✅ 成立（`grep` 确认零断言）                                         | **已修**：新增增量索引测试文件 + Task 3 补断言                                                                                |
+| **N-2** | `current_avg_len` 注释误标 M-2（那是时区）                   | ✅ 成立                                                              | **已修**                                                                                                                      |
+| **N-5** | spec 要「首次出现/最近出现」，只做了后者                     | ✅ 成立。spec §6.2 原文两者并列                                      | **已修**：补 `first_seen`                                                                                                     |
+| **N-6** | M-6 的断言验证「副作用发生」而非值                           | ✅ 成立                                                              | **已采纳建议**：保留断言，注释写明「为什么不比值」（跨日时值不稳定）                                                          |
+
+### 开发窗口的一条方法论建议（已执行）
+
+> 修 C-1 时全篇扫一遍「Interfaces 段 vs 代码块」的字段差异——N-7 证明了这类不一致在 1714 行里不止一处，逐个修不如一次扫完。
+
+**已照做**：脚本比对了全部 6 个「在 Interfaces 与代码块中各出现一次」的 struct
+（`SearchHit` / `DailyPoint` / `Dashboard` / `TargetCount` / `PathDiff` / `CompareResult`），
+字段集合**全部一致**。唯一的差异是 `SearchHit` 在 Interfaces 里写了 `pub` 前缀，
+属于书写风格而非语义差异。**这轮没有发现新的 N-7 类问题。**
+
+### 一个被强化两次的判据
+
+N-8 与首轮的 B-1 是**同一类错误**：计划的某个局部单独看合理，但它遗漏了一整个维度
+（hive / 测试隔离），而遗漏的方式是**静默的**——不报错、不失败、给出错误但看似正常的结果。
+
+开发窗口在第二轮指出的理由值得留在计划里：
+
+> 它是唯一一条「会给出错误结论而不报错」的问题——比缺字段严重，因为缺字段会编译失败，而这个不会。
+
+这应当成为后续所有计划的检查点：**每个「只处理了一半」的地方，问一句「另一半呢」**。
 
 ---
 
