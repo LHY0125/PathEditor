@@ -263,6 +263,7 @@ pub fn run() {
             commands::history::profile_mark_applied,
             commands::history::backup_list,
             commands::history::profile_save,
+            commands::history::profile_export_v5,
             commands::history::profile_paths,
             commands::history::profile_rename,
             commands::history::profile_delete_by_name,

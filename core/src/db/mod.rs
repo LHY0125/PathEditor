@@ -17,6 +17,7 @@ pub mod scan_history;
 pub mod schema;
 pub mod search;
 pub mod stats;
+pub mod v5_export;
 
 #[cfg(windows)]
 pub mod dpapi;

@@ -226,6 +226,19 @@ pub fn profile_save(
     })
 }
 
+/// 把配置导出成 v5 `ProfileData` 的 JSON 字符串（M1 欠账 P2-2）。
+///
+/// 这是**降级到 v5 的退路**：DB 不可用或需要回到旧版本时，用它可以导出
+/// 与 v5 自身写出的格式完全同构的文件（含 `schemaVersion` 信封）。
+///
+/// 返回的字符串由前端负责落盘（`save` 对话框），Rust 侧不写用户文件。
+#[tauri::command]
+pub fn profile_export_v5(uid: String, state: State<'_, DbState>) -> Result<String, CoreError> {
+    with_db(&state, "profile_export_v5", |db| {
+        path_editor_core::db::v5_export::export_profile_v5(db, &uid)
+    })
+}
+
 /// 读取配置的 PATH 条目（UI 预览与应用用）。
 ///
 /// 返回 `null` 表示配置不存在或没有 revision。

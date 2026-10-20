@@ -85,6 +85,29 @@ pub(crate) fn profile_load(name: String) {
     }
 }
 
+/// 把一个 DB 配置导出成 v5 `profiles/*.json` 格式（M1 欠账 P2-2）。
+///
+/// **按名字**指定配置（与其它 `profile` 子命令一致），内部转成 uid 后交给
+/// `core::db::v5_export::export_profile_v5`。输出到 stdout，可直接重定向成文件。
+///
+/// 这是**降级到 v5 的退路**：DB 不可用或需要回到旧版本时，用它可以导出
+/// 与 v5 自身写出的格式完全同构的文件（含 `schemaVersion` 信封）。
+pub(crate) fn profile_export_v5(name: String) {
+    let db = open_db();
+    let Some(view) =
+        db_profiles::get_profile_by_name(&db, &name).unwrap_or_else(|e| exit_core_error(&e))
+    else {
+        exit_core_error(&core::CoreError::new(
+            core::ErrorCode::NotFound,
+            "profile_export_v5",
+            format!("配置不存在: {name}"),
+        ));
+    };
+    let json = core::db::v5_export::export_profile_v5(&db, &view.uid)
+        .unwrap_or_else(|e| exit_core_error(&e));
+    println!("{json}");
+}
+
 pub(crate) fn profile_apply(name: String) {
     let db = open_db();
     let Some((system, user)) =

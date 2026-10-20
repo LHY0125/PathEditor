@@ -940,6 +940,19 @@ export const backend = {
     }
     return result;
   },
+  /**
+   * 把配置导出成 v5 `profiles/*.json` 格式的字符串（M1 欠账 P2-2）。
+   *
+   * 返回值可直接用 `save` 对话框写成 `.json` 文件，供降级到 v5 时使用。
+   * **不写用户文件**：落盘由前端负责，Rust 侧只产出内容。
+   */
+  profileExportV5: async (uid: string): Promise<string> => {
+    const result = await parseCoreError(invoke<unknown>('profile_export_v5', { uid }));
+    if (typeof result !== 'string') {
+      throw new Error('profile_export_v5 必须返回字符串');
+    }
+    return result;
+  },
   /** 软删除配置方案（按 uid）；返回是否真的删除了（已删除返回 false）。 */
   profileDelete: async (uid: string) => {
     const result = await parseCoreError(invoke<unknown>('profile_delete', { uid }));

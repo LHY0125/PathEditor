@@ -194,32 +194,37 @@ pub fn save_profile(
 }
 
 /// 读取单个配置文件（含版本信封解析与损坏隔离）。
+///
+/// **这是唯一的「从路径读配置」实现**（B-1 / N-1）。[`load_profile`] 与
+/// [`load_profile_from`] 都经它，不复制解析逻辑——否则版本迁移规则改动时必然分叉。
 fn read_profile_file(path: &std::path::Path) -> Result<ProfileData, CoreError> {
     let versioned = read_versioned_file(path, "配置文件")?;
     migrate(versioned, "配置文件")
 }
 
-/// 加载配置文件。
-pub fn load_profile(name: &str) -> Result<ProfileData, CoreError> {
-    validate_profile_name(name)?;
-    let path = profile_path(name);
+/// 从**指定路径**读取配置（B-1）。
+///
+/// [`load_profile`] 是「按名字算路径 + 调本函数」的薄封装。
+///
+/// 拆出本函数的理由：`profiles_dir()` 基于 `dirs::home_dir()`，
+/// **无法被环境变量重定向**。外部集成测试（`core/tests/*.rs`）用不到
+/// `#[cfg(test)]` 的 temp 特判，因此必须能显式指定路径——否则测试会写进
+/// 用户真实的 `~/.patheditor/profiles/`。
+pub fn load_profile_from(path: &std::path::Path) -> Result<ProfileData, CoreError> {
     if !path.exists() {
         return Err(CoreError::new(
             ErrorCode::NotFound,
             "load_profile",
-            format!("配置文件不存在: {name}"),
+            format!("配置文件不存在: {}", path.display()),
         ));
     }
-    let content = fs::read_to_string(&path).map_err(|e| {
-        CoreError::new(
-            ErrorCode::Io,
-            "load_profile",
-            format!("无法读取配置文件: {e}"),
-        )
-    })?;
-    serde_json::from_str::<Versioned<ProfileData>>(&content)
-        .map_err(|e| parse_error_quarantined(&path, "配置文件", e))
-        .and_then(|versioned| migrate(versioned, "配置文件"))
+    read_profile_file(path)
+}
+
+/// 加载配置文件。
+pub fn load_profile(name: &str) -> Result<ProfileData, CoreError> {
+    validate_profile_name(name)?;
+    load_profile_from(&profile_path(name))
 }
 
 /// 删除配置文件。

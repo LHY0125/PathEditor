@@ -10,7 +10,8 @@ mod scan_ops;
 
 use import_export::{cmd_export, cmd_import};
 use profile_ops::{
-    profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
+    profile_apply, profile_delete, profile_export_v5, profile_list, profile_load, profile_rename,
+    profile_save,
 };
 use runtime::{
     ensure_single_target, exit_err, exit_persist_error, load_and_save, load_operate_save,
@@ -162,6 +163,8 @@ enum ProfileCmd {
         #[arg(long)]
         new: String,
     },
+    /// 导出为 v5 `profiles/*.json` 格式（降级退路，输出到 stdout）
+    ExportV5 { name: String },
 }
 
 #[derive(Subcommand)]
@@ -605,6 +608,7 @@ fn main() {
             ProfileCmd::Apply { name } => profile_apply(name),
             ProfileCmd::Delete { name } => profile_delete(name),
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
+            ProfileCmd::ExportV5 { name } => profile_export_v5(name),
         },
     }
 }
@@ -656,6 +660,31 @@ mod help_tests {
         assert!(
             help.contains("敏感变量不含明文"),
             "list --help 必须把「不含明文」限定到敏感变量: {help}"
+        );
+    }
+
+    /// `profile export-v5 --help` 必须写明「输出到 stdout」与「降级退路」。
+    ///
+    /// 可证伪性：删掉 `ExportV5` 变体的文档注释，对应片段消失，断言失败。
+    /// 断言具体短语而非「解析成功」——后者无法证明文案存在。
+    #[test]
+    fn profile_export_v5_help_documents_stdout_and_fallback() {
+        let mut cmd = Cli::command();
+        let profile = cmd
+            .find_subcommand_mut("profile")
+            .expect("profile 子命令必须存在");
+        let export = profile
+            .find_subcommand_mut("export-v5")
+            .expect("export-v5 子命令必须存在");
+        let help = export.render_long_help().to_string();
+
+        assert!(
+            help.contains("stdout"),
+            "export-v5 --help 必须写明输出到 stdout: {help}"
+        );
+        assert!(
+            help.contains("降级"),
+            "export-v5 --help 必须写明用途是降级退路: {help}"
         );
     }
 }
