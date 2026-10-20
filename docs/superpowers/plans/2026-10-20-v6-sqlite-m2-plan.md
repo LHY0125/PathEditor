@@ -269,7 +269,7 @@ Expected: FAIL — `search` 模块不存在
 //! `profiles` 完整重建，见 [`rebuild_index`]。
 
 use super::Db;
-use crate::error::{CoreError, ErrorCode};
+use crate::error::CoreError;
 use rusqlite::{params, Transaction};
 
 /// 一条搜索命中。
@@ -371,6 +371,62 @@ fn insert_tx(tx: &Transaction, content: &str, kind: &str, ref_uid: &str) -> Resu
     Ok(())
 }
 
+/// 增量索引**一份快照**（C-2）。
+///
+/// 与 [`rebuild_index`] 的区别：只处理指定的 `snapshot_id`，不清空全表。
+/// 供写入路径在同一事务内调用（spec：派生表可随时重建，增量只是性能优化）。
+///
+/// **调用方必须保证同一快照不被索引两次** —— 重复调用会产生重复行。
+/// 调用前先删该快照的旧行（`DELETE ... WHERE ref_uid LIKE '<uid>#%'`），
+/// 本函数内部会做这一步。
+pub fn index_snapshot_tx(tx: &Transaction, snapshot_id: i64) -> Result<(), CoreError> {
+    // 先取 uid，用于清理旧行（ref_uid 的格式是 `<snapshot_uid>#...`）
+    let uid: String = tx
+        .query_row(
+            "SELECT uid FROM snapshots WHERE id = ?1",
+            params![snapshot_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| super::db_err("index_snapshot_uid", e))?;
+
+    // 幂等：先删该快照的所有旧索引行（profile 类 ref_uid 是裸 uid，也一并处理）
+    tx.execute(
+        "DELETE FROM search_fts WHERE ref_uid = ?1 OR ref_uid LIKE ?2",
+        params![uid, format!("{uid}#%")],
+    )
+    .map_err(|e| super::db_err("index_snapshot_clear", e))?;
+
+    // PATH 条目
+    let mut stmt = tx
+        .prepare("SELECT hive, path FROM path_entries WHERE snapshot_id = ?1")
+        .map_err(|e| super::db_err("index_snapshot_paths", e))?;
+    let rows = stmt
+        .query_map(params![snapshot_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|e| super::db_err("index_snapshot_paths", e))?;
+    for row in rows {
+        let (hive, path) = row.map_err(|e| super::db_err("index_snapshot_paths", e))?;
+        insert_tx(tx, &path, "path", &format!("{uid}#{hive}"))?;
+    }
+    drop(stmt);
+
+    // env 变量名（**不索引 value**）
+    let mut stmt = tx
+        .prepare("SELECT hive, name FROM env_values WHERE snapshot_id = ?1")
+        .map_err(|e| super::db_err("index_snapshot_env", e))?;
+    let rows = stmt
+        .query_map(params![snapshot_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|e| super::db_err("index_snapshot_env", e))?;
+    for row in rows {
+        let (hive, name) = row.map_err(|e| super::db_err("index_snapshot_env", e))?;
+        insert_tx(tx, &name, "envName", &format!("{uid}#{hive}#{name}"))?;
+    }
+    Ok(())
+}
+
 /// 搜索。空查询（含纯空白）返回空结果——**不得返回全量**。
 pub fn search(db: &Db, query: &str, limit: u32) -> Result<Vec<SearchHit>, CoreError> {
     let q = query.trim();
@@ -430,12 +486,13 @@ git commit -m "feat(v6): FTS5 检索与索引重建（不索引敏感值）"
 
 **Interfaces:**
 
-- Consumes: `events` / `snapshots`
+- Consumes: `events` / `snapshots` / `path_entries` / `profiles`
 - Produces:
-  - `pub fn rebuild_daily(db: &mut Db) -> Result<usize, CoreError>`
+  - `pub fn rebuild_daily(db: &mut Db) -> Result<usize, CoreError>` — 重建 `daily_stats` + 打耗时日志（T-1）
   - `pub fn dashboard(db: &Db, days: u32) -> Result<Dashboard, CoreError>`
-  - `pub struct Dashboard { pub days: Vec<DailyPoint>, pub top_targets: Vec<TargetCount>, pub profile_applies: Vec<ProfileApply> }`
-  - `pub struct DailyPoint { pub day: String, pub path_items: i64, pub env_items: i64, pub events: i64, pub conflicts: i64 }`
+  - `pub struct Dashboard { days, top_targets, profile_applies, current_avg_len, current_path_items }`（完整定义见 Step 3）
+  - `pub struct DailyPoint { day, path_items, env_items, events, conflicts }`
+  - `pub struct TargetCount { target, count }` / `pub struct ProfileApply { name, apply_count, last_applied_at }`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -546,16 +603,56 @@ pub struct DailyPoint {
 }
 
 /// 统计面板数据。
+///
+/// **口径说明（M-1）**：`days` 是按天聚合的**历史**序列，某一天的 `path_items`
+/// 是「那天最后一次保存时的条目数」，不是「现在有多少条」。
+/// 「现在」单独由 `current_path_items` / `current_avg_len` 给出，
+/// 取自 `app_state.current_snapshot_id`（与 GUI 的 `READ_SNAPSHOT_CACHE` 同源）。
+/// UI 上必须把这两个概念分开显示，否则用户会把「今天最后一次保存」误读成「当前」。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Dashboard {
     /// 按日期升序的时间序列
     pub days: Vec<DailyPoint>,
+    /// 最常改变的变量（来自 `events.target` 聚合，spec §6.2）
+    pub top_targets: Vec<TargetCount>,
+    /// 配置应用次数（直接读 M1 的 `profiles.apply_count`）
+    pub profile_applies: Vec<ProfileApply>,
+    /// **当前**快照的 PATH 平均长度（M-2：与 `days` 的口径不同，见上）
+    pub current_avg_len: f64,
+    /// **当前**快照的 PATH 条目数
+    pub current_path_items: i64,
+}
+
+/// 变量被修改的次数。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetCount {
+    /// 变量名（`events.target`）
+    pub target: String,
+    /// 出现次数
+    pub count: i64,
+}
+
+/// 配置的应用统计。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileApply {
+    /// 配置名
+    pub name: String,
+    /// 应用次数
+    pub apply_count: i64,
+    /// 最近一次应用时间（Unix 毫秒；从未应用为 `None`）
+    pub last_applied_at: Option<i64>,
 }
 
 /// 全量重建 `daily_stats`，返回写入的天数。
 pub fn rebuild_daily(db: &mut Db) -> Result<usize, CoreError> {
-    db.with_transaction(|tx| {
+    // T-1：**只观测，不设阈值**。当前 events 规模下全表扫描是毫秒级，
+    // 定一个现在跑不到的阈值等于埋一条永远不会被测到的分支。
+    // 等真有启动瓶颈时，这里的日志会提供决策所需的基线数据。
+    let started = std::time::Instant::now();
+    let n = db.with_transaction(|tx| {
         tx.execute("DELETE FROM daily_stats", [])
             .map_err(|e| super::db_err("clear_daily", e))?;
 
@@ -601,10 +698,20 @@ pub fn rebuild_daily(db: &mut Db) -> Result<usize, CoreError> {
             .query_row("SELECT count(*) FROM daily_stats", [], |r| r.get(0))
             .map_err(|e| super::db_err("count_daily", e))?;
         Ok(n as usize)
-    })
+    })?;
+    log::info!(
+        "daily_stats 重建完成: {} 天, 耗时 {:?}",
+        n,
+        started.elapsed()
+    );
+    Ok(n)
 }
 
 /// 读取最近 `days` 天的统计。
+///
+/// 返回两部分（口径不同，UI 必须分开显示，见 `Dashboard` 的文档注释）：
+/// - `days`：按天的**历史**序列；
+/// - `current_*`：**现在**的状态，取自 `app_state.current_snapshot_id`。
 pub fn dashboard(db: &Db, days: u32) -> Result<Dashboard, CoreError> {
     let days = days.clamp(1, 365) as i64;
     let mut stmt = db.prepare(
@@ -625,7 +732,59 @@ pub fn dashboard(db: &Db, days: u32) -> Result<Dashboard, CoreError> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| super::db_err("dashboard", e))?;
     rows.reverse(); // 前端按时间升序画图
-    Ok(Dashboard { days: rows })
+
+    // 最常改变的变量：从 events.target 聚合（spec §6.2，不需要新表）
+    let mut stmt = db.prepare(
+        "SELECT target, count(*) AS c FROM events
+          WHERE target IS NOT NULL AND target <> ''
+          GROUP BY target ORDER BY c DESC, target LIMIT 10",
+    )?;
+    let top_targets = stmt
+        .query_map([], |r| {
+            Ok(TargetCount {
+                target: r.get(0)?,
+                count: r.get(1)?,
+            })
+        })
+        .map_err(|e| super::db_err("dashboard_targets", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| super::db_err("dashboard_targets", e))?;
+
+    // 配置应用次数：直接读 M1 的 profiles
+    let mut stmt = db.prepare(
+        "SELECT name, apply_count, last_applied_at FROM profiles
+          WHERE deleted_at IS NULL ORDER BY apply_count DESC, name LIMIT 10",
+    )?;
+    let profile_applies = stmt
+        .query_map([], |r| {
+            Ok(ProfileApply {
+                name: r.get(0)?,
+                apply_count: r.get(1)?,
+                last_applied_at: r.get(2)?,
+            })
+        })
+        .map_err(|e| super::db_err("dashboard_profiles", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| super::db_err("dashboard_profiles", e))?;
+
+    // 当前快照的条目数与平均长度（B-2：daily_stats 无长度列，这里直接查 path_entries）
+    let (current_path_items, current_avg_len): (i64, f64) = db
+        .query_row_with(
+            "SELECT count(*), COALESCE(AVG(length(path)), 0.0)
+               FROM path_entries
+              WHERE snapshot_id = (SELECT current_snapshot_id FROM app_state WHERE id = 1)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| super::db_err("dashboard_current", e))?;
+
+    Ok(Dashboard {
+        days: rows,
+        top_targets,
+        profile_applies,
+        current_avg_len,
+        current_path_items,
+    })
 }
 ```
 
@@ -778,6 +937,14 @@ pub fn parse_refs(text: &str) -> Vec<String> {
 }
 
 /// 全量重建 `var_references`，返回写入的边数。
+///
+/// **不变量（M-3）**：本表**只保存当前快照的边**，由「每次全量清空 + 只插当前快照」
+/// 保证。因此 [`dependents`] / [`dependencies`] / [`find_cycles`] 可以省略
+/// `snapshot_id` 过滤。
+///
+/// ⚠️ 若将来改为增量（只删当前快照的边），**必须同时**给那三条查询补上
+/// `WHERE snapshot_id = (SELECT current_snapshot_id FROM app_state WHERE id = 1)`，
+/// 否则会静默混入历史快照的边。
 pub fn rebuild_refs(db: &mut Db) -> Result<usize, CoreError> {
     db.with_transaction(|tx| {
         tx.execute("DELETE FROM var_references", [])
@@ -958,6 +1125,9 @@ git commit -m "feat(v6): %VAR% 引用图（解析/递归依赖/环检测）"
 - Produces:
   - `pub fn compare(db: &Db, left: &str, right: &str) -> Result<CompareResult, CoreError>`
   - `pub struct CompareResult { pub path_added, path_removed, path_reordered, env_added, env_removed, env_modified }`
+  - **T-3**：`env_added` / `env_removed` / `env_modified` 本轮**恒为空数组**，
+    UI 必须显式显示「环境变量对比将在 M3 提供」。只有 PATH 结果而字段缺失时，
+    用户会以为「env 没变化」，而不是「env 没对比」——空数组 + 显式文案比字段不存在诚实。
   - 敏感值在结果里**恒为掩码**（`Option<String>` 仅对非敏感项有值）
 
 - [ ] **Step 1: 写失败测试**
@@ -1025,7 +1195,7 @@ Expected: FAIL — `compare` 模块不存在
 //! **敏感值恒掩码**：对比结果里 env 的 `value` 只对非敏感项填充。
 
 use super::{history, Db};
-use crate::error::{CoreError, ErrorCode};
+use crate::error::CoreError;
 use crate::path_entry::PathEntry;
 use std::collections::HashMap;
 
@@ -1112,7 +1282,6 @@ pub fn compare_paths(left: &[PathEntry], right: &[PathEntry]) -> CompareResult {
     }
 }
 
-// 占位：`ErrorCode` 未在纯函数路径使用，`compare` 的错误来自 `get_snapshot`。
 ```
 
 > **实现时删掉上面那行占位注释**，并去掉未使用的 `import`（否则 clippy `-D warnings` 会红）。
@@ -1146,7 +1315,8 @@ git commit -m "feat(v6): N 路快照对比（新增/删除/顺序变化）"
   - `pub fn record_run(db: &mut Db, conflicts_json: &str, tools_json: &str) -> Result<String, CoreError>`
   - `pub fn list_runs(db: &Db, limit: u32) -> Result<Vec<ScanRunView>, CoreError>`
   - `pub fn diff_runs(db: &Db, a: &str, b: &str) -> Result<ScanRunDiff, CoreError>`
-  - `pub struct ScanRunDiff { pub appeared: Vec<String>, pub disappeared: Vec<String>, pub persistent: Vec<String> }`
+  - `pub struct ScanRunDiff { pub appeared: Vec<String>, pub disappeared: Vec<String>, pub persistent: Vec<String>, pub last_seen: Vec<LastSeen> }`
+  - `pub struct LastSeen { pub conflict: String, pub run_uid: String, pub seen_at: i64 }`（M-5）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -1191,6 +1361,21 @@ Expected: FAIL — `scan_history` 模块不存在
   ⚠️ **不能嵌套事务**：`record_run` 用 `with_transaction` 写完后，再单独调 `rebuild_daily`。
 - `list_runs` 按 `created_at DESC, id DESC`。
 - `diff_runs` 解析两份 `conflicts_json`（`Vec<String>`），做三集合运算：`appeared` / `disappeared` / `persistent`，全部排序后返回。
+- **M-5「最近出现」**：spec §6.2 原文要求「首次出现/最近出现」。`last_seen` 字段承载后者——
+  对 `persistent` 里的每一项，从 `list_runs` 的历史里**倒序找第一条不含它的 run**，
+  它之后的那条就是「最近一次出现」。实现上遍历 `scan_runs` 即可，**不需要改表**。
+  若该冲突在最近一次运行里出现（即 `b`），`last_seen` 就是 `b` 本身。
+
+**M-6 测试要求**：Step 1 的测试末尾**必须**再加一条断言，验证 `record_run` 真的触发了
+`daily_stats` 重建——否则「触发重建」这件事没有任何证据，接没接上都会「测试全绿」。
+
+```rust
+// 在同一函数、同一个 db 上追加（不新开 SQLCipher 连接，不违反一文件一测试）
+let rows: i64 = db
+    .query_row_with("SELECT COALESCE(SUM(conflicts),0) FROM daily_stats", [], |r| r.get(0))
+    .unwrap();
+assert!(rows >= 2, "record_run 必须触发 daily_stats 重建（M-6），实际 conflicts 合计 {rows}");
+```
 
 - [ ] **Step 4: 运行，确认通过**
 
@@ -1268,6 +1453,7 @@ git commit -m "feat(v6): history_reveal_env_value —— 敏感值显式 reveal"
 **Files:**
 
 - Create: `core/src/db/v5_export.rs`
+- Modify: `core/src/profiles.rs`（**新增 `load_profile_from(path)`，B-1 整改**）
 - Modify: `gui/src/commands/history.rs`、`cli/src/profile_ops.rs`
 - Test: `core/tests/db_profile_export_v5.rs`
 
@@ -1275,7 +1461,45 @@ git commit -m "feat(v6): history_reveal_env_value —— 敏感值显式 reveal"
 
 - Produces: `pub fn export_profile_v5(db: &Db, uid: &str) -> Result<String, CoreError>`（返回 v5 `ProfileData` 的 JSON 字符串）
 
-**要点**：输出必须能被现有 `core::profiles::load_profile` 读回（降级到 v5 时的退路）。测试断言**往返一致**：export → 写成文件 → `load_profile` 读回 → 与 DB 里的 PATH 相等。
+- 前置（**B-1：必须先做，否则测试会写进用户真实目录**）：
+  `core/src/profiles.rs` 现有 `load_profile(name)` 内部走 `profiles_dir()`，而 `profiles_dir()` 基于
+  `dirs::home_dir()`，**无法被环境变量重定向**。`core/tests/*.rs` 是外部集成测试，
+  用不到 `#[cfg(test)]` 的 temp 特判，照计划写成「export → 写文件 → `load_profile` 读回」
+  会在 `C:\Users\<用户>\.patheditor\profiles\` 下留下测试文件。
+
+  **整改**：把路径解析与解析逻辑拆开——
+
+  ```rust
+  /// 从**指定路径**读取配置（供测试与 v5 导入使用，B-1）。
+  ///
+  /// [`load_profile`] 是「按名字算路径 + 调本函数」的薄封装。
+  /// 拆分理由：`profiles_dir()` 基于 `dirs::home_dir()`，无法重定向；
+  /// 外部集成测试必须能指定路径，否则会写进用户真实配置目录。
+  pub fn load_profile_from(path: &Path) -> Result<ProfileData, CoreError> {
+      if !path.exists() {
+          return Err(CoreError::new(ErrorCode::NotFound, "load_profile", "配置文件不存在"));
+      }
+      let content = fs::read_to_string(path).map_err(|e| {
+          CoreError::new(ErrorCode::Io, "load_profile", format!("无法读取配置文件: {e}"))
+      })?;
+      serde_json::from_str::<Versioned<ProfileData>>(&content)
+          .map_err(|e| parse_error_quarantined(path, "配置文件", e))
+          .and_then(|v| migrate(v, "配置文件"))
+  }
+
+  /// 按名字读取配置（路径由 `profiles_dir()` 决定）。
+  pub fn load_profile(name: &str) -> Result<ProfileData, CoreError> {
+      validate_profile_name(name)?;
+      load_profile_from(&profile_path(name))
+  }
+  ```
+
+  **这是 M1 遗留的可测性缺口**：`profiles.rs` 的所有读写都硬绑 `profiles_dir()`，
+  导致任何依赖它的集成测试都无法隔离。本 Task 顺带修掉。
+
+**要点**：输出必须能被 `core::profiles::load_profile_from(path)` 读回（降级到 v5 时的退路）。
+测试断言**往返一致**：export → 写成 `TempDir` 下的文件 → `load_profile_from(&path)` 读回 →
+与 DB 里的 PATH 相等。**测试全程只碰 `TempDir`，不调 `load_profile(name)`。**
 
 - [ ] **Step 1–5**（同标准 TDD 循环）
 
@@ -1321,7 +1545,7 @@ git commit -m "feat(v6): M2 IPC 命令与前端形状校验"
 **Files:**
 
 - Create: `src/store/search-store.ts`、`src/components/search/SearchPanel.tsx`、`src/components/stats/StatsPanel.tsx`
-- Modify: `src/components/layout/AppShell.tsx`、`src/core/path-capabilities.ts`（新增 `TabId`）
+- Modify: `src/components/layout/AppShell.tsx`、`src/core/path-capabilities.ts`（**在既有 `TabId` 联合类型里追加** `'search' | 'stats'`，不是新建类型；`app-store.ts:16` 已 re-export，无需改动）、`src/i18n/locales/{zh-CN,en}.json`（补 `tab.search` / `tab.stats`）
 - Modify: `src/i18n/locales/{zh-CN,en}.json`
 
 **要求**：
@@ -1419,14 +1643,64 @@ git commit -m "test(v6): 搜索与统计 E2E；文档同步"
 | 引用图：`%VAR%` 边；递归 CTE；删除前显示影响范围                              | Task 4 + Task 11                          |
 | 冲突历史：`scan_runs` 持久化；两次扫描 diff；首次/最近出现                    | Task 6                                    |
 
-**发现的规格缺口（需在开发前确认）**：
+**发现的规格缺口（已于核对轮全部落到具体 Task）**：
 
-1. **「PATH 条目数/长度趋势」的「长度」未在前述 Task 落实** — `daily_stats` 表结构里没有长度字段。两条路：加 `avg_path_len` 列（改 spec §4.1），或在 `dashboard()` 里实时算（不改表）。**本计划选后者**，但要在 Task 3 的实现里补一个 `avg_len` 查询。
-2. **「最常改变量」没有对应的表** — 可从 `events.target` 的 `GROUP BY` 直接算，不需要新表。Task 3 的 `Dashboard` 增加 `top_targets: Vec<TargetCount>`。
-3. **「配置应用次数」** 已在 M1 的 `profiles.apply_count`，Task 3 直接读。
-4. **env 的 N 路对比** 被推迟（敏感值掩码语义需要单独设计）。**这是范围缩减，必须写进 M2 回执的未覆盖项。**
+1. **「PATH 长度趋势」** — `daily_stats` 表结构无长度字段（spec §4.1 未定义）。
+   **裁决（T-2）**：不改表结构，`dashboard()` 直接查 `path_entries` 算 `current_avg_len`。
+   理由：spec §4.2 第 5 条写明派生表可重建、不是真相；为一个展示字段改权威表结构不划算。
+   ⚠️ 口径：`current_avg_len` 是**当前**快照的平均长度，与 `days` 的历史序列不是一回事
+   （见 `Dashboard` 的文档注释 M-1）。
+2. **「最常改变量」** — 从 `events.target` 的 `GROUP BY` 直接算，不需要新表。已落 Task 3。
+3. **「配置应用次数」** — 已在 M1 的 `profiles.apply_count`，Task 3 直接读。已落 Task 3。
+4. **env 的 N 路对比** — 推迟到 M3。**范围缩减，见下方「未覆盖项」表，回执必须照抄。**
 
-**类型一致性**：`SearchHit` / `DailyPoint` / `RefEdge` / `CompareResult` / `ScanRunDiff` 在 Task 2/3/4/5/6 定义，Task 9 的 `parseXxx` 与 Task 10/11 的组件都引用同一形状，无重定义。
+**「未覆盖项」清单（开发窗口回执必须原样带过去，不得省略）**：
+
+| #   | 未覆盖项                                                                   | 归属              | 原因                                                                                                                                  |
+| --- | -------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | env 变量的 N 路对比（`env_added`/`env_removed`/`env_modified` 恒为空数组） | M3                | 掩码值在对比结果里如何呈现没有定义（显示 `••••`？显示「已修改但不可见」？两边都敏感且都改了无法判断是否相同时怎么办），硬做会误导用户 |
+| 2   | CLI 不重建派生表；CLI 改 PATH 后 `var_references` / `daily_stats` 保持陈旧 | 未排期（M1 R-02） | 需 CLI 也接 DB 的 current 快照，属范围扩张；**M2 不顺手修**                                                                           |
+| 3   | 真实注册表闭环测试                                                         | 用户授权后        | E2E 用 mock IPC                                                                                                                       |
+| 4   | CI（MSVC）验证                                                             | 推送后            | 本机为 GNU                                                                                                                            |
+
+**M-2（时区）约束**：`date(..., 'localtime')` 取 C 运行时时区，代码里没有任何地方强制
+`Asia/Shanghai`。**Task 3 的测试必须避开跨日边界**——不要在 23:59 附近写事件，
+断言只比较「天数」不比较具体日期。
+
+**类型一致性**：`SearchHit` / `DailyPoint` / `TargetCount` / `ProfileApply` / `RefEdge` /
+`CompareResult` / `ScanRunDiff` / `LastSeen` 在 Task 2/3/4/5/6 定义，Task 9 的 `parseXxx`
+与 Task 10/11 的组件都引用同一形状，无重定义。
+
+---
+
+## 核对轮裁断（2026-10-20）
+
+开发窗口提交 `PathEditor-v6-M2-核对轮交接.md`（339 行），提出 1 阻塞 + 4 矛盾 + 6 口径 + 3 待裁断。
+审核窗口逐条复核后**全部采纳**，修订如下。
+
+| 编号    | 主张                                          | 复核                                                                                                                   | 裁断                                                                                                                                 |
+| ------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **B-1** | Task 8 的测试会写进 `~/.patheditor/profiles/` | ✅ 成立。`load_profile` 走 `profiles_dir()` = `dirs::home_dir()`，不可重定向；`#[cfg(test)]` 特判只对 crate 内单测生效 | **采纳方案 A**：新增 `profiles::load_profile_from(path)`，`load_profile(name)` 变为薄封装。Task 8 已改写                             |
+| **C-1** | `Dashboard` 三处定义不一致                    | ✅ 成立。接口 3 字段、实现 1 字段、Self-Review 又提 `top_targets`                                                      | **采纳**：定死为 `{ days, top_targets, profile_applies, current_avg_len, current_path_items }`，三处统一                             |
+| **B-2** | `avg_len` 在 `dashboard()` 里算不出来         | ✅ 成立。`daily_stats` 无长度列，`dashboard()` 不接触 `path_entries`                                                   | **采纳方案 B**（T-2）：改查 `path_entries`，不改 spec 表结构                                                                         |
+| **C-2** | `index_snapshot_tx` 声明未实现                | ✅ 成立。Interfaces 有、代码块无、Task 12 依赖它                                                                       | **采纳**：Task 2 补齐实现（含幂等清理）                                                                                              |
+| **C-3** | Task 5 引入未使用的 `ErrorCode`               | ✅ 成立，**且是两处**（Task 2 第 272 行也有）                                                                          | **采纳**：两处都改为 `use crate::error::CoreError;`，删占位注释                                                                      |
+| **C-4** | `TabId` 是「扩展」不是「新增」                | ✅ 成立。`path-capabilities.ts:3` 已有                                                                                 | **采纳**：措辞已改                                                                                                                   |
+| **M-1** | `daily_stats.path_items` 口径                 | ✅ 成立                                                                                                                | **采纳**：`Dashboard` 文档注释写清「历史 vs 当前」，并新增 `current_*` 字段                                                          |
+| **M-2** | `'localtime'` 依赖进程时区                    | ✅ 成立                                                                                                                | **采纳**：写入 Self-Review 的测试约束                                                                                                |
+| **M-3** | 引用查询无快照过滤的不变量是隐式的            | ✅ 成立                                                                                                                | **采纳**：`rebuild_refs` 文档注释写死不变量与破坏后果                                                                                |
+| **M-4** | CLI 侧无派生表重建点                          | ✅ 成立（M1 遗留 R-02）                                                                                                | **采纳**：登记为未覆盖项 #2，**M2 不顺手修**                                                                                         |
+| **M-5** | spec「首次出现/最近出现」无对应实现           | ✅ 成立。`ScanRunDiff` 只有三字段                                                                                      | **采纳**：增加 `last_seen: Vec<LastSeen>`，不改表                                                                                    |
+| **M-6** | Task 6 测试没验证 `daily_stats` 被重建        | ✅ 成立                                                                                                                | **采纳**：测试追加 `SUM(conflicts)` 断言                                                                                             |
+| **T-1** | `daily_stats` 重建阈值                        | 开发窗口建议「现在不定阈值，只加耗时日志」                                                                             | **采纳开发窗口建议**：`rebuild_daily` 加 `Instant` + `log::info!` 耗时。理由：定一个现在跑不到的阈值，等于埋一条永远不会被测到的分支 |
+| **T-2** | `avg_len` 落点                                | 开发窗口推荐方案 B                                                                                                     | **采纳**：不改 spec §4.1                                                                                                             |
+| **T-3** | env 对比推迟的呈现方式                        | 开发窗口建议保留空数组 + 显式文案                                                                                      | **采纳**：比「字段不存在」诚实                                                                                                       |
+
+**未采纳/未处理的**：无。核对轮 14 条全部采纳。
+
+**对核对工具的肯定**：开发窗口在 §9 记录了一版作废稿——三条「阻塞项」是凭印象写的，
+逐字比对原文后**全部不成立**。这个自我更正比条目本身更有价值：它展示了一个可用的
+判据（「打开文件逐字比对」而不是「凭这类计划容易犯什么错」）。本计划后续修订也应遵守同一判据。
 
 ---
 
