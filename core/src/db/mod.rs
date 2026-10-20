@@ -13,6 +13,7 @@ pub mod migrate_v5;
 pub mod profiles;
 pub mod schema;
 pub mod search;
+pub mod stats;
 
 #[cfg(windows)]
 pub mod dpapi;
