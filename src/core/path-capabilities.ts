@@ -1,6 +1,15 @@
 import { TargetType } from './undo-redo';
 
-export type TabId = 'system' | 'user' | 'allVars' | 'merged' | 'history';
+export type TabId =
+  | 'system'
+  | 'user'
+  | 'allVars'
+  | 'merged'
+  | 'history'
+  // M2（Task 10）：在既有联合类型里追加，不是新建类型。
+  // `app-store.ts` 已 re-export 本类型，无需改动。
+  | 'search'
+  | 'stats';
 
 export interface PathCapabilities {
   canReadSystem: boolean;

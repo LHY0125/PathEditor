@@ -22,6 +22,8 @@ import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { EnvBackupDialog } from '@/components/dialogs/EnvBackupDialog';
 import { HistoryPanel } from '@/components/history/HistoryPanel';
+import { SearchPanel } from '@/components/search/SearchPanel';
+import { StatsPanel } from '@/components/stats/StatsPanel';
 import { useEnvStore } from '@/store/env-store';
 import { backend } from '@/services/backend';
 import { envVarKey, findMetaByKey, type EnvVarMeta } from '@/core/env-var';
@@ -134,6 +136,8 @@ export function AppShell() {
     { id: 'allVars', label: t('tab.allVars') },
     { id: 'merged', label: t('tab.merged') },
     { id: 'history', label: t('tab.history') },
+    { id: 'search', label: t('tab.search') },
+    { id: 'stats', label: t('tab.stats') },
   ];
 
   /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
@@ -256,6 +260,10 @@ export function AppShell() {
           <MergePreview />
         ) : activeTab === 'history' ? (
           <HistoryPanel />
+        ) : activeTab === 'search' ? (
+          <SearchPanel />
+        ) : activeTab === 'stats' ? (
+          <StatsPanel />
         ) : activeTab === 'allVars' ? (
           <EnvVarTable
             searchQuery={envSearch}

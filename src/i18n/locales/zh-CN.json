@@ -9,7 +9,9 @@
     "user": "用户 PATH",
     "allVars": "全部变量",
     "merged": "合并预览",
-    "history": "历史记录"
+    "history": "历史记录",
+    "search": "搜索",
+    "stats": "统计"
   },
   "envBackup": {
     "title": "环境变量备份与恢复",
@@ -275,5 +277,26 @@
     "reveal": "显示",
     "revealing": "读取中…",
     "revealFailed": "无法读取该变量的值"
+  },
+  "search": {
+    "placeholder": "搜索路径、变量名、配置…",
+    "submit": "搜索",
+    "searching": "搜索中…",
+    "noResults": "没有匹配结果",
+    "kindPath": "路径",
+    "kindEnvName": "变量名",
+    "kindProfile": "配置"
+  },
+  "stats": {
+    "loading": "加载中…",
+    "currentTitle": "当前状态",
+    "currentPathItems": "当前 PATH 条目",
+    "currentAvgLen": "平均长度",
+    "currentHint": "与下方历史序列口径不同：这里显示的是「现在」的数量",
+    "historyTitle": "最近 30 天",
+    "noData": "暂无数据",
+    "eventsCount": "{{count}} 次操作",
+    "topTargets": "最常改变的变量",
+    "profileApplies": "配置应用次数"
   }
 }
