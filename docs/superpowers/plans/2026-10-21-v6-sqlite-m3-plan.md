@@ -972,9 +972,19 @@ grep -rn "<fn_name>(" --include=*.rs core/src gui/src cli/src | grep -v "fn <fn_
 
 ## Execution Notes
 
-**（留给开发窗口回填）**
+**（由开发窗口回填，2026-10-21）**
 
-- 偏离记录：
-- 未覆盖项：
-- 残余风险：
-- 实际测试数：
+- 偏离记录（详见回执 §3）：
+  1. `insert_snapshot_tx` 在 `EventSource::Migration` 时**不记变更**——它同时被 v5
+     迁移与首次启动建基线调用，无条件记录会把陈年数据推入待导出队列。
+  2. spec §5.2 的 `magic "PESYNC1" (8)` 是笔误（7 字符），实现取 `PESYNC1\0`。
+  3. `SyncFormat` 错误码从 Task 7 **提前到 Task 3**（bundle.rs 就要用它）。
+  4. 新增 `gui/build.rs` + `gui/test.{rc,manifest}`：lib 的 test harness 拿不到
+     Tauri 只给 bin 嵌的 comctl32 v6 清单，进程以 `0xC0000139` 退出。
+  5. bundle 每条变更增加 `content`（实体当前内容）——spec 的 `oldValue`/`newValue`
+     不足以让接收端重建实体。
+- 未覆盖项（详见回执 §5）：配置（`profiles`/`profile_revisions`）导入时不落库；
+  `events` 不同步；真实注册表闭环未做；CLI `sync` 子命令无单测；冲突值掩码未在 Rust 侧实现。
+- 残余风险（详见回执 §6）：配置同步静默不完整（R-1）是最主要的一条。
+- 实际测试数：Rust **339**（基线 329，+10）；前端 **395**（基线 374，+21）；
+  E2E **54**（基线 50，+4）。`npm run verify:all` exit 0。
