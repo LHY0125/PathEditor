@@ -1,0 +1,144 @@
+//! 导出：收集待导出变更 → 构建 payload → 加密 → 写文件 → 标记已导出。
+//!
+//! ## 顺序不是风格问题
+//!
+//! ```text
+//! 正确：收集 → 加密 → 写文件 →（成功后）标记 exported_at
+//! 错误：收集 → 加密 → 标记 exported_at → 写文件
+//! ```
+//!
+//! 后者在写文件失败时，变更**既没导出成功、又不在待导出队列里了**——永久丢失，
+//! 而且不会报错（`mark_exported` 成功了）。这是本次实现里唯一无法靠类型系统
+//! 表达的约束，只能靠测试构造「写文件失败」这条少见路径来守。
+
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+
+use crate::db::sync::bundle::{seal, BundleHeader};
+use crate::db::sync::change_log::{current_lamport, mark_exported, pending_export, ChangeRow};
+use crate::db::Db;
+use crate::error::{CoreError, ErrorCode};
+
+/// 导出结果。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportReport {
+    /// 本次导出的变更条数
+    pub change_count: u32,
+    /// 写出的文件路径
+    pub path: PathBuf,
+}
+
+/// bundle 里的一条变更（**对外形状**，spec §6.4）。
+///
+/// **禁止出现本地整数主键**：`id` 是各设备自己的自增列，跨设备毫无意义。
+/// 所有引用一律用 uid（`uid` / `deviceId` / `entityUid`）。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BundleChange<'a> {
+    uid: &'a str,
+    device_id: &'a str,
+    seq: i64,
+    lamport: i64,
+    entity_type: &'a str,
+    entity_uid: &'a str,
+    field: Option<&'a str>,
+    old_value: Option<&'a str>,
+    new_value: Option<&'a str>,
+    created_at: i64,
+}
+
+impl<'a> From<&'a ChangeRow> for BundleChange<'a> {
+    fn from(c: &'a ChangeRow) -> Self {
+        Self {
+            uid: &c.uid,
+            device_id: &c.device_id,
+            seq: c.seq,
+            lamport: c.lamport,
+            entity_type: &c.entity_type,
+            entity_uid: &c.entity_uid,
+            field: c.field.as_deref(),
+            old_value: c.old_value.as_deref(),
+            new_value: c.new_value.as_deref(),
+            created_at: c.created_at,
+        }
+    }
+}
+
+/// payload 顶层结构（spec §6.4）。
+#[derive(Debug, Serialize)]
+struct BundlePayload<'a> {
+    changes: Vec<BundleChange<'a>>,
+}
+
+/// 导出同步包。成功返回写出的路径与条数。
+///
+/// **无待导出变更时也写出一个空包**：这与「同步中心显示 0 条」一致，
+/// 且让「导出成功」这个操作始终产出文件（用户不必区分两种成功）。
+pub fn export_bundle(
+    db: &mut Db,
+    passphrase: &str,
+    path: &Path,
+) -> Result<ExportReport, CoreError> {
+    // ① 收集
+    let pending = pending_export(db)?;
+    let change_count = u32::try_from(pending.len())
+        .map_err(|_| CoreError::new(ErrorCode::Sync, "export", "待导出变更过多"))?;
+
+    // ② 构建 payload + header
+    let payload = BundlePayload {
+        changes: pending.iter().map(BundleChange::from).collect(),
+    };
+    let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Sync,
+            "export",
+            format!("payload 序列化失败: {e}"),
+        )
+    })?;
+
+    // `device_id` 取本机：所有待导出变更都是 `origin='local'`，device_id 相同
+    let device_id = pending
+        .first()
+        .map(|c| c.device_id.clone())
+        .unwrap_or_else(|| local_device_id(db).unwrap_or_else(|_| "local".to_string()));
+    let header = BundleHeader {
+        schema_version: crate::db::schema::CURRENT_SCHEMA_VERSION,
+        device_id,
+        exported_at: chrono::Utc::now().timestamp_millis(),
+        // `base_lamport` 是**导出时**的时钟，导入方据此把自己提升到至少这个值
+        base_lamport: current_lamport(db)?,
+        change_count,
+    };
+
+    // ③ 加密
+    let sealed = seal(passphrase, &header, &payload_bytes)?;
+
+    // ④ 写文件 —— **必须成功之后才标记**
+    std::fs::write(path, &sealed).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "export",
+            format!("写入同步包失败: {}", e.kind()),
+        )
+    })?;
+
+    // ⑤ 标记（同一事务内批量更新）
+    let uids: Vec<String> = pending.into_iter().map(|c| c.uid).collect();
+    mark_exported(db, &uids, header.exported_at)?;
+
+    Ok(ExportReport {
+        change_count,
+        path: path.to_path_buf(),
+    })
+}
+
+/// 读本机 `device_id`（`origin='local'` 行存在时优先用行里的值）。
+fn local_device_id(db: &Db) -> Result<String, CoreError> {
+    db.query_row_with(
+        "SELECT COALESCE((SELECT device_id FROM app_state WHERE id = 1), 'local')",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+}
