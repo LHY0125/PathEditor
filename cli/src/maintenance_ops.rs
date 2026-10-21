@@ -6,6 +6,7 @@
 
 use crate::runtime::exit_core_error;
 use path_editor_core as core;
+use path_editor_core::db::archive_v5::archive_v5_sources;
 use path_editor_core::db::maintenance::{prune, prune_plan};
 
 /// 打开默认库并迁移 schema（不做 v5 文件导入）。
@@ -37,5 +38,36 @@ pub(crate) fn maintenance_prune(dry_run: bool) {
         },
         report.changes_deleted,
         report.conflicts_deleted
+    );
+}
+
+/// `maintenance archive-v5 [--dry-run]`
+///
+/// 只处理 `disabled.json` 与 `profiles/*.json`；目标已存在则跳过，**绝不覆盖**。
+/// dry-run 是纯读：不改名、不写任何文件。
+pub(crate) fn maintenance_archive_v5(dry_run: bool) {
+    let home = core::db::crypto::config_dir();
+    let report = archive_v5_sources(&home, dry_run).unwrap_or_else(|e| exit_core_error(&e));
+    for path in &report.archived {
+        // `archived` 存的是**目标路径**（`<原名>.v5.bak`）。写「归档到」而不是
+        // 「归档 <目标>」，否则读起来像在归档一个 .v5.bak 文件。
+        println!(
+            "{} {}",
+            if dry_run {
+                "将归档到"
+            } else {
+                "已归档到"
+            },
+            path.display()
+        );
+    }
+    for (path, why) in &report.skipped {
+        eprintln!("跳过 {}：{why}", path.display());
+    }
+    println!(
+        "{}共 {} 个，跳过 {} 个",
+        if dry_run { "（dry-run）" } else { "" },
+        report.archived.len(),
+        report.skipped.len()
     );
 }

@@ -3,6 +3,7 @@
 //! **所有写事务 `BEGIN IMMEDIATE`**（spec D14：WAL 不代替业务并发控制）；
 //! 读-改-写必须带 `version` CAS。
 
+pub mod archive_v5;
 pub mod backups;
 pub mod compare;
 pub mod crypto;

@@ -20,7 +20,9 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
 
     // ③ v5 遗留文件一次性导入（幂等：migration_imports 保证重跑不重复）
     let home = path_editor_core::db::crypto::config_dir();
-    match path_editor_core::db::migrate_v5::migrate_legacy(db, &home) {
+    // 「迁移零失败」是 ⑦ 归档的前置条件：有文件没导进去就把原件改名，
+    // 用户会以为它已经处理过了。
+    let migration_clean = match path_editor_core::db::migrate_v5::migrate_legacy(db, &home) {
         Ok(report) => {
             if report.imported > 0 || report.failed > 0 {
                 log::info!(
@@ -30,10 +32,14 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
                     report.failed
                 );
             }
+            report.failed == 0
         }
         // 迁移失败不阻断启动：DB 仍可用于新记录，旧文件保持原样等下次重试
-        Err(e) => log::warn!("v5 文件迁移失败（继续启动）: {}", e.message),
-    }
+        Err(e) => {
+            log::warn!("v5 文件迁移失败（继续启动）: {}", e.message);
+            false
+        }
+    };
 
     // ③b 确保 DB 里有「当前状态」基线（D-6）。
     //
@@ -126,6 +132,26 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     // 因此「CLI 改 PATH 后 GUI 的引用图/统计仍是旧的」是已知残余风险。
     // 修它需要 CLI 也接 DB 的 current 快照，属范围扩张，M2 不做。
     rebuild_derived_tables(db);
+
+    // ⑦ v5 原件归档（spec §7.4 / §6.5.2）：只在迁移零失败时执行；失败只告警。
+    //
+    // **位置是刻意的，与计划原文不同**：归档会重命名 `disabled.json`，而
+    // `load_path_snapshot()` 在 `v5_writes_disabled()` 为 false（降级模式）或
+    // DB 里没有当前快照时**仍然回落读它**（`core/src/disabled.rs` 的 `load_path_snapshot`）。
+    // 若按计划把它放在 ③b 之后，任何在它之后、⑤ 之前的失败都会让
+    // 「文件已改名 + 读路径仍依赖文件」同时成立，用户禁用过的 PATH 条目
+    // 会全部显示成启用。放在最后意味着所有可能失败的步骤都已跑完。
+    //
+    // 依据：M4 核对轮交接 §1.S-2 与 §6.1 的裁断。
+    if migration_clean {
+        match path_editor_core::db::archive_v5::archive_v5_sources(&home, false) {
+            Ok(r) if !r.archived.is_empty() => {
+                log::info!("v5 原件归档：{} 个文件", r.archived.len())
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("v5 原件归档失败（继续启动）: {}", e.message),
+        }
+    }
 
     Ok(())
 }

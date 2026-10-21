@@ -158,6 +158,12 @@ enum MaintenanceCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// 把 v5 原件（disabled.json / profiles/*.json）归档为 .v5.bak（只改名，不删除）
+    ArchiveV5 {
+        /// 只显示将归档的文件，不改名
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -668,6 +674,9 @@ fn main() {
         },
         Command::Maintenance(cmd) => match cmd {
             MaintenanceCmd::Prune { dry_run } => maintenance_ops::maintenance_prune(dry_run),
+            MaintenanceCmd::ArchiveV5 { dry_run } => {
+                maintenance_ops::maintenance_archive_v5(dry_run)
+            }
         },
     }
 }
