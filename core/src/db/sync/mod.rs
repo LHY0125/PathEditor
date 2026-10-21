@@ -12,4 +12,5 @@
 //! **同步不写注册表**：导入只改 DB，用户要生效必须走既有的
 //! `apply_path_snapshot` / `apply_profile`。
 
+pub mod bundle;
 pub mod change_log;

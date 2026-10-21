@@ -31,6 +31,8 @@ blake3 = "1"
 uuid = { version = "1", features = ["v7"] }
 # OS 熵源：显式声明而非依赖传递依赖的 API
 getrandom = "0.2"
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

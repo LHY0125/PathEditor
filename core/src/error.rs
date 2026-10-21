@@ -35,8 +35,14 @@ pub enum ErrorCode {
     Database,
     /// 密钥/解密失败（v6）
     Crypto,
-    /// 同步包/合并冲突（v6）
+    /// 同步包/合并冲突（v6）：需要人工选择 local/remote
     Sync,
+    /// 同步包格式错误（v6）：magic/版本/AEAD/未知实体类型/悬空引用
+    ///
+    /// **与 [`Self::Sync`] 分开的原因**：两者的脚本处理完全不同——
+    /// 合并冲突应提示用户解决，格式错误应报告文件损坏、重试无用。
+    /// 共用 exit 4 会让自动化无法区分。
+    SyncFormat,
     /// v5 迁移与库版本问题（v6）
     Migration,
     /// 兜底
@@ -89,6 +95,8 @@ impl CoreError {
     pub fn exit_code(&self) -> i32 {
         match self.code {
             ErrorCode::Conflict => 3,
+            // 4 留给「需要人工介入的合并冲突」；包格式错误重试无用，归入一般错误
+            ErrorCode::Sync => 4,
             ErrorCode::Crypto => 5,
             _ => 1,
         }
