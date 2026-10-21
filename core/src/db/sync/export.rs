@@ -34,6 +34,17 @@ pub struct ExportReport {
 ///
 /// **禁止出现本地整数主键**：`id` 是各设备自己的自增列，跨设备毫无意义。
 /// 所有引用一律用 uid（`uid` / `deviceId` / `entityUid`）。
+///
+/// ## `content` 是对 spec §6.4 的补充
+///
+/// spec 的 Change 只有 `oldValue` / `newValue` 两个自由文本字段，**不足以
+/// 让导入方重建实体**：变更日志只知道「某快照被创建了」，不知道它里面有哪些
+/// PATH 条目。若只导出变更行，接收端解密成功后只能记一条 `changes` 行，
+/// 却无法写出对应的 `snapshots` / `path_entries`——同步「成功」但什么都没同步。
+///
+/// 因此导出时把**实体当前内容**一并带上（`content`）。它是导出瞬间的快照，
+/// 天然自包含；导入方无需回查。代价是同一实体多次变更会重复携带内容，
+/// 由去重逻辑在导入侧按 `entityUid` 合并（见 `import.rs`）。
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BundleChange<'a> {
@@ -47,10 +58,12 @@ struct BundleChange<'a> {
     old_value: Option<&'a str>,
     new_value: Option<&'a str>,
     created_at: i64,
+    /// 实体当前内容（`null` 表示实体已不存在，例如已删除）
+    content: Option<serde_json::Value>,
 }
 
-impl<'a> From<&'a ChangeRow> for BundleChange<'a> {
-    fn from(c: &'a ChangeRow) -> Self {
+impl<'a> BundleChange<'a> {
+    fn new(c: &'a ChangeRow, content: Option<serde_json::Value>) -> Self {
         Self {
             uid: &c.uid,
             device_id: &c.device_id,
@@ -62,7 +75,46 @@ impl<'a> From<&'a ChangeRow> for BundleChange<'a> {
             old_value: c.old_value.as_deref(),
             new_value: c.new_value.as_deref(),
             created_at: c.created_at,
+            content,
         }
+    }
+}
+
+/// 读一条变更对应的实体内容。
+///
+/// 返回 `None` 表示实体已不存在（软删除或从未成功写入）——导入方据此判断
+/// 是「墓碑」还是「内容缺失」。**查询失败也必须整体失败**：静默跳过会让
+/// 接收端收到一条没有内容的变更，同步看起来成功但数据丢了。
+fn entity_content(
+    db: &Db,
+    entity_type: &str,
+    entity_uid: &str,
+) -> Result<Option<serde_json::Value>, CoreError> {
+    match entity_type {
+        "snapshot" => {
+            // `reveal = true`：敏感值必须同步过去（DB 与 bundle 都已加密）。
+            // 掩码只发生在 UI 展示层，不在同步层。
+            match crate::db::history::get_snapshot(db, entity_uid, true) {
+                Ok(v) => Ok(Some(serde_json::to_value(&v).map_err(|e| {
+                    CoreError::new(ErrorCode::Sync, "export", format!("快照序列化失败: {e}"))
+                })?)),
+                // 快照被软删/不存在 → 无内容可带，但变更本身仍然有效
+                Err(e) if e.code == ErrorCode::NotFound => Ok(None),
+                Err(e) => Err(e),
+            }
+        }
+        "profile" => {
+            let view = crate::db::profiles::get_profile(db, entity_uid)?;
+            match view {
+                Some(v) => Ok(Some(serde_json::to_value(&v).map_err(|e| {
+                    CoreError::new(ErrorCode::Sync, "export", format!("配置序列化失败: {e}"))
+                })?)),
+                None => Ok(None),
+            }
+        }
+        // `profile_revision` 与 `path_entry` / `env_value` 随父实体走：
+        // 它们的内容已经包含在对应 `snapshot` / `profile` 的 content 里。
+        _ => Ok(None),
     }
 }
 
@@ -87,9 +139,15 @@ pub fn export_bundle(
         .map_err(|_| CoreError::new(ErrorCode::Sync, "export", "待导出变更过多"))?;
 
     // ② 构建 payload + header
-    let payload = BundlePayload {
-        changes: pending.iter().map(BundleChange::from).collect(),
-    };
+    //
+    // 每条变更都带上实体的**当前内容**，使 bundle 自包含（见 `BundleChange`
+    // 的文档：spec 的 oldValue/newValue 不足以重建实体）。
+    let mut changes = Vec::with_capacity(pending.len());
+    for c in &pending {
+        let content = entity_content(db, &c.entity_type, &c.entity_uid)?;
+        changes.push(BundleChange::new(c, content));
+    }
+    let payload = BundlePayload { changes };
     let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
         CoreError::new(
             ErrorCode::Sync,

@@ -14,5 +14,7 @@
 
 pub mod bundle;
 pub mod change_log;
+pub mod conflict;
 pub mod export;
+pub mod import;
 pub mod merge;

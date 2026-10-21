@@ -107,7 +107,9 @@ pub(crate) fn result_from_str(s: &str) -> EventResult {
 }
 
 /// 快照中的一行环境变量。
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// 需要 `Deserialize`：M3 的同步导入要从 bundle 的 `content` 还原快照内容。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvValueRow {
     /// `system` / `user`
@@ -254,9 +256,26 @@ pub fn insert_snapshot(db: &mut Db, snap: NewSnapshot) -> Result<String, CoreErr
 /// 判据用现成的 `EventSource`，不新造机制。
 pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String, CoreError> {
     let uid = Uuid::now_v7().to_string();
+    insert_snapshot_with_uid_tx(tx, snap, &uid, true)
+}
+
+/// 按**指定 uid** 插入快照（同步导入用）。
+///
+/// uid 必须是远端设备的原值：bundle 内的 `parentUid` / `snapshotUid` 都指向它，
+/// 重新生成会让引用全部悬空。因此本函数**不做 uid 冲突检查**——调用方
+/// （`import`）已经先按 uid 判过重，这里只负责写入。
+///
+/// `record_change = false`：远端变更由 `import` 以 `origin='remote'` 统一写入，
+/// 这里再记一条本地变更会让同一个动作在待导出队列里再出现一次。
+pub(crate) fn insert_snapshot_with_uid_tx(
+    tx: &Transaction,
+    snap: NewSnapshot,
+    uid: &str,
+    record_change: bool,
+) -> Result<String, CoreError> {
     let now = chrono::Utc::now().timestamp_millis();
     let hash = content_hash(&snap);
-    let from_migration = matches!(snap.source, EventSource::Migration);
+    let from_migration = matches!(snap.source, EventSource::Migration) || !record_change;
 
     // 父快照 uid → 本地整数主键（bundle 里一律用 uid，库里用 id）
     let parent_id: Option<i64> = match &snap.parent_uid {
@@ -342,7 +361,7 @@ pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String,
             tx,
             crate::db::sync::change_log::NewChange {
                 entity_type: "snapshot".to_string(),
-                entity_uid: uid.clone(),
+                entity_uid: uid.to_string(),
                 field: None,
                 old_value: String::new(),
                 new_value: payload.to_string(),
@@ -350,7 +369,7 @@ pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String,
         )?;
     }
 
-    Ok(uid)
+    Ok(uid.to_string())
 }
 
 /// 内容哈希：**必须区分 hive**（H3）。
