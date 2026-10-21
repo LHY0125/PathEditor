@@ -9,7 +9,9 @@ export type TabId =
   // M2（Task 10）：在既有联合类型里追加，不是新建类型。
   // `app-store.ts` 已 re-export 本类型，无需改动。
   | 'search'
-  | 'stats';
+  | 'stats'
+  // M3（Task 9）：同步中心。同样是在既有联合类型里追加。
+  | 'sync';
 
 export interface PathCapabilities {
   canReadSystem: boolean;

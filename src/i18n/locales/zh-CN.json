@@ -11,7 +11,8 @@
     "merged": "合并预览",
     "history": "历史记录",
     "search": "搜索",
-    "stats": "统计"
+    "stats": "统计",
+    "sync": "同步"
   },
   "envBackup": {
     "title": "环境变量备份与恢复",
@@ -325,5 +326,32 @@
     "noDependencies": "它没有引用其它变量",
     "noCycles": "未发现循环引用",
     "depth": "第 {{depth}} 层"
+  },
+  "sync": {
+    "title": "同步中心",
+    "status": "待导出 {{pending}} 条 · 未解决冲突 {{conflicts}} 条",
+    "statusUnknown": "状态未知",
+    "refresh": "刷新",
+    "registryNotice": "导入只更新本机数据库，不会改动系统 PATH；需要生效请另行应用配置。",
+    "passphrase": "同步口令",
+    "passphrasePlaceholder": "用于加解密同步包，不会被保存",
+    "filePath": "同步包路径",
+    "filePathPlaceholder": "例如 D:\\backup\\patheditor.pesync",
+    "export": "导出",
+    "import": "导入",
+    "conflicts": "冲突",
+    "includeResolved": "含已解决",
+    "noConflicts": "没有待解决的冲突",
+    "fromDevice": "来自设备 {{device}}",
+    "localValue": "本地值",
+    "remoteValue": "远端值",
+    "takeLocal": "保留本地",
+    "takeRemote": "采纳远端",
+    "resolvedAs": "已按 {{resolution}} 解决",
+    "entityType": {
+      "profile": "配置方案",
+      "snapshot": "快照",
+      "profile_revision": "配置版本"
+    }
   }
 }

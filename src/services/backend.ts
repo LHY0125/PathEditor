@@ -1104,6 +1104,118 @@ export function parseScanRunDiff(value: unknown, label = 'scan_history_diff'): S
   };
 }
 
+/* ────────────────────────── M3：同步中心 ────────────────────────── */
+
+/** 导出结果（`core::db::sync::ExportReport`）。 */
+export interface SyncExportReport {
+  /** 本次导出的变更条数 */
+  changeCount: number;
+  /** 写出的文件路径 */
+  path: string;
+}
+
+/** 导入结果（`core::db::sync::ImportReport`）。 */
+export interface SyncImportReport {
+  /** 实际应用的变更数 */
+  applied: number;
+  /** 因已存在而跳过的变更数（幂等） */
+  skipped: number;
+  /** 记录的冲突数 */
+  conflicts: number;
+}
+
+/** 同步中心首屏状态。 */
+export interface SyncStatus {
+  /** 待导出变更数 */
+  pendingCount: number;
+  /** 未解决冲突数 */
+  unresolvedConflicts: number;
+}
+
+/** 冲突的展示形状（`core::db::sync::conflict::SyncConflictView`）。 */
+export interface SyncConflict {
+  id: number;
+  entityType: string;
+  entityUid: string;
+  field: string | null;
+  localValue: string | null;
+  remoteValue: string | null;
+  remoteDevice: string;
+  createdAt: number;
+  resolvedAt: number | null;
+  resolution: string | null;
+}
+
+/** 校验 `SyncExportReport`。 */
+export function parseSyncExportReport(value: unknown, label = 'sync_export'): SyncExportReport {
+  if (!isRecord(value) || typeof value.changeCount !== 'number' || typeof value.path !== 'string') {
+    throw new Error(`${label} 返回了无效的导出结果`);
+  }
+  return { changeCount: value.changeCount, path: value.path };
+}
+
+/** 校验 `SyncImportReport`。 */
+export function parseSyncImportReport(value: unknown, label = 'sync_import'): SyncImportReport {
+  if (
+    !isRecord(value) ||
+    typeof value.applied !== 'number' ||
+    typeof value.skipped !== 'number' ||
+    typeof value.conflicts !== 'number'
+  ) {
+    throw new Error(`${label} 返回了无效的导入结果`);
+  }
+  return { applied: value.applied, skipped: value.skipped, conflicts: value.conflicts };
+}
+
+/** 校验 `SyncStatus`。 */
+export function parseSyncStatus(value: unknown, label = 'sync_status'): SyncStatus {
+  if (
+    !isRecord(value) ||
+    typeof value.pendingCount !== 'number' ||
+    typeof value.unresolvedConflicts !== 'number'
+  ) {
+    throw new Error(`${label} 返回了无效的同步状态`);
+  }
+  return {
+    pendingCount: value.pendingCount,
+    unresolvedConflicts: value.unresolvedConflicts,
+  };
+}
+
+/** 校验 `SyncConflict[]`。 */
+export function parseSyncConflicts(value: unknown, label = 'sync_list_conflicts'): SyncConflict[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须返回数组`);
+  return value.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.id !== 'number' ||
+      typeof raw.entityType !== 'string' ||
+      typeof raw.entityUid !== 'string' ||
+      (raw.field !== null && typeof raw.field !== 'string') ||
+      (raw.localValue !== null && typeof raw.localValue !== 'string') ||
+      (raw.remoteValue !== null && typeof raw.remoteValue !== 'string') ||
+      typeof raw.remoteDevice !== 'string' ||
+      typeof raw.createdAt !== 'number' ||
+      (raw.resolvedAt !== null && typeof raw.resolvedAt !== 'number') ||
+      (raw.resolution !== null && typeof raw.resolution !== 'string')
+    ) {
+      throw new Error(`${label} 的冲突条目形状无效`);
+    }
+    return {
+      id: raw.id,
+      entityType: raw.entityType,
+      entityUid: raw.entityUid,
+      field: raw.field,
+      localValue: raw.localValue,
+      remoteValue: raw.remoteValue,
+      remoteDevice: raw.remoteDevice,
+      createdAt: raw.createdAt,
+      resolvedAt: raw.resolvedAt,
+      resolution: raw.resolution,
+    };
+  });
+}
+
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
   loadSystemPaths: async () =>
@@ -1423,6 +1535,52 @@ export const backend = {
     );
     if (typeof uid !== 'string') throw new Error('scan_history_record 必须返回字符串');
     return uid;
+  },
+
+  /* ────────────────────── M3：同步中心 ────────────────────── */
+
+  /**
+   * 同步状态：待导出变更数 + 未解决冲突数。
+   *
+   * 降级模式（DB 不可用）会以 `database` 码拒绝，调用方据此显示不可用。
+   */
+  syncStatus: async () =>
+    parseSyncStatus(await parseCoreError(invoke<unknown>('sync_status')), 'sync_status'),
+
+  /**
+   * 导出同步包。
+   *
+   * `passphrase` 只在本调用内使用：**不写入 store、不记录日志、不回显**。
+   * 组件侧用 `type="password"` + 局部 state 持有它（与 M2 的 reveal 同口径）。
+   */
+  syncExport: async (passphrase: string, path: string) =>
+    parseSyncExportReport(
+      await parseCoreError(invoke<unknown>('sync_export', { passphrase, path })),
+      'sync_export',
+    ),
+
+  /** 导入同步包。**只改 DB，不写注册表**。 */
+  syncImport: async (passphrase: string, path: string) =>
+    parseSyncImportReport(
+      await parseCoreError(invoke<unknown>('sync_import', { passphrase, path })),
+      'sync_import',
+    ),
+
+  /** 冲突列表；`includeResolved = true` 时含已解决的。 */
+  syncListConflicts: async (includeResolved = false) =>
+    parseSyncConflicts(
+      await parseCoreError(invoke<unknown>('sync_list_conflicts', { includeResolved })),
+      'sync_list_conflicts',
+    ),
+
+  /** 解决一条冲突。`resolution` 取 `local` / `remote`。 */
+  syncResolveConflict: async (id: number, resolution: 'local' | 'remote') => {
+    const result = await parseCoreError(
+      invoke<unknown>('sync_resolve_conflict', { id, resolution }),
+    );
+    if (result !== null && result !== undefined) {
+      throw new Error('sync_resolve_conflict 不应返回数据');
+    }
   },
 };
 

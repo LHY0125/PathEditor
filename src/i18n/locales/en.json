@@ -11,7 +11,8 @@
     "merged": "Merge Preview",
     "history": "History",
     "search": "Search",
-    "stats": "Stats"
+    "stats": "Stats",
+    "sync": "Sync"
   },
   "envBackup": {
     "title": "Environment Variable Backup & Restore",
@@ -325,5 +326,32 @@
     "noDependencies": "It references no other variable",
     "noCycles": "No circular references found",
     "depth": "level {{depth}}"
+  },
+  "sync": {
+    "title": "Sync Center",
+    "status": "{{pending}} pending · {{conflicts}} unresolved conflicts",
+    "statusUnknown": "Status unknown",
+    "refresh": "Refresh",
+    "registryNotice": "Import only updates the local database; it never writes the system PATH. Apply a profile afterwards to take effect.",
+    "passphrase": "Passphrase",
+    "passphrasePlaceholder": "Used to encrypt/decrypt the bundle; never stored",
+    "filePath": "Bundle path",
+    "filePathPlaceholder": "e.g. D:\\backup\\patheditor.pesync",
+    "export": "Export",
+    "import": "Import",
+    "conflicts": "Conflicts",
+    "includeResolved": "Include resolved",
+    "noConflicts": "No unresolved conflicts",
+    "fromDevice": "from device {{device}}",
+    "localValue": "Local value",
+    "remoteValue": "Remote value",
+    "takeLocal": "Keep local",
+    "takeRemote": "Take remote",
+    "resolvedAs": "Resolved as {{resolution}}",
+    "entityType": {
+      "profile": "Profiles",
+      "snapshot": "Snapshots",
+      "profile_revision": "Profile revisions"
+    }
   }
 }
