@@ -217,6 +217,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   'database',
   'crypto',
   'sync',
+  'syncFormat',
   'migration',
   'internal',
 ];
