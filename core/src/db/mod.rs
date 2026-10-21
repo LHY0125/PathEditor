@@ -10,6 +10,7 @@ pub mod crypto;
 pub mod dacl;
 pub mod history;
 pub mod history_sink;
+pub mod maintenance;
 pub mod migrate_v5;
 pub mod profiles;
 pub mod refs;

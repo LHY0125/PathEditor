@@ -58,6 +58,20 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
         Err(e) => log::warn!("备份索引失败（继续启动）: {}", e.message),
     }
 
+    // ④b 保留策略清理（spec §6.5.2）：失败只告警，不阻断启动。
+    //
+    // 只删「已导出且超过 90 天」的 changes 与「已解决超过 30 天」的冲突；
+    // 待导出队列永远不碰（`exported_at IS NULL`）。
+    match path_editor_core::db::maintenance::prune_now(db) {
+        Ok(r) if r.changes_deleted > 0 || r.conflicts_deleted > 0 => log::info!(
+            "保留策略清理：changes {} 条，冲突 {} 条",
+            r.changes_deleted,
+            r.conflicts_deleted
+        ),
+        Ok(_) => {}
+        Err(e) => log::warn!("保留策略清理失败（继续启动）: {}", e.message),
+    }
+
     // ⑤ v5 文件停写（spec §7.8 H7 / 缺口清单 P1-4）。
     //
     // **只有走到这里才停写**：DB 打开成功、schema 迁移完成、v5 文件已导入。

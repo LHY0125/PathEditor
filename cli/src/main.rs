@@ -4,6 +4,7 @@ use serde_json::json;
 
 mod env_ops;
 mod import_export;
+mod maintenance_ops;
 mod profile_ops;
 mod runtime;
 mod scan_ops;
@@ -143,6 +144,20 @@ enum Command {
     /// 同步（文件式变更包，跨设备搬运配置）
     #[command(subcommand)]
     Sync(SyncCmd),
+    /// 维护任务（保留策略清理、v5 原件归档、遗留明文备份清理）
+    #[command(subcommand)]
+    Maintenance(MaintenanceCmd),
+}
+
+/// 维护子命令（spec §6.5.3）。
+#[derive(Subcommand)]
+enum MaintenanceCmd {
+    /// 清理过期的变更与冲突（已导出 90 天 / 已解决 30 天）
+    Prune {
+        /// 只统计，不删除
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -650,6 +665,9 @@ fn main() {
             SyncCmd::Status => sync_ops::sync_status(),
             SyncCmd::Conflicts { all } => sync_ops::sync_conflicts(all),
             SyncCmd::Resolve { id, take } => sync_ops::sync_resolve(id, &take),
+        },
+        Command::Maintenance(cmd) => match cmd {
+            MaintenanceCmd::Prune { dry_run } => maintenance_ops::maintenance_prune(dry_run),
         },
     }
 }
