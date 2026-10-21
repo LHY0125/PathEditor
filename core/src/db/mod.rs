@@ -17,6 +17,7 @@ pub mod scan_history;
 pub mod schema;
 pub mod search;
 pub mod stats;
+pub mod sync;
 pub mod v5_export;
 
 #[cfg(windows)]
