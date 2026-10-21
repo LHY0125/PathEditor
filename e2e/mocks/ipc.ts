@@ -248,6 +248,58 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
               firstSeen: []
             };
           case 'scan_history_record': return 'scan-fixture';
+          // M3：同步中心。降级判定与 search 同源（抛 code=database）。
+          case 'sync_status':
+            if (window.__m2Degraded) {
+              throw {
+                code: 'database',
+                operation: 'sync_status',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '历史库不可用，当前处于降级模式'
+              };
+            }
+            return window.__syncStatusFixture ?? { pendingCount: 2, unresolvedConflicts: 0 };
+          case 'sync_export':
+            if (window.__syncCryptoError) {
+              throw {
+                code: 'crypto',
+                operation: 'sync_export',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '口令错误或同步包已被篡改'
+              };
+            }
+            return { changeCount: 3, path: args?.path ?? 'C:\\\\fixture\\\\a.pesync' };
+          case 'sync_import':
+            if (window.__syncCryptoError) {
+              throw {
+                code: 'crypto',
+                operation: 'sync_import',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '口令错误或同步包已被篡改'
+              };
+            }
+            return { applied: 2, skipped: 0, conflicts: 0 };
+          case 'sync_list_conflicts': {
+            const all = window.__syncConflictsFixture ?? [];
+            return args?.includeResolved ? all : all.filter((c) => c.resolvedAt === null);
+          }
+          case 'sync_resolve_conflict': {
+            // 把对应的冲突标成已解决，让后续 refresh 能反映状态变化——
+            // 否则「解决后列表更新」这条断言会是假绿。
+            const list = window.__syncConflictsFixture ?? [];
+            const target = list.find((c) => c.id === args?.id);
+            if (target) {
+              target.resolvedAt = Date.now();
+              target.resolution = args?.resolution;
+            }
+            return null;
+          }
           case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
           case 'reveal_env_var':
             // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）

@@ -2,6 +2,51 @@
 
 ## 未发布（v6.0.0 里程碑）
 
+### M3 跨设备同步（开发中）
+
+在 M1/M2 的加密存储之上实现**文件式**跨设备同步：变更日志、加密同步包、
+字段级 LWW 合并、冲突记录与同步中心 UI。**同步不写注册表**——导入只改数据库，
+用户要生效必须另行应用配置。
+
+#### 新增
+
+- **schema v3**（`core/src/db/schema.rs`）：`changes`（变更日志，含
+  `device_id`/`seq`/`lamport`/`origin` 与三条索引）与 `sync_conflicts`（冲突记录）。
+  `changes` 是**真相**而非派生表，不能重建。
+- **变更日志**（`core/src/db/sync/change_log.rs`）：`record_change_tx` 在业务
+  事务内写入，`seq` 按设备取 `MAX+1`，`lamport` 与之同源推进并写回 `app_state`。
+  `pending_export` / `mark_exported` 支撑导出队列。
+- **写路径接线（S-1）**：`save_profile_tx` / `delete_profile` / `rename_profile` /
+  `insert_snapshot_tx` 各自在**自己的事务内**记变更。
+  **`EventSource::Migration` 不记**——v5 迁移与首次启动建基线不该进入同步队列。
+- **同步包加密**（`core/src/db/sync/bundle.rs`）：`PESYNC1` 格式，
+  Argon2id（m=65536, t=3, p=1）派生 + ChaCha20-Poly1305。
+  **AAD 覆盖 header**（magic / version / header_len / header JSON / salt / nonce），
+  否则 header 可被篡改而不被发现。
+- **导出**（`core/src/db/sync/export.rs`）：收集 → 加密 → 写文件 →
+  **成功后**才 `mark_exported`。顺序反了会在写失败时永久丢失变更。
+- **导入**（`core/src/db/sync/import.rs`）：单事务、按 `changes.uid` 幂等、
+  实体类型白名单、与本地比较做 LWW、导入后把本地 lamport 提到至少导出方的值。
+- **LWW 合并**（`core/src/db/sync/merge.rs`）：纯函数；`lamport` 高者胜，
+  相等时同设备视为同源、不同设备且值相同按 `device_id` 字典序确定性取一个、
+  值不同才记 `Conflict`。
+- **冲突处理**（`core/src/db/sync/conflict.rs`）：列表 / 未解决计数 / 解决。
+  解决时**追加一条 lamport 更高的变更**，否则第三台设备会按原 lamport 重新判一次。
+- **退出码拆分**：`Sync`（合并冲突）→ 4；`SyncFormat`（包格式/口令/篡改）→ 1。
+  拆开的原因是脚本要能区分「需要人工介入」与「重试无用」。
+- **CLI**：`patheditor sync export|import|status|conflicts|resolve`。
+  口令用 `rpassword` 隐藏输入、两次确认、不落盘、不进 shell 历史。
+- **同步中心 UI**：密码输入不写入 store、冲突按实体类型分组、界面明示
+  「导入不改注册表」。
+
+#### 说明
+
+- 同步包只搬运 `profiles` / `profile_revisions` / `snapshots` / `path_entries` /
+  `env_values`；**`events` 不同步**（本机操作日志，不是用户数据），
+  `backups` 索引与派生表也不同步。
+- 当前版本**实体落库只覆盖快照**（`snapshots` + `path_entries` + `env_values`）；
+  配置（`profiles` / `profile_revisions`）的落库尚未接线，属 M3 已知未覆盖项。
+
 ### M2 检索与统计（开发中）
 
 在 M1 的加密存储之上补齐 Tier 2 能力：FTS5 全文检索、统计仪表盘、N 路快照对比、

@@ -119,4 +119,24 @@ interface Window {
     }>;
     cycles: string[][];
   };
+  /** `sync_status` 的返回 fixture。 */
+  __syncStatusFixture?: {
+    pendingCount: number;
+    unresolvedConflicts: number;
+  };
+  /** `sync_list_conflicts` 的返回 fixture。 */
+  __syncConflictsFixture?: Array<{
+    id: number;
+    entityType: string;
+    entityUid: string;
+    field: string | null;
+    localValue: string | null;
+    remoteValue: string | null;
+    remoteDevice: string;
+    createdAt: number;
+    resolvedAt: number | null;
+    resolution: string | null;
+  }>;
+  /** 置 true 时 `sync_export` / `sync_import` 抛 `crypto` 错误（错误口令路径）。 */
+  __syncCryptoError?: boolean;
 }
