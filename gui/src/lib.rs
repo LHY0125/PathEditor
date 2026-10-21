@@ -95,7 +95,55 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     READ_SNAPSHOT_CACHE.set(snapshot_cache).ok();
     log::info!("当前状态读取已切到 DB（disabled.json 只读归档）");
 
+    // ⑥ 派生表重建（Task 12）。
+    //
+    // 三张派生表（spec §4.2 第 5 条「可随时重建，不是真相」）：
+    // - `search_fts`：只在**为空**时全量重建。每次启动都重建会让搜索索引
+    //   随快照数线性变慢，而它一旦非空就说明已经建过（写入路径会增量维护）。
+    // - `daily_stats`：每次启动全量重建。成本是一次全表扫描，当前数据量下是毫秒级；
+    //   `rebuild_daily` 内部已按 T-1 记录耗时，等真有瓶颈时日志里有基线。
+    // - `var_references`：每次启动全量重建。它只保存当前快照的边，
+    //   而当前快照可能在上次退出后被改过（见未覆盖项 #2）。
+    //
+    // 全部失败只告警：DB 可用性比派生数据新鲜度重要，派生表下次启动会再算。
+    //
+    // ⚠️ **CLI 不做这些重建**（未覆盖项 #2 / M1 的 R-02）：
+    // CLI 的写路径（`cli/src/runtime.rs`）用 `NoopHistory`，不碰 DB 的当前快照，
+    // 因此「CLI 改 PATH 后 GUI 的引用图/统计仍是旧的」是已知残余风险。
+    // 修它需要 CLI 也接 DB 的 current 快照，属范围扩张，M2 不做。
+    rebuild_derived_tables(db);
+
     Ok(())
+}
+
+/// 重建三张派生表（Task 12）。
+///
+/// 抽成独立函数便于测试（`db_derived_rebuild.rs` 直接调它模拟启动序列）——
+/// 若写在 `setup_database` 里，测试就得复现整个启动流程（含注册表读取）。
+fn rebuild_derived_tables(db: &mut path_editor_core::db::Db) {
+    // `search_fts`：仅当为空时才重建
+    match db.query_row_with("SELECT count(*) FROM search_fts", [], |r| {
+        r.get::<_, i64>(0)
+    }) {
+        Ok(0) => match path_editor_core::db::search::rebuild_index(db) {
+            Ok(n) => log::info!("FTS 索引：首次构建 {} 条", n),
+            Err(e) => log::warn!("FTS 索引重建失败（继续启动）: {}", e.message),
+        },
+        Ok(_) => {}
+        Err(e) => log::warn!("FTS 索引计数失败（继续启动）: {}", e.message),
+    }
+
+    // `daily_stats`：每次启动全量重建（内部有耗时日志）
+    match path_editor_core::db::stats::rebuild_daily(db) {
+        Ok(n) => log::info!("daily_stats 重建：{} 天", n),
+        Err(e) => log::warn!("daily_stats 重建失败（继续启动）: {}", e.message),
+    }
+
+    // `var_references`：每次启动全量重建
+    match path_editor_core::db::refs::rebuild_refs(db) {
+        Ok(n) => log::info!("引用图重建：{} 条边", n),
+        Err(e) => log::warn!("引用图重建失败（继续启动）: {}", e.message),
+    }
 }
 
 /// 确保 DB 里有一条 `kind=current` 快照；没有就用注册表当前状态建一条（D-6）。
