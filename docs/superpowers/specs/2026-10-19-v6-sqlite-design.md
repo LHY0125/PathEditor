@@ -484,7 +484,8 @@ CREATE TABLE daily_stats (
 - **导出**：收集 `origin='local' AND exported_at IS NULL` 的记录（含墓碑）→ JSON → Argon2id/AEAD → 文件；成功后在同一事务内 `UPDATE changes SET exported_at = ? WHERE id IN (...)`。
 - **导入**：解密/验签 → 在单事务内逐条应用 → 远端变更以 `origin='remote'`、`applied_at=now`、`exported_at=now` 写入（不再参与导出）→ 冲突写 `sync_conflicts` → 更新 `app_state.lamport`。
 - **合并**：字段级 LWW（`lamport` + `device_id` 打破平局）；同字段并发修改记录冲突；UI 选择 local/remote。
-- **范围**：同步 `profiles`/`profile_revisions`/`snapshots`/`path_entries`/`env_values`/`events`；不同步 `backups` 索引（本地文件）、派生表（本地重建）。
+- **范围**：同步 `profiles`/`profile_revisions`/`snapshots`/`path_entries`/`env_values`；不同步 `backups` 索引（本地文件）、派生表（本地重建）。
+  - **`events` 不同步**（M3 核对轮裁断，2026-10-21 修订）。原设计列入了 `events`，但它是**本机操作日志**而非用户数据：同步过去会让设备 B 的历史面板出现「不是我做的」操作，而 UI 目前不渲染 `device_id`；且 bundle 体积会随操作次数无界增长，同步过去没有应用场景。`events.device_id` 保留在本地库中，供将来需要时按来源筛选。
 - **UI**：同步中心（导出/导入/冲突列表/最近同步时间）；口令输入用密码框，不记忆。
 - **限制**：LWW 可能丢失并发编辑；冲突日志保留败方值；不宣称 CRDT。
 
@@ -556,8 +557,9 @@ CREATE TABLE daily_stats (
 
 ## 八、错误处理与退出码
 
-- 新增 `ErrorCode`：`Database`（打开/查询/事务）、`Crypto`（密钥/解密）、`Sync`（包/冲突）、`Migration`（导入/版本）。
+- 新增 `ErrorCode`：`Database`（打开/查询/事务）、`Crypto`（密钥/解密）、`Sync`（**合并冲突**）、`SyncFormat`（**包格式/口令/篡改**）、`Migration`（导入/版本）。
 - CLI 退出码：0 成功；1 一般错误；2 clap；3 revision 冲突（既有）；**4 同步/合并冲突**（新增）；**5 加密/密钥错误**（新增）。
+  - **`Sync` → 4、`SyncFormat` → 1**（M3 核对轮裁断，2026-10-21 修订）。原设计把两者都归为 `Sync`，导致脚本无法区分「需要人工解决冲突」与「文件坏了/口令错了」——前者应提示用户介入，后者重试无用。拆成两个码后：`Sync`（合并冲突，可解决）→ exit 4；`SyncFormat`（magic 不符、版本未知、AEAD 验证失败、`entityType` 未知）→ exit 1。
 - **DB 打不开（B7）**：GUI 不退出，进入降级模式；CLI 对**需要 DB 的命令**返回 exit 5（Crypto）或 1（Database），不需要 DB 的命令照常。
 - 降级模式写入 `disabled.json` 兜底；状态栏/日志明示「历史不可用，正在使用兜底」。
 - 错误文案不得包含密钥、口令、明文敏感值；日志同样。
