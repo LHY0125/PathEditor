@@ -122,19 +122,88 @@ validate_name(&c.name).map_err(|e| {
 
 - 原来只走 GNU 的 `windres` 路径；MSVC runner 上通常没有 `windres`，
   于是测试二进制没有 comctl32 v6 清单——正是 M3 那个 `0xC0000139` 的成因。
-- 现在按 `CARGO_CFG_TARGET_ENV` 分支：**MSVC 走链接器的 `/MANIFEST:EMBED` +
-  `/MANIFESTINPUT:<绝对路径>`**，完全不依赖 MinGW；GNU 分支保持不变。
-- 两条路的资源身份不同（GNU 侧 `.rc` 用中性语言 0），所以不会与 Tauri 的
-  `libresource.a` 撞车；MSVC 侧是把两份清单**合并**。
+- 现在按 `CARGO_CFG_TARGET_ENV` 分支：MSVC 走链接器的 `/MANIFEST:EMBED` +
+  `/MANIFESTINPUT:<绝对路径>`，不依赖 MinGW；GNU 分支保持不变。
 
-**这一条没能本地验证**：本机只有 GNU 工具链，没有 MSVC 与 Visual Studio。
-CI 的第一次运行就是它的验证，见 §6 R-10。
+**第一次 CI 运行直接证伪了初版做法**（run `39633177862`，`0a97867..8eef884`）：
+
+```text
+CVTRES : fatal error CVT1100: duplicate resource.  type:MANIFEST, name:1, language:0x0409
+LINK : fatal error LNK1123: failure during conversion to COFF: file invalid or corrupt
+error: could not compile `patheditor` (bin "PathEditor" test)
+```
+
+原因是 Tauri 通过 `rustc-link-arg-bins=resource.lib` 已经给 **bin** 嵌了 MANIFEST 资源，
+无条件注入 `/MANIFEST:EMBED` 就撞了 `CVT1100`。
+
+**修正后的做法**：
+
+- `build.rs` 只在 `PATHEDITOR_MSVC_TEST_MANIFEST=1` 时注入清单参数，并声明
+  `rerun-if-env-changed`；缺清单的只有 **lib 的 test harness**，那次调用不链接 bin。
+- CI 拆成两步：`cargo test --workspace --exclude patheditor`（core/cli）→
+  `PATHEDITOR_MSVC_TEST_MANIFEST=1 cargo test -p patheditor --lib`（GUI）。
+  两步都跑，**测试覆盖没有缺口**，只是调用方式不同。
+- GUI 的**编译**由前面的 `cargo clippy --workspace --all-targets` 在 MSVC 下覆盖。
+
+**最终结果**：第四次运行 `39639157635` **success**（2026-10-21T16:55:38Z → 17:11:52Z，约 16 分钟）。
+全部步骤绿：准备用户环境变量 / `cargo fmt` / `cargo clippy` / `cargo test（core / cli）` /
+`cargo test（GUI lib）` / `npx tsc --noEmit` / `npx vitest run`。
+四次运行的完整轨迹见 §4.4。
 
 ### 3.7 J-7：成立，本轮不改
 
 归档位置目前只有注释守卫（`gui/src/lib.rs` ⑦ 那段，注释里写明了「位置是刻意的」并指回
 核对轮 S-2）。真正的回归测试需要把 `setup_database` 拆成可测的小步骤，属结构改动，
 不在本轮裁断范围。**已知残余，见 §6 R-12。**
+
+---
+
+### 3.8 J-8：CI 暴露的既有测试缺陷（不在审查报告内）
+
+**第二次 CI 运行**（run `39635127231`）在 `cargo test（core / cli）` 阶段红在
+`core/tests/db_v5_read_from_db.rs:40`：
+
+```text
+thread 'stop_write_switches_read_to_injected_loader' panicked:
+停写模式下 system 必须来自注入的加载器，实际: ["C:\Windows", …]
+```
+
+**这不是 M4 引入的回归**，是 M1 时代就存在的**断言写法问题**：
+
+- `merge_hive`（`core/src/disabled.rs:213-217`）匹配用 `key()`（`trim + to_lowercase`），
+  但**回填的是注册表里的原始拼写** `current_path.clone()`；
+- 测试却用 `e.path == "C:\\WINDOWS"` 做**精确字符串比较**。
+- 本机注册表写的是 `C:\WINDOWS`，GitHub runner 上是 `C:\Windows` → 只在特定机器上通过。
+
+**修法**（只改测试，不动生产代码）：两处断言改成 `eq_ignore_ascii_case`，并加注释说明
+「匹配大小写不敏感、输出保留注册表拼写」这个口径差异。
+
+> 这条恰好回答了 J-6 的价值：GNU 本机上它永远是绿的，MSVC runner 的 PATH 拼写不同才暴露出来。
+
+### 3.9 J-9：CI 暴露的第二条既有环境假设（CLI 夹具）
+
+**第三次 CI 运行**（run `39636830790`）在 `cargo test（core / cli）` 红在
+`cli/src/env_ops.rs:1539`：
+
+```text
+thread 'env_ops::tests::env_restore_dry_run_reports_each_counter_field' panicked:
+本机用户变量不足 4 个，无法构造夹具；不要让它静默跳过
+```
+
+**不是 M4 的回归**：`craft_preview_fixture` 要求本机至少有 4 个用户环境变量，
+不足时**显式失败**（M1 时期的决定：静默跳过会让「计数器字段串位」这类缺陷漏网）。
+干净的 runner 用户变量很少。
+
+**修法（只改 CI，不改测试意图）**：在测试前补 4 个用户变量——
+
+```powershell
+1..4 | ForEach-Object {
+  [Environment]::SetEnvironmentVariable("PATHEDITOR_CI_VAR_$_", "ci", "User")
+}
+```
+
+用 `SetEnvironmentVariable(User)` 而不是 `setx`：没有 1024 字符上限，不弹提示，
+且 CLI 是从注册表读环境变量的，立刻可见。
 
 ---
 
@@ -157,54 +226,69 @@ npm run test:e2e                                        → 54 passed
 
 ### 4.2 未执行且不能声称完成
 
-- **CI workflow 一次都没跑过**：本机没有 MSVC，也没有 GitHub Actions 的 runner 环境。
-  YAML 只经过 Prettier 与人工通读，**没有任何执行证据**。
-- **`gui/build.rs` 的 MSVC 分支没有本地验证**：同上。
+- **CI 的 Windows runner 只验证到「测试全绿」，没有验证发布流水线本身**：
+  `release.yml` 是 tag 触发的，本轮没打 tag，所以 `npx tauri build` + NSIS 打包
+  在 MSVC 下仍未被这条 CI 覆盖（它只跑 `cargo build/test` 与前端测试）。
 - `maintenance prune --dry-run` 仍未对真实 `~/.patheditor` 执行（J-4 的成因就在这里）。
 - 未启动真实 GUI。
 
+### 4.4 CI 运行历史（同一条 main，四次才收敛）
+
+| 次  | run         | 结果        | 失败点                                                                | 处置                                                             |
+| --- | ----------- | ----------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 1   | 39633177862 | failure     | `CVT1100: duplicate resource. type:MANIFEST`（bin 已有 Tauri 的清单） | 清单改为按需注入（`PATHEDITOR_MSVC_TEST_MANIFEST=1`），CI 分两步 |
+| 2   | 39635127231 | failure     | `db_v5_read_from_db:40` 路径大小写断言                                | 断言改 `eq_ignore_ascii_case`（只改测试）                        |
+| 3   | 39636830790 | failure     | `env_ops.rs:1539` 夹具要求 ≥4 个用户变量                              | CI 预置 4 个用户环境变量                                         |
+| 4   | 39639157635 | **success** | ——                                                                    | 全部步骤绿（约 16 分钟）                                         |
+
+**三次失败没有一次是 M4 的产品代码缺陷**：第 1 次是本轮新引入的清单注入方式，
+第 2、3 次是 M1 时代就存在的、只在特定机器上成立的测试假设。
+这正是「本地 GNU 全绿」与「MSVC 真跑一遍」的差别。
+
 ### 4.3 复审轮补充的偏离（待审核窗口并入计划 Execution Notes）
 
-| #    | 项                         | 计划/规格未覆盖的部分                                                              |
-| ---- | -------------------------- | ---------------------------------------------------------------------------------- |
-| D-14 | J-1 名称校验               | 规格 §6.5.1 只说「保留远端 uid」，没写名称校验；本轮补上并映射为 `SyncFormat`      |
-| D-15 | `gui/build.rs`             | 新增 MSVC 清单分支（`/MANIFEST:EMBED` + `/MANIFESTINPUT`），为 CI 的 MSVC 测试铺路 |
-| D-16 | `.github/workflows/ci.yml` | 新增；发布门从「tag 流水线只编译」变成「push 即跑测试」                            |
+| #    | 项                                 | 计划/规格未覆盖的部分                                                              |
+| ---- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| D-14 | J-1 名称校验                       | 规格 §6.5.1 只说「保留远端 uid」，没写名称校验；本轮补上并映射为 `SyncFormat`      |
+| D-15 | `gui/build.rs`                     | 新增 MSVC 清单分支（`/MANIFEST:EMBED` + `/MANIFESTINPUT`），为 CI 的 MSVC 测试铺路 |
+| D-16 | `.github/workflows/ci.yml`         | 新增；发布门从「tag 流水线只编译」变成「push 即跑测试」                            |
+| D-17 | `core/tests/db_v5_read_from_db.rs` | 路径断言改为忽略大小写（CI 暴露的既有缺陷，见 §3.8）                               |
+| D-18 | `.github/workflows/ci.yml`         | 测试前预置 4 个用户环境变量（CI 暴露的既有夹具假设，见 §3.9）                      |
 
 ---
 
 ## 5. 未覆盖项（更新后）
 
-| #   | 未覆盖                                                          | 说明                                                  |
-| --- | --------------------------------------------------------------- | ----------------------------------------------------- |
-| U-1 | **（已更正）** `prune --dry-run` 会创建密钥文件 + 空库 + schema | 原回执只提了库文件；见 §3.4                           |
-| U-2 | GUI 启动序列未端到端运行                                        | 禁止启动真实 GUI（`setup_database` 会在真实目录归档） |
-| U-3 | `cleanup-legacy-backups --yes` 未实跑                           | 会删用户机器上 9 个真实明文备份                       |
-| U-4 | 无真机双端同步                                                  | 无第二台机器                                          |
-| U-5 | 本机 MSVC 未验证                                                | 只有 GNU 工具链                                       |
-| U-6 | `maintenance` 子命令无 E2E                                      | CLI 无 E2E 框架                                       |
-| U-7 | 窗口标题未目视确认                                              | 未启动 GUI                                            |
-| U-8 | 敏感值掩码未变                                                  | 不在 M4 范围                                          |
-| U-9 | **CI 与 build.rs 的 MSVC 分支从未执行**                         | 本轮新增，需第一次 CI 运行才能证明；见 §6 R-10        |
+| #   | 未覆盖                                                          | 说明                                                              |
+| --- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| U-1 | **（已更正）** `prune --dry-run` 会创建密钥文件 + 空库 + schema | 原回执只提了库文件；见 §3.4                                       |
+| U-2 | GUI 启动序列未端到端运行                                        | 禁止启动真实 GUI（`setup_database` 会在真实目录归档）             |
+| U-3 | `cleanup-legacy-backups --yes` 未实跑                           | 会删用户机器上 9 个真实明文备份                                   |
+| U-4 | 无真机双端同步                                                  | 无第二台机器                                                      |
+| U-5 | 本机 MSVC 未验证                                                | 只有 GNU 工具链                                                   |
+| U-6 | `maintenance` 子命令无 E2E                                      | CLI 无 E2E 框架                                                   |
+| U-7 | 窗口标题未目视确认                                              | 未启动 GUI                                                        |
+| U-8 | 敏感值掩码未变                                                  | 不在 M4 范围                                                      |
+| U-9 | **CI 的 Windows runner 未覆盖发布流水线本身**                   | 只跑测试；`npx tauri build` + NSIS 打包仍只在 tag 时执行，见 §4.2 |
 
 ---
 
 ## 6. 残余风险
 
-| #        | 风险                                                                                        | 状态/缓解                                                                      |
-| -------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| R-1      | 保留策略无 `applied_at` 索引                                                                | 未变（数据量小）                                                               |
-| R-2      | 归档每次启动执行，会改名 `profiles/` 下用户手工放入的 JSON                                  | 未变                                                                           |
-| R-3      | 用户机器现状：2 个 v5 原件 + 9 个明文备份                                                   | 未变                                                                           |
-| R-4      | 整实体 LWW                                                                                  | 未变                                                                           |
-| R-5      | 中文改名进入持久数据                                                                        | 未变                                                                           |
-| R-6      | 不可达 i18n 键                                                                              | 未变                                                                           |
-| R-7      | `CLAUDE.md` / `AGENTS.md` 与 spec §十二 冲突                                                | 未变，待用户裁断                                                               |
-| R-8      | v5 导入会隔离损坏文件                                                                       | 未变                                                                           |
-| R-9      | Argon2 参数与口令强度                                                                       | 未变                                                                           |
-| **R-10** | **CI 首次运行可能红**：MSVC 清单合并、NASM 缺失、vendored SQLCipher 构建（首跑 20–45 分钟） | 已知；`build.rs` 已给 MSVC 专门路径；若仍红，需要按日志继续修，**在 tag 之前** |
-| **R-11** | `prune --dry-run` 仍会创建密钥与空库（J-4）                                                 | 已知；不删不改已有数据，属「不严格纯读」                                       |
-| **R-12** | S-2 的归档顺序只有注释守卫（J-7）                                                           | 已知；重构可能把归档挪回 ③b 而不报错                                           |
+| #        | 风险                                                                                                    | 状态/缓解                                               |
+| -------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| R-1      | 保留策略无 `applied_at` 索引                                                                            | 未变（数据量小）                                        |
+| R-2      | 归档每次启动执行，会改名 `profiles/` 下用户手工放入的 JSON                                              | 未变                                                    |
+| R-3      | 用户机器现状：2 个 v5 原件 + 9 个明文备份                                                               | 未变                                                    |
+| R-4      | 整实体 LWW                                                                                              | 未变                                                    |
+| R-5      | 中文改名进入持久数据                                                                                    | 未变                                                    |
+| R-6      | 不可达 i18n 键                                                                                          | 未变                                                    |
+| R-7      | `CLAUDE.md` / `AGENTS.md` 与 spec §十二 冲突                                                            | 未变，待用户裁断                                        |
+| R-8      | v5 导入会隔离损坏文件                                                                                   | 未变                                                    |
+| R-9      | Argon2 参数与口令强度                                                                                   | 未变                                                    |
+| **R-10** | ~~CI 首次运行可能红~~ **已闭环**：四次运行后 MSVC 全绿（§4.4）。残余：CI 不覆盖 `tauri build`/NSIS 打包 | tag 流水线仍负责发布构建；若打包失败会在 Release 前暴露 |
+| **R-11** | `prune --dry-run` 仍会创建密钥与空库（J-4）                                                             | 已知；不删不改已有数据，属「不严格纯读」                |
+| **R-12** | S-2 的归档顺序只有注释守卫（J-7）                                                                       | 已知；重构可能把归档挪回 ③b 而不报错                    |
 
 ---
 
@@ -212,7 +296,8 @@ npm run test:e2e                                        → 54 passed
 
 - 审查报告的 **J-1 / J-2 / J-4 / J-5 / J-7 全部成立**，J-3 的代填内容**无遗漏**。
 - **J-1 / J-2 / J-5 已整改**，各自附实际命令输出；J-1 另有反向验证（去掉校验 → 转红 → 还原）。
-- **J-6 已按裁断处理**：新增 CI，并把 `build.rs` 的 MSVC 清单路径补上。
+- **J-6 已闭环**：新增 CI 并把 `build.rs` 的 MSVC 路径补上；四次运行后 MSVC **全绿**（§4.4）。
+  CI 顺带暴露并修掉两条既有测试的环境假设（§3.8 / §3.9），**都不是 M4 的回归**。
 - **J-4 / J-7 本轮不改**，理由与残余风险见 §3.4 / §3.7 / §6。
 - 我原回执 **U-1 的措辞不准确**（漏了密钥文件），已在 §3.4 更正并在此声明。
 
@@ -220,5 +305,6 @@ npm run test:e2e                                        → 54 passed
 
 ---
 
-**签章**：本文中每条「已通过」都对应 §4.1 里一条实际执行的命令；
-未执行的（CI、MSVC）在 §4.2 单列，未做的整改在 §3.4 / §3.7 说明理由。
+**签章**：本文中每条「已通过」都对应 §4.1 / §4.4 里一条实际执行的命令；
+未执行的（发布流水线、真实 GUI、prune 实跑）在 §4.2 单列，
+未做的整改在 §3.4 / §3.7 说明理由。
