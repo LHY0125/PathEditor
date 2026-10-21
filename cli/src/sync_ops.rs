@@ -74,9 +74,17 @@ pub(crate) fn sync_import(file: &str) {
     );
     if report.skipped_unsupported > 0 {
         // 必须显式告知：这些变更**没有**同步过来，不要计入「成功」。
+        // M4 起已知类型全部可落库，这条分支只在「对端用了更新的实体类型」时出现。
         eprintln!(
-            "提示: {} 条变更的类型本版本还不支持同步（配置方案），未应用也未记录",
+            "提示: {} 条变更的实体类型本版本还不支持同步，未应用也未记录",
             report.skipped_unsupported
+        );
+    }
+    if report.renamed_profiles > 0 {
+        // 改名会直接改变用户看到的配置名，必须解释发生在哪一步。
+        eprintln!(
+            "提示: {} 条配置因与本地同名，已自动改名为「原名 (来自 设备)」",
+            report.renamed_profiles
         );
     }
     if report.conflicts > 0 {

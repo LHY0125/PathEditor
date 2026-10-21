@@ -45,7 +45,15 @@ pub struct ImportReport {
     /// 这些变更**不写入 `changes`**：写了会让 uid 被占用，
     /// 等到真正支持该类型时同一个包再也无法重放。
     /// 界面必须把这个数字显示出来，否则用户会以为「全部同步成功」。
+    ///
+    /// **M4 起对已知类型恒为 0**：白名单里的类型全部可落库。字段保留是为了
+    /// 将来新增类型时不必再改一次报告形状。
     pub skipped_unsupported: u32,
+    /// 因与本地配置同名而**自动改名**的条数（M4）
+    ///
+    /// 改名只影响本地行，包内 uid 不变；界面与 CLI 都要显式说出来，
+    /// 否则用户会发现「我的配置名字变了」却找不到原因。
+    pub renamed_profiles: u32,
 }
 
 /// 当前版本能真正写入数据库的实体类型（M4：全部已知类型）。
@@ -240,8 +248,11 @@ pub fn import_bundle(
             // 应用实体内容（只对带 content 的类型动手）
             if let Some(content) = &c.content {
                 let key = (c.entity_type.clone(), c.entity_uid.clone());
-                if seen_entities.insert(key) {
-                    apply_entity_tx(tx, &c.entity_type, &c.entity_uid, content, &c.device_id)?;
+                // 同一实体在一包里只应用一次：后到的 content 才是当前值。
+                if seen_entities.insert(key)
+                    && apply_entity_tx(tx, &c.entity_type, &c.entity_uid, content, &c.device_id)?
+                {
+                    report.renamed_profiles += 1;
                 }
             }
 
@@ -368,18 +379,20 @@ fn latest_for_entity_tx(
 /// 把 bundle 里的实体内容写进本地库。
 ///
 /// **不重复记账**：`record_remote_change_tx` 由调用方负责，这里只写实体本身。
+///
+/// 返回 `true` 表示这条内容因同名而**自动改名**（目前只有 `profile` 会产生）。
 fn apply_entity_tx(
     tx: &rusqlite::Transaction,
     entity_type: &str,
     entity_uid: &str,
     content: &serde_json::Value,
     device_id: &str,
-) -> Result<(), CoreError> {
+) -> Result<bool, CoreError> {
     match entity_type {
         "snapshot" => {
             let snap = snapshot_from_content(content, entity_uid)?;
             crate::db::history::insert_snapshot_with_uid_tx(tx, snap, entity_uid, false)?;
-            Ok(())
+            Ok(false)
         }
         // 配置：保留远端 uid，`snapshotUid` 解析成本地快照主键。
         // `device_id` 只用于同名改名的后缀（M4 Task 2）。
@@ -387,7 +400,7 @@ fn apply_entity_tx(
             crate::db::profiles::import_profile_content_tx(tx, entity_uid, content, device_id)
         }
         // 内容随父实体：变更本身已落 `changes`，这里不单独写实体。
-        "profile_revision" | "path_entry" | "env_value" => Ok(()),
+        "profile_revision" | "path_entry" | "env_value" => Ok(false),
         // 防御性分支：调用方（`import_bundle`）已按 `APPLICABLE_ENTITY_TYPES`
         // 提前跳过不支持的类型，这里**不应该**再被命中。
         //

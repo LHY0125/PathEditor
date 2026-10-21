@@ -153,7 +153,13 @@ describe('SyncCenter', () => {
     // store 只给结构化 notice，中文文案由组件经 t() 产出（审查报告 F-4）
     mockState.notice = {
       kind: 'imported',
-      report: { applied: 1, skipped: 0, conflicts: 0, skippedUnsupported: 2 },
+      report: {
+        applied: 1,
+        skipped: 0,
+        conflicts: 0,
+        skippedUnsupported: 2,
+        renamedProfiles: 0,
+      },
     };
     render(<SyncCenter />);
     const status = screen.getByRole('status').textContent ?? '';
@@ -161,10 +167,32 @@ describe('SyncCenter', () => {
     expect(status).toContain('2 条（配置方案）本版本还不支持同步');
   });
 
+  it('重名自动改名时提示必须说出来', () => {
+    // 用户会发现配置名字变了；不说出来就会以为是同步把名字弄坏了（M4 Task 2）
+    mockState.notice = {
+      kind: 'imported',
+      report: {
+        applied: 1,
+        skipped: 0,
+        conflicts: 0,
+        skippedUnsupported: 0,
+        renamedProfiles: 1,
+      },
+    };
+    render(<SyncCenter />);
+    expect(screen.getByRole('status').textContent).toContain('1 条配置因与本地重名已自动改名');
+  });
+
   it('没有不支持项时不显示那条附加说明', () => {
     mockState.notice = {
       kind: 'imported',
-      report: { applied: 3, skipped: 0, conflicts: 0, skippedUnsupported: 0 },
+      report: {
+        applied: 3,
+        skipped: 0,
+        conflicts: 0,
+        skippedUnsupported: 0,
+        renamedProfiles: 0,
+      },
     };
     render(<SyncCenter />);
     expect(screen.getByRole('status').textContent).not.toContain('不支持同步');

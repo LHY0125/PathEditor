@@ -202,12 +202,14 @@ pub(crate) struct ProfileSyncContent {
 /// 由调用方的 LWW 决定，本函数只负责按内容写入。
 ///
 /// 悬空 `snapshotUid` 返回 `SyncFormat`，由调用方整体回滚（spec §6.5.1）。
+///
+/// 返回值：`true` 表示因为本地已有同名配置而**自动改名**了。
 pub(crate) fn import_profile_content_tx(
     tx: &Transaction,
     uid: &str,
     content: &serde_json::Value,
-    _device_id: &str,
-) -> Result<(), CoreError> {
+    device_id: &str,
+) -> Result<bool, CoreError> {
     let c: ProfileSyncContent = serde_json::from_value(content.clone()).map_err(|e| {
         CoreError::new(
             ErrorCode::SyncFormat,
@@ -215,6 +217,11 @@ pub(crate) fn import_profile_content_tx(
             format!("配置内容无法解析: {e}"),
         )
     })?;
+
+    // 同名不同 uid：给本地行生成一个不冲突的名称。
+    // 只影响本地行，包内 uid 保持不变（spec §6.5.1）。
+    let name = unique_name_tx(tx, &c.name, uid, device_id)?;
+    let renamed = name != c.name;
 
     let snapshot_id: Option<i64> = match &c.snapshot_uid {
         Some(s) => {
@@ -255,7 +262,7 @@ pub(crate) fn import_profile_content_tx(
                         updated_at = ?5, version = ?6, deleted_at = NULL
                   WHERE id = ?7",
                 params![
-                    c.name,
+                    name,
                     c.description,
                     tags_json,
                     c.created_at,
@@ -276,7 +283,7 @@ pub(crate) fn import_profile_content_tx(
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
                 params![
                     uid,
-                    c.name,
+                    name,
                     c.description,
                     tags_json,
                     c.created_at,
@@ -291,7 +298,68 @@ pub(crate) fn import_profile_content_tx(
             }
         }
     }
-    Ok(())
+    Ok(renamed)
+}
+
+/// 为导入的配置生成一个本机唯一的未删除名称。
+///
+/// 冲突时改为 `"{desired} (来自 {device_id 前 8 位})"`；仍冲突则追加 ` 2`、` 3`…
+/// 只影响本地行，不改变包内 uid（spec §6.5.1）。
+///
+/// **按字符取设备 id 前缀**：`device_id` 来自外部包，可能是多字节字符，
+/// `&device_id[..8]` 会在字符边界 panic。
+fn unique_name_tx(
+    tx: &Transaction,
+    desired: &str,
+    self_uid: &str,
+    device_id: &str,
+) -> Result<String, CoreError> {
+    let taken = |name: &str| -> Result<bool, CoreError> {
+        let n: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM profiles
+                  WHERE name = ?1 AND deleted_at IS NULL AND uid <> ?2",
+                params![name, self_uid],
+                |r| r.get(0),
+            )
+            .map_err(|e| db_err("name_taken", e))?;
+        Ok(n > 0)
+    };
+
+    if !taken(desired)? {
+        return Ok(desired.to_string());
+    }
+
+    // 名称上限 255 字节（`validate_name`）；给后缀与「 2」这类追加留出空间。
+    let base_name = truncate_name(desired, 200);
+    let suffix: String = device_id.chars().take(8).collect();
+    let base = format!("{base_name} (来自 {suffix})");
+    if !taken(&base)? {
+        return Ok(base);
+    }
+    for i in 2..100 {
+        let candidate = format!("{base} {i}");
+        if !taken(&candidate)? {
+            return Ok(candidate);
+        }
+    }
+    Err(CoreError::new(
+        ErrorCode::SyncFormat,
+        "import_profile",
+        "同名配置过多，无法生成唯一名称",
+    ))
+}
+
+/// 按字节上限截断名称（**不切断 UTF-8 字符**）。
+fn truncate_name(name: &str, max_bytes: usize) -> String {
+    let mut out = String::new();
+    for ch in name.chars() {
+        if out.len() + ch.len_utf8() > max_bytes {
+            break;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// 插入/更新一条 revision（`(profile_id, version)` 唯一）。

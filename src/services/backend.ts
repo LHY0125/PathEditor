@@ -1128,6 +1128,12 @@ export interface SyncImportReport {
    * 界面必须显示这个数字：否则用户会把「全部同步成功」当成事实。
    */
   skippedUnsupported: number;
+  /**
+   * 因与本地配置同名而**自动改名**的条数（M4）。
+   *
+   * 改名只影响本地行；不显示的话，用户会发现配置名字变了却找不到原因。
+   */
+  renamedProfiles: number;
 }
 
 /** 同步中心首屏状态。 */
@@ -1167,7 +1173,8 @@ export function parseSyncImportReport(value: unknown, label = 'sync_import'): Sy
     typeof value.applied !== 'number' ||
     typeof value.skipped !== 'number' ||
     typeof value.conflicts !== 'number' ||
-    typeof value.skippedUnsupported !== 'number'
+    typeof value.skippedUnsupported !== 'number' ||
+    typeof value.renamedProfiles !== 'number'
   ) {
     throw new Error(`${label} 返回了无效的导入结果`);
   }
@@ -1176,6 +1183,7 @@ export function parseSyncImportReport(value: unknown, label = 'sync_import'): Sy
     skipped: value.skipped,
     conflicts: value.conflicts,
     skippedUnsupported: value.skippedUnsupported,
+    renamedProfiles: value.renamedProfiles,
   };
 }
 

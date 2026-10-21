@@ -23,18 +23,30 @@ function renderNotice(
         path: notice.path,
       });
     case 'imported':
-      return notice.report.skippedUnsupported > 0
-        ? t('sync.noticeImportedUnsupported', {
-            applied: notice.report.applied,
-            skipped: notice.report.skipped,
-            conflicts: notice.report.conflicts,
-            unsupported: notice.report.skippedUnsupported,
-          })
-        : t('sync.noticeImported', {
-            applied: notice.report.applied,
-            skipped: notice.report.skipped,
-            conflicts: notice.report.conflicts,
-          });
+      // 顺序有意义：先说「有 N 条根本没同步」（最需要用户知道），
+      // 再说「有 N 条被改名了」（用户会发现名字变了，必须解释），
+      // 最后才是普通的成功提示。
+      if (notice.report.skippedUnsupported > 0) {
+        return t('sync.noticeImportedUnsupported', {
+          applied: notice.report.applied,
+          skipped: notice.report.skipped,
+          conflicts: notice.report.conflicts,
+          unsupported: notice.report.skippedUnsupported,
+        });
+      }
+      if (notice.report.renamedProfiles > 0) {
+        return t('sync.noticeImportedRenamed', {
+          applied: notice.report.applied,
+          skipped: notice.report.skipped,
+          conflicts: notice.report.conflicts,
+          renamed: notice.report.renamedProfiles,
+        });
+      }
+      return t('sync.noticeImported', {
+        applied: notice.report.applied,
+        skipped: notice.report.skipped,
+        conflicts: notice.report.conflicts,
+      });
     case 'resolved':
       return t('sync.resolvedAs', { resolution: notice.resolution });
   }

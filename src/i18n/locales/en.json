@@ -355,6 +355,7 @@
     },
     "noticeExported": "Exported {{count}} changes to {{path}}",
     "noticeImported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}",
-    "noticeImportedUnsupported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{unsupported}} profile change(s) are not supported yet and were not applied"
+    "noticeImportedUnsupported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{unsupported}} profile change(s) are not supported yet and were not applied",
+    "noticeImportedRenamed": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{renamed}} profile(s) were renamed to avoid a name clash"
   }
 }
