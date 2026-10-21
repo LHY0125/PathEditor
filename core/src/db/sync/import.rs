@@ -23,7 +23,7 @@ use serde::Deserialize;
 
 use crate::db::history::{EnvValueRow, NewSnapshot, SnapshotKind};
 use crate::db::sync::bundle::{open, BundleHeader};
-use crate::db::sync::change_log::{record_remote_change_tx, ChangeRow};
+use crate::db::sync::change_log::{change_exists_tx, record_remote_change_tx, ChangeRow};
 use crate::db::sync::conflict::record_conflict_tx;
 use crate::db::sync::merge::{resolve, MergeDecision};
 use crate::db::Db;
@@ -122,14 +122,7 @@ pub fn import_bundle(
 
         for c in &payload.changes {
             // 幂等：这个 uid 已经落过库就跳过
-            let exists: Option<i64> = tx
-                .query_row(
-                    "SELECT id FROM changes WHERE uid = ?1",
-                    rusqlite::params![c.uid],
-                    |r| r.get(0),
-                )
-                .ok();
-            if exists.is_some() {
+            if change_exists_tx(tx, &c.uid)? {
                 report.skipped += 1;
                 continue;
             }

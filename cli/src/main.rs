@@ -7,6 +7,7 @@ mod import_export;
 mod profile_ops;
 mod runtime;
 mod scan_ops;
+mod sync_ops;
 
 use import_export::{cmd_export, cmd_import};
 use profile_ops::{
@@ -139,6 +140,39 @@ enum Command {
     /// 管理配置文件
     #[command(subcommand)]
     Profile(ProfileCmd),
+    /// 同步（文件式变更包，跨设备搬运配置）
+    #[command(subcommand)]
+    Sync(SyncCmd),
+}
+
+#[derive(Subcommand)]
+enum SyncCmd {
+    /// 把待导出的变更写成加密同步包
+    Export {
+        /// 输出文件路径（.pesync）
+        file: String,
+    },
+    /// 解密并应用一个同步包（只改 DB，不改注册表）
+    Import {
+        /// 同步包路径
+        file: String,
+    },
+    /// 显示待导出变更数与未解决冲突数
+    Status,
+    /// 列出冲突
+    Conflicts {
+        /// 含已解决的冲突
+        #[arg(long)]
+        all: bool,
+    },
+    /// 解决一条冲突
+    Resolve {
+        /// 冲突 id（来自 `sync conflicts`）
+        id: i64,
+        /// 取哪一边：local 或 remote
+        #[arg(long)]
+        take: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -609,6 +643,13 @@ fn main() {
             ProfileCmd::Delete { name } => profile_delete(name),
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
             ProfileCmd::ExportV5 { name } => profile_export_v5(name),
+        },
+        Command::Sync(cmd) => match cmd {
+            SyncCmd::Export { file } => sync_ops::sync_export(&file),
+            SyncCmd::Import { file } => sync_ops::sync_import(&file),
+            SyncCmd::Status => sync_ops::sync_status(),
+            SyncCmd::Conflicts { all } => sync_ops::sync_conflicts(all),
+            SyncCmd::Resolve { id, take } => sync_ops::sync_resolve(id, &take),
         },
     }
 }

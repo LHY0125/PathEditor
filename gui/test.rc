@@ -1,0 +1,13 @@
+// Resource script: embed the comctl32 v6 manifest into TEST targets only.
+//
+// `1 24` = CREATEPROCESS_MANIFEST_RESOURCE_ID (1), RT_MANIFEST (24).
+//
+// LANGUAGE 0, 0 (neutral) is deliberate: Tauri's own `libresource.a` (linked
+// into BIN targets via `rustc-link-arg-bins`) embeds RT_MANIFEST/ID 1 with
+// language 1033. Using the neutral language here keeps the two resource
+// identities distinct so the linker does not report a duplicate, while Windows
+// still resolves a neutral-language manifest for the test binary (which has no
+// other manifest).
+LANGUAGE 0, 0
+
+1 24 "test.manifest"

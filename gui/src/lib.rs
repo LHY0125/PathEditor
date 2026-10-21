@@ -330,6 +330,12 @@ pub fn run() {
             commands::history::profile_delete_by_name,
             commands::history::profile_mark_applied_by_name,
             commands::history::history_restore_snapshot,
+            // ── M3（Task 8）：同步中心 ──
+            commands::sync::sync_status,
+            commands::sync::sync_export,
+            commands::sync::sync_import,
+            commands::sync::sync_list_conflicts,
+            commands::sync::sync_resolve_conflict,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

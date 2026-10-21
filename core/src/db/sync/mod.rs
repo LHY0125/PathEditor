@@ -18,3 +18,6 @@ pub mod conflict;
 pub mod export;
 pub mod import;
 pub mod merge;
+
+pub use export::{export_bundle, ExportReport};
+pub use import::{import_bundle, ImportReport};

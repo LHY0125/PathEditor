@@ -206,34 +206,18 @@ pub fn mark_exported(db: &mut Db, uids: &[String], at: i64) -> Result<usize, Cor
     })
 }
 
-/// 按 uid 查一条变更（导入去重用）。
-pub fn find_by_uid(db: &Db, uid: &str) -> Result<Option<ChangeRow>, CoreError> {
-    let row = db
-        .query_row_with(
-            "SELECT uid, device_id, seq, lamport, origin, entity_type, entity_uid,
-                    field, old_value, new_value, created_at, applied_at, exported_at
-               FROM changes WHERE uid = ?1",
-            [uid],
-            |r| {
-                Ok(ChangeRow {
-                    uid: r.get(0)?,
-                    device_id: r.get(1)?,
-                    seq: r.get(2)?,
-                    lamport: r.get(3)?,
-                    origin: r.get(4)?,
-                    entity_type: r.get(5)?,
-                    entity_uid: r.get(6)?,
-                    field: r.get(7)?,
-                    old_value: r.get(8)?,
-                    new_value: r.get(9)?,
-                    created_at: r.get(10)?,
-                    applied_at: r.get(11)?,
-                    exported_at: r.get(12)?,
-                })
-            },
-        )
-        .ok();
-    Ok(row)
+/// 按 uid 查一条变更是否已存在（导入幂等判据）。
+///
+/// **接 `&Transaction` 而非 `&Db`**：导入在单事务里跑，用 `&Db` 会借用冲突。
+pub(crate) fn change_exists_tx(tx: &Transaction, uid: &str) -> Result<bool, CoreError> {
+    use rusqlite::OptionalExtension as _;
+    let id: Option<i64> = tx
+        .query_row("SELECT id FROM changes WHERE uid = ?1", params![uid], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(|e| db_err("change_exists", e))?;
+    Ok(id.is_some())
 }
 
 /// 事务内写入一条**远端**变更（导入用）。
@@ -277,65 +261,4 @@ pub fn record_remote_change_tx(
     )
     .map_err(|e| db_err("insert_remote_change", e))?;
     Ok(())
-}
-
-/// 某实体某字段当前的「最新值」（按 lamport 降序、device_id 字典序降序取第一条）。
-///
-/// LWW 的本地一侧就靠它：导出前与导入时都要知道「本地这个字段现在是什么」。
-/// 无任何变更时返回 `None`。
-pub fn latest_for(
-    db: &Db,
-    entity_type: &str,
-    entity_uid: &str,
-    field: Option<&str>,
-) -> Result<Option<ChangeRow>, CoreError> {
-    let field_clause = if field.is_some() {
-        "AND field = ?3"
-    } else {
-        "AND field IS NULL"
-    };
-    let sql = format!(
-        "SELECT uid, device_id, seq, lamport, origin, entity_type, entity_uid,
-                field, old_value, new_value, created_at, applied_at, exported_at
-           FROM changes
-          WHERE entity_type = ?1 AND entity_uid = ?2 {field_clause}
-          ORDER BY lamport DESC, device_id DESC
-          LIMIT 1"
-    );
-    let mapper = |r: &rusqlite::Row<'_>| -> rusqlite::Result<ChangeRow> {
-        Ok(ChangeRow {
-            uid: r.get(0)?,
-            device_id: r.get(1)?,
-            seq: r.get(2)?,
-            lamport: r.get(3)?,
-            origin: r.get(4)?,
-            entity_type: r.get(5)?,
-            entity_uid: r.get(6)?,
-            field: r.get(7)?,
-            old_value: r.get(8)?,
-            new_value: r.get(9)?,
-            created_at: r.get(10)?,
-            applied_at: r.get(11)?,
-            exported_at: r.get(12)?,
-        })
-    };
-    match field {
-        Some(f) => db.query_row_optional(&sql, params![entity_type, entity_uid, f], mapper),
-        None => db.query_row_optional(&sql, params![entity_type, entity_uid], mapper),
-    }
-}
-
-/// 提升 `app_state.lamport` 到至少 `target`（导入结束时用）。
-///
-/// **只升不降**：远端的时钟可能落后，无条件赋值会让本地时钟倒退，
-/// 后续本地变更就再也赢不了旧的远端值。
-pub fn raise_lamport(db: &mut Db, target: i64) -> Result<(), CoreError> {
-    db.with_transaction(|tx| {
-        tx.execute(
-            "UPDATE app_state SET lamport = MAX(lamport, ?1) WHERE id = 1",
-            params![target],
-        )
-        .map_err(|e| db_err("raise_lamport", e))?;
-        Ok(())
-    })
 }
