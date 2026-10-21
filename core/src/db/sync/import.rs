@@ -85,8 +85,10 @@ fn entity_priority(entity_type: &str) -> u8 {
 
 /// 包格式允许出现的实体类型（spec §6.4）。
 ///
-/// 比 [`APPLICABLE_ENTITY_TYPES`] 宽：白名单里的类型**都是合法输入**，
-/// 只是其中一部分当前版本还落不了库。
+/// 当前与 [`APPLICABLE_ENTITY_TYPES`] **内容一致**（M4 起全部已知类型都可落库）。
+/// 保留两个常量是**有意**的：将来新增已知类型时，先在白名单里接受，
+/// 再实现落库——分离让「格式合法、但本版本还落不了库」这个中间态有地方表达，
+/// 而不是被迫二选一（要么拒收整包，要么计入虚假的 applied，后者是 R-1 的成因）。
 const KNOWN_ENTITY_TYPES: &[&str] = &[
     "snapshot",
     "profile",
