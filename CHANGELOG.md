@@ -2,6 +2,59 @@
 
 ## 未发布（v6.0.0 里程碑）
 
+### M2 检索与统计（开发中）
+
+在 M1 的加密存储之上补齐 Tier 2 能力：FTS5 全文检索、统计仪表盘、N 路快照对比、
+`%VAR%` 引用图、冲突历史持久化，并清偿 M1 移交的 4 项欠账。
+
+#### 新增
+
+- **schema v2**（`core/src/db/schema.rs`）：`scan_runs` / `var_references` / `daily_stats` /
+  `search_fts`（FTS5 虚表）。`var_references` 与 `daily_stats` / `search_fts` 是**派生表**，
+  可随时重建（spec §4.2 第 5 条）；`scan_runs` 是真实记录，无法重建。
+  **顺带修复 M1 的一处升级缺陷**：`PRAGMA user_version` 原写在 `if current < 1` 内部，
+  v1 库升级到 v2 会执行 DDL 但不更新版本号，导致下次启动重复建表报错。
+- **FTS5 检索**（`core/src/db/search.rs`）：`rebuild_index` / `index_snapshot_tx` / `search`。
+  只索引 PATH 串、变量名、配置 name/description/tags，**绝不索引 env 的值**。
+  查询串在 core 侧做 FTS5 phrase 转义（裸 `"` 不再触发 `syntax error`）。
+- **统计聚合**（`core/src/db/stats.rs`）：`rebuild_daily` / `dashboard`。
+  `dashboard` 返回历史序列 + 当前状态 + 最常改变量 + 配置应用次数。
+- **引用图**（`core/src/db/refs.rs`）：`parse_refs` / `rebuild_refs` / `dependents` /
+  `dependencies`（递归 CTE）/ `find_cycles`。环做了旋转归一化去重。
+- **快照对比**（`core/src/db/compare.rs`）：`compare` 返回**双 hive** `{ system, user }` +
+  恒为空的 `env_*` 三字段。
+- **冲突历史**（`core/src/db/scan_history.rs`）：`record_run` / `list_runs` / `diff_runs`，
+  支持「首次出现」与「最近出现」两种语义。
+- **v5 配置导出**（`core/src/db/v5_export.rs` + `profile export-v5`）：降级到 v5 文件的退路。
+- **`profiles::load_profile_from(path)`**：从指定路径读配置，供集成测试与 v5 导入使用。
+  解析逻辑复用既有的 `read_profile_file`，**没有第二份实现**。
+- **`history_reveal_env_value`**：显式 reveal 历史快照里的单个变量明文。
+  掩码是默认；明文只存在组件局部 state，不写入 store。
+- **IPC**：`search` / `stats_dashboard` / `compare_snapshots` / `refs_*` / `scan_history_*`
+  共 12 条命令 + `backend.ts` 的 7 个 `parseXxx` 形状校验。
+- **前端**：新增「搜索」「统计」标签页；历史面板支持多选对比；
+  引用图对话框展示反向/前向/环三个方向。
+
+#### 变更
+
+- **对比结果分 hive**：`CompareResult` 从「只比 system」改为 `{ system, user }`。
+  只比一侧会让「只有用户 PATH 变了」显示成「没有差异」——不报错、给出错误结论。
+- **对比增加启用状态维度**：`PathDiff.toggled` 记录「同一条路径从启用变禁用」。
+  `PathEntry { path, enabled }` 是跨层契约，只比路径串会漏掉这类真实变化。
+
+#### 测试约定
+
+- 新增 12 个 DB 测试文件，仍遵守**一文件一测试**（SQLCipher 栈溢出约束）。
+
+#### 已知限制
+
+- **环境变量的 N 路对比未实现**：`env_*` 三字段恒为空数组，界面上显式显示「将在 M3 提供」。
+  掩码值在对比结果里如何呈现需要单独设计。
+- **CLI 不重建派生表**：用 CLI 改过 PATH 后，GUI 的引用图与统计可能仍是旧值，重启 GUI 后对齐。
+  修复需要 CLI 也接 DB 的 current 快照，属范围扩张。
+- **`index_snapshot_tx` 尚未接入写入路径**：启动时按需全量重建，增量函数已实现并有测试，
+  但 `save_path_with_sidecar` 的写入链路尚未调用它。
+
 ### M1 存储与历史（开发中）
 
 在 core 内建立 **SQLCipher 加密数据库**，把 PATH 快照与操作事件持久化，并把配置方案与备份索引迁入 DB。**注册表仍是唯一真相源**，DB 是 sidecar（spec D16 fail-open）。

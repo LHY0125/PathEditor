@@ -188,6 +188,66 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'history_get_current': return window.__snapshotFixture ?? null;
           case 'history_restore_snapshot': return { system: 'applied', user: 'applied', sidecar: 'saved' };
           case 'backup_list': return [];
+          // M2（Task 9/13）：检索 / 统计 / 对比 / 引用图 / 冲突历史。
+          // 降级判定与 history_list_events 同源：DB 不可用时抛 code=database。
+          case 'search':
+            if (window.__m2Degraded) {
+              throw {
+                code: 'database',
+                operation: 'search',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '历史库不可用，当前处于降级模式'
+              };
+            }
+            // 空查询必须返回空数组（与 core 的口径一致），
+            // 这样「前端不该发请求」的断言才有可证伪性：
+            // 若前端在空查询时发起了调用，__capturedCalls 里会出现 search。
+            return window.__searchFixture ?? [];
+          case 'stats_dashboard':
+            if (window.__m2Degraded) {
+              throw {
+                code: 'database',
+                operation: 'stats_dashboard',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '历史库不可用，当前处于降级模式'
+              };
+            }
+            return window.__statsFixture ?? {
+              days: [],
+              topTargets: [],
+              profileApplies: [],
+              currentAvgLen: 0,
+
+              currentPathItems: 0
+            };
+          case 'stats_rebuild': return 1;
+          case 'search_rebuild': return 0;
+          case 'refs_rebuild': return 0;
+          case 'compare_snapshots':
+            return window.__compareFixture ?? {
+              system: { added: [], removed: [], reordered: [], toggled: [] },
+              user: { added: [], removed: [], reordered: [], toggled: [] },
+              envAdded: [],
+              envRemoved: [],
+              envModified: []
+            };
+          case 'refs_dependents': return window.__refsFixture?.dependents ?? [];
+          case 'refs_dependencies': return window.__refsFixture?.dependencies ?? [];
+          case 'refs_cycles': return window.__refsFixture?.cycles ?? [];
+          case 'scan_history_list': return [];
+          case 'scan_history_diff':
+            return {
+              appeared: [],
+              disappeared: [],
+              persistent: [],
+              lastSeen: [],
+              firstSeen: []
+            };
+          case 'scan_history_record': return 'scan-fixture';
           case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
           case 'reveal_env_var':
             // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）
