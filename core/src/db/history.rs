@@ -244,10 +244,19 @@ pub fn insert_snapshot(db: &mut Db, snap: NewSnapshot) -> Result<String, CoreErr
 }
 
 /// 事务内插入快照；供配置保存等需要「快照 + 业务行同一事务」的调用方复用（H6）。
+///
+/// **写入后记一条 `changes`**（M3 的 S-1 接线）：快照是同步的实体之一，
+/// 不记的话它永远不会进入待导出队列。
+///
+/// **但 `EventSource::Migration` 不记**：v5 文件迁移与首次启动建基线走的也是
+/// 这个函数，把它们记成变更会导致「用户升级到 v6 的那一刻，历史配置/备份/PATH
+/// 快照全部涌入待导出队列」——升级不是一次编辑，不该被同步出去。
+/// 判据用现成的 `EventSource`，不新造机制。
 pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String, CoreError> {
     let uid = Uuid::now_v7().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let hash = content_hash(&snap);
+    let from_migration = matches!(snap.source, EventSource::Migration);
 
     // 父快照 uid → 本地整数主键（bundle 里一律用 uid，库里用 id）
     let parent_id: Option<i64> = match &snap.parent_uid {
@@ -320,6 +329,25 @@ pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String,
             ],
         )
         .map_err(|e| db_err("insert_env", e))?;
+    }
+
+    // 快照本体记一条变更（子行随快照走，不单独记——见 M3 计划 Task 2b 的表）。
+    if !from_migration {
+        let payload = serde_json::json!({
+            "kind": snap.kind.as_str(),
+            "source": source_str(snap.source),
+            "contentHash": hash,
+        });
+        crate::db::sync::change_log::record_change_tx(
+            tx,
+            crate::db::sync::change_log::NewChange {
+                entity_type: "snapshot".to_string(),
+                entity_uid: uid.clone(),
+                field: None,
+                old_value: String::new(),
+                new_value: payload.to_string(),
+            },
+        )?;
     }
 
     Ok(uid)

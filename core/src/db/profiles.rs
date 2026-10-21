@@ -130,6 +130,41 @@ pub fn save_profile_tx(
     )
     .map_err(|e| db_err("insert_revision", e))?;
 
+    // ── M3 S-1 接线 ──
+    //
+    // 两条变更：配置元数据（整实体）+ 它的首个版本。
+    //
+    // **必须放在所有可能失败的检查之后**：上面 `NameExists` 分支会提前 `return`，
+    // 若把记录放在它之前，就会留下「profile 没建成但变更记了」的孤儿行。
+    // 整个函数在同一事务内，任一步失败都会整体回滚——但代码顺序仍应表达
+    // 「先成功、再记账」的意图。
+    let meta = serde_json::json!({
+        "name": name,
+        "description": description,
+        "tags": tags,
+        "snapshotUid": snapshot_uid,
+    });
+    crate::db::sync::change_log::record_change_tx(
+        tx,
+        crate::db::sync::change_log::NewChange {
+            entity_type: "profile".to_string(),
+            entity_uid: uid.clone(),
+            field: None,
+            old_value: String::new(),
+            new_value: meta.to_string(),
+        },
+    )?;
+    crate::db::sync::change_log::record_change_tx(
+        tx,
+        crate::db::sync::change_log::NewChange {
+            entity_type: "profile_revision".to_string(),
+            entity_uid: snapshot_uid.clone(),
+            field: None,
+            old_value: String::new(),
+            new_value: serde_json::json!({ "profileUid": uid, "version": 1 }).to_string(),
+        },
+    )?;
+
     Ok(uid)
 }
 
@@ -189,6 +224,19 @@ pub fn delete_profile(db: &mut Db, uid: &str) -> Result<bool, CoreError> {
                 params![now, uid],
             )
             .map_err(|e| db_err("delete_profile", e))?;
+        if changed == 1 {
+            // 墓碑也是一条变更（`field = "deleted_at"`）：远端据此知道该软删除。
+            crate::db::sync::change_log::record_change_tx(
+                tx,
+                crate::db::sync::change_log::NewChange {
+                    entity_type: "profile".to_string(),
+                    entity_uid: uid.to_string(),
+                    field: Some("deleted_at".to_string()),
+                    old_value: "null".to_string(),
+                    new_value: now.to_string(),
+                },
+            )?;
+        }
         Ok(changed == 1)
     })
 }
@@ -276,6 +324,27 @@ pub fn rename_profile(db: &mut Db, old_name: &str, new_name: &str) -> Result<boo
                 params![new_name, now, old_name],
             )
             .map_err(|e| db_err("rename_profile", e))?;
+        if changed == 1 {
+            // 改名按 `name` 字段记，实体 uid 取自改名后的行——
+            // bundle 里引用一律用 uid，这里必须还原成本地 uid 才能被远端对上。
+            let uid: String = tx
+                .query_row(
+                    "SELECT uid FROM profiles WHERE name = ?1 AND deleted_at IS NULL",
+                    params![new_name],
+                    |r| r.get(0),
+                )
+                .map_err(|e| db_err("rename_profile_uid", e))?;
+            crate::db::sync::change_log::record_change_tx(
+                tx,
+                crate::db::sync::change_log::NewChange {
+                    entity_type: "profile".to_string(),
+                    entity_uid: uid,
+                    field: Some("name".to_string()),
+                    old_value: serde_json::Value::String(old_name.to_string()).to_string(),
+                    new_value: serde_json::Value::String(new_name.to_string()).to_string(),
+                },
+            )?;
+        }
         Ok(changed == 1)
     })
 }
