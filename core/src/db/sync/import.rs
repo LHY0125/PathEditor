@@ -245,6 +245,19 @@ pub fn import_bundle(
                 MergeDecision::TakeRemote => {}
             }
 
+            // 墓碑：`content = null` **且** field 明确是 `deleted_at`。
+            //
+            // 只有这两个条件同时成立才是删除意图；其它 `content = null` 只是
+            // 「这条变更没有实体内容」（例如 `profile_revision` / `path_entry`）。
+            //
+            // 与内容变更共用 `seen_entities` 去重：同一实体在一包里只处理一次。
+            if c.content.is_none() && c.field.as_deref() == Some("deleted_at") {
+                let key = (c.entity_type.clone(), c.entity_uid.clone());
+                if seen_entities.insert(key) {
+                    apply_tombstone_tx(tx, &c.entity_type, &c.entity_uid)?;
+                }
+            }
+
             // 应用实体内容（只对带 content 的类型动手）
             if let Some(content) = &c.content {
                 let key = (c.entity_type.clone(), c.entity_uid.clone());
@@ -412,6 +425,41 @@ fn apply_entity_tx(
             format!("内部错误：实体类型 {other} 未实现落库"),
         )),
     }
+}
+
+/// 应用墓碑：按 uid 软删除实体。
+///
+/// 只支持有 `deleted_at` 列的实体；其它类型说明对端用了本版本没有的语义，
+/// 返回 `SyncFormat` 整包回滚，而不是静默忽略——静默忽略会让「删除」变成
+/// 「什么也没发生」，比报错更难排查。
+///
+/// `WHERE ... AND deleted_at IS NULL` 让重复墓碑成为幂等的 no-op。
+fn apply_tombstone_tx(
+    tx: &rusqlite::Transaction,
+    entity_type: &str,
+    entity_uid: &str,
+) -> Result<(), CoreError> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let sql = match entity_type {
+        "profile" => {
+            "UPDATE profiles SET deleted_at = ?1, updated_at = ?1, version = version + 1
+              WHERE uid = ?2 AND deleted_at IS NULL"
+        }
+        "snapshot" => {
+            "UPDATE snapshots SET deleted_at = ?1, updated_at = ?1
+              WHERE uid = ?2 AND deleted_at IS NULL"
+        }
+        other => {
+            return Err(CoreError::new(
+                ErrorCode::SyncFormat,
+                "import",
+                format!("实体类型 {other} 不支持墓碑"),
+            ))
+        }
+    };
+    tx.execute(sql, rusqlite::params![now, entity_uid])
+        .map_err(|e| crate::db::db_err("apply_tombstone", e))?;
+    Ok(())
 }
 
 /// 从 bundle 的 `content` 还原一个新快照。
