@@ -688,7 +688,9 @@ git commit -m "feat(v6): 字段级 LWW 合并（lamport + device_id 破平）"
 
 - Produces:
   - `pub fn import_bundle(db: &mut Db, passphrase: &str, path: &Path) -> Result<ImportReport, CoreError>`
-  - `pub struct ImportReport { pub applied, pub skipped, pub conflicts }`
+  - `pub struct ImportReport { pub applied, pub skipped, pub conflicts, pub skipped_unsupported }`
+    - `skipped_unsupported` 为整改轮新增：格式合法、但当前版本（`APPLICABLE_ENTITY_TYPES`）
+      落不了库的类型计数。这类变更**不写 `changes`**，否则会占住 uid、使将来的重放永久被跳过。
   - `conflict.rs`: `pub fn list_conflicts(db, include_resolved) -> ...`、`pub fn resolve_conflict(db, id, resolution) -> ...`
     - **解决冲突时追加一条新 change**（核对轮裁断）：`entity_type` / `entity_uid` / `field` 与冲突记录一致，
       `old_value` = 败方值，`new_value` = 胜方值，**`lamport` = `next_lamport()`（= 当前 + 1）**。
@@ -914,7 +916,7 @@ patheditor sync resolve <ID> --take=local|remote
 | 7. 统计/搜索面板交互细节             | ❌ E2E 覆盖主路径                                    |
 | 8. 全局环列表无独立入口              | ❌ M3 不加                                           |
 
-> **未覆盖项 #1#1（env 的 N 路对比）**：M2 推迟的原因是「掩码值在对比结果里如何呈现」。M3 有了加密 bundle 的经验，可以定义：
+> **未覆盖项 #1（env 的 N 路对比）**：M2 推迟的原因是「掩码值在对比结果里如何呈现」。M3 有了加密 bundle 的经验，可以定义：
 >
 > - 两边都非敏感 → 显示明文
 > - 任一边敏感 → 显示「已修改（敏感）」+ 是否相等
@@ -983,8 +985,14 @@ grep -rn "<fn_name>(" --include=*.rs core/src gui/src cli/src | grep -v "fn <fn_
      Tauri 只给 bin 嵌的 comctl32 v6 清单，进程以 `0xC0000139` 退出。
   5. bundle 每条变更增加 `content`（实体当前内容）——spec 的 `oldValue`/`newValue`
      不足以让接收端重建实体。
-- 未覆盖项（详见回执 §5）：配置（`profiles`/`profile_revisions`）导入时不落库；
-  `events` 不同步；真实注册表闭环未做；CLI `sync` 子命令无单测；冲突值掩码未在 Rust 侧实现。
-- 残余风险（详见回执 §6）：配置同步静默不完整（R-1）是最主要的一条。
-- 实际测试数：Rust **339**（基线 329，+10）；前端 **395**（基线 374，+21）；
-  E2E **54**（基线 50，+4）。`npm run verify:all` exit 0。
+  6. （整改轮）导入时区分「格式合法」与「可落库」：新增 `APPLICABLE_ENTITY_TYPES`，
+     不支持的类型**不应用、不计 `applied`、不写 `changes`**，单独计入
+     `skipped_unsupported`；UI 与 CLI 显式提示「这些没同步」。详见 M3 复审回执 §3.2。
+- 未覆盖项（详见回执 §5）：配置（`profiles`/`profile_revisions`）导入时仍不落库
+  （但已不再谎报成功，改为单独计数 + 明示）；`events` 不同步；真实注册表闭环未做；
+  CLI `sync` 子命令无单测；冲突值掩码未在 Rust 侧实现。
+- 残余风险（详见复审回执 §5）：R-1「谎报成功」已闭环；配置同步本身要 M4 才可用（R-7），
+  且 `uq_profiles_name_active` 的同名冲突语义仍是规格空白，需先在 spec 定。
+- 实际测试数（整改后）：Rust **340**（基线 329）；前端 **397**（基线 374）；
+  E2E **54**（基线 50）。原创开发轮 `npm run verify:all` exit 0；
+  整改轮各分项单独执行、未跑串联（见复审回执 §4.2）。

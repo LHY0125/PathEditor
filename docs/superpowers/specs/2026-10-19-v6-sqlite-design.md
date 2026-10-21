@@ -496,7 +496,7 @@ CREATE TABLE daily_stats (
 ```json
 {
   "magic": "PESYNC1",
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "deviceId": "<uuid>",
   "exportedAt": 0,
   "baseLamport": 0,
@@ -506,27 +506,38 @@ CREATE TABLE daily_stats (
 }
 ```
 
+> `schemaVersion` 是**导出方的库结构版本**（M3 为 3），不是 bundle 布局版本。
+> 布局版本在二进制头（`FORMAT_VERSION = 1`），由 `open()` 校验；`schemaVersion`
+> 当前只记录、不拒绝，M4 需明确其语义或改为校验。
+
 **Change（payload 内）**
 
 ```json
 {
   "uid": "<uuid>",
   "deviceId": "<uuid>",
+  "seq": 0,
   "lamport": 0,
-  "entityType": "profile|snapshot|event|profile_revision|path_entry|env_value",
+  "entityType": "profile|snapshot|profile_revision|path_entry|env_value",
   "entityUid": "<uuid>",
   "field": "name|tags|...|null",
   "oldValue": "...",
   "newValue": "...",
-  "deletedAt": null,
-  "createdAt": 0
+  "createdAt": 0,
+  "content": null
 }
 ```
 
+- **`content`（M3 补充）**：实体在导出瞬间的当前内容，接收端据此重建实体。
+  `oldValue` / `newValue` 只是变更记录，不足以重建实体（例如只知道「快照被创建」，
+  不知道它包含哪些 PATH 条目）。`content = null` 表示实体已不存在（墓碑语义，
+  取代早期的 `deletedAt` 字段）。
+- **`seq`**：导出方的本设备单调序号，导入时随 `changes` 落库，用于幂等与去重。
 - **引用映射**：bundle 内所有引用使用 **uid**（`parentUid` / `snapshotUid` / `profileUid`），导入时按 uid 解析本地 `id`；找不到父实体时整体失败回滚。**禁止在 bundle 中出现本地整数主键**。
-- **导入顺序**：单事务，按依赖序 `snapshots → path_entries/env_values → profiles → profile_revisions → events`；任一失败整体回滚。
-- **幂等**：`changes.uid` 已存在则跳过；`deletedAt` 非空表示墓碑。
-- **错误**：未知 `schemaVersion` / 未知 `entityType` / 悬空 uid → `Sync` 错误（退出码 4）。
+- **导入顺序**：单事务，按依赖序 `snapshots → path_entries/env_values → profiles → profile_revisions`；`events` 不在同步范围（见 §6.3）。任一失败整体回滚。
+- **幂等**：`changes.uid` 已存在则跳过。
+- **可落库类型（M3）**：`snapshot`。格式合法但当前版本不落库的类型（`profile` / `profile_revision` / `path_entry` / `env_value`）**不应用、不写 `changes`**，单独计入 `skippedUnsupported` 并在 UI/CLI 明示——写 `changes` 会占住 uid，使将来的重放被永久跳过。M4 实现配置同步后移除该限制。
+- **错误**：未知 bundle 布局版本 / 未知 `entityType` / 悬空 uid → `SyncFormat`（退出码 1）。
 
 ---
 
