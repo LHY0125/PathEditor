@@ -582,19 +582,23 @@ M4 补齐配置同步，并完成 v6.0.0 的清理与发布项。
 
 #### 6.5.3 接口
 
-| 层   | 接口                                                                               |
-| ---- | ---------------------------------------------------------------------------------- |
-| core | `maintenance::prune(db, now_ms) -> PruneReport`                                    |
-| core | `archive_v5::archive_v5_sources(home, dry_run) -> ArchiveReport`                   |
-| core | `maintenance::cleanup_legacy_env_backups(dir, material, dry_run) -> CleanupReport` |
-| core | `v5_import::import_profile_v5(db, path) -> String`（返回新配置 uid）               |
-| CLI  | `patheditor maintenance prune [--dry-run]`                                         |
-| CLI  | `patheditor maintenance archive-v5 [--dry-run]`                                    |
-| CLI  | `patheditor maintenance cleanup-legacy-backups [--dry-run] [--yes]`                |
-| CLI  | `patheditor profile import <FILE>`                                                 |
+| 层   | 接口                                                                                |
+| ---- | ----------------------------------------------------------------------------------- |
+| core | `maintenance::prune(db, now_ms) -> PruneReport`                                     |
+| core | `maintenance::prune_plan(db, now_ms) -> PruneReport`（dry-run 计数，不写库）        |
+| core | `maintenance::prune_now(db) -> PruneReport`（GUI 启动序列；时间源在 core）          |
+| core | `archive_v5::archive_v5_sources(home, dry_run) -> ArchiveReport`                    |
+| core | `maintenance::scan_legacy_env_backups(dir) -> CleanupReport`（dry-run，不加载密钥） |
+| core | `maintenance::cleanup_legacy_env_backups(dir, material, dry_run) -> CleanupReport`  |
+| core | `v5_import::import_profile_v5(db, path) -> String`（返回新配置 uid）                |
+| CLI  | `patheditor maintenance prune [--dry-run]`                                          |
+| CLI  | `patheditor maintenance archive-v5 [--dry-run]`                                     |
+| CLI  | `patheditor maintenance cleanup-legacy-backups [--dry-run] [--yes]`                 |
+| CLI  | `patheditor profile import <FILE>`                                                  |
 
-退出码沿用：0 成功、1 一般错误、2 clap。清理类命令在未给 `--yes` 时打印计划并以 1
-退出，不执行删除。
+退出码沿用：0 成功、1 一般错误、2 clap。`cleanup-legacy-backups` 在未给 `--yes` 时
+打印计划并以 1 退出，不执行删除；`prune` 是保留策略（只删已导出且到期的行），不需要
+`--yes`。
 
 #### 6.5.4 安全边界
 

@@ -128,7 +128,7 @@ fn profile_is_applied_after_its_snapshot_even_if_bundle_order_is_reversed() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_order`
+Run: `cargo test -p path-editor-core --test db_sync_profile_order`
 Expected: FAIL —— `profiles` 表无 `p-1`（当前 `APPLICABLE_ENTITY_TYPES` 只有 `snapshot`）。
 
 - [ ] **Step 3: 实现依赖排序与可落库类型**
@@ -420,12 +420,12 @@ fn upsert_revision_tx(
 
 - [ ] **Step 5: 跑测试确认通过**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_order`
+Run: `cargo test -p path-editor-core --test db_sync_profile_order`
 Expected: PASS（1 passed）。
 
 - [ ] **Step 6: 跑既有同步测试**
 
-Run: `cargo test -p path_editor_core --test db_sync_import --test db_sync_import_limits --test db_sync_conflict --test db_sync_merge --test db_sync_export`
+Run: `cargo test -p path-editor-core --test db_sync_import --test db_sync_import_limits --test db_sync_conflict --test db_sync_merge --test db_sync_export`
 Expected: 全部 passed。
 
 - [ ] **Step 7: 质量门 + 提交**
@@ -558,7 +558,7 @@ fn same_name_different_uid_is_imported_with_device_suffix() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_name_conflict`
+Run: `cargo test -p path-editor-core --test db_sync_profile_name_conflict`
 Expected: 编译失败（`renamed_profiles` 字段不存在）/ 运行失败（名称冲突触发唯一索引）。
 
 - [ ] **Step 3: 实现唯一名称生成**
@@ -751,7 +751,7 @@ it('重名改名时提示必须说出来', () => {
 - [ ] **Step 7: 跑测试**
 
 ```powershell
-cargo test -p path_editor_core --test db_sync_profile_name_conflict
+cargo test -p path-editor-core --test db_sync_profile_name_conflict
 npx tsc --noEmit
 npx vitest run tests/unit/backend-sync-shapes.test.ts tests/unit/sync-center.test.tsx
 ```
@@ -871,7 +871,7 @@ fn tombstone_soft_deletes_profile_and_frees_the_name() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_tombstone`
+Run: `cargo test -p path-editor-core --test db_sync_profile_tombstone`
 Expected: FAIL —— `deleted_at` 仍为 NULL。
 
 - [ ] **Step 3: 实现墓碑分支**
@@ -928,7 +928,7 @@ fn apply_tombstone_tx(
 
 - [ ] **Step 4: 跑测试**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_tombstone`
+Run: `cargo test -p path-editor-core --test db_sync_profile_tombstone`
 Expected: PASS。
 
 - [ ] **Step 5: 质量门 + 提交**
@@ -1045,7 +1045,7 @@ fn older_content_does_not_resurrect_a_deleted_profile() {
 
 - [ ] **Step 2: 跑测试**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_resurrect`
+Run: `cargo test -p path-editor-core --test db_sync_profile_resurrect`
 Expected: PASS（若 Task 1 的实体级 LWW 正确）。若 FAIL，检查 `latest_for_entity_tx` 是否真的被用于 `profile`。
 
 - [ ] **Step 3: 质量门 + 提交（测试即交付）**
@@ -1141,7 +1141,7 @@ fn reimporting_the_same_bundle_does_not_duplicate_profiles_or_revisions() {
 
 - [ ] **Step 2: 跑测试**
 
-Run: `cargo test -p path_editor_core --test db_sync_profile_idempotent`
+Run: `cargo test -p path-editor-core --test db_sync_profile_idempotent`
 Expected: PASS。
 
 - [ ] **Step 3: 质量门 + 提交**
@@ -1247,7 +1247,7 @@ fn prune_deletes_only_expired_and_exported_rows() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core --test db_maintenance_prune`
+Run: `cargo test -p path-editor-core --test db_maintenance_prune`
 Expected: 编译失败（`maintenance` 模块不存在）。
 
 - [ ] **Step 3: 实现 `maintenance.rs`**
@@ -1413,7 +1413,7 @@ pub(crate) fn maintenance_prune(dry_run: bool) {
 - [ ] **Step 6: 跑测试与 CLI 冒烟**
 
 ```powershell
-cargo test -p path_editor_core --test db_maintenance_prune
+cargo test -p path-editor-core --test db_maintenance_prune
 cargo run -p patheditor-cli -- maintenance prune --dry-run
 ```
 
@@ -1490,7 +1490,7 @@ fn archives_v5_sources_once_and_never_overwrites() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core --test db_archive_v5`
+Run: `cargo test -p path-editor-core --test db_archive_v5`
 Expected: 编译失败（模块不存在）。
 
 - [ ] **Step 3: 实现 `archive_v5.rs`**
@@ -1663,7 +1663,7 @@ pub(crate) fn maintenance_archive_v5(dry_run: bool) {
 - [ ] **Step 6: 跑测试与 CLI 冒烟**
 
 ```powershell
-cargo test -p path_editor_core --test db_archive_v5
+cargo test -p path-editor-core --test db_archive_v5
 cargo run -p patheditor-cli -- maintenance archive-v5 --dry-run
 ```
 
@@ -1755,7 +1755,7 @@ mod tests {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core db::maintenance::tests`
+Run: `cargo test -p path-editor-core db::maintenance::tests`
 Expected: 编译失败（`cleanup_legacy_env_backups` 不存在）。
 
 - [ ] **Step 3: 实现清理函数**
@@ -1962,7 +1962,7 @@ pub(crate) fn maintenance_cleanup_legacy(dry_run: bool, yes: bool) {
 - [ ] **Step 5: 跑测试与 CLI 冒烟**
 
 ```powershell
-cargo test -p path_editor_core db::maintenance::tests
+cargo test -p path-editor-core db::maintenance::tests
 cargo run -p patheditor-cli -- maintenance cleanup-legacy-backups --dry-run
 cargo run -p patheditor-cli -- maintenance cleanup-legacy-backups
 ```
@@ -2055,7 +2055,7 @@ fn imports_a_v5_profile_json_into_the_database() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cargo test -p path_editor_core --test db_v5_import`
+Run: `cargo test -p path-editor-core --test db_v5_import`
 Expected: 编译失败（模块不存在）。
 
 - [ ] **Step 3: 实现 `v5_import.rs`**
@@ -2127,7 +2127,7 @@ pub(crate) fn profile_import(file: String) {
 - [ ] **Step 5: 跑测试与 CLI 冒烟**
 
 ```powershell
-cargo test -p path_editor_core --test db_v5_import
+cargo test -p path-editor-core --test db_v5_import
 ```
 
 Expected: PASS。
@@ -2303,4 +2303,23 @@ git commit -m "chore(v6): 版本号升至 6.0.0"
 
 ## Execution Notes
 
-（由开发窗口回填：偏离记录、未覆盖项、残余风险、实际测试数。）
+**（开发窗口未回填本节；以下由审核窗口据开发回执 §2/§3/§5/§6 代填，2026-10-22）**
+
+- 偏离记录（详见开发回执 §3）：D-1 包名是连字符 `path-editor-core`；D-2
+  `db_sync_import_limits.rs` 按核对轮 S-1 改写；D-3 抽出 `map_change_row` 共用；
+  D-4 `unique_name_tx` 保持私有；D-5 Task 4 补反向验证；D-6 维护 CLI 用
+  `open_default + migrate_to_current`；D-7 归档移到 `setup_database` 末尾（S-2）；
+  D-8 dry-run 走 `scan_legacy_env_backups`；D-9 文案改「将归档到」；
+  D-10 归档增加 `is_file()` 与排序；D-11 CHANGELOG 标题直接改写；
+  D-12 过期注释更正；D-13 cleanup 签名保持 spec §6.5.3 形状。
+- 未覆盖项（详见回执 §5）：U-1 prune dry-run 未对真实目录执行；U-2 GUI 启动序列
+  未端到端运行；U-3 cleanup `--yes` 未实跑；U-4 无真机双端验证；U-5 MSVC 未验证；
+  U-6 `maintenance` 无 E2E；U-7 窗口标题未目视；U-8 敏感值掩码未变。
+- 残余风险（详见回执 §6）：R-1 prune 无 `applied_at` 索引；R-2 归档会改名
+  `profiles/` 下用户手工放入的 JSON；R-3 用户机器现状（2 个 v5 原件 + 9 个明文备份）；
+  R-4 整实体 LWW；R-5 中文改名进入持久数据；R-6 不可达 i18n 键；R-7
+  `CLAUDE.md` / `AGENTS.md` 与 spec §十二 冲突；R-8 v5 导入会隔离损坏文件；
+  R-9 Argon2 参数与口令强度未变。
+- 实际测试数：Rust **56 binaries / 349 passed / 0 failed / 2 ignored**（基线 48/340）；
+  前端 **33 files / 398 passed**（基线 397）；E2E **54 passed**（基线 54）。
+  `npm run verify:all` exit 0；覆盖率 Lines 82.7%（门槛 80%）。
