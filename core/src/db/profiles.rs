@@ -218,6 +218,21 @@ pub(crate) fn import_profile_content_tx(
         )
     })?;
 
+    // **外部输入跨信任边界**：包里的名称先过与本地保存同一套校验。
+    //
+    // 不做这一步的后果：空名 / 超长名 / 含控制字符的名称会写进 `profiles.name`
+    // 并被 UI 渲染；与本地重名时空名还会变成 `" (来自 dev-x)"`。
+    //
+    // 错误码映射：`validate_name` 给的是 `InvalidName`（「用户输入错」的语义），
+    // 而同步包里的非法名称属于「包格式错」，这里统一成 `SyncFormat` 整包回滚。
+    validate_name(&c.name).map_err(|e| {
+        CoreError::new(
+            ErrorCode::SyncFormat,
+            "import_profile",
+            format!("配置名称不合法: {}", e.message),
+        )
+    })?;
+
     // 同名不同 uid：给本地行生成一个不冲突的名称。
     // 只影响本地行，包内 uid 保持不变（spec §6.5.1）。
     let name = unique_name_tx(tx, &c.name, uid, device_id)?;
