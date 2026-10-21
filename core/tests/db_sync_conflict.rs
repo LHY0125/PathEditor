@@ -20,12 +20,12 @@ fn open_db(dir: &TempDir, name: &str) -> Db {
     db
 }
 
-/// 在同一实体同一字段上写一条变更。
 /// 在**支持落库**的实体类型上写一条变更。
 ///
-/// 用 `snapshot` 而不是 `profile`：`profile` 属于「格式合法但当前版本不落库」
-/// 的类型，导入时会被 `APPLICABLE_ENTITY_TYPES` 提前跳过，走不到冲突判定。
-/// 快照的整实体变更没有 `field`，因此 `field = None`。
+/// 用 `snapshot` 而不是 `profile`：快照的整实体变更没有 `field`
+/// （`field = None`），夹具最简。`profile` 从 M4 起也支持落库，但它的整实体
+/// 变更会去解析 `content.snapshotUid`，而这里只写 `new_value`、不带 `content`——
+/// 冲突路径本就走不到应用实体，用 `snapshot` 能让「这条测试测的是什么」更清楚。
 fn write_entity(db: &mut Db, entity_uid: &str, value: &str) -> String {
     db.with_transaction(|tx| {
         record_change_tx(

@@ -168,6 +168,156 @@ pub fn save_profile_tx(
     Ok(uid)
 }
 
+/// 同步包里的配置内容（接受侧子集）。
+///
+/// **不含** `applyCount` / `lastAppliedAt`：使用统计是本机数据，不跨设备同步
+/// （spec §6.5.1）。导出方送来的 `ProfileView` 会带这两个字段，
+/// serde 默认忽略未知字段，所以可以直接反序列化。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProfileSyncContent {
+    /// 配置名称
+    pub name: String,
+    /// 描述
+    pub description: Option<String>,
+    /// 标签
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// 创建时间（Unix 毫秒）
+    pub created_at: i64,
+    /// 更新时间（Unix 毫秒）
+    pub updated_at: i64,
+    /// CAS 版本号，同时是 revision 的版本号
+    pub version: i64,
+    /// 该版本指向的快照 uid
+    pub snapshot_uid: Option<String>,
+}
+
+/// 按**远端 uid** 落库一条配置（同步导入用）。
+///
+/// 保留远端 uid：bundle 内所有引用都指向它。`profile_revisions.uid` 由本地生成
+/// （bundle 不引用 revision uid）；`(profile_id, version)` 用 upsert 更新 `snapshot_id`。
+///
+/// 已存在同 uid 的行时更新元数据并**复活**（`deleted_at = NULL`）——是否符合预期
+/// 由调用方的 LWW 决定，本函数只负责按内容写入。
+///
+/// 悬空 `snapshotUid` 返回 `SyncFormat`，由调用方整体回滚（spec §6.5.1）。
+pub(crate) fn import_profile_content_tx(
+    tx: &Transaction,
+    uid: &str,
+    content: &serde_json::Value,
+    _device_id: &str,
+) -> Result<(), CoreError> {
+    let c: ProfileSyncContent = serde_json::from_value(content.clone()).map_err(|e| {
+        CoreError::new(
+            ErrorCode::SyncFormat,
+            "import_profile",
+            format!("配置内容无法解析: {e}"),
+        )
+    })?;
+
+    let snapshot_id: Option<i64> = match &c.snapshot_uid {
+        Some(s) => {
+            let id: Option<i64> = tx
+                .query_row("SELECT id FROM snapshots WHERE uid = ?1", params![s], |r| {
+                    r.get(0)
+                })
+                .optional()
+                .map_err(|e| db_err("import_profile_snapshot", e))?;
+            Some(id.ok_or_else(|| {
+                CoreError::new(
+                    ErrorCode::SyncFormat,
+                    "import_profile",
+                    format!("配置引用的快照不存在: {s}"),
+                )
+            })?)
+        }
+        None => None,
+    };
+
+    let existing: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM profiles WHERE uid = ?1",
+            params![uid],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| db_err("find_profile_uid", e))?;
+
+    let tags_json = serde_json::to_string(&c.tags).unwrap_or_else(|_| "[]".to_string());
+    let version = c.version.max(1);
+
+    match existing {
+        Some(id) => {
+            tx.execute(
+                "UPDATE profiles
+                    SET name = ?1, description = ?2, tags = ?3, created_at = ?4,
+                        updated_at = ?5, version = ?6, deleted_at = NULL
+                  WHERE id = ?7",
+                params![
+                    c.name,
+                    c.description,
+                    tags_json,
+                    c.created_at,
+                    c.updated_at,
+                    version,
+                    id
+                ],
+            )
+            .map_err(|e| db_err("import_profile_update", e))?;
+            if let Some(sid) = snapshot_id {
+                upsert_revision_tx(tx, id, version, c.updated_at, sid)?;
+            }
+        }
+        None => {
+            tx.execute(
+                "INSERT INTO profiles
+                   (uid, name, description, tags, created_at, updated_at, apply_count, version)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
+                params![
+                    uid,
+                    c.name,
+                    c.description,
+                    tags_json,
+                    c.created_at,
+                    c.updated_at,
+                    version
+                ],
+            )
+            .map_err(|e| db_err("import_profile_insert", e))?;
+            let id = tx.last_insert_rowid();
+            if let Some(sid) = snapshot_id {
+                upsert_revision_tx(tx, id, version, c.updated_at, sid)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 插入/更新一条 revision（`(profile_id, version)` 唯一）。
+fn upsert_revision_tx(
+    tx: &Transaction,
+    profile_id: i64,
+    version: i64,
+    created_at: i64,
+    snapshot_id: i64,
+) -> Result<(), CoreError> {
+    tx.execute(
+        "INSERT INTO profile_revisions (uid, profile_id, version, created_at, snapshot_id)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(profile_id, version) DO UPDATE SET snapshot_id = excluded.snapshot_id",
+        params![
+            Uuid::now_v7().to_string(),
+            profile_id,
+            version,
+            created_at,
+            snapshot_id
+        ],
+    )
+    .map_err(|e| db_err("upsert_revision", e))?;
+    Ok(())
+}
+
 /// 列出未删除的配置，按 `updated_at DESC` 排序。
 pub fn list_profiles(db: &Db) -> Result<Vec<ProfileView>, CoreError> {
     let mut stmt = db.prepare(
