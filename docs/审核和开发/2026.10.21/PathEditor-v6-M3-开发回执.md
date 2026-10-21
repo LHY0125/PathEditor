@@ -79,7 +79,7 @@
 | 7    | 退出码拆分：`Sync`→4 / `SyncFormat`→1（映射在 Task 3 已提前落地）                     | `5b3b5ce` |
 | 8    | IPC 5 条命令 + CLI 5 个子命令（`rpassword` 隐藏输入）                                 | `41be188` |
 | 9    | 前端形状校验 + `sync-store` + `SyncCenter` + `sync` 标签页                            | `8a1c087` |
-| 10   | E2E 4 条主路径 + README / CHANGELOG                                                   | 见 §9     |
+| 10   | E2E 4 条主路径 + README / CHANGELOG                                                   | `d041b45` |
 
 **代码规模**：47 个文件，+4001 / −14 行。
 
@@ -174,11 +174,24 @@ Test Files  33 passed (33)
 ### E2E
 
 ```
-npx playwright test --config e2e/playwright.config.ts e2e/tests/sync.spec.ts
-4 passed
+npx playwright test --config e2e/playwright.config.ts
+Running 54 tests using 2 workers
+54 passed (1.8m)
 ```
 
-完整套件结果见 §9 的最终验证。
+基线 50 → 54（**+4**，`e2e/tests/sync.spec.ts`）。
+
+### 全量质量门
+
+```
+npm run verify:all
+54 passed (1.8m)
+[exited with code 0]
+```
+
+`verify:all` 依次执行：Prettier check → ESLint → 前端构建 → 覆盖率（行覆盖 ≥80%）
+→ `cargo fmt --check` → Clippy `-D warnings` → `cargo test --workspace` → Playwright。
+**exit 0 意味着上述每一步都通过**（覆盖率门槛未触发失败）。
 
 ### 其他
 
@@ -304,6 +317,7 @@ error_exit_codes: 1
 ## §9 提交清单与状态
 
 ```
+d041b45 test(v6): 同步 E2E 四条主路径；README / CHANGELOG 更新
 8a1c087 feat(v6): 同步中心 UI 与前端形状校验
 41be188 feat(v6): 同步 IPC 与 CLI（sync export/import/status/conflicts/resolve）
 5b3b5ce feat(v6): 拆分 Sync/SyncFormat 退出码（4 / 1）
