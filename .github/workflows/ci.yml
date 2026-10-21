@@ -69,8 +69,19 @@ jobs:
 
       # 首次运行要编译 vendored SQLCipher + OpenSSL，约 20–45 分钟；
       # 之后靠 rust-cache 复用 target 目录。
-      - name: cargo test（全量）
-        run: cargo test --workspace
+      #
+      # 分两步跑的原因：GUI crate 的 **bin** 已经通过 Tauri 的 resource.lib 拿到
+      # comctl32 v6 清单，而 **lib 的 test harness** 拿不到。给所有目标无条件注入
+      # `/MANIFEST:EMBED` 会和 resource.lib 撞车（CVTRES CVT1100 duplicate resource）。
+      # 所以先排除 GUI 跑 core/cli，再单独跑 GUI 的 lib 测试并打开清单注入开关。
+      - name: cargo test（core / cli）
+        run: cargo test --workspace --exclude patheditor
+
+      - name: cargo test（GUI lib）
+        shell: pwsh
+        run: |
+          $env:PATHEDITOR_MSVC_TEST_MANIFEST = '1'
+          cargo test -p patheditor --lib
 
       - name: 前端类型检查
         run: npx tsc --noEmit

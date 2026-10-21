@@ -33,9 +33,9 @@ fn main() {
 ///
 /// **MSVC 与 GNU 走两条不同的路**：
 /// - GNU：用 MinGW 的 `windres` 把 `test.rc` 编成 COFF 对象再链进去。
-/// - MSVC：不编译资源，直接把 `test.manifest` 交给链接器的
-///   `/MANIFESTINPUT`。MSVC 的 runner 上通常没有 `windres`，
-///   而“没有清单”正是 0xC0000139 的成因，所以这里必须有一条不依赖 MinGW 的路径。
+/// - MSVC：**在 `PATHEDITOR_MSVC_TEST_MANIFEST=1` 时**把 `test.manifest` 交给链接器的
+///   `/MANIFESTINPUT`。不能无条件注入——bin 已经有 Tauri 的 `resource.lib` 清单，
+///   再叠一份会 CVT1100 重复资源。详见下方分支处的注释。
 ///
 /// 两条路的资源身份不同（GNU 侧的 `.rc` 用中性语言 0），因此不会与 Tauri 的
 /// `libresource.a` 撞车；MSVC 侧则是把两份清单**合并**，不是替换。
@@ -47,15 +47,27 @@ fn embed_manifest_for_test_binaries() {
     println!("cargo:rerun-if-changed=test.rc");
     println!("cargo:rerun-if-changed=test.manifest");
 
-    // MSVC：直接用链接器的清单开关，不依赖 MinGW。
+    // MSVC：**只在显式要求时注入**。
+    //
+    // 为什么不能无条件注入：Tauri 通过 `rustc-link-arg-bins=resource.lib` 已经给
+    // **bin** 嵌了 MANIFEST 资源；再叠一个 `/MANIFEST:EMBED` 会让 CVTRES 报
+    // `CVT1100: duplicate resource. type:MANIFEST, name:1, language:0x0409`。
+    //
+    // 缺清单的只有 **lib 的 test harness**（拿不到 `-bins` 的参数）。因此约定：
+    // 单独跑 `cargo test -p patheditor --lib` 时设置环境变量
+    // `PATHEDITOR_MSVC_TEST_MANIFEST=1`——那次调用不链接 bin，也就没有 resource.lib，
+    // 不会撞车。CI 的 ci.yml 就是按这个两步跑法写的。
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
-        let manifest = PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 必须存在"),
-        )
-        .join("test.manifest");
-        // `/MANIFESTINPUT` 要绝对路径：链接时的工作目录不是 crate 根。
-        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
-        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+        println!("cargo:rerun-if-env-changed=PATHEDITOR_MSVC_TEST_MANIFEST");
+        if std::env::var_os("PATHEDITOR_MSVC_TEST_MANIFEST").is_some() {
+            let manifest = PathBuf::from(
+                std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 必须存在"),
+            )
+            .join("test.manifest");
+            // `/MANIFESTINPUT` 要绝对路径：链接时的工作目录不是 crate 根。
+            println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+            println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+        }
         return;
     }
 
