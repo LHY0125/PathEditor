@@ -539,6 +539,77 @@ CREATE TABLE daily_stats (
 - **可落库类型（M3）**：`snapshot`。格式合法但当前版本不落库的类型（`profile` / `profile_revision` / `path_entry` / `env_value`）**不应用、不写 `changes`**，单独计入 `skippedUnsupported` 并在 UI/CLI 明示——写 `changes` 会占住 uid，使将来的重放被永久跳过。M4 实现配置同步后移除该限制。
 - **错误**：未知 bundle 布局版本 / 未知 `entityType` / 悬空 uid → `SyncFormat`（退出码 1）。
 
+### 6.5 M4：配置同步落库、墓碑与清理（2026-10-21 增补）
+
+M3 的同步只落 `snapshot`；`profile` / `profile_revision` 等被跳过并计入 `skippedUnsupported`。
+M4 补齐配置同步，并完成 v6.0.0 的清理与发布项。
+
+#### 6.5.1 配置同步
+
+- **可落库类型**：`snapshot` / `profile` / `profile_revision` / `path_entry` / `env_value`。
+  后三者的 `content` 为 `null`（内容随父实体），导入时只记 `changes`，不单独写实体。
+- **依赖序**：同一包内按 `snapshot → profile → profile_revision → path_entry → env_value`
+  **稳定排序**后应用；同类型内部保持包内原有顺序。
+- **profile content**（`ProfileSyncContent`）：`uid` / `name` / `description` / `tags` /
+  `createdAt` / `updatedAt` / `version` / `snapshotUid`。导入端**忽略** `applyCount` /
+  `lastAppliedAt`。
+- **uid 保留**：远端 uid 直接写入本地 `profiles.uid`，引用不重新生成。
+  `profile_revisions.uid` 在本地生成（bundle 不引用 revision uid）；
+  `profile_revisions(profile_id, version)` 用 upsert 更新 `snapshot_id`。
+- **使用统计不同步**：`apply_count` / `last_applied_at` 是本机使用数据，保留本地值；
+  新建行取 `0` / `NULL`。
+- **同名不同 uid**：自动改名为 `"{name} (来自 {deviceId 前 8 位})"`；若仍冲突，
+  依次追加 ` 2`、` 3`…。改名只影响本地行，不改变包内 uid。
+  `ImportReport` 新增 `renamed_profiles` 计数，UI/CLI 明示。
+- **墓碑**：`content = null` **且** `field = "deleted_at"` → 软删除对应实体
+  （`profiles.deleted_at` / `snapshots.deleted_at`）。其它 `content = null` 不触发删除。
+- **实体级 LWW**：`snapshot` / `profile` 的本地比较取该实体**最新的一条变更（不限 field）**。
+  否则墓碑（`field="deleted_at"`）与内容变更（`field=null`）落在两条互不可见的时间线上，
+  旧内容会在删除之后「复活」。`path_entry` / `env_value` 仍按 field 比较。
+- **悬空 `snapshotUid`**：`SyncFormat` 错误，整包回滚。
+- `skipped_unsupported` 字段保留；M4 起对已知类型恒为 0。
+
+#### 6.5.2 保留策略与清理
+
+- `changes`：删除 `exported_at IS NOT NULL AND applied_at > 0 AND applied_at < now - 90d`。
+  **绝不删除 `exported_at IS NULL`**（待导出队列）。
+- `sync_conflicts`：删除 `resolved_at IS NOT NULL AND resolved_at < now - 30d`。
+- 执行：GUI 启动序列调用一次；CLI 提供 `maintenance prune`。失败只告警，不阻断启动。
+- `.v5.bak`：迁移成功后把 `disabled.json` 与 `profiles/*.json` 重命名为
+  `<原名>.v5.bak`；目标已存在则跳过并记录；**不删除**。
+- 遗留 `env_backup_*.json`：先转换为 `.pebak`（DPAPI 加密）并回读校验，
+  成功后才删除 `.json`；任一失败保留原文件。CLI 必须 `--yes`。
+
+#### 6.5.3 接口
+
+| 层   | 接口                                                                               |
+| ---- | ---------------------------------------------------------------------------------- |
+| core | `maintenance::prune(db, now_ms) -> PruneReport`                                    |
+| core | `archive_v5::archive_v5_sources(home, dry_run) -> ArchiveReport`                   |
+| core | `maintenance::cleanup_legacy_env_backups(dir, material, dry_run) -> CleanupReport` |
+| core | `v5_import::import_profile_v5(db, path) -> String`（返回新配置 uid）               |
+| CLI  | `patheditor maintenance prune [--dry-run]`                                         |
+| CLI  | `patheditor maintenance archive-v5 [--dry-run]`                                    |
+| CLI  | `patheditor maintenance cleanup-legacy-backups [--dry-run] [--yes]`                |
+| CLI  | `patheditor profile import <FILE>`                                                 |
+
+退出码沿用：0 成功、1 一般错误、2 clap。清理类命令在未给 `--yes` 时打印计划并以 1
+退出，不执行删除。
+
+#### 6.5.4 安全边界
+
+- 不写注册表；所有路径由调用方显式传入，测试用 `TempDir`。
+- 删除类操作必须显式确认；转换失败不删除原文件。
+- 导入仍是单事务，任一错误整体回滚。
+- 保留策略只动 `exported_at IS NOT NULL` 的行，待导出队列不受影响。
+
+#### 6.5.5 不在 M4 范围
+
+- 使用统计（`applyCount` / `lastAppliedAt`）跨设备同步
+- 配置字段级冲突（仍为整实体 LWW）
+- GUI 的 v5 导入入口（仅 CLI）
+- `schemaVersion` 校验、`sync-store` 中文兜底
+
 ---
 
 ## 七、迁移与兼容
@@ -631,7 +702,8 @@ CREATE TABLE daily_stats (
 - [ ] `.pebak` 头部含 `payload_hash`（salted BLAKE3）；索引可在不解密的情况下按 hash 去重；`hash_salt` 不在文件头。
 - [ ] DB 打不开时 GUI fail-open：编辑照常、历史/同步降级、`disabled.json` 兜底、常驻条幅；恢复后对账；不静默重建。
 - [ ] FTS5 搜索、统计、N 路对比、引用图、冲突历史可用。
-- [ ] 文件式同步：两库导出/导入、并发合并、冲突 UI、幂等、错误口令/篡改拒绝。
+- [ ] 文件式同步：两库导出/导入、并发合并、冲突 UI、幂等、错误口令/篡改拒绝；
+      配置（`profile` / `profile_revision`）落库、同名自动改名、墓碑软删除（§6.5.1）。
 - [ ] 并发写：两进程同时写，CAS 冲突返回 `conflict`，无 lost update。
 - [ ] M4 清理：`env_backup_*.json` 在用户确认后删除；无新的明文敏感文件生成。
 - [ ] `npm run verify:all` 退出码 0；覆盖率 ≥80%；现有测试全绿。
@@ -647,7 +719,7 @@ CREATE TABLE daily_stats (
 | **M1 存储 + 历史** | schema/迁移/加密/事件/快照/配置/备份索引；`.pebak` 备份；`HistorySink` 接缝；fail-open 降级；Tier 1 UI                                                              | 迁移夹具 + 历史/恢复 + 并发 CAS + 降级 + `verify:all`       |
 | **M2 检索与统计**  | FTS5、统计、N 路对比、引用图、冲突历史                                                                                                                              | 查询/图/统计测试 + UI E2E                                   |
 | **M3 同步**        | changes/墓碑/bundle/合并/冲突 UI                                                                                                                                    | 两库同步 + 并发/篡改/幂等测试                               |
-| **M4 清理与发布**  | 遗留明文 `.json` 清理（用户确认）、文档、v5 导出、发布检查                                                                                                          | 验收清单全绿 + 用户确认删除                                 |
+| **M4 清理与发布**  | 配置同步落库（含同名自动改名/墓碑）、保留策略清理、`.v5.bak` 归档、遗留明文 `.json` 转换后清理（用户确认）、v5 导入、文档、版本 6.0.0、发布检查                     | 验收清单全绿 + 用户确认删除                                 |
 
 **每个里程碑必须独立通过 `verify:all` 并可回滚**；M0 的结论（构建/加密可行性）是 v6.0.0 能否按此设计推进的硬门。
 
