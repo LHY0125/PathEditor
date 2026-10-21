@@ -71,7 +71,12 @@ pub(super) fn with_history_and_snapshot<T>(
                 parent_uid: None,
             };
             match path_editor_core::db::history::insert_snapshot(db, snap) {
-                Ok(uid) => Some(uid),
+                Ok(uid) => {
+                    // 「操作前」快照同样进库、同样应当可被搜索到（Task 12 的增量策略）。
+                    // 失败只告警：派生表不是真相。
+                    index_snapshot_by_uid(db, &uid);
+                    Some(uid)
+                }
                 Err(e) => {
                     log::warn!("建快照失败（操作继续，事件将不带快照）: {}", e.message);
                     None
@@ -139,10 +144,40 @@ fn update_current_snapshot(
         Err(e) => log::warn!("更新 current_snapshot_id 失败: {}", e.message),
     }
 
+    // 增量索引这份快照（Task 12 的 `search_fts` 策略：「每次写入快照后增量」）。
+    //
+    // **为什么挂在这里而不是 `insert_snapshot` 内部**：`insert_snapshot` 是 core
+    // 的通用入口，`migrate_v5` / `insert_snapshot_tx` 也会用它——在那些路径上
+    // 增量索引既没必要（迁移后启动序列会全量重建）又会让 core 依赖自己的派生模块。
+    // 挂在这条**生产写入链路**上，职责清晰。
+    //
+    // 失败只告警：派生表不是真相，下次启动若发现为空会全量重建。
+    index_snapshot_by_uid(db, &uid);
+
     // 同步刷新 `disabled.rs` 的读缓存（D-1 方案 A）。
     // 停写之后 `load_path_snapshot()` 从 DB 读，而加载器是 `Fn()` 且拿不到 `Db`，
     // 靠进程级缓存桥接；写完不刷新会让读路径停留在旧状态。
     crate::refresh_read_snapshot(system_for_cache, user_for_cache);
+}
+
+/// 按快照 uid 做一次增量 FTS 索引。
+///
+/// `index_snapshot_tx` 接的是 `snapshot_id`（整数主键），而 `insert_snapshot`
+/// 只返回 uid——这里补一次 id 解析。解析失败只告警：索引不是真相。
+fn index_snapshot_by_uid(db: &mut path_editor_core::db::Db, uid: &str) {
+    let sid: Result<i64, _> =
+        db.query_row_with("SELECT id FROM snapshots WHERE uid = ?1", [uid], |r| {
+            r.get::<_, i64>(0)
+        });
+    let Ok(sid) = sid else {
+        log::warn!("增量索引：解析快照 id 失败，跳过（下次启动会全量重建）");
+        return;
+    };
+    if let Err(e) =
+        db.with_transaction(|tx| path_editor_core::db::search::index_snapshot_tx(tx, sid))
+    {
+        log::warn!("增量索引失败（下次启动会全量重建）: {}", e.message);
+    }
 }
 
 /// 读当前 PATH 快照（供建「操作前」快照用）。
