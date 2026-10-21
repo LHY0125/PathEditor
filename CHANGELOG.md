@@ -1,8 +1,46 @@
 # Changelog
 
-## 未发布（v6.0.0 里程碑）
+## 6.0.0 (2026-10-21)
 
-### M3 跨设备同步（开发中）
+### M4 配置同步、清理与发布
+
+M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接进导入管线，
+并完成保留策略、v5 原件归档、遗留明文备份清理与 v5 配置导入。
+
+#### 新增
+
+- **配置同步落库**（`core/src/db/sync/import.rs`、`core/src/db/profiles.rs`）：
+  `profile` 的 `content` 按远端 uid 落库，`snapshotUid` 解析成本地快照主键。
+  导入前按 `snapshot → profile → profile_revision → path_entry → env_value`
+  **稳定排序**，包内顺序颠倒也能正确解析依赖。
+- **同名自动改名**：与本地未删除配置同名时改为 `"{name} (来自 {设备前 8 位})"`，
+  仍冲突则追加 ` 2`、` 3`…。改名只影响本地行，包内 uid 不变；
+  `ImportReport.renamed_profiles` 计数并在 UI/CLI 明示。
+- **墓碑软删除**：`content = null` **且** `field = "deleted_at"` 时软删除
+  `profiles` / `snapshots`，名称随之释放。
+- **保留策略**（`core/src/db/maintenance.rs`）：删除「已导出超过 90 天」的
+  `changes` 与「已解决超过 30 天」的 `sync_conflicts`。GUI 每次启动执行一次，
+  失败只告警；CLI 提供 `maintenance prune [--dry-run]`。
+- **v5 原件归档**（`core/src/db/archive_v5.rs`）：迁移零失败时把 `disabled.json`
+  与 `profiles/*.json` 改名为 `.v5.bak`，目标已存在则跳过，**绝不覆盖**。
+- **遗留明文备份清理**：`env_backup_YYYYMMDD_HHMMSS_mmm.json` 先转成 DPAPI 加密的
+  `.pebak` 并**回读校验**，成功后才删除明文；CLI 必须 `--yes`。
+- **v5 配置导入**：`patheditor profile import <FILE>`，从 `profiles/*.json` 读回 DB。
+- **维护命令**：`patheditor maintenance archive-v5 [--dry-run]`、
+  `maintenance cleanup-legacy-backups [--dry-run] [--yes]`。
+
+#### 变更
+
+- 同步导入的**实体级 LWW**：`snapshot` / `profile` 取该实体最新一条变更（不限 field），
+  否则墓碑（`field = "deleted_at"`）与内容变更（`field = null`）互不可见，
+  已删除的配置会被旧内容「复活」。
+- 已知实体类型**全部可落库**，`skippedUnsupported` 对它们恒为 0。
+
+#### 修复
+
+- 墓碑不会被低 lamport 的旧内容覆盖（实体级 LWW 的直接结果）。
+
+### M3 跨设备同步
 
 在 M1/M2 的加密存储之上实现**文件式**跨设备同步：变更日志、加密同步包、
 字段级 LWW 合并、冲突记录与同步中心 UI。**同步不写注册表**——导入只改数据库，
@@ -44,10 +82,11 @@
 - 同步包只搬运 `profiles` / `profile_revisions` / `snapshots` / `path_entries` /
   `env_values`；**`events` 不同步**（本机操作日志，不是用户数据），
   `backups` 索引与派生表也不同步。
-- 当前版本**实体落库只覆盖快照**（`snapshots` + `path_entries` + `env_values`）；
-  配置（`profiles` / `profile_revisions`）的落库尚未接线，属 M3 已知未覆盖项。
+- ~~当前版本**实体落库只覆盖快照**（`snapshots` + `path_entries` + `env_values`）；
+  配置（`profiles` / `profile_revisions`）的落库尚未接线，属 M3 已知未覆盖项。~~
+  **M4 已闭环**：配置与 revision 现在随包落库，见上文 M4「配置同步落库」。
 
-### M2 检索与统计（开发中）
+### M2 检索与统计
 
 在 M1 的加密存储之上补齐 Tier 2 能力：FTS5 全文检索、统计仪表盘、N 路快照对比、
 `%VAR%` 引用图、冲突历史持久化，并清偿 M1 移交的 4 项欠账。
@@ -100,7 +139,7 @@
 - **`index_snapshot_tx` 尚未接入写入路径**：启动时按需全量重建，增量函数已实现并有测试，
   但 `save_path_with_sidecar` 的写入链路尚未调用它。
 
-### M1 存储与历史（开发中）
+### M1 存储与历史
 
 在 core 内建立 **SQLCipher 加密数据库**，把 PATH 快照与操作事件持久化，并把配置方案与备份索引迁入 DB。**注册表仍是唯一真相源**，DB 是 sidecar（spec D16 fail-open）。
 

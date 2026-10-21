@@ -195,6 +195,7 @@ patheditor conflicts
 # 配置切换
 patheditor profile save "Python开发"
 patheditor profile apply "Python开发"
+patheditor profile import <FILE>          # 从 v5 profiles/*.json 导入（只写 DB）
 
 # 通用环境变量（Path 除外）
 patheditor env list     [--system|--user] [--json]
@@ -212,6 +213,11 @@ patheditor sync import <FILE>
 patheditor sync status
 patheditor sync conflicts [--all]
 patheditor sync resolve <ID> --take local|remote
+
+# 维护任务（保留策略 / v5 归档 / 遗留明文备份）
+patheditor maintenance prune                    [--dry-run]
+patheditor maintenance archive-v5               [--dry-run]
+patheditor maintenance cleanup-legacy-backups   [--dry-run] [--yes]
 ```
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
@@ -306,7 +312,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
   某一天的条目数是「那天最后一次保存时」的值，不是「现在」，混在一起会误导。
   另有最常改变的变量与配置应用次数。
 - **快照对比**：任选两条历史事件对比，**系统与用户 PATH 分开**呈现新增 / 删除 / 移动 / 启用状态变化。
-  ⚠️ 环境变量对比**尚未提供**（M3 未纳入范围），界面上会显式说明，而不是让你以为「env 没变化」。
+  ⚠️ 环境变量对比**尚未提供**（本版本未纳入范围），界面上会显式说明，而不是让你以为「env 没变化」。
 - **引用图**：解析 `%VAR%` 引用关系，展示「谁引用了它」（删除前的影响范围）、
   「它依赖了谁」（递归）与循环引用。
 - **冲突历史**：每次路径扫描持久化，支持两次扫描的差异对比与「首次 / 最近出现」。
@@ -317,13 +323,17 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 > **已知限制**：CLI 不重建派生表 —— 用 CLI 改过 PATH 后，GUI 的引用图与统计可能仍是旧值，
 > 重启 GUI 后对齐（未排期修复）。
 
-### 跨设备同步（v6 M3）
+### 跨设备同步（v6）
 
 - **同步中心**：导出 / 导入加密同步包，查看待导出变更数与冲突列表。
 - **同步包**：`Argon2id`（64 MiB / t=3 / p=1）派生密钥 + `ChaCha20-Poly1305` 加密，
   AAD 覆盖包头，**改一个字节都打不开**。口令不落盘、不进 shell 历史，CLI 用隐藏输入。
-- **合并规则**：字段级 LWW（`lamport` 高者胜；相同时按 `device_id` 破平）。
+- **合并规则**：LWW（`lamport` 高者胜；相同时按 `device_id` 破平）。
+  `snapshot` / `profile` 按**整实体**比较（墓碑与内容变更共用一条时间线），
+  其余实体仍按字段比较。
   真正的平局（同 lamport、不同设备、值不同）**不会被静默覆盖**——记一条冲突，由你选。
+- **配置同步**：`profile` / `profile_revision` 会随包落库；与本地同名的配置自动改名为
+  「原名 (来自 设备)」，导入提示会显示改名数量。删除的配置以**墓碑**同步（软删除）。
 - **CLI**：`patheditor sync export|import|status|conflicts|resolve`。
   退出码：合并冲突 → 4（需人工解决），包格式/口令错误 → 1（重试无用）。
 
@@ -331,9 +341,8 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 > `profile apply` 或对应的 PATH 命令。这是刻意的：同步是「把配置搬过来」，
 > 不是「替我改系统」。
 >
-> **已知限制**：当前版本导入时**只有快照（`snapshots` + PATH 条目 + 环境变量）会真正落库**；
-> 配置方案（`profiles` / `profile_revisions`）的实体重建尚未接线，变更日志与冲突记录是完整的。
-> 同步范围不含 `events`（本机操作日志）与备份索引。
+> **已知限制**：配置合并是**整实体 LWW**，不是字段级——两台设备同时改同一个配置的
+> 不同字段时会互相覆盖。同步范围不含 `events`（本机操作日志）与备份索引。
 
 > **密钥与备份**：数据库密钥由 Windows DPAPI 保护，存放在 `~/.patheditor/keys/db.key.dpapi`，
 > 文件权限限定为当前用户 + SYSTEM。
@@ -343,7 +352,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 > **降级回落**：若密钥文件不可用（拿不到 DPAPI 密钥），备份会回落到明文 `.json` 并**在 stderr 打印警告**——
 > 这是为了让备份功能在密钥故障时依然可用，但意味着此时磁盘上会新增明文敏感文件。
 >
-> **v6.0.0 尚未交付**：环境变量的 N 路对比与跨设备同步属于 M3。
+> **环境变量的 N 路对比尚未提供**（本版本未纳入范围），环境变量对比面板会显式说明这一点。
 
 ### 导入/导出
 
