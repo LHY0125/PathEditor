@@ -164,6 +164,15 @@ enum MaintenanceCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// 把遗留 env_backup_*.json 转为 .pebak 后删除（必须先 --yes）
+    CleanupLegacyBackups {
+        /// 只显示计划，不改动任何文件
+        #[arg(long)]
+        dry_run: bool,
+        /// 确认执行（不加就只打印提示并以 1 退出）
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -676,6 +685,9 @@ fn main() {
             MaintenanceCmd::Prune { dry_run } => maintenance_ops::maintenance_prune(dry_run),
             MaintenanceCmd::ArchiveV5 { dry_run } => {
                 maintenance_ops::maintenance_archive_v5(dry_run)
+            }
+            MaintenanceCmd::CleanupLegacyBackups { dry_run, yes } => {
+                maintenance_ops::maintenance_cleanup_legacy(dry_run, yes)
             }
         },
     }

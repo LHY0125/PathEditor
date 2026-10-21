@@ -7,7 +7,9 @@
 use crate::runtime::exit_core_error;
 use path_editor_core as core;
 use path_editor_core::db::archive_v5::archive_v5_sources;
-use path_editor_core::db::maintenance::{prune, prune_plan};
+use path_editor_core::db::maintenance::{
+    cleanup_legacy_env_backups, prune, prune_plan, scan_legacy_env_backups,
+};
 
 /// 打开默认库并迁移 schema（不做 v5 文件导入）。
 fn open_db() -> core::db::Db {
@@ -68,6 +70,48 @@ pub(crate) fn maintenance_archive_v5(dry_run: bool) {
         "{}共 {} 个，跳过 {} 个",
         if dry_run { "（dry-run）" } else { "" },
         report.archived.len(),
+        report.skipped.len()
+    );
+}
+
+/// `maintenance cleanup-legacy-backups [--dry-run] [--yes]`
+///
+/// 把遗留 `env_backup_*.json` 转成 `.pebak` 后删除明文。**必须先 `--yes`**：
+/// 这是唯一会删除用户文件的维护命令。
+///
+/// dry-run 走 [`scan_legacy_env_backups`] 而**不加载密钥**——`load_or_create_key`
+/// 在密钥不存在时会新建 `~/.patheditor/keys/db.key.dpapi`，预览不该有磁盘副作用。
+pub(crate) fn maintenance_cleanup_legacy(dry_run: bool, yes: bool) {
+    let dir = core::backup::env_backup_dir();
+
+    if !dry_run && !yes {
+        eprintln!("错误: 这会删除明文备份。先运行 --dry-run 查看计划，确认后加 --yes。");
+        std::process::exit(1);
+    }
+
+    let report = if dry_run {
+        scan_legacy_env_backups(&dir).unwrap_or_else(|e| exit_core_error(&e))
+    } else {
+        let home = core::db::crypto::config_dir();
+        let material =
+            core::db::crypto::load_or_create_key(&home).unwrap_or_else(|e| exit_core_error(&e));
+        cleanup_legacy_env_backups(&dir, &material, false).unwrap_or_else(|e| exit_core_error(&e))
+    };
+
+    for (json, pebak) in &report.converted {
+        if dry_run {
+            println!("将转换 {}", json.display());
+        } else {
+            println!("已转换 {} -> {}", json.display(), pebak.display());
+        }
+    }
+    for (path, why) in &report.skipped {
+        eprintln!("跳过 {}：{why}", path.display());
+    }
+    println!(
+        "{}共 {} 个，跳过 {} 个",
+        if dry_run { "（dry-run）" } else { "" },
+        report.converted.len(),
         report.skipped.len()
     );
 }
