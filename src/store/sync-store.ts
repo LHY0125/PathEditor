@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { backend, type SyncConflict, type SyncStatus } from '@/services/backend';
+import {
+  backend,
+  type SyncConflict,
+  type SyncImportReport,
+  type SyncStatus,
+} from '@/services/backend';
 
 /**
  * 同步中心状态（M3 Task 9）。
@@ -52,13 +57,25 @@ export function maskConflictValue(value: string | null, maxLength = 60): string 
   return `${value.slice(0, maxLength)}…`;
 }
 
+/**
+ * 操作成功的提示——**结构化，不是字符串**。
+ *
+ * store 不产出面向用户的文案：文案属于展示层，必须走 `t()`。
+ * 早期版本在这里直接拼中文，导致切换英文界面时这条主反馈仍是中文
+ * （审查报告 F-4）。现在由 `SyncCenter` 按 `kind` 选择 i18n 键渲染。
+ */
+export type SyncNotice =
+  | { kind: 'exported'; changeCount: number; path: string }
+  | { kind: 'imported'; report: SyncImportReport }
+  | { kind: 'resolved'; id: number; resolution: 'local' | 'remote' };
+
 interface SyncState {
   status: SyncStatus | null;
   conflicts: SyncConflict[];
   loading: boolean;
   error: string | null;
-  /** 最近一次操作的提示文案（成功态） */
-  notice: string | null;
+  /** 最近一次操作的结果（结构化，由组件渲染文案） */
+  notice: SyncNotice | null;
 
   /** 刷新状态与冲突列表。 */
   refresh: (includeResolved?: boolean) => Promise<void>;
@@ -98,7 +115,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const report = await backend.syncExport(passphrase, path);
       set({
         loading: false,
-        notice: `已导出 ${report.changeCount} 条变更到 ${report.path}`,
+        notice: { kind: 'exported', changeCount: report.changeCount, path: report.path },
       });
       // 导出后待导出数应归零，刷新一次让 UI 反映真实状态
       await get().refresh();
@@ -113,10 +130,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ loading: true, error: null, notice: null });
     try {
       const report = await backend.syncImport(passphrase, path);
-      set({
-        loading: false,
-        notice: `导入完成：应用 ${report.applied}，跳过 ${report.skipped}，冲突 ${report.conflicts}`,
-      });
+      set({ loading: false, notice: { kind: 'imported', report } });
       await get().refresh();
       return true;
     } catch (e) {
@@ -129,7 +143,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ loading: true, error: null, notice: null });
     try {
       await backend.syncResolveConflict(id, resolution);
-      set({ loading: false, notice: `冲突 ${id} 已按 ${resolution} 解决` });
+      set({ loading: false, notice: { kind: 'resolved', id, resolution } });
       await get().refresh();
       return true;
     } catch (e) {

@@ -22,7 +22,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::db::history::{EnvValueRow, NewSnapshot, SnapshotKind};
-use crate::db::sync::bundle::{open, BundleHeader};
+use crate::db::sync::bundle::open;
 use crate::db::sync::change_log::{change_exists_tx, record_remote_change_tx, ChangeRow};
 use crate::db::sync::conflict::record_conflict_tx;
 use crate::db::sync::merge::{resolve, MergeDecision};
@@ -34,13 +34,38 @@ use crate::history::EventSource;
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
-    /// 实际应用的变更数
+    /// 实际应用的变更数（**真正落库**的条数）
     pub applied: u32,
     /// 因已存在而跳过的变更数（幂等）
     pub skipped: u32,
     /// 记录的冲突数
     pub conflicts: u32,
+    /// 本版本还不支持落库、因而**未应用也未记录**的变更数
+    ///
+    /// 这些变更**不写入 `changes`**：写了会让 uid 被占用，
+    /// 等到真正支持该类型时同一个包再也无法重放。
+    /// 界面必须把这个数字显示出来，否则用户会以为「全部同步成功」。
+    pub skipped_unsupported: u32,
 }
+
+/// 当前版本能真正写入数据库的实体类型。
+///
+/// **与白名单分开**：白名单（`KNOWN_ENTITY_TYPES`）决定「包是否合法」，
+/// 这张表决定「我们能不能落地」。把两者混在一起，就会出现
+/// 「合法但不落地、却计入 applied」——正是 R-1 的成因。
+const APPLICABLE_ENTITY_TYPES: &[&str] = &["snapshot"];
+
+/// 包格式允许出现的实体类型（spec §6.4）。
+///
+/// 比 [`APPLICABLE_ENTITY_TYPES`] 宽：白名单里的类型**都是合法输入**，
+/// 只是其中一部分当前版本还落不了库。
+const KNOWN_ENTITY_TYPES: &[&str] = &[
+    "snapshot",
+    "profile",
+    "profile_revision",
+    "path_entry",
+    "env_value",
+];
 
 /// payload 里的一条变更（接受侧形状）。
 #[derive(Debug, Deserialize)]
@@ -98,10 +123,7 @@ pub fn import_bundle(
 
     // ③ 实体类型白名单：未知类型说明对端版本更新，静默忽略会丢掉用户的配置
     for c in &payload.changes {
-        if !matches!(
-            c.entity_type.as_str(),
-            "snapshot" | "profile" | "profile_revision" | "path_entry" | "env_value"
-        ) {
+        if !KNOWN_ENTITY_TYPES.contains(&c.entity_type.as_str()) {
             return Err(CoreError::new(
                 ErrorCode::SyncFormat,
                 "import",
@@ -124,6 +146,16 @@ pub fn import_bundle(
             // 幂等：这个 uid 已经落过库就跳过
             if change_exists_tx(tx, &c.uid)? {
                 report.skipped += 1;
+                continue;
+            }
+
+            // 本版本落不了库的类型：**不应用、不记录、单独计数**。
+            //
+            // 为什么不记 change：记了就把 uid 占住，等将来真正支持该类型时，
+            // 同一个包会因为「uid 已存在」被永久跳过——变更日志被污染成
+            // 「已同步」的假象。这正是 R-1 之外的第二层陷阱。
+            if !APPLICABLE_ENTITY_TYPES.contains(&c.entity_type.as_str()) {
+                report.skipped_unsupported += 1;
                 continue;
             }
 
@@ -274,11 +306,16 @@ fn apply_entity_tx(
             crate::db::history::insert_snapshot_with_uid_tx(tx, snap, entity_uid, false)?;
             Ok(())
         }
-        // profile 的实体写入依赖 `profiles` 表的本地整数主键映射，
-        // 且 profile_revision 引用 snapshot —— 它们的落库由 M3 后续迭代
-        // 的 `apply_profile_content` 承担；当前版本先保证变更日志与冲突记录
-        // 正确，配置内容同步记录为未覆盖项。
-        _ => Ok(()),
+        // 防御性分支：调用方（`import_bundle`）已按 `APPLICABLE_ENTITY_TYPES`
+        // 提前跳过不支持的类型，这里**不应该**再被命中。
+        //
+        // 返回错误而不是 `Ok(())`：将来有人往可落库列表里加类型却忘了在这里
+        // 实现，会**立刻炸**而不是静默吞掉——R-1 就是这么来的。
+        other => Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import",
+            format!("内部错误：实体类型 {other} 未实现落库"),
+        )),
     }
 }
 
@@ -315,9 +352,3 @@ fn snapshot_from_content(content: &serde_json::Value, uid: &str) -> Result<NewSn
         parent_uid: None,
     })
 }
-
-/// 供 GUI/CLI 展示的「未解析实体引用」检查（C-3 的实体侧）。
-///
-/// 当前实现只在导入时按需检查；独立入口留给 M4。
-#[allow(dead_code)]
-fn _unused(_: &BundleHeader) {}

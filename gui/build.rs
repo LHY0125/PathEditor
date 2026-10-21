@@ -59,8 +59,13 @@ fn embed_manifest_for_test_binaries() {
              会以 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) 退出",
             s.code()
         ),
-        Err(e) => {
-            println!("cargo:warning=找不到 windres（{e}）：测试二进制可能缺 v6 清单而无法启动")
-        }
+        Err(e) => println!(
+            "cargo:warning=找不到 windres（{e}）：测试二进制将缺少 comctl32 v6 清单，\
+             运行时会以 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) 退出。\
+             修复：把 MinGW 的 bin 目录加入 PATH（本机为 \
+             `D:\\settings\\Language\\C\\mingw64\\bin`），或安装 mingw-w64 工具链后重新构建。\
+             注意：MSVC 工具链下无需 windres，此警告可忽略——但届时若测试仍报 \
+             0xC0000139，说明 MSVC 也没嵌清单，需另行处理。"
+        ),
     }
 }

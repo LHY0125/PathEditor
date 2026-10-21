@@ -39,20 +39,26 @@ describe('parseSyncExportReport', () => {
 
 describe('parseSyncImportReport', () => {
   it('接受合法响应（含全 0）', () => {
-    expect(parseSyncImportReport({ applied: 1, skipped: 2, conflicts: 3 })).toEqual({
-      applied: 1,
-      skipped: 2,
-      conflicts: 3,
-    });
-    expect(parseSyncImportReport({ applied: 0, skipped: 0, conflicts: 0 }).applied).toBe(0);
+    expect(
+      parseSyncImportReport({ applied: 1, skipped: 2, conflicts: 3, skippedUnsupported: 4 }),
+    ).toEqual({ applied: 1, skipped: 2, conflicts: 3, skippedUnsupported: 4 });
+    expect(
+      parseSyncImportReport({ applied: 0, skipped: 0, conflicts: 0, skippedUnsupported: 0 })
+        .applied,
+    ).toBe(0);
   });
 
-  it('拒绝缺字段', () => {
+  it('拒绝缺字段（含新增的 skippedUnsupported）', () => {
     expect(() => parseSyncImportReport({ applied: 1, skipped: 2 })).toThrow(/无效的导入结果/);
+    expect(() => parseSyncImportReport({ applied: 1, skipped: 2, conflicts: 0 })).toThrow(
+      /无效的导入结果/,
+    );
   });
 
   it('拒绝类型错误', () => {
-    expect(() => parseSyncImportReport({ applied: '1', skipped: 0, conflicts: 0 })).toThrow(/无效/);
+    expect(() =>
+      parseSyncImportReport({ applied: '1', skipped: 0, conflicts: 0, skippedUnsupported: 0 }),
+    ).toThrow(/无效/);
   });
 });
 

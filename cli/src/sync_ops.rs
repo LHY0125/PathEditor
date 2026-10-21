@@ -72,6 +72,13 @@ pub(crate) fn sync_import(file: &str) {
         "导入完成：应用 {}，跳过 {}，冲突 {}",
         report.applied, report.skipped, report.conflicts
     );
+    if report.skipped_unsupported > 0 {
+        // 必须显式告知：这些变更**没有**同步过来，不要计入「成功」。
+        eprintln!(
+            "提示: {} 条变更的类型本版本还不支持同步（配置方案），未应用也未记录",
+            report.skipped_unsupported
+        );
+    }
     if report.conflicts > 0 {
         // 有冲突时提示下一步，但**不改退出码**：导入本身成功了，
         // 冲突是待人工处理的正常结果，不是错误。

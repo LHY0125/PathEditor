@@ -284,7 +284,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
                 message: '口令错误或同步包已被篡改'
               };
             }
-            return { applied: 2, skipped: 0, conflicts: 0 };
+            return { applied: 2, skipped: 0, conflicts: 0, skippedUnsupported: 0 };
           case 'sync_list_conflicts': {
             const all = window.__syncConflictsFixture ?? [];
             return args?.includeResolved ? all : all.filter((c) => c.resolvedAt === null);

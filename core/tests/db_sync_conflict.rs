@@ -21,14 +21,19 @@ fn open_db(dir: &TempDir, name: &str) -> Db {
 }
 
 /// 在同一实体同一字段上写一条变更。
-fn write_field(db: &mut Db, entity_uid: &str, field: &str, value: &str) -> String {
+/// 在**支持落库**的实体类型上写一条变更。
+///
+/// 用 `snapshot` 而不是 `profile`：`profile` 属于「格式合法但当前版本不落库」
+/// 的类型，导入时会被 `APPLICABLE_ENTITY_TYPES` 提前跳过，走不到冲突判定。
+/// 快照的整实体变更没有 `field`，因此 `field = None`。
+fn write_entity(db: &mut Db, entity_uid: &str, value: &str) -> String {
     db.with_transaction(|tx| {
         record_change_tx(
             tx,
             NewChange {
-                entity_type: "profile".into(),
+                entity_type: "snapshot".into(),
                 entity_uid: entity_uid.into(),
-                field: Some(field.into()),
+                field: None,
                 old_value: String::new(),
                 new_value: value.into(),
             },
@@ -58,9 +63,9 @@ fn concurrent_same_lamport_edits_record_conflict_and_resolution_appends_newer_ch
         .unwrap();
     assert_ne!(dev_a, dev_b, "前置：两个库的 device_id 必须不同");
 
-    // ── 两边各自在同一个 lamport 上改同一字段 ──
-    write_field(&mut a, "p-shared", "name", "\"from-A\"");
-    write_field(&mut b, "p-shared", "name", "\"from-B\"");
+    // ── 两边各自在同一个 lamport 上改同一实体 ──
+    write_entity(&mut a, "snap-shared", "\"from-A\"");
+    write_entity(&mut b, "snap-shared", "\"from-B\"");
     assert_eq!(
         current_lamport(&a).unwrap(),
         current_lamport(&b).unwrap(),
@@ -74,7 +79,7 @@ fn concurrent_same_lamport_edits_record_conflict_and_resolution_appends_newer_ch
     let report = import_bundle(&mut b, "pw", &bundle).unwrap();
     assert_eq!(
         report.conflicts, 1,
-        "同 lamport 不同设备改同一字段必须记冲突"
+        "同 lamport 不同设备改同一实体必须记冲突"
     );
     assert_eq!(report.applied, 0, "冲突项不得应用");
     assert_eq!(unresolved_count(&b).unwrap(), 1);
@@ -82,8 +87,8 @@ fn concurrent_same_lamport_edits_record_conflict_and_resolution_appends_newer_ch
     let list = list_conflicts(&b, false).unwrap();
     assert_eq!(list.len(), 1);
     let c = &list[0];
-    assert_eq!(c.field.as_deref(), Some("name"));
-    assert_eq!(c.entity_uid, "p-shared");
+    assert_eq!(c.field, None, "整实体变更没有 field");
+    assert_eq!(c.entity_uid, "snap-shared");
     assert_eq!(
         c.local_value.as_deref(),
         Some("\"from-B\""),
@@ -123,7 +128,7 @@ fn concurrent_same_lamport_edits_record_conflict_and_resolution_appends_newer_ch
     // 按 seq 取会拿到旧的。追加的变更必然是 lamport 最大的那条。
     let added = pending
         .iter()
-        .filter(|x| x.entity_uid == "p-shared" && x.field.as_deref() == Some("name"))
+        .filter(|x| x.entity_uid == "snap-shared" && x.field.is_none())
         .max_by_key(|x| x.lamport)
         .expect("解决冲突必须追加一条新变更");
     assert!(

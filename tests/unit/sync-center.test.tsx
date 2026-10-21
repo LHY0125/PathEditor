@@ -148,4 +148,25 @@ describe('SyncCenter', () => {
     render(<SyncCenter />);
     expect(screen.getByRole('alert').textContent).toContain('降级模式');
   });
+
+  it('导入提示必须显式说出「有 N 条没同步」，不能只说应用了几条', () => {
+    // store 只给结构化 notice，中文文案由组件经 t() 产出（审查报告 F-4）
+    mockState.notice = {
+      kind: 'imported',
+      report: { applied: 1, skipped: 0, conflicts: 0, skippedUnsupported: 2 },
+    };
+    render(<SyncCenter />);
+    const status = screen.getByRole('status').textContent ?? '';
+    expect(status).toContain('应用 1');
+    expect(status).toContain('2 条（配置方案）本版本还不支持同步');
+  });
+
+  it('没有不支持项时不显示那条附加说明', () => {
+    mockState.notice = {
+      kind: 'imported',
+      report: { applied: 3, skipped: 0, conflicts: 0, skippedUnsupported: 0 },
+    };
+    render(<SyncCenter />);
+    expect(screen.getByRole('status').textContent).not.toContain('不支持同步');
+  });
 });

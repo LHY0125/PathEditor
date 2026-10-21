@@ -1,7 +1,44 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { maskConflictValue, useSyncStore } from '@/store/sync-store';
+import { maskConflictValue, useSyncStore, type SyncNotice } from '@/store/sync-store';
 import type { SyncConflict } from '@/services/backend';
+
+/**
+ * 把 store 的**结构化** notice 渲染成文案。
+ *
+ * store 不产出中文/英文字符串——文案必须过 `t()`，否则切到英文界面时
+ * 这条主反馈还是中文（审查报告 F-4）。
+ *
+ * `imported` 分两种文案：有 `skippedUnsupported` 时必须**显式说出**
+ * 「这些没同步」，否则「应用 N 条」会被理解成全部成功。
+ */
+function renderNotice(
+  notice: SyncNotice,
+  t: (key: string, params?: Record<string, unknown>) => string,
+): string {
+  switch (notice.kind) {
+    case 'exported':
+      return t('sync.noticeExported', {
+        count: notice.changeCount,
+        path: notice.path,
+      });
+    case 'imported':
+      return notice.report.skippedUnsupported > 0
+        ? t('sync.noticeImportedUnsupported', {
+            applied: notice.report.applied,
+            skipped: notice.report.skipped,
+            conflicts: notice.report.conflicts,
+            unsupported: notice.report.skippedUnsupported,
+          })
+        : t('sync.noticeImported', {
+            applied: notice.report.applied,
+            skipped: notice.report.skipped,
+            conflicts: notice.report.conflicts,
+          });
+    case 'resolved':
+      return t('sync.resolvedAs', { resolution: notice.resolution });
+  }
+}
 
 /**
  * 同步中心（M3 Task 9）。
@@ -104,7 +141,7 @@ export function SyncCenter() {
       )}
       {notice !== null && (
         <div role="status" style={{ color: 'var(--app-text-muted)' }}>
-          {notice}
+          {renderNotice(notice, t)}
         </div>
       )}
 

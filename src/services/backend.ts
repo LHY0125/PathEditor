@@ -1116,12 +1116,18 @@ export interface SyncExportReport {
 
 /** 导入结果（`core::db::sync::ImportReport`）。 */
 export interface SyncImportReport {
-  /** 实际应用的变更数 */
+  /** 实际应用的变更数（真正落库的条数） */
   applied: number;
   /** 因已存在而跳过的变更数（幂等） */
   skipped: number;
   /** 记录的冲突数 */
   conflicts: number;
+  /**
+   * 本版本还不支持落库、因而**未应用也未记录**的变更数。
+   *
+   * 界面必须显示这个数字：否则用户会把「全部同步成功」当成事实。
+   */
+  skippedUnsupported: number;
 }
 
 /** 同步中心首屏状态。 */
@@ -1160,11 +1166,17 @@ export function parseSyncImportReport(value: unknown, label = 'sync_import'): Sy
     !isRecord(value) ||
     typeof value.applied !== 'number' ||
     typeof value.skipped !== 'number' ||
-    typeof value.conflicts !== 'number'
+    typeof value.conflicts !== 'number' ||
+    typeof value.skippedUnsupported !== 'number'
   ) {
     throw new Error(`${label} 返回了无效的导入结果`);
   }
-  return { applied: value.applied, skipped: value.skipped, conflicts: value.conflicts };
+  return {
+    applied: value.applied,
+    skipped: value.skipped,
+    conflicts: value.conflicts,
+    skippedUnsupported: value.skippedUnsupported,
+  };
 }
 
 /** 校验 `SyncStatus`。 */

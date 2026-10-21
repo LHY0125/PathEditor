@@ -352,6 +352,9 @@
       "profile": "Profiles",
       "snapshot": "Snapshots",
       "profile_revision": "Profile revisions"
-    }
+    },
+    "noticeExported": "Exported {{count}} changes to {{path}}",
+    "noticeImported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}",
+    "noticeImportedUnsupported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{unsupported}} profile change(s) are not supported yet and were not applied"
   }
 }
