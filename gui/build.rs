@@ -29,8 +29,16 @@ fn main() {
 ///
 /// ## 平台边界
 ///
-/// 只在 Windows 目标生效。非 Windows 没有 comctl32；MSVC 工具链下由链接器
-/// 按默认规则处理。
+/// 只在 Windows 目标生效。非 Windows 没有 comctl32。
+///
+/// **MSVC 与 GNU 走两条不同的路**：
+/// - GNU：用 MinGW 的 `windres` 把 `test.rc` 编成 COFF 对象再链进去。
+/// - MSVC：不编译资源，直接把 `test.manifest` 交给链接器的
+///   `/MANIFESTINPUT`。MSVC 的 runner 上通常没有 `windres`，
+///   而“没有清单”正是 0xC0000139 的成因，所以这里必须有一条不依赖 MinGW 的路径。
+///
+/// 两条路的资源身份不同（GNU 侧的 `.rc` 用中性语言 0），因此不会与 Tauri 的
+/// `libresource.a` 撞车；MSVC 侧则是把两份清单**合并**，不是替换。
 fn embed_manifest_for_test_binaries() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
@@ -38,6 +46,18 @@ fn embed_manifest_for_test_binaries() {
 
     println!("cargo:rerun-if-changed=test.rc");
     println!("cargo:rerun-if-changed=test.manifest");
+
+    // MSVC：直接用链接器的清单开关，不依赖 MinGW。
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        let manifest = PathBuf::from(
+            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 必须存在"),
+        )
+        .join("test.manifest");
+        // `/MANIFESTINPUT` 要绝对路径：链接时的工作目录不是 crate 根。
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+        return;
+    }
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR 必须存在"));
     let obj = out_dir.join("test_manifest.o");
@@ -64,8 +84,7 @@ fn embed_manifest_for_test_binaries() {
              运行时会以 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) 退出。\
              修复：把 MinGW 的 bin 目录加入 PATH（本机为 \
              `D:\\settings\\Language\\C\\mingw64\\bin`），或安装 mingw-w64 工具链后重新构建。\
-             注意：MSVC 工具链下无需 windres，此警告可忽略——但届时若测试仍报 \
-             0xC0000139，说明 MSVC 也没嵌清单，需另行处理。"
+             （MSVC 目标不走这条分支，它用链接器的 /MANIFESTINPUT，不需要 windres。）"
         ),
     }
 }

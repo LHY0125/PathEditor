@@ -1,0 +1,79 @@
+# PathEditor — 质量门
+# push 到 main / PR / 手动触发时跑：Rust 格式与 lint、全量测试、前端类型检查与单测。
+#
+# 为什么是 MSVC：release.yml 用 MSVC 构建并发布，本地开发用 GNU。
+# 只有在这里跑一遍 **MSVC 下的测试**，才能在打 tag 之前发现「本地绿、MSVC 红」的问题
+# （M3 的 0xC0000139 就是这种形态：GNU 下通过，缺清单的 MSVC 二进制直接退不出去）。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支连推多次时，只保留最新一次，避免排队烧机器
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 质量门（MSVC）
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # rust-toolchain.toml 固定为本机 GNU 工具链；GitHub Windows runner
+      # 使用 MSVC 工具链更稳定，因此在这里覆盖（与 release.yml 同口径）。
+      - name: Setup Rust (MSVC)
+        shell: pwsh
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+          rustup override set stable-x86_64-pc-windows-msvc
+
+      - name: 缓存 Cargo
+        uses: Swatinem/rust-cache@v2
+
+      # OpenSSL 的 MSVC 构建需要 NASM；runner 通常已带，缺失时补装。
+      - name: 确保 NASM 可用
+        shell: pwsh
+        run: |
+          $nasm = Get-Command nasm -ErrorAction SilentlyContinue
+          if (-not $nasm) {
+            choco install nasm -y --no-progress
+            'C:\Program Files\NASM' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            Write-Host "NASM 已存在: $($nasm.Source)"
+          }
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # 首次运行要编译 vendored SQLCipher + OpenSSL，约 20–45 分钟；
+      # 之后靠 rust-cache 复用 target 目录。
+      - name: cargo test（全量）
+        run: cargo test --workspace
+
+      - name: 前端类型检查
+        run: npx tsc --noEmit
+
+      - name: 前端单测
+        run: npx vitest run
