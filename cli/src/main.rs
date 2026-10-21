@@ -12,8 +12,8 @@ mod sync_ops;
 
 use import_export::{cmd_export, cmd_import};
 use profile_ops::{
-    profile_apply, profile_delete, profile_export_v5, profile_list, profile_load, profile_rename,
-    profile_save,
+    profile_apply, profile_delete, profile_export_v5, profile_import, profile_list, profile_load,
+    profile_rename, profile_save,
 };
 use runtime::{
     ensure_single_target, exit_err, exit_persist_error, load_and_save, load_operate_save,
@@ -229,6 +229,8 @@ enum ProfileCmd {
     },
     /// 导出为 v5 `profiles/*.json` 格式（降级退路，输出到 stdout）
     ExportV5 { name: String },
+    /// 从 v5 `profiles/*.json` 导入配置（只写 DB，不改注册表）
+    Import { file: String },
 }
 
 #[derive(Subcommand)]
@@ -673,6 +675,7 @@ fn main() {
             ProfileCmd::Delete { name } => profile_delete(name),
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
             ProfileCmd::ExportV5 { name } => profile_export_v5(name),
+            ProfileCmd::Import { file } => profile_import(file),
         },
         Command::Sync(cmd) => match cmd {
             SyncCmd::Export { file } => sync_ops::sync_export(&file),

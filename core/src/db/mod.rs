@@ -21,6 +21,7 @@ pub mod search;
 pub mod stats;
 pub mod sync;
 pub mod v5_export;
+pub mod v5_import;
 
 #[cfg(windows)]
 pub mod dpapi;

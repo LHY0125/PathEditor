@@ -108,6 +108,21 @@ pub(crate) fn profile_export_v5(name: String) {
     println!("{json}");
 }
 
+/// 从 v5 `profiles/*.json` 导入一个配置（M4 Task 9）。
+///
+/// **只写 DB，不改注册表**：导入只是「把配置放进库里」，要生效仍需 `profile apply`。
+/// 名称冲突返回 `NameExists`（与 `profile save` 同口径），**不会**自动改名——
+/// 用户指定了这个文件，悄悄改掉它的名字会让「我导入了什么」不可预期。
+pub(crate) fn profile_import(file: String) {
+    let mut db = open_db();
+    let uid = core::db::v5_import::import_profile_v5(&mut db, std::path::Path::new(&file))
+        .unwrap_or_else(|e| exit_core_error(&e));
+    match db_profiles::get_profile(&db, &uid).unwrap_or_else(|e| exit_core_error(&e)) {
+        Some(v) => println!("已导入配置「{}」（{}）", v.name, v.uid),
+        None => println!("已导入配置（{uid}）"),
+    }
+}
+
 pub(crate) fn profile_apply(name: String) {
     let db = open_db();
     let Some((system, user)) =
