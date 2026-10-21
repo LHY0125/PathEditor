@@ -61,8 +61,15 @@ fn upgrading_a_v1_database_bumps_version_and_does_not_rerun_ddl_v2() {
         .unwrap();
     assert!(!device_id.is_empty(), "升级不得清空 app_state");
 
-    // 关掉再开，版本仍是 2（确认真的写进了文件，不是只改了内存）
+    // 关掉再开，版本仍是当前版本（确认真的写进了文件，不是只改了内存）
+    //
+    // 断言用 `CURRENT_SCHEMA_VERSION` 而非硬编码数字：本测试守的是「持久化」，
+    // 不是「等于 2」——每次 schema 递增都不该让它失败。
     drop(db);
     let reopened = Db::open_encrypted(&path, &key_hex).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 2, "版本号必须持久化");
+    assert_eq!(
+        reopened.schema_version().unwrap(),
+        schema::CURRENT_SCHEMA_VERSION,
+        "版本号必须持久化"
+    );
 }

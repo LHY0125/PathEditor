@@ -114,6 +114,11 @@ impl Db {
                 tx.execute_batch(schema::DDL_V2)
                     .map_err(|e| db_err("ddl_v2", e))?;
             }
+            // v3：M3 的同步表（changes / sync_conflicts）
+            if current < 3 {
+                tx.execute_batch(schema::DDL_V3)
+                    .map_err(|e| db_err("ddl_v3", e))?;
+            }
             // 版本号写在**所有分支之后**：v1→v2 的升级路径同样要落版本，
             // 写在 `if current < 1` 内部会让升级后 user_version 仍停在 1，
             // 下次启动重复执行 DDL_V2（表已存在 → 报错）。

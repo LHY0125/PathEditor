@@ -4,7 +4,7 @@
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
 /// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 /// v1 全量 DDL（与 spec §4.1 一致）。
 ///
@@ -161,6 +161,51 @@ CREATE TABLE daily_stats (
 CREATE VIRTUAL TABLE search_fts USING fts5(
   content, kind, ref_uid, tokenize='unicode61'
 );
+"#;
+
+/// v3 增量 DDL：M3 的同步表（spec §4.1）。
+///
+/// 两张表都是**本地状态**，不参与「派生表可从真相重建」的口径——
+/// `changes` 是变更日志本身（真相），`sync_conflicts` 是待人工解决的决定。
+///
+/// **`changes` 的索引是 LWW 与同步的核心**：
+/// - `(device_id, seq)` 支撑「本设备单调序号」及导入时的去重；
+/// - `(entity_type, entity_uid)` 支撑按实体找回当前值；
+/// - `(origin, exported_at)` 支撑 `pending_export()` 的部分索引扫描。
+pub const DDL_V3: &str = r#"
+CREATE TABLE changes (
+  id           INTEGER PRIMARY KEY,
+  uid          TEXT NOT NULL UNIQUE,
+  device_id    TEXT NOT NULL,
+  seq          INTEGER NOT NULL,
+  lamport      INTEGER NOT NULL,
+  origin       TEXT NOT NULL CHECK (origin IN ('local','remote')),
+  entity_type  TEXT NOT NULL,
+  entity_uid   TEXT NOT NULL,
+  field        TEXT,
+  old_value    TEXT,
+  new_value    TEXT,
+  created_at   INTEGER NOT NULL,
+  applied_at   INTEGER NOT NULL,
+  exported_at  INTEGER
+);
+CREATE INDEX idx_changes_seq ON changes(device_id, seq);
+CREATE INDEX idx_changes_entity ON changes(entity_type, entity_uid);
+CREATE INDEX idx_changes_pending_export ON changes(origin, exported_at);
+
+CREATE TABLE sync_conflicts (
+  id            INTEGER PRIMARY KEY,
+  entity_type   TEXT NOT NULL,
+  entity_uid    TEXT NOT NULL,
+  field         TEXT,
+  local_value   TEXT,
+  remote_value  TEXT,
+  remote_device TEXT NOT NULL,
+  created_at    INTEGER NOT NULL,
+  resolved_at   INTEGER,
+  resolution    TEXT
+);
+CREATE INDEX idx_sync_conflicts_unresolved ON sync_conflicts(resolved_at);
 "#;
 
 /// 建库时写入 `app_state` 单行（J-7）。
