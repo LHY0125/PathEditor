@@ -36,9 +36,16 @@ fn stop_write_switches_read_to_injected_loader() {
     disabled::set_v5_writes_disabled(true);
     let snap = disabled::load_path_snapshot().expect("读取失败");
 
-    // 加载器的数据必须出现在结果里（说明读路径真的切到了注入源）
+    // 加载器的数据必须出现在结果里（说明读路径真的切到了注入源）。
+    //
+    // **断言必须忽略大小写**：`merge_hive` 回填的是**注册表里的原始拼写**
+    // （`key()` 只用于匹配，不用于输出）。本机注册表写的是 `C:\WINDOWS`，
+    // GitHub runner 上是 `C:\Windows`——用 `==` 精确比较会让这条测试只在
+    // 特定机器上通过。这是 CI（MSVC）第一次跑测试时暴露出来的。
     assert!(
-        snap.system.iter().any(|e| e.path == "C:\\WINDOWS"),
+        snap.system
+            .iter()
+            .any(|e| e.path.eq_ignore_ascii_case("C:\\WINDOWS")),
         "停写模式下 system 必须来自注入的加载器，实际: {:?}",
         snap.system.iter().map(|e| &e.path).collect::<Vec<_>>()
     );
@@ -46,7 +53,7 @@ fn stop_write_switches_read_to_injected_loader() {
     let usr = snap
         .user
         .iter()
-        .find(|e| e.path == "C:\\WINDOWS\\system32")
+        .find(|e| e.path.eq_ignore_ascii_case("C:\\WINDOWS\\system32"))
         .expect("user 侧必须来自加载器");
     assert!(!usr.enabled, "禁用标记必须从 DB 侧保留");
 
