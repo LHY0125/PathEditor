@@ -19,7 +19,7 @@
 
 ## Global Constraints
 
-- **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU/MSVC 均已复现，`--test-threads=1` 无效）。M2 结束时 `core/tests/` 有 31 个文件，M3 声明 **10 个**新文件（Task 1 两个、Task 2/2b/3/4/5/6/7 各一）。
+- **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU/MSVC 均已复现，`--test-threads=1` 无效）。M2 结束时 `core/tests/` 有 31 个文件，M3 在 `core/tests/` 下声明 **10 个**新文件（Task 1 两个、Task 6 两个、Task 2/2b/3/4/5/7 各一），另有 2 个前端测试文件。
 - **`config_dir()` 无法被环境变量重定向**：`dirs::home_dir()` 在 Windows 上走 `SHGetKnownFolderPath`，`HOME` 与 `USERPROFILE` **都不读**。所有测试必须**显式传 `home: &Path` 参数**（`tempfile::TempDir`），不得依赖 `set_var`。M1 已因此出过一次写坏用户真实 `disabled.json` 的事故。
 - **每个新增 `pub fn` 必须有生产调用者**。检查方法（**先验证工具本身有效**）：
 
