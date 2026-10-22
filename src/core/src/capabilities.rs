@@ -36,11 +36,10 @@ mod tests {
             can_write_user: true,
         })
         .expect("序列化能力对象失败");
-        let expected: Value =
-            serde_json::from_str(include_str!(
-                "../../../src/gui/web/tests/fixtures/path-capabilities.json"
-            ))
-                .expect("解析共享契约 fixture 失败");
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../../src/gui/web/tests/fixtures/path-capabilities.json"
+        ))
+        .expect("解析共享契约 fixture 失败");
 
         assert_eq!(actual, expected);
         assert!(actual.get("canWriteSystem").is_some());
