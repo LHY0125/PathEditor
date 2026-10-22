@@ -8,8 +8,8 @@ use winreg::enums::{RegType, REG_EXPAND_SZ, REG_SZ};
 
 /// 保留变量：由专用通路拥有，通用通路必须完全排除。
 ///
-/// `Path` 必须在此列 —— 否则用户可绕过 `PathEntry` / `disabled.json` /
-/// `_pendingSys` / `_pendingUser` 与快照事务直接改 PATH。
+/// `Path` 必须在此列 —— 否则用户可绕过 `PathEntry` / 快照事务，
+/// 经通用环境变量通路直接改 PATH。
 const RESERVED_NAMES: &[&str] = &["Path"];
 
 /// 保护变量：系统内置关键项，改坏会导致系统或登录异常。

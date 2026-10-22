@@ -4,7 +4,7 @@
 //! `apply_path_snapshot` / `apply_profile`。
 //!
 //! **口令不进前端 store**：这里的 `passphrase` 参数用完即弃，不返回、不记录。
-//! 组件侧用 `type="password"` + 局部 state（与 M2 的 reveal 同口径）。
+//! 组件侧用 `type="password"` + 局部 state（与历史快照 reveal 同口径）。
 
 use path_editor_core::db::sync::change_log::pending_export;
 use path_editor_core::db::sync::conflict::{list_conflicts, unresolved_count, Resolution};

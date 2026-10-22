@@ -10,7 +10,7 @@ import {
  * M3 同步 IPC 的形状校验（Task 9）。
  *
  * 每个 `parseXxx` 覆盖四类输入：正常 / 缺字段 / 类型错 / 非法值。
- * 与 M2 的 `backend-m2-shapes.test.ts` 同一口径：校验的价值在于
+ * 与 `backend-analytics-shapes.test.ts` 同一口径：校验的价值在于
  * **后端形状漂移时前端立刻报错**，而不是把 `undefined` 渲染成空白。
  */
 

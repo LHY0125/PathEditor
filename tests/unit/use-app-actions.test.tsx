@@ -47,8 +47,6 @@ function resetStore(sys: PathEntry[] = [], user: PathEntry[] = []) {
     undoRedo: new UndoRedoManager(50),
     _savedSys: sys,
     _savedUser: user,
-    _pendingSys: null,
-    _pendingUser: null,
     selectedIndices: [],
     isModified: false,
     isLoading: false,

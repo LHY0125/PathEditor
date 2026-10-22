@@ -9,7 +9,7 @@ interface ModalProps {
 /**
  * 对话框外壳。
  *
- * 视觉规格由 globals.css 的 .modal-overlay / .modal-surface 提供（Wave 4.1），
+ * 视觉规格由 globals.css 的 .modal-overlay / .modal-surface 提供，
  * 组件本身只管挂载与 Escape 关闭 —— 业务内容由调用方决定。
  */
 export function Modal({ open, onClose, children }: ModalProps) {

@@ -37,9 +37,9 @@ PathEditor/
 │   └── backup.rs                # 注册表备份、env 备份（.pebak）
 ├── gui/src/commands/            # #[tauri::command] 薄包装，调用 core
 │   ├── registry.rs / system.rs / backup.rs / fs.rs / disabled.rs / scanner.rs
-│   ├── env_var.rs / service.rs / profiles.rs（v5 兼容模块，未注册）
+│   ├── env_var.rs / service.rs
 │   ├── history.rs               # 历史 / DB 配置 / 备份索引
-│   ├── m2.rs                    # 检索 / 统计 / 对比 / 引用图 / 冲突历史
+│   ├── analytics.rs             # 检索 / 统计 / 对比 / 引用图 / 冲突历史
 │   └── sync.rs                  # 同步状态 / 导出 / 导入 / 冲突
 ├── cli/src/                     # Clap 定义 + 命令分派（bin-only crate，无 lib target）
 │   ├── runtime.rs               # 注册表安全保存、错误退出、快照提交

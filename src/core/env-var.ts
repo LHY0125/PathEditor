@@ -57,7 +57,7 @@ export type ErrorCode =
   | 'database'
   | 'crypto'
   | 'sync'
-  // v6 M3：同步包格式错误（magic/版本/AEAD/未知实体类型/悬空引用）。
+  // 同步包格式错误（magic/版本/AEAD/未知实体类型/悬空引用）。
   // 与 `sync` 分开：sync = 需人工解决合并冲突（exit 4），
   // syncFormat = 重试无用（exit 1）。漏加会让前端静默兜底成 internal。
   | 'syncFormat'

@@ -7,7 +7,7 @@ import type { SyncConflict } from '@/services/backend';
  * 把 store 的**结构化** notice 渲染成文案。
  *
  * store 不产出中文/英文字符串——文案必须过 `t()`，否则切到英文界面时
- * 这条主反馈还是中文（审查报告 F-4）。
+ * 这条主反馈仍是中文。
  *
  * `imported` 分两种文案：有 `skippedUnsupported` 时必须**显式说出**
  * 「这些没同步」，否则「应用 N 条」会被理解成全部成功。

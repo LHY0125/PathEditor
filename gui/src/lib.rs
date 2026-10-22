@@ -127,10 +127,9 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     //
     // 全部失败只告警：DB 可用性比派生数据新鲜度重要，派生表下次启动会再算。
     //
-    // ⚠️ **CLI 不做这些重建**（未覆盖项 #2 / M1 的 R-02）：
-    // CLI 的写路径（`cli/src/runtime.rs`）用 `NoopHistory`，不碰 DB 的当前快照，
-    // 因此「CLI 改 PATH 后 GUI 的引用图/统计仍是旧的」是已知残余风险。
-    // 修它需要 CLI 也接 DB 的 current 快照，属范围扩张，M2 不做。
+    // ⚠️ CLI 的写路径（`cli/src/runtime.rs`）用 `NoopHistory`，不更新 DB 的
+    // 当前快照；在 CLI 接入 DB store 之前，「CLI 改 PATH 后 GUI 的引用图/统计
+    // 仍是旧的」是已知残余风险。修复需要让 CLI 也维护 current 快照。
     rebuild_derived_tables(db);
 
     // ⑦ v5 原件归档（spec §7.4 / §6.5.2）：只在迁移零失败时执行；失败只告警。
@@ -328,20 +327,12 @@ pub fn run() {
             commands::disabled::load_path_snapshot,
             commands::scanner::scan_paths,
             commands::registry::clean_path_entries,
-            // P0-1 方案 A：v5 文件版 profile 命令**已下线**。
-            // 配置方案统一走 DB（`profile_list` / `profile_save` / `profile_paths` /
-            // `profile_rename` / `profile_delete_by_name`）。
-            // 保留 `commands::profiles` 模块本身：`core::profiles` 仍是 v5 兼容通路
-            // （`migrate_legacy` 读它；spec §7.5 的「导出 v5 JSON」将来要用）。
             commands::env_var::list_all_env_vars,
             commands::env_var::reveal_env_var,
             commands::env_var::update_env_var,
             commands::env_var::create_env_var,
             commands::env_var::delete_env_var,
             commands::service::save_path_with_sidecar,
-            commands::service::apply_path_snapshot,
-            commands::service::retry_pending_path_state,
-            commands::service::apply_profile,
             commands::history::history_list_events,
             commands::history::history_get_snapshot,
             commands::history::history_get_current,
@@ -352,25 +343,25 @@ pub fn run() {
             commands::history::backup_list,
             commands::history::profile_save,
             commands::history::profile_export_v5,
-            // ── M2（Task 9）：检索 / 统计 / 对比 / 引用图 / 冲突历史 ──
-            commands::m2::search,
-            commands::m2::stats_dashboard,
-            commands::m2::stats_rebuild,
-            commands::m2::compare_snapshots,
-            commands::m2::refs_dependents,
-            commands::m2::refs_dependencies,
-            commands::m2::refs_cycles,
-            commands::m2::refs_rebuild,
-            commands::m2::search_rebuild,
-            commands::m2::scan_history_list,
-            commands::m2::scan_history_diff,
-            commands::m2::scan_history_record,
+            // ── 检索 / 统计 / 对比 / 引用图 / 冲突历史 ──
+            commands::analytics::search,
+            commands::analytics::stats_dashboard,
+            commands::analytics::stats_rebuild,
+            commands::analytics::compare_snapshots,
+            commands::analytics::refs_dependents,
+            commands::analytics::refs_dependencies,
+            commands::analytics::refs_cycles,
+            commands::analytics::refs_rebuild,
+            commands::analytics::search_rebuild,
+            commands::analytics::scan_history_list,
+            commands::analytics::scan_history_diff,
+            commands::analytics::scan_history_record,
             commands::history::profile_paths,
             commands::history::profile_rename,
             commands::history::profile_delete_by_name,
             commands::history::profile_mark_applied_by_name,
             commands::history::history_restore_snapshot,
-            // ── M3（Task 8）：同步中心 ──
+            // ── 同步中心 ──
             commands::sync::sync_status,
             commands::sync::sync_export,
             commands::sync::sync_import,

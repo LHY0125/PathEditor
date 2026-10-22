@@ -22,8 +22,6 @@ interface AppState {
   undoRedo: UndoRedoManager;
   _savedSys: PathEntry[]; // 上次成功写入注册表的快照，用于 isModified 判断
   _savedUser: PathEntry[];
-  _pendingSys: PathEntry[] | null; // 注册表已提交、但 disabled.json 待补写的快照
-  _pendingUser: PathEntry[] | null;
 
   activeTab: TabId;
   searchQuery: string;
@@ -62,12 +60,9 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => {
   const markDirty = () => {
-    const { _savedSys, _savedUser, _pendingSys, _pendingUser, sysPaths, userPaths } = get();
+    const { _savedSys, _savedUser, sysPaths, userPaths } = get();
     set({
-      isModified:
-        !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)) ||
-        Boolean(_pendingSys) ||
-        Boolean(_pendingUser),
+      isModified: !(arraysEqual(sysPaths, _savedSys) && arraysEqual(userPaths, _savedUser)),
     });
   };
 
@@ -77,8 +72,6 @@ export const useAppStore = create<AppState>((set, get) => {
     undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
     _savedSys: [],
     _savedUser: [],
-    _pendingSys: null,
-    _pendingUser: null,
 
     activeTab: 'system',
     searchQuery: '',
@@ -300,35 +293,27 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     undo: () => {
-      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser, _pendingSys, _pendingUser } =
-        get();
+      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser } = get();
       const result = undoRedo.undo(sysPaths, userPaths);
       if (result) {
         set({
           sysPaths: result[0],
           userPaths: result[1],
           selectedIndices: [],
-          isModified:
-            !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)) ||
-            Boolean(_pendingSys) ||
-            Boolean(_pendingUser),
+          isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
         });
       }
     },
 
     redo: () => {
-      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser, _pendingSys, _pendingUser } =
-        get();
+      const { undoRedo, sysPaths, userPaths, _savedSys, _savedUser } = get();
       const result = undoRedo.redo(sysPaths, userPaths);
       if (result) {
         set({
           sysPaths: result[0],
           userPaths: result[1],
           selectedIndices: [],
-          isModified:
-            !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)) ||
-            Boolean(_pendingSys) ||
-            Boolean(_pendingUser),
+          isModified: !(arraysEqual(result[0], _savedSys) && arraysEqual(result[1], _savedUser)),
         });
       }
     },
@@ -343,8 +328,6 @@ export const useAppStore = create<AppState>((set, get) => {
           userPaths: usrEntries,
           _savedSys: [...sysEntries],
           _savedUser: [...usrEntries],
-          _pendingSys: null,
-          _pendingUser: null,
           undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
           isLoading: false,
           isModified: false,
@@ -367,26 +350,19 @@ export const useAppStore = create<AppState>((set, get) => {
         userPaths: state.userPaths,
         savedSys: state._savedSys,
         savedUser: state._savedUser,
-        pendingSys: state._pendingSys,
-        pendingUser: state._pendingUser,
         isAdmin: state.isAdmin,
         capabilities: state.pathCapabilities,
         force,
       });
       set({
-        isModified:
-          !(
-            arraysEqual(state.sysPaths, outcome.savedSys) &&
-            arraysEqual(state.userPaths, outcome.savedUser)
-          ) ||
-          Boolean(outcome.pendingSys) ||
-          Boolean(outcome.pendingUser),
+        isModified: !(
+          arraysEqual(state.sysPaths, outcome.savedSys) &&
+          arraysEqual(state.userPaths, outcome.savedUser)
+        ),
         isSaving: false,
         statusMessage: outcome.statusMessage,
         _savedSys: outcome.savedSys,
         _savedUser: outcome.savedUser,
-        _pendingSys: outcome.pendingSys,
-        _pendingUser: outcome.pendingUser,
       });
       return outcome.result;
     },

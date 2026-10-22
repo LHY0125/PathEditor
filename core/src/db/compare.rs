@@ -78,7 +78,10 @@ pub struct CompareResult {
     pub system: PathDiff,
     /// 用户 PATH 的差异
     pub user: PathDiff,
-    /// T-3：本轮恒为空，UI 必须显示「环境变量对比将在 M3 提供」
+    /// 环境变量对比尚未实现，字段恒为空。
+    ///
+    /// UI 必须显式显示「本版本不支持环境变量对比」，不能留白让用户以为
+    /// 「环境变量没有变化」。
     pub env_added: Vec<String>,
     /// 同上
     pub env_removed: Vec<String>,
@@ -88,7 +91,7 @@ pub struct CompareResult {
 
 /// 比较两个快照（按 uid）。
 pub fn compare(db: &Db, left_uid: &str, right_uid: &str) -> Result<CompareResult, CoreError> {
-    // 双 hive 都对比（N-8）；env 对比涉及掩码语义，推迟到 M3（见未覆盖项 #1）
+    // 双 hive 都对比；环境变量对比涉及掩码语义，尚未实现（三个 env 字段恒为空）
     let left = history::get_snapshot(db, left_uid, false)?;
     let right = history::get_snapshot(db, right_uid, false)?;
     Ok(CompareResult {

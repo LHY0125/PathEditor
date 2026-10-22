@@ -230,13 +230,12 @@ const ERROR_CODES: readonly ErrorCode[] = [
 type RejectionPayload = Pick<CoreError, 'code' | 'message'>;
 
 /**
- * 把 Tauri invocation 的 rejection 解析为结构化 `CoreError`（F-06）。
+ * 把 Tauri invocation 的 rejection 解析为结构化 `CoreError`。
  *
- * 双形状兼容（过渡期，Wave 2 收口时复核是否收紧）：
- * - env 命令的 Rust 错误已迁移为 `CoreError`，Tauri rejection 是
- *   `{code, message, ...}` 对象 → 白名单校验 `code` 后结构化透传；
- * - PATH 命令仍返回纯文本 `String`（后续波次迁移）→ 兜底为
- *   `{code:'internal', message: 原文}`。
+ * 双形状兼容：
+ * - env 与 v6 DB/同步命令返回 `CoreError` 对象 → 白名单校验 `code` 后结构化透传；
+ * - PATH 命令仍返回纯文本 `String` → 兜底为 `{code:'internal', message: 原文}`。
+ *   PATH 命令迁移到 `CoreError` 后可收紧为单形状。
  *
  * 白名单构造：对象但 `code` 不是合法 ErrorCode、或 `message` 缺失时，
  * 一律降级为 `internal`，绝不透传来路不明的字段。
@@ -317,7 +316,7 @@ function parseEnvVarMeta(value: unknown, label: string): EnvVarMeta {
 
 /**
  * RevealedValue 契约校验：reveal_env_var 必须同时返回完整明文与读取时的
- * revision（F-01 编辑陈旧判定依赖后者）。白名单构造，绝不透传上游多余字段。
+ * revision（编辑陈旧判定依赖后者）。白名单构造，绝不透传上游多余字段。
  */
 function parseRevealedValue(value: unknown, label: string): RevealedValue {
   if (
@@ -512,7 +511,7 @@ export interface EventPage {
   total: number;
 }
 
-/** 事件列表筛选（P1-1：补齐 spec §6.1 要求的全部维度）。 */
+/** 事件列表筛选（覆盖 action/source/hive/target/时间范围）。 */
 export interface EventFilter {
   limit?: number;
   offset?: number;
@@ -744,7 +743,7 @@ function parseBackupList(value: unknown, label: string): BackupView[] {
   });
 }
 
-/* ────────────────────────── M2：检索 / 统计 / 对比 / 引用图 ────────────────────────── */
+/* ────────────────────────── 检索 / 统计 / 对比 / 引用图 ────────────────────────── */
 
 /** 一条搜索命中（对应 core 的 `db::search::SearchHit`）。 */
 export interface SearchHit {
@@ -819,10 +818,10 @@ export interface PathDiff {
 }
 
 /**
- * 对比结果（N-8：system 与 user **分开**）。
+ * 对比结果（system 与 user **分开**）。
  *
  * `env_*` 三字段本轮**恒为空数组**（T-3）——UI 必须显示
- * 「环境变量对比将在 M3 提供」，而不是让用户以为「env 没变化」。
+ * 「本版本不支持环境变量对比」，而不是让用户以为「env 没变化」。
  */
 export interface CompareResult {
   system: PathDiff;
@@ -995,10 +994,10 @@ function parsePathDiff(value: unknown, label: string): PathDiff {
   };
 }
 
-/** 校验 `CompareResult`（N-8：双 hive 都必须存在）。 */
+/** 校验 `CompareResult`（双 hive 都必须存在）。 */
 export function parseCompareResult(value: unknown, label = 'compare_snapshots'): CompareResult {
   if (!isRecord(value)) throw new Error(`${label} 返回了无效的对比契约`);
-  // 缺 system 或 user 一律报错：只比一侧是本轮修掉的 N-8 缺陷，
+  // 缺 system 或 user 一律报错：只比一侧会让「只有用户 PATH 变了」看起来像没有差异，
   // 不能让后端退回旧形状而前端静默接受
   if (value.system === undefined || value.user === undefined) {
     throw new Error(`${label} 必须同时返回 system 与 user 两侧`);
@@ -1104,7 +1103,7 @@ export function parseScanRunDiff(value: unknown, label = 'scan_history_diff'): S
   };
 }
 
-/* ────────────────────────── M3：同步中心 ────────────────────────── */
+/* ────────────────────────── 同步中心 ────────────────────────── */
 
 /** 导出结果（`core::db::sync::ExportReport`）。 */
 export interface SyncExportReport {
@@ -1129,7 +1128,7 @@ export interface SyncImportReport {
    */
   skippedUnsupported: number;
   /**
-   * 因与本地配置同名而**自动改名**的条数（M4）。
+   * 因与本地配置同名而**自动改名**的条数。
    *
    * 改名只影响本地行；不显示的话，用户会发现配置名字变了却找不到原因。
    */
@@ -1258,7 +1257,7 @@ export const backend = {
   savePathSnapshot: (system: PathEntry[] | null, user: PathEntry[] | null) =>
     invoke<void>('save_path_snapshot', { system, user }),
   /**
-   * 唯一的「保存 PATH + sidecar」编排入口（Wave 3.0-B，F-08 收口）。
+   * 唯一的「保存 PATH + sidecar」编排入口。
    *
    * core 侧负责：写前备份、乐观并发校验（`expected`）、顺序写（system→user）、
    * 广播、sidecar/pending 事务。GUI 只传数据并映射结果。
@@ -1287,7 +1286,7 @@ export const backend = {
     invoke<[PathEntry[], PathEntry[]]>('clean_path_entries', { entries }),
   scanPaths: (paths: string[], query = '') => invoke<ScanResult>('scan_paths', { paths, query }),
   /**
-   * 配置方案已迁到 DB（P0-1 方案 A）。
+   * 配置方案已迁到 DB。
    *
    * **不再使用 v5 文件通路的 `list_profiles` / `save_profile` / …**：
    * 那组命令读写的仍是 `~/.patheditor/profiles/*.json`，与 DB 是两个真相源。
@@ -1400,7 +1399,7 @@ export const backend = {
       'history_get_snapshot',
     ),
   /**
-   * 把历史快照恢复回注册表（P0-3）。
+   * 把历史快照恢复回注册表。
    *
    * **破坏性操作**：会覆盖当前 PATH。UI 必须先二次确认。
    * 恢复走既有注册表编排（含写前备份），成功后追加新快照与新事件（append-only）。
@@ -1462,7 +1461,7 @@ export const backend = {
   backupList: async () =>
     parseBackupList(await parseCoreError(invoke<unknown>('backup_list')), 'backup_list'),
 
-  /* ────────────────────── M2：检索 / 统计 / 对比 / 引用图 / 冲突历史 ────────────────────── */
+  /* ────────────────────── 检索 / 统计 / 对比 / 引用图 / 冲突历史 ────────────────────── */
 
   /**
    * FTS5 全文检索。
@@ -1490,7 +1489,7 @@ export const backend = {
     return n;
   },
 
-  /** 比较两个快照（N-8：system 与 user 分开返回）。 */
+  /** 比较两个快照（system 与 user 分开返回）。 */
   compareSnapshots: async (leftUid: string, rightUid: string) =>
     parseCompareResult(
       await parseCoreError(invoke<unknown>('compare_snapshots', { leftUid, rightUid })),
@@ -1557,7 +1556,7 @@ export const backend = {
     return uid;
   },
 
-  /* ────────────────────── M3：同步中心 ────────────────────── */
+  /* ────────────────────── 同步中心 ────────────────────── */
 
   /**
    * 同步状态：待导出变更数 + 未解决冲突数。
@@ -1571,7 +1570,7 @@ export const backend = {
    * 导出同步包。
    *
    * `passphrase` 只在本调用内使用：**不写入 store、不记录日志、不回显**。
-   * 组件侧用 `type="password"` + 局部 state 持有它（与 M2 的 reveal 同口径）。
+   * 组件侧用 `type="password"` + 局部 state 持有它（与历史快照 reveal 同口径）。
    */
   syncExport: async (passphrase: string, path: string) =>
     parseSyncExportReport(
@@ -1604,7 +1603,7 @@ export const backend = {
   },
 };
 
-// ── 配置方案（DB 版，P0-1 方案 A） ────────────────────────
+// ── 配置方案（DB 版） ────────────────────────
 
 /** 保存配置的入参（对应 Rust 的 `ProfileSaveRequest`）。 */
 export interface ProfileSaveRequest {

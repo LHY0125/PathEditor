@@ -89,9 +89,9 @@ impl CoreError {
         self
     }
 
-    /// CLI 退出码映射：冲突 3，加密/密钥 5，其余 1。
+    /// CLI 退出码映射：冲突 3，同步合并冲突 4，加密/密钥 5，其余 1。
     ///
-    /// spec §8：4 预留给同步/合并冲突（M3），当前 `Sync` 仍映射为 1。
+    /// 4 只用于「需要人工介入的合并冲突」；同步包格式错误重试无用，归入一般错误。
     pub fn exit_code(&self) -> i32 {
         match self.code {
             ErrorCode::Conflict => 3,

@@ -6,11 +6,9 @@ export type TabId =
   | 'allVars'
   | 'merged'
   | 'history'
-  // M2（Task 10）：在既有联合类型里追加，不是新建类型。
-  // `app-store.ts` 已 re-export 本类型，无需改动。
+  // 在既有联合类型里追加，不是新建类型；`app-store.ts` 已 re-export 本类型。
   | 'search'
   | 'stats'
-  // M3（Task 9）：同步中心。同样是在既有联合类型里追加。
   | 'sync';
 
 export interface PathCapabilities {

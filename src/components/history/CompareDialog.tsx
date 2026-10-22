@@ -4,17 +4,13 @@ import { backend, type CompareResult, type PathDiff } from '@/services/backend';
 import { Modal } from '@/components/ui/Modal';
 
 /**
- * 快照对比对话框（Task 11）。
+ * 快照对比对话框。
  *
- * **双 hive 分开显示**（N-8）：`system` 与 `user` 各一块。
- * 只显示一侧会让「只有用户 PATH 变了」看起来像「没有差异」。
+ * 系统与用户 PATH 分开显示；只显示一侧会让「只有用户 PATH 变了」看起来像
+ * 「没有差异」。启用状态变化也要显示：`PathEntry { path, enabled }`
+ * 是跨层契约，同一条路径从启用变禁用是真实变化。
  *
- * **启用状态变化也要显示**（`toggled`）：`PathEntry { path, enabled }`
- * 是跨层契约，同一条路径从启用变禁用是真实变化。计划的 `compare_paths`
- * 只比路径串，本实现在 core 侧补了这个维度，UI 必须一并呈现。
- *
- * **env 对比恒为空**（T-3）：显式显示「将在 M3 提供」，
- * 而不是让用户以为「环境变量没变化」。
+ * 环境变量对比尚未实现，界面必须显式说明，不能让用户以为「环境变量没变化」。
  */
 
 interface Props {
@@ -134,7 +130,7 @@ export function CompareDialog({ leftUid, rightUid, onClose }: Props) {
             <DiffSection title={t('history.systemPath')} diff={result.system} />
             <DiffSection title={t('history.userPath')} diff={result.user} />
 
-            {/* T-3：env 对比未实现，必须显式说明而不是留白 */}
+            {/* 环境变量对比未实现，必须显式说明而不是留白 */}
             <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
               {t('compare.envNotAvailable')}
             </p>

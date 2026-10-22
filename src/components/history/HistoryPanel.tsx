@@ -10,12 +10,10 @@ function formatTime(ms: number): string {
 }
 
 /**
- * 历史时间线面板（M1 最小可用）。
+ * 历史时间线面板。
  *
- * 只做三件事：列出事件、选中查看快照、显示掩码后的变量值。
- * 恢复操作与筛选留到 M2（见回执「未覆盖项」）。
- *
- * **所有文案走 i18n**（J-2 整改）：`action.*` / `source.*` 等键在
+ * 列出事件、选中查看快照、显示掩码后的变量值，并支持恢复快照与筛选。
+ * 所有文案走 i18n：`action.*` / `source.*` 等键在
  * `src/i18n/locales/{zh-CN,en}.json` 的 `history` 段里。
  * 用 `defaultValue` 只是兜底，不代表可以省掉 locale 条目。
  */
@@ -85,9 +83,8 @@ export function HistoryPanel() {
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          {/* P1-1：筛选下拉。core 与 IPC 已支持全部 5 个维度
-              （action/source/hive/target/时间范围），
-              这里先暴露最常用的 3 个；target 与时间范围留到 M2 的筛选面板。 */}
+          {/* 筛选下拉：core 与 IPC 支持 action/source/hive/target/时间范围，
+              界面目前只暴露最常用的 action/source/hive 三个维度。 */}
           <select
             className="field-input"
             value={filter.action ?? ''}

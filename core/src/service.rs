@@ -22,7 +22,6 @@ use crate::history::{
     EventAction, EventResult, EventSource, HistoryEvent, HistorySink, NoopHistory,
 };
 use crate::path_entry::PathEntry;
-use crate::profiles;
 use crate::registry;
 use crate::system;
 
@@ -513,26 +512,6 @@ pub fn commit_sidecar_snapshot(
     })
 }
 
-/// 应用一个配置文件（多 hive；语义为 best-effort，逐 hive 结果可见）。
-///
-/// 内部完成：best-effort 补写 pending → 读取配置 → 写注册表 → 广播 →
-/// 落 sidecar。配置不存在或名称非法返回 `Err`（诚实报告）。
-pub fn apply_profile(name: &str, history: &dyn HistorySink) -> Result<ApplyOutcome, CoreError> {
-    let data =
-        profiles::load_profile(name).map_err(|e| core_err(e.code, "apply_profile", e.message))?;
-    save_path_with_sidecar(
-        Some(PathHiveWrite {
-            entries: data.sys,
-            expected: None,
-        }),
-        Some(PathHiveWrite {
-            entries: data.user,
-            expected: None,
-        }),
-        history,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -968,12 +947,5 @@ mod tests {
             !disabled::has_pending_path_snapshot(),
             "补写成功后 pending 必须被清除"
         );
-    }
-
-    #[test]
-    fn apply_profile_missing_reports_error() {
-        // 配置不存在 → Err（诚实报告），不触碰注册表
-        let result = apply_profile("__svc_no_such_profile__", &NoopHistory);
-        assert!(result.is_err());
     }
 }

@@ -6,7 +6,7 @@
 ## 数据、保存与事务
 
 - `disabled.json` 是 v5 状态文件（`systemSnapshot` / `userSnapshot` / 旧版禁用字符串）。v6 迁移成功后**停写**并归档为 `.v5.bak`；**降级模式下仍是兜底读源**。正常启动以注册表为启用路径真相来源，用 DB 的当前快照恢复禁用项和顺序。
-- **保存 PATH 的唯一编排是 `core::service::save_path_with_sidecar`**（GUI 经 `backend.savePathWithSidecar`、CLI 的所有 PATH 写入口统一调用）。它先写注册表、再提交侧车快照；注册表成功但快照写入失败时，在 **core 侧**落 pending 磁盘文件（`disabled::save_pending_path_snapshot`），下次 PATH 命令开头经 `retry_pending_path_state` 补写。**GUI store 不再携带 `_pendingSys/_pendingUser`**（Wave 3.0 / D6 前移）；保存成功的状态栏会**非阻断提示**快照未落盘。两个 hive 分别报告成功或失败（`ApplyOutcome` 按 hive 分字段）。
+- **保存 PATH 的唯一编排是 `core::service::save_path_with_sidecar`**（GUI 经 `backend.savePathWithSidecar`、CLI 的所有 PATH 写入口统一调用）。它先写注册表、再提交侧车快照；注册表成功但快照写入失败时，在 **core 侧**落 pending 磁盘文件（`disabled::save_pending_path_snapshot`），下次 PATH 命令开头经 `retry_pending_path_state` 补写。**GUI store 不携带 `_pendingSys/_pendingUser`**；保存成功的状态栏会**非阻断提示**快照未落盘。两个 hive 分别报告成功或失败（`ApplyOutcome` 按 hive 分字段）。
 - 保存前使用原始值做外部修改检测；不得用旧草稿覆盖其他进程刚写入的内容。
 - 清理、禁用和启用操作必须保留 `PathEntry`，不能只传路径字符串。
 - 通用环境变量写入（CLI 3 命令、GUI 3 命令）前自动产生一份备份，**默认写 DPAPI 加密的 `~/.patheditor/backups/env_backup_<时间戳>.pebak`**；只有拿不到密钥时才回落明文 `.json` 并打印警告。备份失败**不阻断写入**，只记警告并如实返回（`WriteOutcome.backup`）。默认保留最近 20 份（`backup::ENV_BACKUP_KEEP`，可被 `~/.patheditor/config.ini` 的 `env_backup_keep` 覆盖），轮换只删除本功能生成的 `env_backup_*.pebak` / `.json`。恢复默认在 revision 冲突时中止（退出码 3）且零写入；`--force` 跳过 revision 校验但**不豁免**保护名单与类型判定。

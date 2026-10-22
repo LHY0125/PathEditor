@@ -65,7 +65,7 @@ PathEditor/
 │   ├── backup.rs     # 注册表备份、env 备份（.pebak）
 │   └── profiles.rs   # v5 文件版配置（兼容通路；DB 版在 db/profiles.rs）
 ├── gui/src/commands/ # Tauri 薄包装（registry/system/backup/fs/disabled/scanner/
-│                     #   env_var/service/history/m2/sync）
+│                     #   env_var/service/history/analytics/sync）
 ├── cli/src/          # Clap + 分派（runtime/env_ops/profile_ops/sync_ops/
 │                     #   maintenance_ops/scan_ops/import_export）
 ├── src/              # React（core/services/store/components/hooks/i18n）

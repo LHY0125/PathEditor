@@ -1,13 +1,13 @@
-//! M2 的 Tauri 命令：检索 / 统计 / 对比 / 引用图 / 冲突历史。
+//! 检索 / 统计 / 对比 / 引用图 / 冲突历史的 Tauri 命令。
 //!
-//! **只做参数转换与错误呈现**，业务规则全在 core（spec §3.2 所有权边界）。
+//! 只做参数转换与错误呈现，业务规则全在 core。
 //!
-//! 降级语义（继承 M1）：DB 不可用时 `DbState` 为 `None`，所有命令返回
+//! 降级语义：DB 不可用时 `DbState` 为 `None`，所有命令返回
 //! `CoreError { code: database }`；注册表编辑命令不受影响。
 //!
-//! **分页契约**（spec §3.2.1 规则 1）：返回列表的命令都接受 `limit`，
-//! 缺省 50、上限 500（与 `history_list_events` 一致）。搜索结果的上限是 200
-//! （由 `search::search` 内部 clamp），因为搜索是「即时过滤」而非分页浏览。
+//! 分页契约：返回列表的命令都接受 `limit`，缺省 50、上限 500（与
+//! `history_list_events` 一致）。搜索结果的上限是 200（由 `search::search`
+//! 内部 clamp），因为搜索是「即时过滤」而非分页浏览。
 
 use path_editor_core::db::{
     compare::{self, CompareResult},

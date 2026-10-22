@@ -309,7 +309,7 @@
     "toggled": "{{path}}（已{{state}}）",
     "enabled": "启用",
     "disabled": "禁用",
-    "envNotAvailable": "环境变量对比将在 M3 提供",
+    "envNotAvailable": "本版本不支持环境变量对比",
     "selectForCompare": "选择此快照用于对比",
     "open": "对比选中项（{{count}}/2）",
     "clearSelection": "清除选择"

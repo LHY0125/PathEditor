@@ -309,7 +309,7 @@
     "toggled": "{{path}} (now {{state}})",
     "enabled": "enabled",
     "disabled": "disabled",
-    "envNotAvailable": "Environment variable comparison will be available in M3",
+    "envNotAvailable": "Environment variable comparison is not supported in this version",
     "selectForCompare": "Select this snapshot for comparison",
     "open": "Compare selected ({{count}}/2)",
     "clearSelection": "Clear selection"

@@ -82,7 +82,7 @@ describe('CompareDialog', () => {
     expect(screen.queryAllByText(/无变化/)).toHaveLength(1);
   });
 
-  it('env 对比显式说明在 M3 提供（T-3）', async () => {
+  it('env 对比显式说明本版本不支持', async () => {
     compareMock.mockResolvedValue({
       system: emptyDiff,
       user: emptyDiff,
@@ -93,7 +93,7 @@ describe('CompareDialog', () => {
     const { CompareDialog } = await import('@/components/history/CompareDialog');
     render(<CompareDialog leftUid="a" rightUid="b" onClose={() => {}} />);
 
-    await waitFor(() => expect(screen.getByText(/环境变量对比将在 M3 提供/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/本版本不支持环境变量对比/)).toBeTruthy());
   });
 });
 

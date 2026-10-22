@@ -72,7 +72,7 @@ pub fn from_request(req: Option<EventFilterRequest>) -> EventFilter {
 
 /// 从共享状态取 DB；降级模式返回结构化错误。
 ///
-/// `pub(crate)` 供 `commands::m2` 复用——**不要复制第二份**：
+/// `pub(crate)` 供 `commands::analytics` 复用——**不要复制第二份**：
 /// 锁中毒与降级（`DbState::None`）的判定必须在一处，否则两个模块会对
 /// 「什么算降级」产生分歧。
 pub(crate) fn with_db<T>(
@@ -90,7 +90,7 @@ pub(crate) fn with_db<T>(
     f(db)
 }
 
-/// 从共享状态取可变 DB（写入路径）。`pub(crate)` 供 `commands::m2` 复用。
+/// 从共享状态取可变 DB（写入路径）。`pub(crate)` 供 `commands::analytics` 复用。
 pub(crate) fn with_db_mut<T>(
     state: &State<'_, DbState>,
     op: &'static str,
@@ -173,8 +173,8 @@ pub fn profile_delete(uid: String, state: State<'_, DbState>) -> Result<bool, Co
 
 /// 记录配置被应用（应用次数 + 最后应用时间）。
 ///
-/// **不在此处写注册表**：注册表写入走 `commands::service::apply_profile`，
-/// 成功后才调用本命令记账（避免把「记账」和「真写」混在一个命令里）。
+/// **不在此处写注册表**：前端先读取 `profile_paths`，再经 `save_path_with_sidecar`
+/// 写入注册表；成功后才调用本命令记账，避免把「记账」和「真写」混在一个命令里。
 #[tauri::command]
 pub fn profile_mark_applied(uid: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
     with_db_mut(&state, "profile_mark_applied", |db| {

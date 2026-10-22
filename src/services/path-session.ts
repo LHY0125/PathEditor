@@ -22,8 +22,6 @@ export interface SaveSnapshotRequest {
   userPaths: PathEntry[];
   savedSys: PathEntry[];
   savedUser: PathEntry[];
-  pendingSys: PathEntry[] | null;
-  pendingUser: PathEntry[] | null;
   isAdmin: boolean;
   capabilities: PathCapabilities;
   force?: boolean;
@@ -33,8 +31,6 @@ export interface SaveSnapshotOutcome {
   result: SaveResult;
   savedSys: PathEntry[];
   savedUser: PathEntry[];
-  pendingSys: PathEntry[] | null;
-  pendingUser: PathEntry[] | null;
   statusMessage: string;
 }
 
@@ -68,9 +64,9 @@ export async function loadPathSnapshot(): Promise<LoadSnapshot> {
  * 已**删除**（改由 core 承担）：自理写前备份、两 hive 并行写、store 内 pending。
  * 签名与返回类型**保持不变**，`app-store.ts` 调用点无需改动。
  *
- * **pending 语义变化（D6）**：pending 统一为 core 的**磁盘文件**机制
+ * **pending 语义**：pending 统一由 core 的磁盘文件机制处理
  * （`disabled::save_pending_path_snapshot` + `retry_pending_path_state`），
- * GUI store 不再携带 `pendingSys` / `pendingUser` —— 故本函数恒返回 `null`。
+ * 本函数不携带 pending 字段。
  */
 export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<SaveSnapshotOutcome> {
   const { sysPaths, userPaths, savedSys, savedUser, isAdmin, capabilities, force } = request;
@@ -82,8 +78,6 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
       result: { kind: 'success' },
       savedSys,
       savedUser,
-      pendingSys: null,
-      pendingUser: null,
       statusMessage: i18n.t('status.saved'),
     };
   }
@@ -100,8 +94,6 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
       result: { kind: 'failure', message },
       savedSys,
       savedUser,
-      pendingSys: null,
-      pendingUser: null,
       statusMessage: message,
     };
   }
@@ -119,8 +111,6 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
       result: { kind: 'warning', reason: 'lengthExceeded' },
       savedSys,
       savedUser,
-      pendingSys: null,
-      pendingUser: null,
       statusMessage: i18n.t('status.saveWarningLongPaths'),
     };
   }
@@ -141,8 +131,6 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
       result: { kind: 'failure', message: String(error) },
       savedSys,
       savedUser,
-      pendingSys: null,
-      pendingUser: null,
       statusMessage: i18n.t('status.saveFailure', { details: String(error) }),
     };
   }
@@ -175,8 +163,6 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
       result: partial ? { kind: 'partial', message } : { kind: 'failure', message },
       savedSys: nextSavedSys,
       savedUser: nextSavedUser,
-      pendingSys: null,
-      pendingUser: null,
       statusMessage: message,
     };
   }
@@ -191,8 +177,6 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
     result: { kind: 'success' },
     savedSys: nextSavedSys,
     savedUser: nextSavedUser,
-    pendingSys: null,
-    pendingUser: null,
     statusMessage,
   };
 }

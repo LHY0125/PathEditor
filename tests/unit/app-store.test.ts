@@ -45,8 +45,6 @@ function resetStore() {
     undoRedo: new UndoRedoManager(50),
     _savedSys: [],
     _savedUser: [],
-    _pendingSys: null,
-    _pendingUser: null,
     isModified: false,
     isLoading: false,
     isSaving: false,
@@ -288,9 +286,9 @@ describe('savePaths', () => {
   it('sidecar 落 pending 时报告成功，但状态栏给出非阻断提示', async () => {
     // 注册表两 hive 都写成功，但 sidecar 落 pending。
     //
-    // **语义（复审裁断 ④）**：注册表已生效 ⇒ 保存**成功**（不是 partial）；
+    // **语义**：注册表已生效 ⇒ 保存**成功**（不是 partial）；
     // 但快照未落盘**必须提示**（静默持久化失败是回归）。补写由 core 的磁盘
-    // pending 机制在下次命令时承担（D6），故 GUI store 不携带 `_pendingSys/User`。
+    // pending 机制在下次命令时承担。
     mockedInvoke.mockResolvedValueOnce({
       system: 'applied',
       user: 'applied',
@@ -302,8 +300,6 @@ describe('savePaths', () => {
     const state = useAppStore.getState();
     expect(state.isModified).toBe(false); // 草稿已全部落注册表
     expect(state.statusMessage).toContain('磁盘写入失败'); // 非阻断提示必须出现
-    expect(state._pendingSys).toBeNull(); // pending 在 core 磁盘，不在 store
-    expect(state._pendingUser).toBeNull();
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
   });
   it('isSaving 守卫：并发第二次调用直接返回', async () => {
