@@ -1,5 +1,5 @@
 /**
- * 手写内联 SVG 图标集 —— 不引入图标库依赖（spec N3）。
+ * 手写内联 SVG 图标集 —— 不引入图标库依赖。
  *
  * 模块状态：当前生产代码仅使用 `MoreIcon`（Menu 的 ⋯ 触发按钮）。
  * `PlusIcon` / `PencilIcon` / `TrashIcon` / `ArrowUpIcon` / `ArrowDownIcon` 是为工具栏

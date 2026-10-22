@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * 搜索 store 的「空查询不发请求」契约（Task 10）。
+ * 搜索 store 的「空查询不发请求」契约。
  *
  * 这条契约有两层：core 的 `search()` 对空查询返回空数组，
  * 前端 store 的 `run()` 直接跳过 IPC。两层各守一次——

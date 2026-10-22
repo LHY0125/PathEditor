@@ -1,4 +1,4 @@
-//! `merge_hive` 的 golden 用例（F-10 第 5 类：禁用项兼容性）。
+//! `merge_hive` 的 golden 用例。
 //!
 //! `merge_hive` 是 [`super`]（`crate::disabled`）的私有 fn，因此本文件以
 //! `#[cfg(test)] #[path = "registry/golden/merge_golden_tests.rs"]` 挂在

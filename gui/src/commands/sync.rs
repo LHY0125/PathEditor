@@ -1,4 +1,4 @@
-//! 同步中心（M3）的 Tauri 命令。
+//! 同步中心的 Tauri 命令。
 //!
 //! **同步不写注册表**：导入只改 DB，用户要生效必须走既有的
 //! `apply_path_snapshot` / `apply_profile`。

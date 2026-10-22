@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     current_snapshot, get_snapshot, insert_snapshot, list_events, EnvValueRow, EventFilter,
@@ -37,7 +37,7 @@ fn snapshot_roundtrip_and_masking() {
                     kind: "String".into(),
                     value: Some("secret".into()),
                     revision: "abc".into(),
-                    // 故意传 false：写入层必须用 is_sensitive 覆盖成 true（H2）
+                    // 故意传 false：写入层必须用 is_sensitive 覆盖成 true
                     sensitive: false,
                     restorable: true,
                 },
@@ -64,10 +64,7 @@ fn snapshot_roundtrip_and_masking() {
 
     let token = masked.env.iter().find(|e| e.name == "MY_TOKEN").unwrap();
     assert_eq!(token.value, None, "敏感值默认必须被掩码");
-    assert!(
-        token.sensitive,
-        "H2：sensitive 必须由 is_sensitive 覆盖为 true"
-    );
+    assert!(token.sensitive, "sensitive 必须由 is_sensitive 覆盖为 true");
 
     let plain = masked.env.iter().find(|e| e.name == "PLAIN_ONE").unwrap();
     assert_eq!(
@@ -81,7 +78,7 @@ fn snapshot_roundtrip_and_masking() {
     let token = revealed.env.iter().find(|e| e.name == "MY_TOKEN").unwrap();
     assert_eq!(token.value.as_deref(), Some("secret"));
 
-    // B2：insert_snapshot 不写事件；事件由 HistorySink 负责（Task 5）
+    // insert_snapshot 不写事件；事件由 HistorySink 负责
     let page = list_events(&db, &EventFilter::default()).unwrap();
     assert!(page.items.is_empty(), "insert_snapshot 不应自行写事件");
     assert_eq!(page.total, 0);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// backend.ts 的 EnvVarMeta 运行时校验（F-05）：白名单复制、拒绝 value 字段、
+// backend.ts 的 EnvVarMeta 运行时校验：白名单复制、拒绝 value 字段、
 // 非空 name/revision。直接 mock @tauri-apps/api/core 的 invoke 注入恶意返回值。
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -137,7 +137,7 @@ describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
   });
 
   it('未知 code 对象但带非空 message 时兜底为 internal 且保留原文', async () => {
-    // 兜底不得丢 message：String(error) 会变成 "[object Object]"（终审 M-1）
+    // 兜底不得丢 message：String(error) 会变成 "[object Object]"
     mockInvoke.mockRejectedValue({ code: 'unknown_kind', message: '未知错误详情' });
 
     const err = await backend.updateEnvVar('user', 'X', 'v', 'rev').catch((e) => e);
@@ -147,7 +147,7 @@ describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
   });
 
   it('成功时原样返回，不包裹为错误对象', async () => {
-    // 成功路径原样透传写结果（不再返回 void —— 含写前备份结果，见 Task 8）。
+    // 成功路径原样透传写结果。
     mockInvoke.mockResolvedValue({ backup: { created: 'C:\\b\\env_backup_1.json' } });
 
     await expect(backend.updateEnvVar('user', 'X', 'v', 'rev')).resolves.toEqual({

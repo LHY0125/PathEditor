@@ -1,9 +1,9 @@
-//! `%VAR%` 引用图（spec §6.2）。
+//! `%VAR%` 引用图。
 //!
 //! **只解析名字，不解析值**：`var_references` 存的是「A 引用了 B」这条边，
 //! 边由 `%NAME%` 语法得出，与变量值无关。因此本模块的派生表不含任何明文。
 //!
-//! **不变量（M-3）**：本表**只保存当前快照的边**，由「每次全量清空 + 只插当前快照」
+//! **不变量**：本表**只保存当前快照的边**，由「每次全量清空 + 只插当前快照」
 //! 保证。因此 [`dependents`] / [`dependencies`] / [`find_cycles`] 可以省略
 //! `snapshot_id` 过滤。
 //!
@@ -160,7 +160,7 @@ pub fn dependents(db: &Db, name: &str) -> Result<Vec<RefEdge>, CoreError> {
     Ok(rows)
 }
 
-/// `name` 传递依赖了谁（递归 CTE，spec §6.2 明确要求）。
+/// `name` 传递依赖了谁。
 ///
 /// 深度上限 10：防止环导致无限递归。环由 [`find_cycles`] 单独报告。
 pub fn dependencies(db: &Db, name: &str) -> Result<Vec<RefEdge>, CoreError> {

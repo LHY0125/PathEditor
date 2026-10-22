@@ -1,4 +1,4 @@
-//! 冲突历史（spec §6.2）：`scan_runs` 持久化、两次扫描 diff、首次/最近出现。
+//! 冲突历史：`scan_runs` 持久化、两次扫描 diff、首次/最近出现。
 //!
 //! **`scan_runs` 不是派生表**：它是真实记录（每次扫描当时看到了什么），
 //! 无法从别的表重建。`daily_stats.conflicts` 才是从它派生出来的。
@@ -22,7 +22,7 @@ pub struct ScanRunView {
     pub tool_count: usize,
 }
 
-/// 「首次出现」的一条（N-5）。
+/// 「首次出现」的一条。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirstSeen {
@@ -34,7 +34,7 @@ pub struct FirstSeen {
     pub seen_at: i64,
 }
 
-/// 「最近出现」的一条（M-5）。
+/// 「最近出现」的一条。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastSeen {
@@ -56,15 +56,15 @@ pub struct ScanRunDiff {
     pub disappeared: Vec<String>,
     /// 两次都有
     pub persistent: Vec<String>,
-    /// 「最近出现」（M-5）：**全部**冲突在历史里最后一次出现的 run
+    /// 「最近出现」：**全部**冲突在历史里最后一次出现的 run
     pub last_seen: Vec<LastSeen>,
-    /// 「首次出现」（N-5）：**全部**冲突在历史里第一次出现的 run
+    /// 「首次出现」：**全部**冲突在历史里第一次出现的 run
     pub first_seen: Vec<FirstSeen>,
 }
 
 /// 记录一次扫描，返回其 uid。
 ///
-/// **同时触发 `daily_stats` 重建**：冲突频率依赖 `scan_runs`（M-6）。
+/// **同时触发 `daily_stats` 重建**：冲突频率依赖 `scan_runs`。
 ///
 /// ⚠️ 事务纪律：本函数先用 `with_transaction` 写完并提交，**返回之后**才调
 /// [`stats::rebuild_daily`]。两者不能嵌套——SQLite 不支持嵌套事务，
@@ -154,7 +154,7 @@ pub fn diff_runs(db: &Db, a: &str, b: &str) -> Result<ScanRunDiff, CoreError> {
     persistent.dedup();
 
     // 「首次出现」与「最近出现」基于**全历史**，不只这两次——
-    // spec §6.2 说的是冲突在历史中的首末，与本次是否 persistent 无关。
+    // 说的是冲突在历史中的首末，与本次是否 persistent 无关。
     let history = load_history(db)?;
     let (first_seen, last_seen) = first_and_last_seen(&history);
 

@@ -8,13 +8,13 @@ import { findMetaByKey } from '@/core/env-var';
 interface EditEnvVarDialogProps {
   /**
    * 稳定键（`${hive}:${name}`）。meta 不随 prop 固化 —— 每次提交前由
-   * 调用方从最新快照派生，冲突刷新后重试自动携带新 revision（F-02）。
+   * 调用方从最新快照派生，冲突刷新后重试自动携带新 revision。
    */
   varKey: string;
   onCancel: () => void;
   /**
    * 返回是否保存成功；失败时弹窗保留并显示 store 的错误消息。
-   * readRevision 是弹窗读取原值时的 revision，供保存点陈旧判定（F-01）。
+   * readRevision 是弹窗读取原值时的 revision，供保存点陈旧判定。
    */
   onConfirm: (value: string, readRevision: string | null) => Promise<boolean>;
 }
@@ -26,8 +26,8 @@ const labelStyle = { color: 'var(--app-fg-muted)' };
  * 编辑环境变量值的弹窗。
  *
  * - 打开时经 `fetchFullValue` 取**完整原值**：preview 是截断/净化后的展示
- *   摘要，严禁作为编辑数据源，否则原样保存也会损坏长值/含换行的值（F-01）。
- * - 输入实时同步进 store 草稿：真实输入参与关窗确认，X/Alt+F4 不会静默丢弃（F-04）。
+ *   摘要，严禁作为编辑数据源，否则原样保存也会损坏长值/含换行的值。
+ * - 输入实时同步进 store 草稿：真实输入参与关窗确认，X/Alt+F4 不会静默丢弃。
  * - 草稿策略统一为「镜像弹窗输入」：冲突后保留（输入不丢、revision 已随
  *   快照刷新），成功或取消时清除（c2）。
  */
@@ -39,7 +39,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
   const meta = useEnvStore((s) => (s.snapshot ? findMetaByKey(s.snapshot, varKey) : null));
   const gone = meta === null;
   const [value, setValue] = useState<string | null>(null); // null = 加载完整原值中
-  // 读取原值时的 revision（F-01）：提交时与最新快照比对，判断值是否已陈旧。
+  // 读取原值时的 revision：提交时与最新快照比对，判断值是否已陈旧。
   const [readRevision, setReadRevision] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -78,7 +78,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
   const submit = async () => {
     if (value === null) return;
     setSubmitting(true);
-    // F-01：提交前若快照 revision 已变（外部修改），先重取最新完整值，
+    // 提交前若快照 revision 已变（外部修改），先重取最新完整值，
     // 本次不保存；用户看到新值后可再次确认。
     const store = useEnvStore.getState();
     const current = store.snapshot ? findMetaByKey(store.snapshot, varKey) : null;
@@ -128,7 +128,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
             placeholder={value === null ? t('status.loading') : ''}
             onChange={(e) => {
               setValue(e.target.value);
-              // 实时镜像进草稿：真实输入纳入关窗确认（F-04）
+              // 实时镜像进草稿：真实输入纳入关窗确认
               setDraftByKey(varKey, e.target.value);
             }}
             className="field-input flex-1 font-mono"

@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
 // **B-1 的验收**：测试全程只碰 `TempDir`，不调 `load_profile(name)`。
 // 若调它，路径由 `profiles_dir()` = `dirs::home_dir()` 决定，

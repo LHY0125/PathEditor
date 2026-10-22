@@ -1,6 +1,6 @@
 //! `.pebak` 备份格式与备份索引。
 //!
-//! `.pebak` = **明文文件头 + DPAPI 加密正文**（spec §5.3）：
+//! `.pebak` = **明文文件头 + DPAPI 加密正文**：
 //!
 //! ```text
 //! 偏移  长度  字段
@@ -15,7 +15,7 @@
 //! 55    n     DPAPI 密文（正文）
 //! ```
 //!
-//! **头部不含秘密**：索引与列表只读头，不必解密（spec §5.3「列表」）。
+//! **头部不含秘密**：索引与列表只读头，不必解密。
 //! `hash_salt` 来自 DPAPI 密钥文件、**不写进文件**，因此外部观察者无法用
 //! 候选明文直接验证 `payload_hash`（弱化字典攻击面，但**它不是加密**）。
 
@@ -84,7 +84,7 @@ pub struct BackupView {
 /// 写一份 `.pebak` 备份，返回落盘路径。
 ///
 /// 写入顺序：**先写临时文件再 rename** —— 中途崩溃不会留下半份备份
-/// （spec §5.3「写入」）。
+/// 。
 pub fn write_env_backup_pebak(
     dir: &Path,
     payload: &EnvBackupPayload,
@@ -202,7 +202,7 @@ fn parse_header(bytes: &[u8]) -> Result<PebakHeader, CoreError> {
 
 /// 读取任意格式的 env 备份：`.pebak` 解密，`.json` 明文兼容。
 ///
-/// `.json` 路径给明文警告（spec §7.9：遗留格式可一次性恢复，但必须提示）。
+/// `.json` 路径给明文警告。
 pub fn read_env_backup_any(
     path: &Path,
     material: &KeyMaterial,
@@ -365,7 +365,7 @@ pub fn list_backups(db: &Db) -> Result<Vec<BackupView>, CoreError> {
             let file_path: String = r.get(5)?;
             let encrypted = file_path.to_ascii_lowercase().ends_with(".pebak");
             let variable_count = if encrypted {
-                // 只读文件头（M0 已验证 .pebak 头不含秘密）；失败不阻断列表
+                // 只读文件头；失败不阻断列表
                 read_pebak_header(Path::new(&file_path))
                     .map(|h| h.variable_count)
                     .unwrap_or(0)
@@ -391,9 +391,9 @@ pub fn list_backups(db: &Db) -> Result<Vec<BackupView>, CoreError> {
 
 /// 插入或更新一条索引（同一 `file_path` 只保留一行）。
 ///
-/// **不用 `ON CONFLICT(file_path)`**：spec §4.1 的 `backups` 表没有 `file_path`
+/// **不用 `ON CONFLICT(file_path)`**：`backups` 表没有 `file_path`
 /// 的唯一约束（只有 `uid`），UPSERT 的目标列必须匹配某个唯一索引，否则 SQLite
-/// 直接报错。改为「先查后写」，语义等价且不改 spec 的 DDL。
+/// 直接报错。改为「先查后写」，语义等价且不改现有 DDL。
 fn upsert_index(
     db: &mut Db,
     file_path: &str,

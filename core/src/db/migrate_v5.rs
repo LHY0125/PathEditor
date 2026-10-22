@@ -1,25 +1,21 @@
-//! v5 遗留文件的一次性迁移（spec §7）。
+//! v5 遗留文件的一次性迁移。
 //!
-//! **幂等**：以 `migration_imports(source_path, content_hash)` 判重（spec B3），
+//! **幂等**：以 `migration_imports(source_path, content_hash)` 判重，
 //! 迁移可重跑而不会产生重复快照。
 //!
 //! **不动原件**：只读 + 登记导入记录。
 //!
-//! **关于 `.v5.bak` 归档（P1-5 更正）**：spec §7.4 写的是「原件：保留为 `*.v5.bak`；
-//! 不自动删除」——它是**迁移规则本身**，不是对 M4 的授权。授权 M4 的是 §7.6
-//! 「清理 `env_backup_*.json`」。
+//! **关于 `.v5.bak` 归档**：迁移规则只要求「原件保留为 `*.v5.bak`、不自动删除」。
+//! 本模块把归档推迟到启动序列末尾，理由是「不在迁移中改用户文件」——这是实现取舍，
+//! 不是迁移规则的要求。
 //!
-//! 本模块把归档一并推迟到 M4，理由是「不在迁移中改用户文件」——这是**实现取舍**，
-//! 不是 spec 的要求。此前这里写成「留给 M4（spec §7.4）」是**错误引用**，
-//! 会让读者以为 §7.4 授权了推迟。
-//!
-//! 迁移范围（spec §7.2）：
+//! 迁移范围：
 //! - `disabled.json` → `snapshots(kind=current)` + `path_entries`
 //! - `profiles/*.json` → `profiles` + `profile_revisions` + `snapshots`
 //! - `env_backup_*.json` → `snapshots(kind=backup)` + `env_values`（排除 Path）
 //! - `path_backup_*.txt` → `snapshots(kind=backup)` + `path_entries`
 //!
-//! **pending 补写不在本模块**：spec §7.1 把「先 `retry_pending_path_state`」
+//! **pending 补写不在本模块**：把「先 `retry_pending_path_state`」
 //! 列为**启动序列**的第一步，由调用方（GUI/CLI 启动路径）在调用本函数前完成。
 //! 刻意不在此处调用，原因有二：
 //! 1. `retry_pending_path_state` 读写的是 `~/.patheditor/` 下的**真实**文件
@@ -60,7 +56,7 @@ pub fn migrate_legacy(db: &mut Db, home: &Path) -> Result<MigrationReport, CoreE
 
 /// 执行迁移并上报事件（GUI/CLI 注入 `DbHistory` 时使用）。
 ///
-/// **调用方必须先完成 pending 补写**（spec §7.1 启动序列第一步），见模块文档。
+/// **调用方必须先完成 pending 补写**，见模块文档。
 /// 生产入口是 `gui/src/lib.rs` 的 `setup_database()`。
 pub fn migrate_legacy_with(
     db: &mut Db,
@@ -76,7 +72,7 @@ pub fn migrate_legacy_with(
 
     // 标记已完成 v5 迁移（app_state 可能尚无行，用 UPSERT 建立单行状态）
     //
-    // **D-2 修正**：`current_snapshot_id` 必须取 `kind='current'` 的那条
+    // 修正：`current_snapshot_id` 必须取 `kind='current'` 的那条
     // （由 `disabled.json` 导入），不能取「最后插入的」。
     //
     // 原实现用 `ORDER BY created_at DESC, id DESC LIMIT 1` —— 而导入顺序是
@@ -218,7 +214,7 @@ fn import_profiles(
             continue;
         }
 
-        // B3：正常路径带 schemaVersion 信封；无版本头的旧格式按 v1 读
+        // 正常路径带 schemaVersion 信封；无版本头的旧格式按 v1 读
         let data: ProfileData = match serde_json::from_slice::<Versioned<ProfileData>>(&raw) {
             Ok(v) => v.inner,
             Err(e) => {
@@ -245,7 +241,7 @@ fn import_profiles(
                     Ok(true)
                 }
                 // 同名配置已存在（例如用户先手动建过）：跳过而非整体失败。
-                // 这是迁移期可接受的冲突，M4 的清理阶段再统一处理。
+                // 这是迁移期可接受的冲突，清理阶段再统一处理。
                 Err(e) if e.code == ErrorCode::NameExists => {
                     log::warn!(
                         "配置「{}」已存在于库中，跳过 {}: {}",
@@ -310,7 +306,7 @@ fn import_env_backups(
             }
         };
 
-        // D13：Path 走专用通路，不得进入 env_values；
+        // Path 走专用通路，不得进入 env_values；
         // Unsupported 只存元数据（value=None、restorable=false）。
         let mut env = Vec::new();
         for (hive, vars) in [
@@ -338,7 +334,7 @@ fn import_env_backups(
                         None
                     },
                     revision: v.revision.clone(),
-                    sensitive: false, // 写入层会按 is_sensitive 重新计算（H2）
+                    sensitive: false, // 写入层会按 is_sensitive 重新计算
                     restorable,
                 });
             }
@@ -460,7 +456,7 @@ fn parse_path_backup_text(text: &str) -> (Vec<PathEntry>, Vec<PathEntry>) {
     (system, user)
 }
 
-/// 该文件是否已按此内容导入过（幂等判据，spec B3）。
+/// 该文件是否已按此内容导入过。
 fn already_imported(db: &Db, path: &Path, hash: &str) -> Result<bool, CoreError> {
     let key = path.to_string_lossy().to_string();
     let n: i64 = db

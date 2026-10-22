@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test';
 import { createIpcMock } from '../mocks/ipc';
 
 /**
- * 统计面板 E2E（Task 13）。
+ * 统计面板 E2E。
  *
  * 覆盖两条：
- * 1. 面板显示**当前状态**与**历史序列**两块（M-1 的口径必须分开）
+ * 1. 面板显示**当前状态**与**历史序列**两块
  * 2. 降级模式下显示不可用
  *
  * **全部走 mock IPC，绝不触碰真实注册表**。

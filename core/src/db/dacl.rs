@@ -1,6 +1,6 @@
 //! 密钥文件的 DACL 加固。
 //!
-//! **为什么 DPAPI 之外还需要 DACL**（计划 Task 3 的威胁模型）：
+//! **为什么 DPAPI 之外还需要 DACL**：
 //!
 //! | 威胁 | DPAPI | DACL |
 //! | --- | --- | --- |
@@ -8,20 +8,20 @@
 //! | 同机**另一个用户删除/替换**密钥文件 | ❌ 不挡 | ✅ 挡 |
 //!
 //! 缺失 DACL 的后果不是信息泄露，而是**拒绝服务**：密钥文件被替换或删除后，
-//! 进程下次启动发现「文件在但解不开」→ 按 D16 返回 `Crypto` 错误、进入降级模式，
-//! **历史永久不可读且用户无法自愈**（不会自动重建空库，见 spec §5.1）。
+//! 进程下次启动发现「文件在但解不开」→ 按返回 `Crypto` 错误、进入降级模式，
+//! **历史永久不可读且用户无法自愈**。
 //!
 //! 实现要点：
 //! - DACL 用 SDDL 描述：`D:(A;;GA;;;SY)(A;;GA;;;<current-user-SID>)` ——
 //!   只授权 SYSTEM 与当前用户完全访问；SDDL 由系统解析，不手工构造 ACL 结构。
 //! - 写密钥后**立即**设置；失败则删除半成品并返回 `Crypto` 错误
 //!   （宁可不写，也不留下权限过宽的密钥文件）。
-//! - 启动时**只校验不修改**（spec §5.1）：过宽仅 `log::warn!`，避免误伤用户自建目录。
+//! - 启动时**只校验不修改**：过宽仅 `log::warn!`，避免误伤用户自建目录。
 
 use crate::error::{CoreError, ErrorCode};
 use std::path::Path;
 
-/// 取当前进程用户的 SID 字符串（形如 `S-1-5-21-...`）。
+/// 取当前进程用户的 SID 字符串。
 fn current_user_sid_string() -> Result<Vec<u16>, CoreError> {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
@@ -150,7 +150,7 @@ pub fn set_key_dacl(path: &Path) -> Result<(), CoreError> {
 /// 读取并校验密钥文件的 DACL：只允许**当前用户**与 **SYSTEM**。
 ///
 /// 返回 `Ok(true)` 表示权限受限；`Ok(false)` 表示存在非预期主体。
-/// **只读不写**（spec §5.1：过宽只告警，不自动修改）。
+/// **只读不写**。
 pub fn key_dacl_is_restricted(path: &Path) -> Result<bool, CoreError> {
     use windows_sys::Win32::Security::Authorization::{
         ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW, SE_FILE_OBJECT,

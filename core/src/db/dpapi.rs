@@ -1,12 +1,12 @@
 //! Windows DPAPI 封装（用户作用域）。
 //!
-//! 移植自 M0 探针 `probes/v6-sqlcipher/src/lib.rs` 的 `dpapi` 模块 —— 该实现已在
-//! GNU 与 MSVC 双平台实测通过（M0 结果 §二）。改动仅两处：
+//! 移植自探针 `probes/v6-sqlcipher/src/lib.rs` 的 `dpapi` 模块 —— 该实现已在
+//! GNU 与 MSVC 双平台实测通过。改动仅两处：
 //! 1. 错误类型从 `String` 换成 `CoreError`（`ErrorCode::Crypto`），与其他模块统一；
 //! 2. 补充中文文档注释。
 //!
 //! **作用域语义**：`CryptProtectData` 默认绑定当前 Windows 用户，换用户/换机器
-//! 不可解密 —— 这是 spec D3 的刻意选择（免输入口令），文档必须写明后果。
+//! 不可解密 —— 这是的刻意选择（免输入口令），文档必须写明后果。
 
 use crate::error::{CoreError, ErrorCode};
 use windows_sys::Win32::Foundation::{LocalFree, HLOCAL};

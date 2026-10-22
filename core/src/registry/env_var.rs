@@ -15,7 +15,7 @@ use super::conflict::conflict_error;
 /// 一次环境变量写操作的结果。
 ///
 /// 写入本身的成败仍由外层 `Result` 表达；本结构只承载**备份**这一附带结果 ——
-/// 备份失败不使写入失败（设计文档 K2），但必须被调用方看见。
+/// 备份失败不使写入失败，但必须被调用方看见。
 ///
 /// 补 serde 派生（核对轮裁定 1）：本类型经 GUI 的 `#[tauri::command]` 返回值
 /// 出境，Tauri 要求返回值实现 `Serialize`。
@@ -117,11 +117,11 @@ pub(crate) fn reset_write_broadcast() {
 /// 被调方，实测 IR（`rustc --emit=llvm-ir`，同形最小用例）：
 ///
 /// - **非测试构建**：`define void @wrapper() { tail call void @real_broadcast_side_effect() }`
-///   —— 分支**和**真实调用都在。`cargo build`、`cargo build --release`、
-///   `cargo clippy --workspace --all-targets` 的 lint 构建都属此类，
-///   **一律真实广播**。
+/// —— 分支**和**真实调用都在。`cargo build`、`cargo build --release`、
+/// `cargo clippy --workspace --all-targets` 的 lint 构建都属此类，
+/// **一律真实广播**。
 /// - **测试构建**：`define void @wrapper() { ret void }` —— 分支仍在源码里，
-///   只有调用被消除；被调方符号随之成为死代码。
+/// 只有调用被消除；被调方符号随之成为死代码。
 ///
 /// 即：**测试构建跳过真实 Win32 调用，生产构建无条件执行广播。**
 /// 跳过仅省测试期开销，**不改变生产行为**（生产每次写仍付完整广播耗时）。
@@ -150,19 +150,19 @@ fn broadcast_after_write() {
 /// 计算都基于它。先判定类型再做字符串解码：`REG_DWORD` 等不支持类型
 /// 必须返回「类型不受支持」，而不是误导性的解码失败。
 ///
-/// W2-B1（2026-09-20 裁断）：三类错误在函数内部分类完成 ——
+/// （2026-09-20 裁断）：三类错误在函数内部分类完成 ——
 /// 读取失败 → `Io`、类型不支持 → `UnsupportedType`、解码失败 → `Parse`。
 /// 调用方直接 `?` 传播，不再整体包成 `Io`；hive 标签由调用侧补（W2-B3b）。
 ///
-/// #34（2026-10-16）：读取失败一路改走 [`EnvHiveStore::get_raw_kind`]，使「变量不存在」
-/// 以 `NotFound` 码上传，而非被稀释成通用 `Io`（此即 #34 的根因：旧代码恒包 `Io`，
-/// 与 W2-B1 声明的行为不符）。
+/// （2026-10-16）：读取失败一路改走 [`EnvHiveStore::get_raw_kind`]，使「变量不存在」
+/// 以 `NotFound` 码上传，而非被稀释成通用 `Io`（此即的根因：旧代码恒包 `Io`，
+/// 与声明的行为不符）。
 ///
 /// **⚠️ 邻近改动禁区**：同文件的 `list_env_vars`（以及 `backup.rs` 的采集/恢复预览路径）
 /// **刻意保持 `get_raw` + 统一 `Io` 文案** —— 列表级路径不需要逐变量分类，
 /// 看到两套读法时**不要**「统一」，那会把列表的错误文案也改掉（非预期回归）。
 fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String), CoreError> {
-    // #34：`get_raw_kind` 已把 NotFound 与 Io 分类，此处**不得**再统一包成 Io。
+    // `get_raw_kind` 已把 NotFound 与 Io 分类，此处**不得**再统一包成 Io。
     let raw = store.get_raw_kind(name)?;
     // `RegType` 非 Copy（`winreg-0.52.0/src/enums.rs:20`），必须先
     // `.clone()` 取值再借用 `&raw`，否则 `from_reg_type(raw.vtype)` 会部分
@@ -188,7 +188,7 @@ fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String
 /// 为 `read_env_var` 的错误补上 hive 标签与目标信息（W2-B3b）。
 ///
 /// `read_env_var` 签名无 hive 参数，message 文本标签在调用侧包一层，
-/// 与 F-04 列表路径的「读取{系统}环境变量…失败」样式一致；结构化
+/// 与列表路径的「读取{系统}环境变量…失败」样式一致；结构化
 /// `hive`/`name` 字段经 `with_target` 携带。
 fn attach_read_context(e: CoreError, hive: EnvHive, name: &str) -> CoreError {
     let label = hive_location(hive).2;
@@ -251,14 +251,14 @@ fn list_hive_env_vars(hive: EnvHive) -> Result<Vec<EnvVarMeta>, CoreError> {
 
 /// `list_hive_env_vars` 的核心逻辑，存储可注入（测试用内存实现）。
 ///
-/// F-04：同一 hive 内任一枚举 / 读取 / 解码失败即返回 `Err`。
+/// 同一 hive 内任一枚举 / 读取 / 解码失败即返回 `Err`。
 /// 「成功但不完整」的列表是错误的成功语义，用户无法区分「变量不存在」
 /// 与「枚举/读取失败」。
 fn list_env_vars_in_store(
     hive: EnvHive,
     store: &dyn EnvHiveStore,
 ) -> Result<Vec<EnvVarMeta>, CoreError> {
-    // F-04：错误必须携带 hive 标识，与 open 错误（自带标签）保持一致。
+    // 错误必须携带 hive 标识，与 open 错误（自带标签）保持一致。
     let (_, _, label) = hive_location(hive);
     let mut metas = Vec::new();
 
@@ -273,7 +273,7 @@ fn list_env_vars_in_store(
     };
 
     let names = store.enum_names().map_err(|e| {
-        // spec F-04：warning 日志保留，但不再是唯一反馈；Err 继续向上传播。
+        // warning 日志保留，但不再是唯一反馈；Err 继续向上传播。
         log::warn!("{}环境变量列表读取失败: {}", label, e);
         with_hive(
             ErrorCode::Io,
@@ -365,13 +365,13 @@ pub fn reveal_env_var(hive: EnvHive, name: &str) -> Result<RevealedValue, CoreEr
     reveal_env_var_in_store(&store, hive, name)
 }
 
-/// 预览一次环境变量变更所需的只读信息（#36）。
+/// 预览一次环境变量变更所需的只读信息。
 ///
 /// **只读**：不写注册表、不产生备份、不广播。判定（类型、写权限）在此完成，
-/// CLI 只消费结果（S3：CLI 零判定）。
+/// CLI 只消费结果（CLI 零判定）。
 ///
 /// `writable` 是**该 hive 对当前用户的写权限**（hive 级，不含保护名单/类型判定）——
-/// 与 spec §命令规格 4 的字段表一致，且满足验收标准 9「预览层不拒绝」：
+/// 与命令契约的字段表一致，且满足验收标准 9「预览层不拒绝」：
 /// 保护变量照常展示 `writable: false`，真正的拒绝留给执行阶段。
 ///
 /// **敏感值保护（安全审查修正）**：`old_value` 对命中 `is_sensitive` 的变量**不返回明文**
@@ -463,8 +463,8 @@ fn reveal_env_var_in_store(
         )
         .with_target(hive, name));
     }
-    // #34：`NotFound` 走专用简洁文案（变量名只出现一次、不泄漏原生错误串）；
-    // 其余错误保留 `attach_read_context` 的「读取X环境变量 Y 失败: 」前缀。
+    // `NotFound` 走专用简洁文案（变量名只出现一次、不泄漏原生错误串）；
+    // 其余错误保留 `attach_read_context` 的「读取X环境变量 Y 失败:」前缀。
     let (vtype, value) = read_env_var(store, name).map_err(|e| {
         if e.code == ErrorCode::NotFound {
             CoreError::new(
@@ -586,7 +586,7 @@ fn update_env_var_in_store(
 /// # Returns
 /// - `Ok(WriteOutcome)` — 创建成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 名称非法、已存在（`NameExists`）、保护名单（`Protected`）
-///   或类型不受支持
+/// 或类型不受支持
 pub fn create_env_var(
     hive: EnvHive,
     name: &str,
@@ -630,12 +630,12 @@ fn create_env_var_with_store(
 /// **有意的语义变更（评审裁断 O-2）**：查重用的 `store.enum_names()?` 会传播
 /// 枚举错误。原 `create_env_var_in_key` 用 `enum_values().flatten()` 吞掉枚举
 /// 错误 —— 枚举失败会被当作「同名不存在」而继续写入，有冒险覆盖的隐患。
-/// 新行为是「失败响亮优于冒险覆盖」，与 F-04 同源，但**超出 F-04 只针对
+/// 新行为是「失败响亮优于冒险覆盖」，与同源，但**超出只针对
 /// list 的字面范围**。若不愿引入该变更，改 `store.enum_names().unwrap_or_default()`
 /// 即可完全保持现状。
 ///
 /// `pub(crate)` 而非 `pub`：恢复执行（`core/src/backup.rs`）需要逐变量调用它
-/// （设计文档 §S6：恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::registry`
+/// （恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::registry`
 /// 对外公开 —— 外部入口一贯带写前备份（`create_env_var`），恢复自己不产生备份。
 /// `crate::registry` 根模块为其加了 `pub(crate) use` 重导出。
 pub(crate) fn create_env_var_in_store(
@@ -828,7 +828,7 @@ fn update_env_var_force_with_store(
 
 /// `update_env_var_force` 的核心逻辑，存储可注入。
 ///
-/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它（设计文档 §S6）。
+/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它。
 /// **只豁免 revision 校验，保护名单 / 保留名 / 类型 / 名值合法性判定照旧** ——
 /// 这正是恢复 `--force` 需要的语义（不允许在恢复层自行实现「跳过校验」）。
 pub(crate) fn update_env_var_force_in_store(
@@ -909,7 +909,7 @@ fn delete_env_var_force_with_store(
 
 /// `delete_env_var_force` 的核心逻辑，存储可注入。
 ///
-/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它（设计文档 §S6）。
+/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它。
 /// 同 [`update_env_var_force_in_store`]：只豁免 revision 校验，保护名单判定照旧。
 pub(crate) fn delete_env_var_force_in_store(
     store: &dyn EnvHiveStore,
@@ -1272,7 +1272,7 @@ mod env_var_tests {
         assert!(hive.contains("MY_VAR"), "冲突时不得删除变量");
     }
 
-    // ── F-04：列表失败语义 —— 任一失败让整个 hive 报错 ──
+    // ──：列表失败语义 —— 任一失败让整个 hive 报错 ──
 
     #[test]
     fn list_fails_when_enum_fails() {
@@ -1304,7 +1304,7 @@ mod env_var_tests {
     // `from_utf16_lossy`：非法 UTF-16 被替换为 U+FFFD 而不返回 Err，奇数字节
     // 被截断后 lossy 解码为空串。因此「解码失败」分支对字符串类型当前不可达，
     // 本测试的构造（奇数字节 REG_SZ）无法让 list 报错。保留测试体作为休眠
-    // 用例：若未来 winreg 改为严格解码，F-04 的 map_err 分支会生效，此测试
+    // 用例：若未来 winreg 改为严格解码， map_err 分支会生效，此测试
     // 随之通过。详见 winreg-0.52.0/src/types.rs:38（`String::from_reg_value` 的 lossy 解码）。
     #[ignore = "winreg 0.52 对字符串类型 lossy 解码，解码失败分支当前不可达"]
     fn list_fails_when_decode_fails() {
@@ -1333,7 +1333,7 @@ mod env_var_tests {
         assert!(ERR_CONFLICT.contains("已被其他进程修改"));
     }
 
-    // ── F-02：force API —— 只豁免 revision 校验，安全校验照旧 ──
+    // ──：force API —— 只豁免 revision 校验，安全校验照旧 ──
 
     #[test]
     fn update_env_var_force_overwrites_after_external_change() {
@@ -1387,7 +1387,7 @@ mod env_var_tests {
         assert!(!hive.contains("MY_VAR"));
     }
 
-    // ── 写前备份挂载（Task 3）──
+    // ── 写前备份挂载──
     // 测试用注入写入逻辑（`*_with_store`），备份目录经 `PATHEDITOR_BACKUP_DIR`
     // 指向临时目录。**不在测试里向用户真实备份目录写入**。
     // 注意：`backup_env_vars()` 内部仍以**只读**方式打开真实 hive 采集
@@ -1429,7 +1429,7 @@ mod env_var_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 备份失败（目录不可写）时写入仍必须成功（K2：不阻断）。
+    /// 备份失败（目录不可写）时写入仍必须成功。
     #[test]
     fn update_env_var_succeeds_even_when_backup_fails() {
         let _guard = crate::persist::test_persist_lock();
@@ -1462,7 +1462,7 @@ mod env_var_tests {
 
     /// 广播回归：5 个写入口的成功路径都必须发出 `WM_SETTINGCHANGE`。
     ///
-    /// 存在的理由（2026-09-21 复审 Critical）：Task 3 的重构把 5 处
+    /// 存在的理由（2026-09-21 复审 Critical）：重构把 5 处
     /// `broadcast_env_change()` 整体丢失，而**当时没有任何测试会因此失败**——
     /// 运行中的进程会一直持有陈旧环境变量直到重启 shell。golden/README.md
     /// 第 6 类记的正是「端口未抽出、本类不做测试」，本用例用观察标志补上这一格。
@@ -1709,7 +1709,7 @@ mod env_var_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// #34：不存在的变量，message 必须是「{hive}环境变量 X 不存在」，
+    /// 不存在的变量，message 必须是「{hive}环境变量 X 不存在」，
     /// 且**不含** `os error`、**不含**重复的变量名。
     #[test]
     fn reveal_missing_var_message_is_concise_and_named_once() {
@@ -1732,7 +1732,7 @@ mod env_var_tests {
         );
     }
 
-    /// #34 不变量：其它错误（如类型不支持）的 message 保持既有前缀，不因本次改动而变。
+    ///  不变量：其它错误（如类型不支持）的 message 保持既有前缀，不因本次改动而变。
     #[test]
     fn reveal_unsupported_type_message_keeps_existing_prefix() {
         let hive = MemoryHive::new(true);

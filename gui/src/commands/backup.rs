@@ -11,9 +11,9 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
 ///
 /// # Returns
 /// - `Ok(String)` — 备份文件路径。**不保证绝对**：由 `env_backup_dir()` 决定，
-///   该目录可被 `PATHEDITOR_BACKUP_DIR` 设成相对路径（见 core 侧文档）。
+/// 该目录可被 `PATHEDITOR_BACKUP_DIR` 设成相对路径（见 core 侧文档）。
 /// - `Err(CoreError)` — 采集或落盘失败（code=`Io`，或对未支持的注册表类型为
-///   `UnsupportedType`）
+/// `UnsupportedType`）
 #[tauri::command]
 pub fn backup_env_vars() -> Result<String, CoreError> {
     backup::backup_env_vars().map(|path| path.to_string_lossy().into_owned())
@@ -39,7 +39,7 @@ pub fn list_env_backups() -> Result<Vec<EnvBackupInfo>, CoreError> {
 /// # Returns
 /// - `Ok(RestorePreview)` — 差异摘要
 /// - `Err(CoreError)` — 路径非法（`InvalidValue`/`NotFound`）、读取或解析失败
-///   （`Io`/`Parse`）、打开注册表键或枚举失败（`PermissionDenied`/`Io`）
+/// （`Io`/`Parse`）、打开注册表键或枚举失败（`PermissionDenied`/`Io`）
 #[tauri::command]
 pub fn preview_env_backup(file: String) -> Result<RestorePreview, CoreError> {
     let path = backup::validate_backup_path(&file)?;
@@ -58,7 +58,7 @@ pub fn preview_env_backup(file: String) -> Result<RestorePreview, CoreError> {
 /// # Returns
 /// - `Ok(RestoreOutcome)` — 恢复结果（含逐条失败）
 /// - `Err(CoreError)` — 路径非法、读取失败、打开 hive 失败（`PermissionDenied`），
-///   或 `force = false` 时检测到冲突（code=`Conflict`，注册表零改动）
+/// 或 `force = false` 时检测到冲突（code=`Conflict`，注册表零改动）
 #[tauri::command]
 pub fn restore_env_backup(file: String, force: bool) -> Result<RestoreOutcome, CoreError> {
     let path = backup::validate_backup_path(&file)?;

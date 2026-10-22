@@ -1,9 +1,9 @@
 //! v2 → v3 升级路径的回归守卫。
 //!
-//! M2 的首版把 `PRAGMA user_version` 写在 `if current < 1` 内部，
-//! 导致 v1→v2 执行了 DDL 但不更新版本号。M3 必须避免同样的错误。
+//! 首版把 `PRAGMA user_version` 写在 `if current < 1` 内部，
+//! 导致 v1→v2 执行了 DDL 但不更新版本号。 必须避免同样的错误。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::{schema, Db};
 use rusqlite::Connection;

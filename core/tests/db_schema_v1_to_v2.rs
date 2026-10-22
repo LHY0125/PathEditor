@@ -1,9 +1,9 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
 // **v1 → v2 升级路径的回归守卫。**
 //
-// 为什么必须有这个测试：M1 把 `PRAGMA user_version` 写在 `if current < 1` **内部**。
-// 照抄到 M2 后，v1 库升级到 v2 会执行 `DDL_V2` 但**不更新版本号**，
+// 为什么必须有这个测试：把 `PRAGMA user_version` 写在 `if current < 1` **内部**。
+// 照抄到后，v1 库升级到 v2 会执行 `DDL_V2` 但**不更新版本号**，
 // 下次启动 `current` 仍是 1 → 再次执行 `DDL_V2` → `table scan_runs already exists`。
 //
 // 而 `db_schema_v2.rs` 只测了「新库直接建到 v2」，走的是 `current == 0 < 1` 分支，
@@ -42,7 +42,7 @@ fn upgrading_a_v1_database_bumps_version_and_does_not_rerun_ddl_v2() {
     assert_eq!(
         db.schema_version().unwrap(),
         schema::CURRENT_SCHEMA_VERSION,
-        "升级后版本号必须落盘——这正是 M1 把 PRAGMA 写在 if 内部会漏掉的一步"
+        "升级后版本号必须落盘——写在 if 内部会漏掉这一步"
     );
 
     // 派生表确实建出来了

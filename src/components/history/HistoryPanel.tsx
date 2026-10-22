@@ -33,7 +33,7 @@ export function HistoryPanel() {
   const setFilter = useHistoryStore((s) => s.setFilter);
   const undoLast = useHistoryStore((s) => s.undoLast);
 
-  // Task 11：多选两个事件做对比（存的是 snapshotUid，不是事件 uid——
+  // 多选两个事件做对比（存的是 snapshotUid，不是事件 uid——
   // 对比的对象是快照，而事件只是「哪两个快照可比」的入口）
   const [compareSel, setCompareSel] = useState<string[]>([]);
   const [comparePair, setComparePair] = useState<[string, string] | null>(null);
@@ -49,7 +49,7 @@ export function HistoryPanel() {
    * 绝不静默恢复——与仓库里其它破坏性操作同一口径。
    */
   /**
-   * 跨会话撤销（P1-7）：恢复最近一次可撤销操作前的快照。
+   * 跨会话撤销：恢复最近一次可撤销操作前的快照。
    *
    * 与 `handleRestore` 同样走二次确认——它也是破坏性操作（覆盖当前 PATH）。
    */
@@ -146,7 +146,7 @@ export function HistoryPanel() {
         </div>
       </div>
 
-      {/* 降级模式条幅：DB 不可用时历史不可用，但注册表编辑照常（spec D16） */}
+      {/* 降级模式条幅：DB 不可用时历史不可用，但注册表编辑照常 */}
       {error && (
         <div
           className="rounded-lg px-3 py-2 text-xs"

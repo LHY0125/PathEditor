@@ -2,7 +2,7 @@ mod commands;
 
 use tauri::Manager;
 
-/// 启动时的数据库初始化序列（spec §7.1 / §7.2）。
+/// 启动时的数据库初始化序列。
 ///
 /// 拆成独立函数而不是塞进 `setup` 闭包：`setup` 的返回值是 `Result<(), Box<dyn Error>>`，
 /// 把错误类型收窄成 `CoreError` 才能在这里做分步日志，也便于将来加启动自检。
@@ -11,7 +11,7 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     db.migrate_to_current()?;
 
     // ② best-effort 补写上次未落盘的快照。失败只告警：它代表的是上一次操作
-    //    遗留的「注册表已写、DB 当前快照未落盘」，补不上也不该阻止本次启动。
+    //   遗留的「注册表已写、DB 当前快照未落盘」，补不上也不该阻止本次启动。
     if let Err(e) = path_editor_core::service::retry_pending_path_state_db(
         db,
         path_editor_core::history::EventSource::Gui,
@@ -42,9 +42,9 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
         }
     };
 
-    // ③b 确保 DB 里有「当前状态」基线（D-6）。
+    // ③b 确保 DB 里有「当前状态」基线。
     //
-    // **为什么必须有**：D-1 方案 A 让读路径依赖 `app_state.current_snapshot_id`。
+    // **为什么必须有**：方案 A 让读路径依赖 `app_state.current_snapshot_id`。
     // 但 `import_disabled` 只在 `disabled.json` 存在时才产生 `kind=current` 快照——
     // 新装用户没有这个文件，迁移后 `current_snapshot_id` 就是 NULL。
     // 此时读路径回落到 `read_state()`，而文件已停写且不存在 → 空状态 →
@@ -55,9 +55,9 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     // 读注册表属于启动序列。
     ensure_current_snapshot_baseline(db);
 
-    // ④ 备份索引（P1-2）：扫描 backups/ 写入 `backups` 表。
+    // ④ 备份索引：扫描 backups/ 写入 `backups` 表。
     // 没有这一步，`backup_list` 会永远返回空——命令在、数据恒空是最容易误导的形态。
-    // 索引是派生数据（spec §4.2 第 5 条），重建成本低，每次启动重扫一遍即可。
+    // 索引是派生数据，重建成本低，每次启动重扫一遍即可。
     let backup_dir = path_editor_core::backup::env_backup_dir();
     match path_editor_core::db::backups::index_backups(db, &backup_dir) {
         Ok(n) if n > 0 => log::info!("备份索引：{} 条", n),
@@ -65,7 +65,7 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
         Err(e) => log::warn!("备份索引失败（继续启动）: {}", e.message),
     }
 
-    // ④b 保留策略清理（spec §6.5.2）：失败只告警，不阻断启动。
+    // ④b 保留策略清理：失败只告警，不阻断启动。
     //
     // 只删「已导出且超过 90 天」的 changes 与「已解决超过 30 天」的冲突；
     // 待导出队列永远不碰（`exported_at IS NULL`）。
@@ -107,7 +107,7 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     Ok(())
 }
 
-/// 重建三张派生表（Task 12）。
+/// 重建三张派生表。
 ///
 /// 抽成独立函数便于测试（`db_derived_rebuild.rs` 直接调它模拟启动序列）——
 /// 若写在 `setup_database` 里，测试就得复现整个启动流程（含注册表读取）。
@@ -137,7 +137,7 @@ fn rebuild_derived_tables(db: &mut path_editor_core::db::Db) {
     }
 }
 
-/// 确保 DB 里有一条 `kind=current` 快照；没有就用注册表当前状态建一条（D-6）。
+/// 确保 DB 里有一条 `kind=current` 快照；没有就用注册表当前状态建一条。
 ///
 /// 幂等：已有 `current_snapshot_id` 时什么都不做。
 /// 失败只告警——它是降级可容忍的（读路径会回落到文件），不该阻断启动。
@@ -204,13 +204,13 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_log::Builder::default().level(level).build())?;
 
-            // v6 M1：打开历史库。失败时进入降级模式（spec D16 fail-open）：
+            // v6：打开历史库。失败时进入降级模式：
             // 注册表编辑照常，history_*/profile_*/backup_* 命令返回 database 错误。
             //
-            // 启动序列（spec §7.1）：
-            //   ① best-effort 补写 pending（注册表已写、快照未落盘的 gap）
-            //   ② 建库/迁移 schema
-            //   ③ 首次启动时把 v5 遗留文件导入 DB（幂等，可重跑）
+            // 启动序列：
+            //  ① best-effort 补写 pending（注册表已写、快照未落盘的 gap）
+            //  ② 建库/迁移 schema
+            //  ③ 首次启动时把 v5 遗留文件导入 DB（幂等，可重跑）
             let db = match path_editor_core::db::open_default() {
                 Ok(mut db) => match setup_database(&mut db) {
                     Ok(()) => Some(db),

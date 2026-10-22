@@ -1,17 +1,17 @@
 //! `profile` 子命令：配置方案的增删改查与应用。
 //!
-//! **P0-1 方案 A**：全部走 **DB**（`core::db::profiles`），不再读写
+//! 方案 A：全部走 **DB**（`core::db::profiles`），不再读写
 //! `~/.patheditor/profiles/*.json`。GUI 与 CLI 共用同一份数据，
 //! 消除「两个真相源」。
 //!
 //! 迁移期说明：v5 的 `profiles/*.json` 由启动时的 `migrate_legacy` 一次性导入，
-//! 之后**不再写入**（spec §7.8 的停写原则）。旧文件保留在原地不删（spec §7.4）。
+//! 之后**不再写入**。旧文件保留在原地不删。
 
 use crate::runtime::{exit_core_error, exit_persist_error, save_path_write};
 use path_editor_core as core;
 use path_editor_core::db::profiles as db_profiles;
 
-/// 打开默认库；失败按 CLI 退出码约定退出（spec §8：Crypto → 5，其余 → 1）。
+/// 打开默认库；失败按 CLI 退出码约定退出。
 fn open_db() -> core::db::Db {
     core::db::open_and_migrate().unwrap_or_else(|e| exit_core_error(&e))
 }
@@ -86,7 +86,7 @@ pub(crate) fn profile_load(name: String) {
     }
 }
 
-/// 把一个 DB 配置导出成 v5 `profiles/*.json` 格式（M1 欠账 P2-2）。
+/// 把一个 DB 配置导出成 v5 `profiles/*.json` 格式。
 ///
 /// **按名字**指定配置（与其它 `profile` 子命令一致），内部转成 uid 后交给
 /// `core::db::v5_export::export_profile_v5`。输出到 stdout，可直接重定向成文件。
@@ -109,7 +109,7 @@ pub(crate) fn profile_export_v5(name: String) {
     println!("{json}");
 }
 
-/// 从 v5 `profiles/*.json` 导入一个配置（M4 Task 9）。
+/// 从 v5 `profiles/*.json` 导入一个配置。
 ///
 /// **只写 DB，不改注册表**：导入只是「把配置放进库里」，要生效仍需 `profile apply`。
 /// 名称冲突返回 `NameExists`（与 `profile save` 同口径），**不会**自动改名——
@@ -136,10 +136,10 @@ pub(crate) fn profile_apply(name: String) {
         ));
     };
     // 双 hive 一次提交（core 内顺序 system → user，含备份/sidecar/广播）。
-    // Wave 3.1：不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
+    // 不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
     save_path_write(Some(system), Some(user));
 
-    // P0-1：应用成功后记账（失败只告警——注册表已写成功的事实优先于统计）
+    // 应用成功后记账（失败只告警——注册表已写成功的事实优先于统计）
     let mut db = db;
     if let Err(e) = db_profiles::mark_profile_applied_by_name(&mut db, &name) {
         eprintln!("警告: 配置应用计数更新失败: {}", e.message);

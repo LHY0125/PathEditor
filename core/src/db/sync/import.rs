@@ -2,7 +2,7 @@
 //!
 //! ## 三条不可协商的约束
 //!
-//! 1. **整体回滚**：任何一步失败都不产生半应用状态（spec §8）。
+//! 1. **整体回滚**：任何一步失败都不产生半应用状态。
 //!    靠 `Db::with_transaction` 保证——它不是「尽力而为」，是「全有或全无」。
 //! 2. **幂等**：`changes.uid` 已存在则跳过。同一份包导入两次不该产生第二份数据。
 //! 3. **不写注册表**：导入只改 DB；用户要生效必须显式走
@@ -46,17 +46,17 @@ pub struct ImportReport {
     /// 等到真正支持该类型时同一个包再也无法重放。
     /// 界面必须把这个数字显示出来，否则用户会以为「全部同步成功」。
     ///
-    /// **M4 起对已知类型恒为 0**：白名单里的类型全部可落库。字段保留是为了
+    /// 起对已知类型恒为 0：白名单里的类型全部可落库。字段保留是为了
     /// 将来新增类型时不必再改一次报告形状。
     pub skipped_unsupported: u32,
-    /// 因与本地配置同名而**自动改名**的条数（M4）
+    /// 因与本地配置同名而**自动改名**的条数
     ///
     /// 改名只影响本地行，包内 uid 不变；界面与 CLI 都要显式说出来，
     /// 否则用户会发现「我的配置名字变了」却找不到原因。
     pub renamed_profiles: u32,
 }
 
-/// 当前版本能真正写入数据库的实体类型（M4：全部已知类型）。
+/// 当前版本能真正写入数据库的实体类型。
 ///
 /// `profile_revision` / `path_entry` / `env_value` 的 `content` 为 `null`
 /// （内容随父实体），`apply_entity_tx` 对它们是显式 no-op。
@@ -83,12 +83,12 @@ fn entity_priority(entity_type: &str) -> u8 {
     }
 }
 
-/// 包格式允许出现的实体类型（spec §6.4）。
+/// 包格式允许出现的实体类型。
 ///
-/// 当前与 [`APPLICABLE_ENTITY_TYPES`] **内容一致**（M4 起全部已知类型都可落库）。
+/// 当前与 [`APPLICABLE_ENTITY_TYPES`] **内容一致**。
 /// 保留两个常量是**有意**的：将来新增已知类型时，先在白名单里接受，
 /// 再实现落库——分离让「格式合法、但本版本还落不了库」这个中间态有地方表达，
-/// 而不是被迫二选一（要么拒收整包，要么计入虚假的 applied，后者是 R-1 的成因）。
+/// 而不是被迫二选一。
 const KNOWN_ENTITY_TYPES: &[&str] = &[
     "snapshot",
     "profile",
@@ -169,7 +169,7 @@ pub fn import_bundle(
     //
     // `profile.content.snapshotUid` 指向同一包里的快照；不排序时，
     // 若导出方把 profile 写在 snapshot 前面，接收端会因「引用的快照不存在」
-    // 整包回滚（spec §6.5.1 的依赖序）。
+    // 整包回滚。
     let mut ordered: Vec<&InboundChange> = payload.changes.iter().collect();
     ordered.sort_by_key(|c| entity_priority(&c.entity_type));
 
@@ -187,11 +187,11 @@ pub fn import_bundle(
                 continue;
             }
 
-            // 白名单里的类型在 M4 已**全部**可落库，本分支当前不可达。
+            // 白名单里的类型在已**全部**可落库，本分支当前不可达。
             //
             // 保留它是为了将来：新增已知类型但还没实现落库时，必须走
             // 「不应用、不记录、单独计数」——记了就把 uid 占住，等真正支持
-            // 该类型时同一个包会因为「uid 已存在」被永久跳过（R-1 的第二层陷阱）。
+            // 该类型时同一个包会因为「uid 已存在」被永久跳过。
             if !APPLICABLE_ENTITY_TYPES.contains(&c.entity_type.as_str()) {
                 report.skipped_unsupported += 1;
                 continue;
@@ -201,7 +201,7 @@ pub fn import_bundle(
             //
             // 墓碑是 `field = "deleted_at"` 的变更；若按 field 比较，它与内容变更
             // （`field = null`）会落在两条互不可见的时间线上，旧内容就在删除之后
-            // 「复活」（spec §6.5.1）。
+            // 「复活」。
             let local = match c.entity_type.as_str() {
                 "snapshot" | "profile" => latest_for_entity_tx(tx, &c.entity_type, &c.entity_uid)?,
                 _ => latest_for_tx(tx, &c.entity_type, &c.entity_uid, c.field.as_deref())?,
@@ -369,7 +369,7 @@ fn latest_for_tx(
 ///
 /// `snapshot` / `profile` 用实体级 LWW：墓碑是 `field = "deleted_at"` 的变更，
 /// 若按 field 比较，它和内容变更（`field = null`）会落在两条互不可见的时间线上，
-/// 旧内容会在删除之后「复活」（spec §6.5.1）。
+/// 旧内容会在删除之后「复活」。
 fn latest_for_entity_tx(
     tx: &rusqlite::Transaction,
     entity_type: &str,
@@ -410,7 +410,7 @@ fn apply_entity_tx(
             Ok(false)
         }
         // 配置：保留远端 uid，`snapshotUid` 解析成本地快照主键。
-        // `device_id` 只用于同名改名的后缀（M4 Task 2）。
+        // `device_id` 只用于同名改名的后缀。
         "profile" => {
             crate::db::profiles::import_profile_content_tx(tx, entity_uid, content, device_id)
         }
@@ -420,7 +420,7 @@ fn apply_entity_tx(
         // 提前跳过不支持的类型，这里**不应该**再被命中。
         //
         // 返回错误而不是 `Ok(())`：将来有人往可落库列表里加类型却忘了在这里
-        // 实现，会**立刻炸**而不是静默吞掉——R-1 就是这么来的。
+        // 实现，会**立刻炸**而不是静默吞掉—— 就是这么来的。
         other => Err(CoreError::new(
             ErrorCode::SyncFormat,
             "import",

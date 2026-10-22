@@ -5,7 +5,7 @@
 //! 2. 导出文件能被 `open()` 读回且 header 自洽（否则包是废的）
 //! 3. **写文件失败时待导出队列不变**（顺序反了会永久丢失变更）
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{open, BundleHeader};
 use path_editor_core::db::sync::change_log::{pending_export, record_change_tx, NewChange};

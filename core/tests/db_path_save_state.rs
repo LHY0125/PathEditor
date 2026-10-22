@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
 // **CLI/DB 保存链路守卫**：`save_path_with_db_io` 必须在写注册表成功后：
 // 1. 把当前快照写入 DB（`app_state.current_snapshot_id`）；

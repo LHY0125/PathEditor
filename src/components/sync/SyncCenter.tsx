@@ -53,12 +53,12 @@ function renderNotice(
 }
 
 /**
- * 同步中心（M3 Task 9）。
+ * 同步中心。
  *
  * ## 口令只活在组件里
  *
  * `passphrase` 是局部 `useState`，**不写入任何 store**。导出/导入结束后立刻
- * 清空。输入框用 `type="password"`，不提供「记住」选项——spec §5.2 要求
+ * 清空。输入框用 `type="password"`，不提供「记住」选项—— 要求
  * 「口令不落盘、不记忆」。
  *
  * ## 同步不写注册表

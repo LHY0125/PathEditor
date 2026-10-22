@@ -62,7 +62,7 @@ export function AppShell() {
   const [newVarOpen, setNewVarOpen] = useState(false);
   const [envBackupOpen, setEnvBackupOpen] = useState(false);
   // 选中与编辑都只存稳定键；meta 一律从快照派生 —— 冲突刷新后重试自动
-  // 携带新 revision（F-02），快照换代后悬空引用自动失效。
+  // 携带新 revision，快照换代后悬空引用自动失效。
   const [selectedVarKey, setSelectedVarKey] = useState<string | null>(null);
   const [editVarKey, setEditVarKey] = useState<string | null>(null);
   const [envSearch, setEnvSearch] = useState('');
@@ -80,7 +80,7 @@ export function AppShell() {
     if (activeTab === 'allVars') void loadEnvVars();
   }, [activeTab, loadEnvVars]);
 
-  // Tauri 原生关窗确认（F-04）：X / Alt+F4 与工具栏「取消」走同一套检查 ——
+  // Tauri 原生关窗确认：X / Alt+F4 与工具栏「取消」走同一套检查 ——
   // PATH 有未保存修改或环境变量草稿未提交时先确认。草稿包含编辑弹窗中
   // 正在输入的实时内容（弹窗 onChange 镜像进 store）。非 Tauri 环境
   // （E2E mock、jsdom）没有原生窗口事件，静默跳过。
@@ -93,7 +93,7 @@ export function AppShell() {
         const handler = await getCurrentWindow().onCloseRequested((event) => {
           const pending = useAppStore.getState().isModified || useEnvStore.getState().hasDrafts();
           if (!pending) return; // 无待保存内容：不拦截，包装层自动 destroy
-          event.preventDefault(); // 同步拦截默认销毁；确认后显式 destroy 收口（G-B2）
+          event.preventDefault(); // 同步拦截默认销毁；确认后显式 destroy 收口
           void (async () => {
             try {
               const confirmed = await backend.confirmDialog(i18n.t('dialog.unsavedConfirm'));
@@ -157,7 +157,7 @@ export function AppShell() {
   return (
     <div className="app-root">
       <TitleBar />
-      {/* spec §7.10：降级条幅必须常驻，与当前标签页无关 */}
+      {/* 降级条幅必须常驻，与当前标签页无关 */}
       <DegradedBanner />
 
       <nav className="tabs" aria-label={t('app.name')}>
@@ -343,7 +343,7 @@ export function AppShell() {
           onCancel={() => setEditVarKey(null)}
           onConfirm={async (value, readRevision) => {
             const store = useEnvStore.getState();
-            // 从最新快照派生 meta：冲突刷新后重试自动携带新 revision（F-02）
+            // 从最新快照派生 meta：冲突刷新后重试自动携带新 revision
             const meta = store.snapshot ? findMetaByKey(store.snapshot, editVarKey) : null;
             if (!meta) return false;
             store.setDraft(meta, value);

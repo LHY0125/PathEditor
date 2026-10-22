@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 
-// 异步工厂 + vi.mocked(backend)：与 Task 5 的 env-store.test.ts 保持一致。
+// 异步工厂 + vi.mocked(backend)：与 env-store.test.ts 保持一致。
 vi.mock('@/services/backend', async () => {
   const { vi: viModule } = await import('vitest');
   return {
@@ -209,7 +209,7 @@ describe('EnvVarTable', () => {
   });
 });
 
-describe('data-env-var-key 行定位属性（Task 8 E2E 契约）', () => {
+describe('data-env-var-key 行定位属性（E2E 契约）', () => {
   it('每行带 `${hive}:${name}` 属性，可按 user:JAVA_HOME 精确定位', () => {
     const { container } = render(<EnvVarTable />);
     const rows = container.querySelectorAll('[data-env-var-key]');

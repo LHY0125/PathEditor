@@ -1,10 +1,10 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **P0-3 回归守卫**：恢复快照必须是 **append-only**。
+// 回归守卫：恢复快照必须是 **append-only**。
 //
-// spec §6.1：「restore_snapshot(uid)：把该快照交给既有注册表写入编排；
+// 「restore_snapshot(uid)：把该快照交给既有注册表写入编排；
 // 成功后追加新快照与事件（**append-only，不回滚 DB**）」。
-// 缺口清单 P0-3 指出 `history_restore_snapshot` 在首版完全不存在。
+// 缺口清单指出 `history_restore_snapshot` 在首版完全不存在。
 //
 // 本测试验证 DB 层的 append-only 语义：恢复 = 读旧快照 + 写新快照 + 记新事件，
 // **旧快照与旧事件都还在**。注册表写入本身由既有编排负责（不在此测试范围，
@@ -47,7 +47,7 @@ fn restore_is_append_only_and_keeps_old_snapshots() {
     assert_eq!(snapshots_before, 2);
 
     // ② 模拟「恢复到 old_uid」：命令层会先建一份操作前快照，再写注册表，
-    //    最后通过 sink 记事件。这里直接验证 DB 侧的 append 语义。
+    //   最后通过 sink 记事件。这里直接验证 DB 侧的 append 语义。
     let before_restore = insert_snapshot(&mut db, mk("C:\\New")).unwrap();
     {
         let sink = DbHistory::with_snapshot(&mut db, Some(before_restore.clone()));

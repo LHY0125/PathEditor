@@ -1,6 +1,6 @@
 //! v5 配置导入：把 `profiles/*.json` 读回 DB，并保留 PATH 条目。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::v5_import::import_profile_v5;
 use path_editor_core::db::Db;

@@ -1,11 +1,11 @@
 //! DPAPI 保护的本地密钥文件。
 //!
-//! **密钥丢失即历史不可读，不得静默重建空库**（spec §5.1 / D16）。
+//! **密钥丢失即历史不可读，不得静默重建空库**。
 //!
 //! 文件内容：`version(1) + db_key(32) + hash_salt(16)` = 49 字节明文，
 //! 整体经 `CryptProtectData`（用户作用域）后落盘。
 //!
-//! **并发安全（spec H4）**：用命名互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，
+//! **并发安全**：用命名互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，
 //! 密钥文件以 `create_new(true)` 原子创建 —— **禁止「先 exists() 再写」的 TOCTOU**。
 
 use crate::error::{CoreError, ErrorCode};
@@ -41,7 +41,7 @@ pub fn key_hex(m: &KeyMaterial) -> String {
 ///
 /// 生产入口 `open_default()` 用它；**测试一律显式传 `home` 参数**，
 /// 不通过 `PATHEDITOR_HOME` 重定向 —— 那是进程级全局状态，会污染同进程其它测试
-/// （计划核对 H4）。
+/// 。
 pub fn config_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -85,7 +85,7 @@ fn create_key(path: &Path) -> Result<KeyMaterial, CoreError> {
     use std::fs;
     use std::io::Write;
 
-    // H4：命名互斥量串行化首次创建，把「读-判-写」压成临界区。
+    // 命名互斥量串行化首次创建，把「读-判-写」压成临界区。
     let _guard = InitGuard::acquire()?;
 
     // 临界区内复查：另一进程可能已在我们拿锁之前写好了。
@@ -109,7 +109,7 @@ fn create_key(path: &Path) -> Result<KeyMaterial, CoreError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| io_err("create_key_dir", e))?;
     }
-    // create_new(true)：多进程竞争时只有一个成功，其余读取已写文件（H4）。
+    // create_new(true)：多进程竞争时只有一个成功，其余读取已写文件。
     match fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -118,7 +118,7 @@ fn create_key(path: &Path) -> Result<KeyMaterial, CoreError> {
         Ok(mut f) => {
             f.write_all(&blob).map_err(|e| io_err("write_key", e))?;
             f.sync_all().map_err(|e| io_err("sync_key", e))?;
-            // 写完立即加固 DACL（spec §5.1）：失败则删除半成品——宁可不留密钥文件，
+            // 写完立即加固 DACL：失败则删除半成品——宁可不留密钥文件，
             // 也不能留下权限过宽的它（另一个用户可替换 → 历史永久不可读）。
             drop(f);
             if let Err(e) = super::dacl::set_key_dacl(path) {

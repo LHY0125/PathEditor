@@ -15,7 +15,7 @@ import { backend } from '@/services/backend';
 import type { BackupOutcome, CoreError } from '@/core/env-var';
 
 /**
- * F-06（Task 3）：错误判定完全按 `code` —— backend.ts 已把 Tauri rejection
+ * 错误判定完全按 `code` —— backend.ts 已把 Tauri rejection
  * 统一解析为 `CoreError`（PATH 纯文本兜底为 `code:'internal'`），这里不再
  * 匹配 `[E_CONFLICT]` 字符串前缀。core 的 message 仍保留该前缀，但仅作
  * 展示层文本，程序分支一律看 code。
@@ -40,7 +40,7 @@ function isCoreError(err: unknown): err is CoreError {
  * 写入成功后的状态文案：写前自动备份失败时如实降级为「保存成功（备份失败）」。
  *
  * 复用既有 `status.saved_without_backup` 键，不新增文案源（J1a）。
- * 备份是 best-effort（设计文档 K2）：失败**不改变**操作成功的判定 ——
+ * 备份是 best-effort：失败**不改变**操作成功的判定 ——
  * 调用方的 `return true` 照旧，只有状态栏措辞变化。
  */
 function savedStatusMessage(backup: BackupOutcome): string {
@@ -80,7 +80,7 @@ interface EnvState {
   clearDraftByKey: (key: string) => void;
   /** 取单个变量的完整明文及其读取时的 revision（编辑弹窗数据源）。不进入 revealed，不影响表格打码状态。 */
   fetchFullValue: (hive: EnvHive, name: string) => Promise<RevealedValue>;
-  /** 返回是否写入成功；弹窗据此决定关闭还是保留并显示错误。readRevision 是弹窗读取原值时的 revision，用于保存点陈旧判定（F-01）。 */
+  /** 返回是否写入成功；弹窗据此决定关闭还是保留并显示错误。readRevision 是弹窗读取原值时的 revision，用于保存点陈旧判定。 */
   save: (meta: EnvVarMeta, readRevision: string | null) => Promise<boolean>;
   create: (hive: EnvHive, name: string, value: string, kind: EnvValueKind) => Promise<boolean>;
   remove: (meta: EnvVarMeta) => Promise<boolean>;
@@ -154,13 +154,13 @@ export const useEnvStore = create<EnvState>((set, get) => {
 
     fetchFullValue: async (hive, name) => {
       // 编辑数据源专用：完整明文 + 读取时 revision 直接返回给调用方，绝不写入
-      // revealed —— preview 是截断/净化后的展示摘要，严禁作为编辑初始值（F-01）。
+      // revealed —— preview 是截断/净化后的展示摘要，严禁作为编辑初始值。
       // revision 用于提交时校验值是否已陈旧。
       return backend.revealEnvVar(hive, name);
     },
 
     save: async (meta, readRevision) => {
-      // F-01：编辑值的读取版本与将写入的 revision 不一致 → 值已陈旧，
+      // 编辑值的读取版本与将写入的 revision 不一致 → 值已陈旧，
       // 拒绝提交，刷新快照让弹窗重取，避免用旧值覆盖外部新值。
       if (readRevision !== null && readRevision !== meta.revision) {
         await refreshAfterError(i18n.t('envVar.staleReloaded'));

@@ -1,8 +1,8 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **M1 欠账 P2-1**：`history_reveal_env_value` 的 core 侧实现。
+// ：`history_reveal_env_value` 的 core 侧实现。
 //
-// 语义（spec §3.2.1）：
+// 语义：
 // - 掩码是**默认**：`get_snapshot(reveal=false)` 对敏感值返回 None；
 // - 明文必须经**独立命令**显式请求，是一次可审计的动作；
 // - `restorable = 0` 的变量（`Unsupported` 类型）没有值可 reveal，返回 NotFound。

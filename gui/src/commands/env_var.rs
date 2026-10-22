@@ -4,8 +4,8 @@ use path_editor_core::registry::{self, WriteOutcome};
 
 /// 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）。
 ///
-/// F-06（Wave 2 Task 2）：env 通路错误迁移为结构化 `CoreError`（serde 序列化为
-/// `{code, message, ...}` 对象）；Task 3 接手前端按 `code` 判定的完整迁移。
+/// env 通路错误迁移为结构化 `CoreError`（serde 序列化为
+/// `{code, message, ...}` 对象）； 接手前端按 `code` 判定的完整迁移。
 ///
 /// # Returns
 /// - `Ok(EnvVarSnapshot)` — system / user 两个 hive 的变量元数据
@@ -20,7 +20,7 @@ pub fn list_all_env_vars() -> Result<EnvVarSnapshot, CoreError> {
 /// # Returns
 /// - `Ok(RevealedValue)` — 变量完整值与读取时的 revision
 /// - `Err(CoreError)` — 名称非法（`InvalidName`）、保留名（`ReservedName`）、
-///   类型不受支持（`UnsupportedType`）或读取失败（`Io`）
+/// 类型不受支持（`UnsupportedType`）或读取失败（`Io`）
 #[tauri::command]
 pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<RevealedValue, CoreError> {
     registry::reveal_env_var(hive, &name)
@@ -50,7 +50,7 @@ pub fn update_env_var(
 /// # Returns
 /// - `Ok(WriteOutcome)` — 创建成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 名称非法、已存在（`NameExists`）、保护名单（`Protected`）
-///   或类型不受支持
+/// 或类型不受支持
 #[tauri::command]
 pub fn create_env_var(
     hive: EnvHive,

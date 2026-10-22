@@ -24,11 +24,11 @@ pub trait EnvHiveStore {
     /// 读取值的原始字节与真实类型。
     fn get_raw(&self, name: &str) -> Result<RegValue, String>;
 
-    /// 读取值的原始字节与真实类型，并携带结构化错误分类（#34）。
+    /// 读取值的原始字节与真实类型，并携带结构化错误分类。
     ///
     /// 与 [`get_raw`] 的**唯一区别**是错误类型：本方法把 winreg 的
     /// `io::ErrorKind::NotFound` 映射为 [`ErrorCode::NotFound`]，其余为 [`ErrorCode::Io`]。
-    /// `get_raw` 保持 `Result<_, String>` 不动（W2-N2 端口边界裁断，本文件 `WinregHive::open`
+    /// `get_raw` 保持 `Result<_, String>` 不动（ 端口边界裁断，本文件 `WinregHive::open`
     /// 的文档注释）。
     ///
     /// 默认实现退回 `get_raw`（给不关心分类的实现用）；`WinregHive` 与 `MemoryHive` 各自覆写。
@@ -56,10 +56,10 @@ impl WinregHive {
     ///
     /// `write` 为 `true` 时请求 `KEY_READ | KEY_WRITE`，否则只请求 `KEY_READ`。
     ///
-    /// W2-N2（2026-09-20 裁断）：本方法是固有方法、不在 [`EnvHiveStore`] trait
+    /// （2026-09-20 裁断）：本方法是固有方法、不在 [`EnvHiveStore`] trait
     /// 上，可单独迁移到 `CoreError`。winreg 错误按 `io::ErrorKind` 诚实分类：
     /// `PermissionDenied` → [`ErrorCode::PermissionDenied`]，其余 → [`ErrorCode::Io`]。
-    /// trait 的其他方法保持 `Result<_, String>`（Wave 0 端口边界不动）。
+    /// trait 的其他方法保持 `Result<_, String>`。
     pub fn open(hive: EnvHive, write: bool) -> Result<Self, CoreError> {
         let (root, sub_path, label) = crate::registry::hive_location(hive);
         let flags = if write {
@@ -117,7 +117,7 @@ impl EnvHiveStore for WinregHive {
             .map_err(|e| format!("无法读取环境变量 {}: {}", name, e))
     }
 
-    /// #34：与 [`get_raw`](Self::get_raw) 同源，但按 `io::ErrorKind` 分类错误码。
+    /// 与 [`get_raw`](Self::get_raw) 同源，但按 `io::ErrorKind` 分类错误码。
     ///
     /// 非 `NotFound` 分支的 message 与 `get_raw` **逐字节相同**（不变量 2）。
     fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
@@ -192,7 +192,7 @@ pub(crate) mod memory {
     /// 内存版环境变量 hive。
     ///
     /// 值名按 Windows 语义**大小写不敏感**。`fail_*` 字段用于故障注入，
-    /// 让 F-04 的「枚举/读取失败不得静默」可被测试。
+    /// 让 「枚举/读取失败不得静默」可被测试。
     pub(crate) struct MemoryHive {
         values: RefCell<Vec<(String, RegValue)>>,
         writable: bool,
@@ -267,7 +267,7 @@ pub(crate) mod memory {
                 .ok_or_else(|| format!("无法读取环境变量 {}: 找不到", name))
         }
 
-        /// #34：与 [`get_raw`](Self::get_raw) 同源，但把「找不到」分类为 `NotFound`、
+        /// 与 [`get_raw`](Self::get_raw) 同源，但把「找不到」分类为 `NotFound`、
         /// 注入失败分类为 `Io`。message 文本与 `get_raw` 逐字节相同（不变量 2）。
         fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
             if self
@@ -376,7 +376,7 @@ mod memory_tests {
             .contains("注入的读取失败"));
     }
 
-    /// #34：不存在的变量必须产出 `NotFound` 码，而不是笼统的 `Io`。
+    /// 不存在的变量必须产出 `NotFound` 码，而不是笼统的 `Io`。
     ///
     /// 这是 `env get` 能给出「该变量不存在」而非「os error 2」的前提。
     #[test]
@@ -393,7 +393,7 @@ mod memory_tests {
         );
     }
 
-    /// #34 不变量 2：其它读取错误的 message 文本必须保持原样（不因新增方法而改变用户可见文案）。
+    ///  不变量 2：其它读取错误的 message 文本必须保持原样（不因新增方法而改变用户可见文案）。
     ///
     /// N1 裁断后：`fail_get` 注入场景下 `get_raw_kind` 默认实现直接复用 `get_raw`
     /// 的错误字符串，故 message 与 `get_raw` 逐字节相同。

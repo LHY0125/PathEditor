@@ -3,12 +3,12 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import i18n from '@/i18n';
 
 /**
- * 对比与引用图组件的守卫（Task 11）。
+ * 对比与引用图组件的守卫。
  *
  * 这三条断言对应本轮修掉/新增的三个维度：
- * 1. **双 hive**（N-8）：只显示 system 会让「只有用户 PATH 变了」看起来像没差异。
+ * 1. **双 hive**：只显示 system 会让「只有用户 PATH 变了」看起来像没差异。
  * 2. **toggled**（超出计划的维度）：同一条路径从启用变禁用是真实变化。
- * 3. **env 显式文案**（T-3）：不能让用户以为「环境变量没变化」。
+ * 3. **env 显式文案**：不能让用户以为「环境变量没变化」。
  */
 
 // 测试环境的 navigator 是 en；断言中文文案前必须显式切语言。
@@ -46,7 +46,7 @@ describe('CompareDialog', () => {
     compareMock.mockReset();
   });
 
-  it('同时显示 system 与 user 两侧（N-8）', async () => {
+  it('同时显示 system 与 user 两侧', async () => {
     compareMock.mockResolvedValue({
       system: { ...emptyDiff, added: [{ path: 'C:\\SYS\\NEW', enabled: true }] },
       user: { ...emptyDiff, added: [{ path: 'C:\\USR\\NEW', enabled: true }] },

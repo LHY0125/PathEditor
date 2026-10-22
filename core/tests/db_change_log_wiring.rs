@@ -1,10 +1,10 @@
-//! **S-1 的回归守卫**：写操作必须真的产生 `changes` 行。
+//! 的回归守卫：写操作必须真的产生 `changes` 行。
 //!
 //! 首版计划里 `record_change_tx` 只有测试调用者，这个测试守的是「生产路径也在调」。
 //! 注意本测试**不手写 `record_change_tx`**——它调 core 的写函数，然后断言
 //! `changes` 表自己多出了行。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles;
@@ -48,10 +48,7 @@ fn write_paths_populate_change_log_without_manual_recording() {
     )
     .unwrap();
     let after_profile = pending_export(&db).unwrap();
-    assert!(
-        !after_profile.is_empty(),
-        "保存配置必须产生 changes 行（S-1）"
-    );
+    assert!(!after_profile.is_empty(), "保存配置必须产生 changes 行");
     assert!(after_profile.iter().any(|c| c.entity_type == "profile"));
     assert!(
         after_profile.iter().any(|c| c.entity_type == "snapshot"),
@@ -73,7 +70,7 @@ fn write_paths_populate_change_log_without_manual_recording() {
     )
     .unwrap();
     let after_snap = pending_export(&db).unwrap().len();
-    assert!(after_snap > before, "插入快照必须产生 changes 行（S-1）");
+    assert!(after_snap > before, "插入快照必须产生 changes 行");
     assert!(
         pending_export(&db)
             .unwrap()

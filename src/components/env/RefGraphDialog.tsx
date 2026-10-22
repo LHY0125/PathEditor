@@ -4,9 +4,9 @@ import { backend, type RefEdge } from '@/services/backend';
 import { Modal } from '@/components/ui/Modal';
 
 /**
- * `%VAR%` 引用图对话框（Task 11）。
+ * `%VAR%` 引用图对话框。
  *
- * **三个方向都要展示**（开工提示词 §五 陷阱二）：
+ * **三个方向都要展示**：
  * - 反向（`refs_dependents`）：谁引用了它 → **删除前的影响范围**
  * - 前向（`refs_dependencies`）：它递归依赖了谁
  * - 环（`refs_cycles`）：循环引用 → 高亮

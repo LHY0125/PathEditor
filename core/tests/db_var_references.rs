@@ -1,11 +1,11 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **偏离记录（计划 Task 4 的测试）**：计划版测试插完快照就直接调 `rebuild_refs`，
+// **偏离记录**：计划版测试插完快照就直接调 `rebuild_refs`，
 // 但 `rebuild_refs` 只处理 `app_state.current_snapshot_id` 指向的那一份——
 // 不设当前快照时 `sid` 为 None，函数返回 0，测试必然失败。
-// 本测试补上 `set_current_snapshot`（与 Task 3 同一模式）。
+// 本测试补上 `set_current_snapshot`。
 //
-// 计划版还把 `name: "PATH"` 放进 `env`，而 `insert_snapshot` 会拒绝它（D13 的
+// 计划版还把 `name:"PATH"` 放进 `env`，而 `insert_snapshot` 会拒绝它（ 的
 // CHECK）；计划自己的注释也说「换成合法名字更清晰」。这里按注释建议改。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{

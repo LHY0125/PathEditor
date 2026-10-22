@@ -1,6 +1,6 @@
 //! 配置同步：profile content 落库，且 profile 在 bundle 中先于 snapshot 时仍能应用。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;
@@ -58,7 +58,7 @@ fn profile_is_applied_after_its_snapshot_even_if_bundle_order_is_reversed() {
 
     let report = import_bundle(&mut db, "pw", &path).unwrap();
     assert_eq!(report.applied, 2, "快照与配置都必须落库");
-    assert_eq!(report.skipped_unsupported, 0, "M4 起已知类型全部可落库");
+    assert_eq!(report.skipped_unsupported, 0, "已知类型全部可落库");
 
     let name: String = db
         .query_row_with("SELECT name FROM profiles WHERE uid = 'p-1'", [], |r| {

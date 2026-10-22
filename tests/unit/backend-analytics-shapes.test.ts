@@ -100,9 +100,9 @@ describe('parseCompareResult', () => {
     expect(r.user.added).toHaveLength(0);
   });
 
-  // N-8 的守卫：后端退回「只返回 system」的形状时，前端必须拒绝，
+  // 守卫：后端退回「只返回 system」的形状时，前端必须拒绝，
   // 而不是把 user 当成空差异静默显示「用户 PATH 没变化」
-  it('缺 user 侧必须报错（N-8）', () => {
+  it('缺 user 侧必须报错', () => {
     expect(() => parseCompareResult({ ...valid, user: undefined })).toThrow(
       /必须同时返回 system 与 user 两侧/,
     );
@@ -187,7 +187,7 @@ describe('parseScanRunDiff', () => {
     expect(d.lastSeen[0].runUid).toBe('r3');
   });
 
-  it('拒绝缺 firstSeen（N-5：首末是两个字段，不能只给一个）', () => {
+  it('拒绝缺 firstSeen（首末是两个字段，不能只给一个）', () => {
     expect(() => parseScanRunDiff({ ...valid, firstSeen: undefined })).toThrow(
       /firstSeen 必须是数组/,
     );

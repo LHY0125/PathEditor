@@ -195,7 +195,7 @@ pub fn save_profile(
 
 /// 读取单个配置文件（含版本信封解析与损坏隔离）。
 ///
-/// **这是唯一的「从路径读配置」实现**（B-1 / N-1）。[`load_profile`] 与
+/// **这是唯一的「从路径读配置」实现**。[`load_profile`] 与
 /// [`load_profile_from`] 都经它，不复制解析逻辑——否则版本迁移规则改动时必然分叉。
 fn read_profile_file(path: &std::path::Path) -> Result<ProfileData, CoreError> {
     let versioned = read_versioned_file(path, "配置文件")?;
@@ -407,7 +407,7 @@ mod tests {
         delete_profile("__test_list_b").unwrap();
     }
 
-    // ── F-11：schemaVersion / .bak / quarantine 测试（profiles）──
+    // ──：schemaVersion / .bak / quarantine 测试（profiles）──
 
     #[test]
     fn legacy_profile_without_schema_version_reads_as_v1() {

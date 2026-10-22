@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 /**
- * 同步中心组件（M3 Task 9）。
+ * 同步中心组件。
  *
  * 三条不可退让的断言：
  * 1. **口令输入是 `type="password"`**，且提交后立刻清空（不留在界面/组件状态里）
@@ -150,7 +150,7 @@ describe('SyncCenter', () => {
   });
 
   it('导入提示必须显式说出「有 N 条没同步」，不能只说应用了几条', () => {
-    // store 只给结构化 notice，中文文案由组件经 t() 产出（审查报告 F-4）
+    // store 只给结构化 notice，中文文案由组件经 t 产出
     mockState.notice = {
       kind: 'imported',
       report: {
@@ -168,7 +168,7 @@ describe('SyncCenter', () => {
   });
 
   it('重名自动改名时提示必须说出来', () => {
-    // 用户会发现配置名字变了；不说出来就会以为是同步把名字弄坏了（M4 Task 2）
+    // 用户会发现配置名字变了；不说出来就会以为是同步把名字弄坏了
     mockState.notice = {
       kind: 'imported',
       report: {

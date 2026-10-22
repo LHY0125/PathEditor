@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const raw = readFileSync(resolve(__dirname, '../../src/styles/globals.css'), 'utf8');
 
 /**
- * 剥离 CSS 注释后再匹配（B4）。
+ * 剥离 CSS 注释后再匹配。
  * 不剥离时：注释里提到「已删除 --color-path-invalid」会假红；
  *          把死变量注释掉而不删会假绿。
  */
@@ -63,11 +63,10 @@ describe('设计 token 层', () => {
     }
   });
 
-  it('过渡别名已随 Wave 4.1 删除', () => {
+  it('过渡别名已删除', () => {
     for (const v of ['--app-list-bg', '--app-list-alt', '--app-select-row']) {
       expect(declares(v), `过渡别名 ${v} 应已删除`).toBe(false);
     }
-    expect(raw).not.toContain('TODO(Wave 4.1)');
   });
 
   it('.tab-active 已删除，.tab-pill 保留', () => {

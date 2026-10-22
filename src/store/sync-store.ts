@@ -7,7 +7,7 @@ import {
 } from '@/services/backend';
 
 /**
- * 同步中心状态（M3 Task 9）。
+ * 同步中心状态。
  *
  * ## 口令永不进入 store
  *
@@ -20,7 +20,7 @@ import {
  * ## 冲突值按敏感判定掩码
  *
  * `sync_conflicts.local_value` / `remote_value` 可能是环境变量值。
- * spec §4.2 第 9 条要求 UI 展示敏感值时掩码——`maskConflictValue`
+ *  第 9 条要求 UI 展示敏感值时掩码——`maskConflictValue`
  * 把判定收在一处，组件不各自实现。
  */
 
@@ -62,7 +62,7 @@ export function maskConflictValue(value: string | null, maxLength = 60): string 
  *
  * store 不产出面向用户的文案：文案属于展示层，必须走 `t()`。
  * 早期版本在这里直接拼中文，导致切换英文界面时这条主反馈仍是中文
- * （审查报告 F-4）。现在由 `SyncCenter` 按 `kind` 选择 i18n 键渲染。
+ * 。现在由 `SyncCenter` 按 `kind` 选择 i18n 键渲染。
  */
 export type SyncNotice =
   | { kind: 'exported'; changeCount: number; path: string }

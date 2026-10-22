@@ -1,8 +1,8 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// J-7 整改的守卫测试：`app_state` 单行必须在**建库时**就存在。
+// 整改的守卫测试：`app_state` 单行必须在**建库时**就存在。
 // 若它为空，`set_current_snapshot` 的 CAS 永远匹配 0 行、恒返回 false，
-// spec §十二「并发写：CAS 冲突返回 conflict」将永远不可达。
+// 「并发写：CAS 冲突返回 conflict」将永远不可达。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, NewSnapshot, SnapshotKind,

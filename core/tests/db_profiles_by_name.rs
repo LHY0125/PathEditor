@@ -1,9 +1,9 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **P0-1 回归守卫**：配置方案必须只有 DB 一个真相源。
+// 回归守卫：配置方案必须只有 DB 一个真相源。
 //
-// 这条测试的存在理由：M1 首版把 `profiles/*.json` 导入 DB 后，UI 仍在读写文件，
-// 造成「DB 数据永久冻结」的双真相源。缺口清单把它列为 P0-1。
+// 这条测试的存在理由：首版把 `profiles/*.json` 导入 DB 后，UI 仍在读写文件，
+// 造成「DB 数据永久冻结」的双真相源。缺口清单把它列为。
 // 若将来有人把 UI 改回文件通路，或让 CLI 重新写文件，本用例会失败。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
@@ -84,7 +84,7 @@ fn profiles_live_in_db_and_support_full_crud_by_name() {
     // 幂等：再删返回 false 而不是报错
     assert!(!delete_profile_by_name(&mut db, "Office").unwrap());
 
-    // ⑧ 删除后同名可重建（B5 的部分唯一索引）
+    // ⑧ 删除后同名可重建
     let uid2 = save_profile(&mut db, "Office", None, &[], snap("C:\\C")).unwrap();
     assert_ne!(uid, uid2, "重建必须是新行");
 

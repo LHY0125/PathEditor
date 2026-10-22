@@ -248,7 +248,7 @@ describe('savePaths', () => {
   });
 
   it('保存成功', async () => {
-    // Wave 3.0-B：单次 `save_path_with_sidecar` 调用（取代旧的
+    // -B：单次 `save_path_with_sidecar` 调用（取代旧的
     // backup_registry + save_*_paths + save_path_snapshot 序列）。
     mockedInvoke.mockResolvedValueOnce({
       system: 'applied',

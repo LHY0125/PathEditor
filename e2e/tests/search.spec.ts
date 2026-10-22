@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { createIpcMock } from '../mocks/ipc';
 
 /**
- * 搜索面板 E2E（Task 13）。
+ * 搜索面板 E2E。
  *
- * spec §3.2.1 要求 3–4 条主路径。这里覆盖两条：
+ *  要求 3–4 条主路径。这里覆盖两条：
  * 1. 输入后出结果，且**高亮**来自 Rust 侧的 snippet（`[命中]` → `<mark>`）
  * 2. 空查询不发请求（`__capturedCalls` 里不得出现 `search`）
  *

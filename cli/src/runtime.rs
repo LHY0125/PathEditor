@@ -15,7 +15,7 @@ pub(crate) fn exit_persist_error(err: &core::CoreError) -> ! {
     std::process::exit(err.exit_code());
 }
 
-/// 按结构化错误决定退出码与输出（F-06）。
+/// 按结构化错误决定退出码与输出。
 ///
 /// 退出码由 `CoreError::exit_code()` 统一映射（冲突 3，其余 1），
 /// 不再匹配 `[E_CONFLICT]` 文本前缀 —— 判定只看 `code`。
@@ -24,7 +24,7 @@ pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
     std::process::exit(err.exit_code());
 }
 
-/// 备份失败时在 stderr 提示，**不改变退出码**（设计文档 K2）。
+/// 备份失败时在 stderr 提示，**不改变退出码**。
 ///
 /// CLI 未初始化 logger，core 的 `log::warn!` 在此被丢弃 —— 必须经返回值显式打印。
 pub(crate) fn warn_if_backup_failed(outcome: &core::backup::BackupOutcome) {
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn conflict_prefix_matches_core_constant() {
-        // 契约（F-06 重定位）：`[E_CONFLICT]` 前缀仍是前端过渡期判定依据与
+        // 契约：`[E_CONFLICT]` 前缀仍是前端过渡期判定依据与
         // core 消息的稳定标识，测试改为直接断言 core 常量本身；CLI 退出码
         // 已由 `CoreError.exit_code()` 驱动，不再依赖文本前缀。
         use path_editor_core as core;
@@ -248,7 +248,7 @@ mod tests {
         assert!(msg.contains("磁盘已满"), "必须透传原始错误: {msg}");
     }
 
-    // ── `warn_if_backup_failed`：CLI 侧唯一的「写前备份失败」可见渠道（K2）──
+    // ── `warn_if_backup_failed`：CLI 侧唯一的「写前备份失败」可见渠道──
     //
     // 为什么必须用**子进程**而不是进程内调用：被测函数直接 `eprintln!` 到真实
     // stderr，进程内拿不到那串字节（libtest 默认还会把 `eprintln!` 收进内存捕获
@@ -293,7 +293,7 @@ mod tests {
 
     /// **`warn_if_backup_failed` 的可证伪性测试：真实 stderr 字节级断言。**
     ///
-    /// 覆盖设计文档 K2 的三条语义：
+    /// 覆盖的三条语义：
     /// 1. `Failed` → stderr 出现「警告: 环境变量写前备份失败」，且透传原因；
     /// 2. 该警告只在 `Failed` 出现（`Created` / `Skipped` 一条都不许有）；
     /// 3. 警告走 stderr 而非 stdout（stdout 不得出现该文案）。
@@ -329,7 +329,7 @@ mod tests {
             )
         };
 
-        // 情形 1：Failed → 必须输出警告、透传原因、点明「写入已完成」（K2 的措辞语义）
+        // 情形 1：Failed → 必须输出警告、透传原因、点明「写入已完成」
         let (stdout, stderr) = run("failed");
         assert!(
             stderr.contains("警告: 环境变量写前备份失败"),
@@ -337,7 +337,7 @@ mod tests {
         );
         assert!(
             stderr.contains("写入已完成"),
-            "警告必须点明写入已完成（备份失败不阻断写入，K2）: {stderr}"
+            "警告必须点明写入已完成（备份失败不阻断写入）: {stderr}"
         );
         assert!(
             stderr.contains("磁盘已满"),

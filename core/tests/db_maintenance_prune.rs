@@ -1,6 +1,6 @@
 //! 保留策略：只删「已导出且超过 90 天」的 changes 与「已解决超过 30 天」的冲突。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::maintenance::{prune, CHANGES_RETENTION_MS, CONFLICTS_RETENTION_MS};
 use path_editor_core::db::Db;

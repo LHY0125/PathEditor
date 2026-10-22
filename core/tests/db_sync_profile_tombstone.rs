@@ -1,6 +1,6 @@
 //! 墓碑：`content = null` 且 `field = "deleted_at"` → 本地软删除。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};

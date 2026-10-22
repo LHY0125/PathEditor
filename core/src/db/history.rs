@@ -1,4 +1,4 @@
-//! 快照与事件读写。**`events` 不得含 env 明文值（spec D6）。**
+//! 快照与事件读写。**`events` 不得含 env 明文值。**
 //!
 //! 事务纪律：
 //! - 自带事务的入口（[`insert_snapshot`]）供顶层调用；
@@ -108,7 +108,7 @@ pub(crate) fn result_from_str(s: &str) -> EventResult {
 
 /// 快照中的一行环境变量。
 ///
-/// 需要 `Deserialize`：M3 的同步导入要从 bundle 的 `content` 还原快照内容。
+/// 需要 `Deserialize`：同步导入要从 bundle 的 `content` 还原快照内容。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvValueRow {
@@ -122,7 +122,7 @@ pub struct EnvValueRow {
     pub value: Option<String>,
     /// 采集时的并发校验摘要
     pub revision: String,
-    /// **调用方传入值会被忽略** —— 写入前由 `env_var::is_sensitive` 重新计算（H2）
+    /// **调用方传入值会被忽略** —— 写入前由 `env_var::is_sensitive` 重新计算
     pub sensitive: bool,
     /// 是否可通过通用通路恢复
     pub restorable: bool,
@@ -163,7 +163,7 @@ pub struct SnapshotView {
     pub env: Vec<EnvValueRow>,
 }
 
-/// 事件列表筛选条件。默认 `limit = 50`、`offset = 0`（spec §3.2.1）。
+/// 事件列表筛选条件。默认 `limit = 50`、`offset = 0`。
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     /// 本页条数（1–500）
@@ -174,15 +174,15 @@ pub struct EventFilter {
     pub action: Option<String>,
     /// 按来源筛选
     pub source: Option<String>,
-    /// 按 hive 筛选（`system` / `user`）——P1-1
+    /// 按 hive 筛选（`system` / `user`）——
     pub hive: Option<String>,
-    /// 按操作目标筛选（变量名等）——P1-1
+    /// 按操作目标筛选（变量名等）——
     pub target: Option<String>,
-    /// 按结果筛选（`success` / `partial` / `failure`）——P1-1
+    /// 按结果筛选（`success` / `partial` / `failure`）——
     pub result: Option<String>,
-    /// 时间范围起点（含，Unix 毫秒）——P1-1
+    /// 时间范围起点（含，Unix 毫秒）——
     pub from_ms: Option<i64>,
-    /// 时间范围终点（含，Unix 毫秒）——P1-1
+    /// 时间范围终点（含，Unix 毫秒）——
     pub to_ms: Option<i64>,
 }
 
@@ -220,7 +220,7 @@ pub struct EventView {
     pub target: Option<String>,
     /// 结果
     pub result: EventResult,
-    /// 本次操作产生的快照 uid（J-8）。
+    /// 本次操作产生的快照 uid。
     ///
     /// `None` 表示该事件没有关联快照（例如纯查询类事件），或快照已被删除。
     /// 前端据此决定是否允许点击查看详情。
@@ -233,21 +233,21 @@ pub struct EventView {
 pub struct EventPage {
     /// 本页事件
     pub items: Vec<EventView>,
-    /// 满足条件的**总行数**（不是本页条数，H1）
+    /// 满足条件的**总行数**
     pub total: u32,
 }
 
 /// 插入快照 + 条目，返回快照 uid。
 ///
 /// **不写 `events`** —— 事件统一由 `HistorySink` 负责，避免同一操作产生两条
-/// 事件（计划核对 B2）。
+/// 事件。
 pub fn insert_snapshot(db: &mut Db, snap: NewSnapshot) -> Result<String, CoreError> {
     db.with_transaction(|tx| insert_snapshot_tx(tx, snap))
 }
 
-/// 事务内插入快照；供配置保存等需要「快照 + 业务行同一事务」的调用方复用（H6）。
+/// 事务内插入快照；供配置保存等需要「快照 + 业务行同一事务」的调用方复用。
 ///
-/// **写入后记一条 `changes`**（M3 的 S-1 接线）：快照是同步的实体之一，
+/// **写入后记一条 `changes`**：快照是同步的实体之一，
 /// 不记的话它永远不会进入待导出队列。
 ///
 /// **但 `EventSource::Migration` 不记**：v5 文件迁移与首次启动建基线走的也是
@@ -316,7 +316,7 @@ pub(crate) fn insert_snapshot_with_uid_tx(
     }
 
     for v in &snap.env {
-        // D13：Path 永不进入 env_values（DDL 的 CHECK 也会拒绝，这里提前给出可读错误）
+        // Path 永不进入 env_values（DDL 的 CHECK 也会拒绝，这里提前给出可读错误）
         if v.name.eq_ignore_ascii_case("path") {
             return Err(CoreError::new(
                 ErrorCode::InvalidName,
@@ -324,9 +324,9 @@ pub(crate) fn insert_snapshot_with_uid_tx(
                 "Path 走专用通路，不得写入 env_values",
             ));
         }
-        // H2：sensitive 以 core 判定为准，忽略调用方传值。
+        // sensitive 以 core 判定为准，忽略调用方传值。
         let sensitive = crate::env_var::is_sensitive(&v.name);
-        // D13：Unsupported 只存元数据
+        // Unsupported 只存元数据
         let value = if v.restorable {
             v.value.as_deref()
         } else {
@@ -350,7 +350,7 @@ pub(crate) fn insert_snapshot_with_uid_tx(
         .map_err(|e| db_err("insert_env", e))?;
     }
 
-    // 快照本体记一条变更（子行随快照走，不单独记——见 M3 计划 Task 2b 的表）。
+    // 快照本体记一条变更。
     if !from_migration {
         let payload = serde_json::json!({
             "kind": snap.kind.as_str(),
@@ -372,7 +372,7 @@ pub(crate) fn insert_snapshot_with_uid_tx(
     Ok(uid.to_string())
 }
 
-/// 内容哈希：**必须区分 hive**（H3）。
+/// 内容哈希：**必须区分 hive**。
 ///
 /// `system=[A]` 与 `user=[A]` 在 PATH 语义上完全不同，不能哈希相同。
 /// 每个字段之间插入互不相同的分隔字节，避免「拼接歧义」碰撞
@@ -407,14 +407,14 @@ fn content_hash(snap: &NewSnapshot) -> String {
 
 /// 分页查询事件，按 `created_at DESC, id DESC` 排序（服务端固定排序）。
 ///
-/// `total` 是**独立的 count 查询**，不能等于本页条数（H1）。
+/// `total` 是**独立的 count 查询**，不能等于本页条数。
 pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError> {
     let limit = filter.limit.clamp(1, 500) as i64;
     let offset = filter.offset as i64;
 
     // WHERE 条件在两处必须完全一致，否则 total 与实际可分页内容不符。
     // 必须带 `e.` 前缀：`snapshots` 也有 `source` 列，JOIN 后裸列名是歧义的。
-    // P1-1：新增 hive / target / result / 时间范围四个维度（spec §6.1）。
+    // 新增 hive / target / result / 时间范围四个维度。
     const WHERE: &str = "WHERE (?1 IS NULL OR e.action = ?1)
            AND (?2 IS NULL OR e.source = ?2)
            AND (?3 IS NULL OR e.hive = ?3)
@@ -487,7 +487,7 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
 
 /// 按 uid 读取快照视图。
 ///
-/// `reveal = false` 时，`sensitive = 1` 的环境变量值被置为 `None`（spec §3.2.1-3）。
+/// `reveal = false` 时，`sensitive = 1` 的环境变量值被置为 `None`。
 pub fn get_snapshot(db: &Db, uid: &str, reveal: bool) -> Result<SnapshotView, CoreError> {
     let (id, created_at, kind): (i64, i64, String) = db
         .query_row_with(
@@ -597,7 +597,7 @@ pub fn app_state_version(db: &Db) -> Result<i64, CoreError> {
     .map_err(|e| CoreError::new(e.code, "app_state_version", e.message))
 }
 
-/// 显式 reveal 一个历史快照里的 env 变量值（spec §3.2.1，M1 欠账 P2-1）。
+/// 显式 reveal 一个历史快照里的 env 变量值。
 ///
 /// **为什么是独立函数而不是 `get_snapshot(reveal=true)`**：
 /// 掩码必须是默认行为；「看明文」应当是一次**显式、可审计**的动作，

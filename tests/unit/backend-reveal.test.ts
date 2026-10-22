@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
- * `historyRevealEnvValue` 的形状校验（Task 7 / M1 欠账 P2-1）。
+ * `historyRevealEnvValue` 的形状校验。
  *
  * 这条命令是**唯一**返回历史里环境变量明文的出口，所以它的契约必须守住：
  * - 必须返回字符串；

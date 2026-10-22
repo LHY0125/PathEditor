@@ -1,12 +1,12 @@
 //! Schema DDL 与版本迁移。
 //!
-//! **启动只读 `user_version`；只在建库/迁移事务内写**（spec §3.3 B2）。
+//! **启动只读 `user_version`；只在建库/迁移事务内写**。
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
 /// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
-/// v1 全量 DDL（与 spec §4.1 一致）。
+/// v1 全量 DDL。
 ///
 /// 注意 `app_state` 引用 `snapshots(id)`，因此 `snapshots` 必须先建。
 pub const DDL_V1: &str = r#"
@@ -123,15 +123,15 @@ CREATE TABLE migration_imports (
 );
 "#;
 
-/// v2 增量 DDL：M2 的派生表（可随时重建，不是真相源）。
+/// v2 增量 DDL：派生表（可随时重建，不是真相源）。
 ///
-/// **逐字照抄 spec §4.1**（`2026-10-19-v6-sqlite-design.md`）。这是唯一一处
-/// 「照抄权威文档」的地方，不要发挥——列名与类型必须与 spec 完全一致。
+/// **逐字照抄 **（`2026-10-19-v6-sqlite-design.md`）。这是唯一一处
+/// 「照抄权威文档」的地方，不要发挥——列名与类型必须与设计文档完全一致。
 ///
-/// 四张表的性质（spec §4.2 第 5 条）：
+/// 四张表的性质：
 /// - `scan_runs`：冲突扫描历史，**不是派生表**（是真实记录，无法从别处重建）；
 /// - `var_references` / `daily_stats` / `search_fts`：派生表，必须能从
-///   `snapshots` / `events` / `path_entries` 完整重建。
+/// `snapshots` / `events` / `path_entries` 完整重建。
 pub const DDL_V2: &str = r#"
 CREATE TABLE scan_runs (
   id             INTEGER PRIMARY KEY,
@@ -163,7 +163,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 "#;
 
-/// v3 增量 DDL：M3 的同步表（spec §4.1）。
+/// v3 增量 DDL：同步表。
 ///
 /// 两张表都是**本地状态**，不参与「派生表可从真相重建」的口径——
 /// `changes` 是变更日志本身（真相），`sync_conflicts` 是待人工解决的决定。
@@ -208,15 +208,15 @@ CREATE TABLE sync_conflicts (
 CREATE INDEX idx_sync_conflicts_unresolved ON sync_conflicts(resolved_at);
 "#;
 
-/// 建库时写入 `app_state` 单行（J-7）。
+/// 建库时写入 `app_state` 单行。
 ///
 /// **为什么必须在建库时写**：`app_state` 若为空，
 /// - `app_state_version()` 无行可读 → 返回错误；
 /// - `set_current_snapshot()` 的 CAS `WHERE id = 1 AND version = ?` 匹配 0 行
-///   → **恒返回 `false`**，spec §十二 的「CAS 冲突返回 conflict」永远不可达；
+/// → **恒返回 `false`**，「CAS 冲突返回 conflict」永远不可达；
 /// - `DbHistory::record` 只能用 `COALESCE(..., 'local')` 兜底 `device_id`。
 ///
-/// `device_id` 在 Rust 侧生成一次（UUIDv7），此后不再变更 —— M3 的同步以它区分设备。
+/// `device_id` 在 Rust 侧生成一次（UUIDv7），此后不再变更 —— 同步以它区分设备。
 /// 用 `INSERT OR IGNORE` 保证重复调用幂等（已有行时不覆盖真实 device_id）。
 pub const SEED_APP_STATE_SQL: &str = "INSERT OR IGNORE INTO app_state
        (id, current_snapshot_id, version, migrated_v5, device_id, lamport)

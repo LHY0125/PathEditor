@@ -7,7 +7,7 @@ import type { CoreError } from '@/core/env-var';
  *
  * **不能写 `e instanceof Error`**：`parseCoreError` 抛出的是普通对象
  * `{code, message}`，不是 `Error` 实例——那样做会让所有错误都退化成
- * `String(e)` 即 `"[object Object]"`，降级条幅永远显示乱码（J-4）。
+ * `String(e)` 即 `"[object Object]"`，降级条幅永远显示乱码。
  * 判定方式与 `env-store.ts` 的 `isCoreError` 保持一致。
  */
 function isCoreError(err: unknown): err is Pick<CoreError, 'code' | 'message'> {
@@ -19,7 +19,7 @@ function isCoreError(err: unknown): err is Pick<CoreError, 'code' | 'message'> {
   );
 }
 
-/** 错误文案；`crypto` 单独给出更具体的说明（spec §8 的高价值分支）。 */
+/** 错误文案；`crypto` 单独给出更具体的说明。 */
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
     if (err.code === 'crypto') {
@@ -40,13 +40,13 @@ interface HistoryState {
   detailLoading: boolean;
   /** 恢复操作进行中 */
   restoring: boolean;
-  /** 当前筛选条件（P1-1：action / source / hive / result） */
+  /** 当前筛选条件 */
   filter: EventFilter;
   load: () => Promise<void>;
   selectEvent: (event: EventView) => Promise<void>;
   clearDetail: () => void;
   restore: (uid: string) => Promise<void>;
-  /** 跨会话撤销：恢复最近一次可撤销操作前的快照（P1-7） */
+  /** 跨会话撤销：恢复最近一次可撤销操作前的快照 */
   undoLast: () => Promise<EventView | null>;
   /** 设置筛选并重新加载（offset 归零） */
   setFilter: (patch: Partial<EventFilter>) => Promise<void>;
@@ -82,7 +82,7 @@ export const useHistoryStore = create<HistoryState>((set) => ({
   /**
    * 选中一条事件并加载其快照。
    *
-   * **J-8 整改**：用 `event.snapshotUid`（不是 `event.uid`）查快照。
+   * 整改：用 `event.snapshotUid`（不是 `event.uid`）查快照。
    * 旧写法拿事件 uid 当快照 uid，必然 `NotFound`，右侧详情恒空。
    * `snapshotUid` 为 `null` 时直接清空详情——这条事件本来就没有关联快照。
    *
@@ -110,11 +110,11 @@ export const useHistoryStore = create<HistoryState>((set) => ({
   },
 
   /**
-   * 跨会话撤销：把「最近一次可撤销的操作」恢复到它执行前的状态（P1-7）。
+   * 跨会话撤销：把「最近一次可撤销的操作」恢复到它执行前的状态。
    *
    * **不重建内存版的 `OpRecord`**：那是 UI 的即时栈（`UndoRedoManager`），
    * 关掉进程就没了。跨会话撤销的正确形态是——事件流本身就是撤销栈：
-   * 每条事件在 P0-2 之后都指向「该操作执行前」的快照，
+   * 每条事件在之后都指向「该操作执行前」的快照，
    * 恢复那个快照就等于撤销该操作。
    *
    * 排除 `restore` 自身：撤销一条恢复记录会让用户困惑（"撤销我的撤销"）。
@@ -130,7 +130,7 @@ export const useHistoryStore = create<HistoryState>((set) => ({
   },
 
   /**
-   * 把当前选中的快照恢复回注册表（P0-3）。
+   * 把当前选中的快照恢复回注册表。
    *
    * **破坏性操作**：调用方必须先二次确认。成功后重新加载列表——
    * 恢复本身会追加一条新事件（append-only），列表需要刷新才看得到。

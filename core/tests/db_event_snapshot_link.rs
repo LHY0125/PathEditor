@@ -1,8 +1,8 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **P0-2 回归守卫**：事件必须能关联到快照（`events.snapshot_id` 非 NULL）。
+// 回归守卫：事件必须能关联到快照（`events.snapshot_id` 非 NULL）。
 //
-// 缺口清单 P0-2：首版 `service.rs:351` / `:486` 把 `snapshot_uid` 写死为 `None`，
+// 缺口清单：首版 `service.rs:351` / `:486` 把 `snapshot_uid` 写死为 `None`，
 // 导致历史面板的详情按钮恒禁用。修复方式是在命令层「先建操作前快照、再调服务」，
 // 通过 `DbHistory::with_snapshot` 把 uid 绑定给该次操作的所有事件。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
@@ -55,13 +55,13 @@ fn events_recorded_through_bound_sink_point_at_the_snapshot() {
         .unwrap();
     }
 
-    // ① 事件读回来必须带 snapshotUid（这就是 P0-2 的核心断言）
+    // ① 事件读回来必须带 snapshotUid
     let page = list_events(&db, &EventFilter::default()).unwrap();
     assert_eq!(page.items.len(), 1);
     assert_eq!(
         page.items[0].snapshot_uid.as_deref(),
         Some(before.as_str()),
-        "P0-2：事件必须指向命令层建的操作前快照"
+        "事件必须指向命令层建的操作前快照"
     );
 
     // ② 落库的 snapshot_id 也必须非 NULL（读的是同一列的两条路径）

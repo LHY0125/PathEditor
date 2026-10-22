@@ -16,7 +16,7 @@ pub(crate) fn cmd_import(file: String, target: String) {
         }
         _ => {
             // 双 hive：一次调用同时提交（core 内顺序 system → user）。
-            // Wave 3.1：不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
+            // 不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
             let sys = (!sys_entries.is_empty()).then_some(sys_entries);
             let usr = (!usr_entries.is_empty()).then_some(usr_entries);
             save_path_write(sys, usr);

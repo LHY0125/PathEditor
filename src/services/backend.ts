@@ -820,7 +820,7 @@ export interface PathDiff {
 /**
  * 对比结果（system 与 user **分开**）。
  *
- * `env_*` 三字段本轮**恒为空数组**（T-3）——UI 必须显示
+ * `env_*` 三字段当前实现**恒为空数组**——UI 必须显示
  * 「本版本不支持环境变量对比」，而不是让用户以为「env 没变化」。
  */
 export interface CompareResult {
@@ -1382,7 +1382,7 @@ export const backend = {
       await parseCoreError(invoke<unknown>('restore_env_backup', { file, force })),
     ),
 
-  // ── v6 历史（spec §3.2.1：细粒度命令，前端只做形状校验） ────────────
+  // ── v6 历史 ────────────
 
   /** 列出历史事件（分页，服务端固定时间倒序）。 */
   historyListEvents: async (filter?: EventFilter) =>
@@ -1412,7 +1412,7 @@ export const backend = {
     return result === null ? null : parseSnapshotView(result, 'history_get_current');
   },
   /**
-   * 显式 reveal 一个历史快照里的环境变量值（Task 7 / M1 欠账 P2-1）。
+   * 显式 reveal 一个历史快照里的环境变量值。
    *
    * 与 `historyGetSnapshot(uid, true)` 的区别：后者是**批量**揭示，
    * 前者是**单个变量**的显式请求（UI 上每个被掩码变量旁的「显示」按钮）。
@@ -1433,7 +1433,7 @@ export const backend = {
     return result;
   },
   /**
-   * 把配置导出成 v5 `profiles/*.json` 格式的字符串（M1 欠账 P2-2）。
+   * 把配置导出成 v5 `profiles/*.json` 格式的字符串。
    *
    * 返回值可直接用 `save` 对话框写成 `.json` 文件，供降级到 v5 时使用。
    * **不写用户文件**：落盘由前端负责，Rust 侧只产出内容。
@@ -1468,7 +1468,7 @@ export const backend = {
    *
    * **空查询由后端直接返回空数组**（见 `core::db::search::search`），
    * 前端不应依赖这一点来省请求——搜索框为空时 UI 也不该发起调用
-   * （Task 10 的要求），两层各守一次。
+   * ，两层各守一次。
    *
    * 查询串由 Rust 侧做 FTS5 转义，前端传原始用户输入即可。
    */
@@ -1482,7 +1482,7 @@ export const backend = {
       'stats_dashboard',
     ),
 
-  /** 全量重建 `daily_stats`（Task 12 启动接线与调试用）。 */
+  /** 全量重建 `daily_stats`。 */
   statsRebuild: async () => {
     const n = await parseCoreError(invoke<unknown>('stats_rebuild'));
     if (typeof n !== 'number') throw new Error('stats_rebuild 必须返回数字');
@@ -1514,14 +1514,14 @@ export const backend = {
   refsCycles: async () =>
     parseCycleList(await parseCoreError(invoke<unknown>('refs_cycles')), 'refs_cycles'),
 
-  /** 全量重建引用图（Task 12 启动接线与调试用）。 */
+  /** 全量重建引用图。 */
   refsRebuild: async () => {
     const n = await parseCoreError(invoke<unknown>('refs_rebuild'));
     if (typeof n !== 'number') throw new Error('refs_rebuild 必须返回数字');
     return n;
   },
 
-  /** 全量重建 FTS 索引（Task 12 启动接线与调试用）。 */
+  /** 全量重建 FTS 索引。 */
   searchRebuild: async () => {
     const n = await parseCoreError(invoke<unknown>('search_rebuild'));
     if (typeof n !== 'number') throw new Error('search_rebuild 必须返回数字');

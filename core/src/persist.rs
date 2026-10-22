@@ -1,4 +1,4 @@
-//! 版本化持久化原语（F-11，Wave 2 Task 6）。
+//! 版本化持久化原语。
 //!
 //! `disabled.json` / `pending_path_snapshot.json` / `profiles/*.json` 共用：
 //! - 顶层 `schemaVersion` 信封（[`Versioned`]），无版本头的旧文件按 v1 读取；

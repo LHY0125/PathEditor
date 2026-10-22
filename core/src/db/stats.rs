@@ -1,7 +1,7 @@
-//! 统计聚合（spec §6.2）。
+//! 统计聚合。
 //!
 //! `daily_stats` 是**派生表**：从 `events` / `snapshots` / `scan_runs` 重算，
-//! 可随时重建（spec §4.2 第 5 条）。
+//! 可随时重建。
 
 use super::Db;
 use crate::error::CoreError;
@@ -25,7 +25,7 @@ pub struct DailyPoint {
 
 /// 统计面板数据。
 ///
-/// **口径说明（M-1）**：`days` 是按天聚合的**历史**序列，某一天的 `path_items`
+/// **口径说明**：`days` 是按天聚合的**历史**序列，某一天的 `path_items`
 /// 是「那天最后一次保存时的条目数」，不是「现在有多少条」。
 /// 「现在」单独由 `current_path_items` / `current_avg_len` 给出，
 /// 取自 `app_state.current_snapshot_id`（与 GUI 的 `READ_SNAPSHOT_CACHE` 同源）。
@@ -35,11 +35,11 @@ pub struct DailyPoint {
 pub struct Dashboard {
     /// 按日期升序的时间序列
     pub days: Vec<DailyPoint>,
-    /// 最常改变的变量（来自 `events.target` 聚合，spec §6.2）
+    /// 最常改变的变量
     pub top_targets: Vec<TargetCount>,
-    /// 配置应用次数（直接读 M1 的 `profiles.apply_count`）
+    /// 配置应用次数
     pub profile_applies: Vec<ProfileApply>,
-    /// **当前**快照的 PATH 平均长度（与 `days` 的口径不同，见上；口径讨论见 M-1）
+    /// **当前**快照的 PATH 平均长度
     pub current_avg_len: f64,
     /// **当前**快照的 PATH 条目数
     pub current_path_items: i64,
@@ -69,7 +69,7 @@ pub struct ProfileApply {
 
 /// 全量重建 `daily_stats`，返回写入的天数。
 ///
-/// **T-1：只观测，不设阈值。** 当前 `events` 规模下全表扫描是毫秒级，
+/// ：只观测，不设阈值。：当前 `events` 规模下全表扫描是毫秒级，
 /// 定一个现在跑不到的阈值等于埋一条永远不会被测到的分支。
 /// 等真有启动瓶颈时，日志会提供决策所需的基线数据。
 pub fn rebuild_daily(db: &mut Db) -> Result<usize, CoreError> {
@@ -82,7 +82,7 @@ pub fn rebuild_daily(db: &mut Db) -> Result<usize, CoreError> {
         //
         // **为什么不用 `FULL OUTER JOIN`**：它要求 SQLite ≥ 3.39，且与聚合 CTE
         // 混用时语义容易读错。这里改用「UNION ALL 出 (day, 维度) 长表再 pivot」，
-        // 语义完全相同，且不依赖任何可选特性——M2 不引入新的版本约束。
+        // 语义完全相同，且不依赖任何可选特性—— 不引入新的版本约束。
         //
         // 每个来源只贡献**自己那一列**，其余列由别的分支补 0。
         tx.execute(
@@ -168,7 +168,7 @@ pub fn dashboard(db: &Db, days: u32) -> Result<Dashboard, CoreError> {
         .map_err(|e| super::db_err("dashboard", e))?;
     rows.reverse(); // 前端按时间升序画图
 
-    // 最常改变的变量：从 events.target 聚合（spec §6.2，不需要新表）
+    // 最常改变的变量：从 events.target 聚合
     let mut stmt = db.prepare(
         "SELECT target, count(*) AS c FROM events
           WHERE target IS NOT NULL AND target <> ''
@@ -185,7 +185,7 @@ pub fn dashboard(db: &Db, days: u32) -> Result<Dashboard, CoreError> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| super::db_err("dashboard_targets", e))?;
 
-    // 配置应用次数：直接读 M1 的 profiles
+    // 配置应用次数：直接读 profiles
     let mut stmt = db.prepare(
         "SELECT name, apply_count, last_applied_at FROM profiles
           WHERE deleted_at IS NULL ORDER BY apply_count DESC, name LIMIT 10",

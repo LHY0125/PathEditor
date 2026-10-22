@@ -2,7 +2,7 @@ interface Window {
   __TAURI_INTERNALS__?: {
     invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
   };
-  /** 历史相关 mock 的注入点（P1-6 E2E）。每个用例按需设置。 */
+  /** 历史相关 mock 的注入点。每个用例按需设置。 */
   __historyPageFixture?: {
     items: Array<{
       uid: string;
@@ -35,7 +35,7 @@ interface Window {
   } | null;
   /** 置 true 时 `history_list_events` 抛 `database` 错误（降级模式）。 */
   __historyDegraded?: boolean;
-  /** 配置列表 fixture（P0-1 方案 A 的 DB 版）。 */
+  /** 配置列表 fixture。 */
   __profilesFixture?: Array<{
     uid: string;
     name: string;
@@ -56,7 +56,7 @@ interface Window {
     user: Array<{ path: string; enabled: boolean }>;
   } | null;
 
-  /* ── M2（Task 13）────────────────────────────────────── */
+  /* ── ────────────────────────────────────── */
 
   /** 置 true 时 `search` / `stats_dashboard` 抛 `database` 错误（降级模式）。 */
   __m2Degraded?: boolean;

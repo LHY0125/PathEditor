@@ -2,16 +2,16 @@ import { test, expect } from '@playwright/test';
 import { createIpcMock } from '../mocks/ipc';
 
 /**
- * 历史面板 E2E（P1-6）。
+ * 历史面板 E2E。
  *
- * spec §3.2.1 测试要求：「E2E 只覆盖 3–4 条主路径（历史面板、恢复、配置应用）」。
- * 缺口清单 P1-6 指出首版 `grep -rln history e2e/` 零命中——历史面板没有任何
+ *  测试要求：「E2E 只覆盖 3–4 条主路径（历史面板、恢复、配置应用）」。
+ * 缺口清单指出首版 `grep -rln history e2e/` 零命中——历史面板没有任何
  * 端到端证据，只有 store 与 parse 的单元测试。
  *
  * 三条覆盖：
  * 1. 空态正确（不是错误、不是降级）
- * 2. 降级模式 → 常驻条幅可见（spec §7.10）
- * 3. 有事件且带 snapshotUid → 点击展开详情（依赖 P0-2）
+ * 2. 降级模式 → 常驻条幅可见
+ * 3. 有事件且带 snapshotUid → 点击展开详情
  *
  * **全部走 mock IPC，绝不触碰真实注册表**（仓库硬约束）。
  */
@@ -50,7 +50,7 @@ test('降级模式：常驻条幅在历史面板内可见', async ({ page }) => 
   // 条幅文案来自 i18n 的 history.unavailable
   const banner = page.getByRole('alert').filter({ hasText: '历史不可用（降级模式）' });
   await expect(banner).toBeVisible();
-  // 必须说明「编辑不受影响」——这是 fail-open 的用户可见承诺（spec D16）
+  // 必须说明「编辑不受影响」——这是 fail-open 的用户可见承诺
   await expect(banner).toContainText('环境变量编辑不受影响');
 });
 
@@ -107,6 +107,6 @@ test('有事件时可展开快照详情，敏感值仍被掩码', async ({ page 
   // 敏感变量显示圆点而不是明文
   await expect(page.getByText('••••••')).toBeVisible();
   await expect(page.getByText('已掩码')).toBeVisible();
-  // 恢复按钮存在（P0-3）
+  // 恢复按钮存在
   await expect(page.getByRole('button', { name: '恢复到此快照' })).toBeVisible();
 });

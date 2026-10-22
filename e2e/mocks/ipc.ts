@@ -118,7 +118,7 @@ const restorePreviewFixture = {
 };
 
 /**
- * reveal_env_var 的 mock 返回值（F-01 新契约）：按变量名索引
+ * reveal_env_var 的 mock 返回值：按变量名索引
  * `{ value, revision }`，revision 与 allEnvVarsFixture 快照一致。
  */
 const revealedFixture: Record<string, { value: string; revision: string }> = {
@@ -163,7 +163,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'export_path_entries': return '';
           case 'clean_path_entries': return [args?.entries ?? [], []];
           case 'scan_paths': return { conflicts: [], tools: [] };
-          // 配置方案（P0-1 方案 A：v5 文件命令已下线，只保留 DB 版）
+          // 配置方案
           case 'profile_list': return window.__profilesFixture ?? [];
           case 'profile_save': return 'uid-fixture';
           case 'profile_paths': return window.__profilePathsFixture ?? null;
@@ -171,7 +171,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'profile_delete_by_name': return true;
           case 'profile_mark_applied': return true;
           case 'profile_mark_applied_by_name': return true;
-          // 历史（P0-2 / P0-3 / P1-1）
+          // 历史
           case 'history_list_events':
             if (window.__historyDegraded) {
               throw {
@@ -188,7 +188,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'history_get_current': return window.__snapshotFixture ?? null;
           case 'history_restore_snapshot': return { system: 'applied', user: 'applied', sidecar: 'saved' };
           case 'backup_list': return [];
-          // M2（Task 9/13）：检索 / 统计 / 对比 / 引用图 / 冲突历史。
+          // 检索 / 统计 / 对比 / 引用图 / 冲突历史。
           // 降级判定与 history_list_events 同源：DB 不可用时抛 code=database。
           case 'search':
             if (window.__m2Degraded) {
@@ -248,7 +248,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
               firstSeen: []
             };
           case 'scan_history_record': return 'scan-fixture';
-          // M3：同步中心。降级判定与 search 同源（抛 code=database）。
+          // 同步中心。降级判定与 search 同源（抛 code=database）。
           case 'sync_status':
             if (window.__m2Degraded) {
               throw {
@@ -302,7 +302,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           }
           case 'list_all_env_vars': return ${JSON.stringify(allEnvVarsFixture)};
           case 'reveal_env_var':
-            // 新契约（F-01）：返回明文 + 读取时 revision（按名称查 fixture 快照）
+            // 新契约：返回明文 + 读取时 revision（按名称查 fixture 快照）
             return ${JSON.stringify(revealedFixture)}[args?.name] ?? null;
           // Tauri 插件对话框：插件侧 confirm() 实际调 plugin:dialog|message，
           // 并把返回值与 okLabel（默认 Ok）比较得出布尔结果。默认返回 Cancel
@@ -310,7 +310,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           // （正文经 __capturedCalls 记录供断言：args.message / args.title / args.kind）。
           case 'plugin:dialog|message':
             return window.__confirmResponse ? 'Ok' : 'Cancel';
-          // 环境变量备份通路（Task 8）。返回值形状必须与 Rust 序列化一致：
+          // 环境变量备份通路。返回值形状必须与 Rust 序列化一致：
           // BackupOutcome 是外部标签枚举 → {"created":"路径"} / "skipped" / {"failed":"原因"}。
           case 'backup_env_vars': return 'C:\\\\backups\\\\env_backup_20260922_120000_000.json';
           case 'list_env_backups': return ${JSON.stringify(envBackupsFixture)};
@@ -339,7 +339,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
             }
             return { applied: 3, skipped: 0, failures: [] };
           case 'update_env_var':
-            // 冲突契约（F-06）：与 Rust CoreError 序列化一致，对象形状携带
+            // 冲突契约：与 Rust CoreError 序列化一致，对象形状携带
             // code 字段（前端按 code 判定，不再匹配 [E_CONFLICT] 文本前缀）。
             // message 保留前缀仅为与真实 core 文案对齐的展示文本。
             if (window.__conflictOverride) {

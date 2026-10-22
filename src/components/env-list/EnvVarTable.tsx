@@ -94,11 +94,11 @@ export function EnvVarTable({
             return (
               <div
                 key={key}
-                // Task 8 的 E2E 用该属性精确定位行（区分同名跨 hive 变量），不可移除。
+                // E2E 用该属性精确定位行（区分同名跨 hive 变量），不可移除。
                 data-env-var-key={key}
                 data-index={rowIdx}
                 onClick={() => onSelect?.(meta)}
-                // 交替底色按逻辑索引（H1），选中态由 .is-selected 覆盖
+                // 交替底色按逻辑索引，选中态由 .is-selected 覆盖
                 data-odd={rowIdx % 2 === 1}
                 className={`path-row${isSelected ? ' is-selected' : ''}`}
                 style={{
@@ -175,7 +175,7 @@ export function EnvVarTable({
 /**
  * 禁用原因提示。权限判定单一实现在 Rust（canEdit 已折算 hive 写能力），
  * 前端只做文案映射 —— 不区分「保护变量」与「无写权限」，统一 protectedHint
- * （计划 Task 7 的明确取舍，c1）。
+ * 。
  */
 function editHint(meta: EnvVarMeta, masked: boolean, t: (key: string) => string): string {
   if (meta.kind === 'unsupported') return t('envVar.typeUnsupported');

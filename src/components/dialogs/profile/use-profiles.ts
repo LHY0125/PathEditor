@@ -29,7 +29,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
     setSaving(true);
     try {
       const { sysPaths, userPaths } = useAppStore.getState();
-      // P0-1 方案 A：写 DB（快照 + profile 行同一事务），不再写 profiles/*.json
+      // 方案 A：写 DB（快照 + profile 行同一事务），不再写 profiles/*.json
       await backend.profileSave({
         name: newName.trim(),
         description: null,

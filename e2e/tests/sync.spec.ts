@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { createIpcMock } from '../mocks/ipc';
 
 /**
- * 同步中心 E2E（M3 Task 10）。
+ * 同步中心 E2E。
  *
- * spec §3.2.1 要求 3–4 条主路径。这里覆盖四条：
+ *  要求 3–4 条主路径。这里覆盖四条：
  * 1. 打开同步中心 → 显示待导出数与未解决冲突数
  * 2. 导出 → 提示成功（变更条数来自返回值，不是硬编码）
  * 3. 导入遇到错误口令 → 显示错误且不崩溃

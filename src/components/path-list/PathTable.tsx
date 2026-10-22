@@ -131,7 +131,7 @@ export function PathTable({ tabId }: PathTableProps) {
               data-testid="path-row"
               data-path={path}
               data-state={rowState}
-              // H1：交替底色按逻辑索引决定 —— 虚拟滚动只渲染可视窗口，
+              // 交替底色按逻辑索引决定 —— 虚拟滚动只渲染可视窗口，
               // :nth-child(odd) 的奇偶取决于「当前渲染了哪些节点」，滚动时会跳变闪烁。
               data-odd={rowIdx % 2 === 1}
               onClick={(e) => handleClick(index, e)}

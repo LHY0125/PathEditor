@@ -50,7 +50,7 @@ pub fn stats_dashboard(
     })
 }
 
-/// 全量重建 `daily_stats`（Task 12 的启动接线会调；也供调试与测试用）。
+/// 全量重建 `daily_stats`。
 #[tauri::command]
 pub fn stats_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
     with_db_mut(&state, "stats_rebuild", stats::rebuild_daily)
@@ -58,8 +58,8 @@ pub fn stats_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
 
 /// 比较两个快照（按 uid）。
 ///
-/// 返回 `{ system: PathDiff, user: PathDiff, env_* }`——**双 hive 分开**（N-8）。
-/// env 三字段恒为空（T-3），UI 必须显式显示「环境变量对比将在 M3 提供」。
+/// 返回 `{ system: PathDiff, user: PathDiff, env_* }`——**双 hive 分开**。
+/// env 三字段恒为空，UI 必须显式显示「环境变量对比将在提供」。
 #[tauri::command]
 pub fn compare_snapshots(
     left_uid: String,
@@ -94,13 +94,13 @@ pub fn refs_cycles(state: State<'_, DbState>) -> Result<Vec<Vec<String>>, CoreEr
     with_db(&state, "refs_cycles", refs::find_cycles)
 }
 
-/// 全量重建引用图（Task 12 的启动接线会调）。
+/// 全量重建引用图。
 #[tauri::command]
 pub fn refs_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
     with_db_mut(&state, "refs_rebuild", refs::rebuild_refs)
 }
 
-/// 全量重建 FTS 索引（Task 12 的启动接线会调）。
+/// 全量重建 FTS 索引。
 #[tauri::command]
 pub fn search_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
     with_db_mut(&state, "search_rebuild", search::rebuild_index)

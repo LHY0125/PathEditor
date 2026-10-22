@@ -1,5 +1,5 @@
 // 一文件一测试：同一进程内跑第二个 SQLCipher 测试会 STATUS_STACK_OVERFLOW
-// （GNU/MSVC 均已复现，--test-threads=1 无效）。见 M0 结果 §5.3。
+// （GNU/MSVC 均已复现，--test-threads=1 无效）。见测试约束说明。
 use path_editor_core::db::{schema::CURRENT_SCHEMA_VERSION, Db};
 use tempfile::TempDir;
 

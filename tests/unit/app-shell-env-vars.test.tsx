@@ -251,7 +251,7 @@ describe('「全部变量」拖放早退（决策 3）', () => {
 });
 
 describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
-  // 关窗入口已收进工具栏 ⋯ 菜单（Task 6）：「取消并关闭」是 footer 条目，需先打开菜单。
+  // 关窗入口已收进工具栏 ⋯ 菜单：「取消并关闭」是 footer 条目，需先打开菜单。
   function clickCancelAndClose(): void {
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '取消并关闭' }));
@@ -294,7 +294,7 @@ describe('关窗确认纳入环境变量草稿（异步对话框版）', () => {
   });
 });
 
-describe('onCloseRequested 原生关窗回调（诊断报告 §四.3 补底）', () => {
+describe('onCloseRequested 原生关窗回调', () => {
   beforeEach(() => {
     closeRequestedHandlers.length = 0;
     destroyMock.mockClear();
@@ -348,7 +348,7 @@ describe('onCloseRequested 原生关窗回调（诊断报告 §四.3 补底）',
     render(<AppShell />);
     await waitFor(() => expect(closeRequestedHandlers.length).toBeGreaterThan(0));
 
-    // 记录 preventDefault 是否被同步调用（G-B2：先同步拦截再异步确认）
+    // 记录 preventDefault 是否被同步调用
     let prevented = false;
     for (const h of closeRequestedHandlers) {
       const evt: MockCloseEvent = {
@@ -448,7 +448,7 @@ describe('新建环境变量弹窗', () => {
 describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   async function openEditDialog(): Promise<void> {
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()], capturedAt: 0 });
-    // 弹窗打开时经 fetchFullValue（revealEnvVar）取完整原值作为编辑数据源（F-01）；
+    // 弹窗打开时经 fetchFullValue（revealEnvVar）取完整原值作为编辑数据源；
     // 返回值携带读取时 revision，供保存点陈旧判定。
     mockBackend.revealEnvVar.mockResolvedValue({ value: 'C:\\Java', revision: 'rev-1' });
     render(<AppShell />);

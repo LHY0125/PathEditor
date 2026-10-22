@@ -7,10 +7,10 @@ const SIZES = [
 ];
 
 /**
- * 检测工具栏是否被裁切（B2）。
+ * 检测工具栏是否被裁切。
  *
  * **不能用「工具栏高度 < 48」或「documentElement 溢出 ≤ 0」**：
- * Task 6 给 .toolbar 写了 `overflow: hidden`，内容超出时会被裁在工具栏内部，
+ *  给 .toolbar 写了 `overflow: hidden`，内容超出时会被裁在工具栏内部，
  * 这两条断言都会恒真 —— 实测撑爆 1618px 仍全部通过。
  *
  * 正确判据：**.toolbar 自身**的 scrollWidth 与 clientWidth 之差。

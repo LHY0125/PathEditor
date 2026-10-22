@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{rebuild_index, search};

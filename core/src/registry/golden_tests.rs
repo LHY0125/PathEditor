@@ -1,4 +1,4 @@
-//! C→Rust 行为等价 golden 基线（F-10，Wave 2 Task 7）。
+//! C→Rust 行为等价 golden 基线。
 //!
 //! 数据驱动：每个用例一个 JSON（`golden/` 目录，`include_str!` 读入），
 //! `op` 字符串分派到具体函数调用。每个 `#[test]` 对应一个 JSON 用例，
@@ -8,7 +8,7 @@
 //! 但 `mod` 声明挂在 [`super`]（`registry/path.rs`）下而非 `registry.rs`
 //! 根 —— `split_path` / `join_path` / `validate_and_join_paths` /
 //! `select_path_value_type` / `make_path_value` 是 `path.rs` 的私有 fn，
-//! 只有其子模块可以 `use super::` 够到（brief W2-B3 的推理在 Task 4
+//! 只有其子模块可以 `use super::` 够到（brief 的推理在
 //! registry 拆分后依然成立，只是宿主文件变了）。
 //!
 //! 覆盖六类行为中的五类（第 6 类延后，见 `golden/README.md`）：
@@ -248,7 +248,7 @@ fn run_case(case: &GoldenCase) {
                 ),
             ] {
                 if case.expect[field].as_str() != Some("current_registry_entries") {
-                    // 守卫：不识别的取值直接 panic，禁止静默跳过（Task 7 复审登记项）。
+                    // 守卫：不识别的取值直接 panic，禁止静默跳过。
                     // 新增取值时必须在此显式扩展处理分支。
                     panic!(
                         "golden 用例 {name}: 不识别的 {field} 取值 {:?}，请在 golden_tests.rs 显式处理",
@@ -279,7 +279,7 @@ fn run_case(case: &GoldenCase) {
                 // 守卫：filename_pattern 目前只支持描述 path_backup_*.txt 形态的
                 // 描述串（见 golden/backup_format_contract.json 的
                 // "path_backup_YYYYMMDD_HHMMSS_mmm.txt"）；不识别的取值直接
-                // panic，禁止静默跳过（Task 7 复审登记项）。
+                // panic，禁止静默跳过。
                 if case.expect["filename_pattern"].as_str()
                     != Some("path_backup_YYYYMMDD_HHMMSS_mmm.txt")
                 {

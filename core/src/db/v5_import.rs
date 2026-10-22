@@ -1,4 +1,4 @@
-//! v5 配置导入（M1 欠账 P2-2 的导入侧）：`profiles/*.json` → DB。
+//! v5 配置导入：`profiles/*.json` → DB。
 //!
 //! 读取复用 [`crate::profiles::load_profile_from`]——它是 v5 侧唯一的解析入口，
 //! 带 `schemaVersion` 信封与损坏隔离语义，不在这里复制。

@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { backend, type Dashboard } from '@/services/backend';
 
 /**
- * 统计面板（Task 10）。
+ * 统计面板。
  *
- * **口径必须分开显示**（M-1）：`days` 是按天的**历史**序列，
+ * **口径必须分开显示**：`days` 是按天的**历史**序列，
  * `currentPathItems` / `currentAvgLen` 是**现在**的状态。
  * 混在一起显示会让用户把「今天最后一次保存」误读成「当前」。
  *

@@ -1,13 +1,13 @@
-//! FTS5 全文检索（spec §6.2）。
+//! FTS5 全文检索。
 //!
 //! **索引范围**：PATH 条目串、env 变量名、配置名/描述/标签。
 //! **绝不索引 env 变量的值** —— 明文值只存在于 `env_values.value`，
-//! 由 SQLCipher 保护，且不进任何派生表（spec D6 + §6.2）。
+//! 由 SQLCipher 保护，且不进任何派生表。
 //!
 //! **派生表**：`search_fts` 可从 `path_entries` / `env_values.name` /
 //! `profiles` 完整重建，见 [`rebuild_index`]。
 //!
-//! **查询转义**（开工提示词 §六-2 留给我决定的设计点）：
+//! **查询转义**：
 //!
 //! FTS5 的 `MATCH` 把右边的值当**查询语法**解析。用户直接输入 `C:\Program Files`
 //! 会被拆成两个 token 做隐式 AND，而输入一个裸 `"` 会直接报
@@ -39,7 +39,7 @@ pub struct SearchHit {
 
 /// 全量重建索引，返回写入的行数。
 ///
-/// 派生表纪律（spec §4.2 第 5 条）：本函数必须能从 `path_entries` /
+/// 派生表纪律：本函数必须能从 `path_entries` /
 /// `env_values` / `profiles` 完整重建 `search_fts`，不依赖任何其他派生表。
 pub fn rebuild_index(db: &mut Db) -> Result<usize, CoreError> {
     db.with_transaction(|tx| {
@@ -141,10 +141,10 @@ fn insert_tx(tx: &Transaction, content: &str, kind: &str, ref_uid: &str) -> Resu
     Ok(())
 }
 
-/// 增量索引**一份快照**（N-4 / C-2）。
+/// 增量索引**一份快照**。
 ///
 /// 与 [`rebuild_index`] 的区别：只处理指定的 `snapshot_id`，不清空全表。
-/// 供写入路径在同一事务内调用（spec §4.2 第 5 条：派生表可随时重建，
+/// 供写入路径在同一事务内调用（ 第 5 条：派生表可随时重建，
 /// 增量只是性能优化）。
 ///
 /// **幂等**：先删该快照的所有旧行再重插，重复调用不会产生重复行。
@@ -205,7 +205,7 @@ pub fn index_snapshot_tx(tx: &Transaction, snapshot_id: i64) -> Result<(), CoreE
 /// 整个查询包成一对双引号，内部的双引号按 FTS5 规则翻倍。这样：
 /// - `C:\Program Files` → 一个 phrase，按原文匹配，不会被拆成 AND；
 /// - `"` → 外层一对引号 + 内部 `""` 转义，展开为 `""""`：一个**内容为一个双引号字符**
-///   的 phrase（不是空 phrase），语法合法，不报 `unterminated string`；
+/// 的 phrase（不是空 phrase），语法合法，不报 `unterminated string`；
 /// - `a OR b` → 按字面量 `a OR b` 匹配，不触发布尔语法。
 ///
 /// 为什么是这个写法而不是 `""` 空 phrase：空 phrase 匹配不到任何行，

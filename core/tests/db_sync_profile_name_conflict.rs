@@ -1,6 +1,6 @@
 //! 同名不同 uid 的配置：自动改名导入，本地配置不受影响。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};

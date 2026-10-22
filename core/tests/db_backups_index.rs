@@ -1,5 +1,5 @@
 #![cfg(windows)]
-// 一文件一测试：见 M0 §5.3。`.pebak` 走 DPAPI，因此整体限定 Windows。
+// 一文件一测试（SQLCipher）。`.pebak` 走 DPAPI，因此整体限定 Windows。
 use path_editor_core::backup::{EnvBackupHives, EnvBackupPayload, EnvBackupVar};
 use path_editor_core::db::backups::{
     index_backups, list_backups, read_env_backup_any, read_pebak_header, write_env_backup_pebak,
@@ -19,7 +19,7 @@ fn pebak_backup_is_indexed_without_decrypting() {
     db.migrate_to_current().unwrap();
 
     let backup_dir = dir.path().join("backups");
-    // B4：`EnvBackupPayload` 没有 `empty_for_test` 构造器，显式构造
+    // `EnvBackupPayload` 没有 `empty_for_test` 构造器，显式构造
     let payload = EnvBackupPayload {
         captured_at: 1_700_000_000_000,
         hives: EnvBackupHives {

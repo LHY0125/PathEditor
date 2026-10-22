@@ -1,5 +1,5 @@
-// 一文件一测试：见 M0 §5.3。
-// **N-4**：`index_snapshot_tx` 此前只有实现没有测试。
+// 一文件一测试（SQLCipher）。
+// `index_snapshot_tx` 此前只有实现没有测试。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{index_snapshot_tx, rebuild_index, search};

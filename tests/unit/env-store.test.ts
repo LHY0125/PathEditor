@@ -210,7 +210,7 @@ describe('save', () => {
   });
 
   it('revision 冲突时不重试、提示并刷新', async () => {
-    // 冲突契约（F-06）：backend 解析层把 CoreError rejection 原样抛出，
+    // 冲突契约：backend 解析层把 CoreError rejection 原样抛出，
     // 判定只看 code==='conflict'，message 仅为展示文本
     mockBackend.updateEnvVar.mockRejectedValue({
       code: 'conflict',
@@ -234,7 +234,7 @@ describe('save', () => {
   });
 
   it('结构化 CoreError 形状（code=conflict）也判定为冲突', async () => {
-    // Task 3 起唯一冲突形状：backend 把 Tauri rejection 解析为 CoreError 对象。
+    // 唯一冲突形状：backend 把 Tauri rejection 解析为 CoreError 对象。
     // message 不带 [E_CONFLICT] 前缀也必须按 code 判定为冲突（不匹配文本）。
     mockBackend.updateEnvVar.mockRejectedValue({
       code: 'conflict',
@@ -383,8 +383,8 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   });
 });
 
-// Task 8 / J2：写方法的返回值携带写前备份结果，状态栏必须如实降级。
-// 备份是 best-effort（K2）：失败**不改变**操作成功语义。
+// / J2：写方法的返回值携带写前备份结果，状态栏必须如实降级。
+// 备份是 best-effort：失败**不改变**操作成功语义。
 describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链路）', () => {
   const backupFailedOutcome: WriteOutcome = { backup: { failed: '磁盘已满' } };
   const backupCreatedOutcome: WriteOutcome = {

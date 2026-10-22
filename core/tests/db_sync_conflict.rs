@@ -1,6 +1,6 @@
 //! 冲突记录与解决：同 lamport 不同设备改同一字段 → 记冲突，用户选择后追加新变更。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::change_log::{
     current_lamport, pending_export, record_change_tx, NewChange,
@@ -23,7 +23,7 @@ fn open_db(dir: &TempDir, name: &str) -> Db {
 /// 在**支持落库**的实体类型上写一条变更。
 ///
 /// 用 `snapshot` 而不是 `profile`：快照的整实体变更没有 `field`
-/// （`field = None`），夹具最简。`profile` 从 M4 起也支持落库，但它的整实体
+/// （`field = None`），夹具最简。`profile` 从也支持落库，但它的整实体
 /// 变更会去解析 `content.snapshotUid`，而这里只写 `new_value`、不带 `content`——
 /// 冲突路径本就走不到应用实体，用 `snapshot` 能让「这条测试测的是什么」更清楚。
 fn write_entity(db: &mut Db, entity_uid: &str, value: &str) -> String {

@@ -1,14 +1,14 @@
 //! 导入的**边界**：已知类型是否真的落库、未知类型是否被拒绝。
 //!
-//! 本文件的历史：M3 整改时为 R-1 加过一条守卫——「`APPLICABLE_ENTITY_TYPES`
+//! 本文件的历史：整改时为加过一条守卫——「`APPLICABLE_ENTITY_TYPES`
 //! 之外的类型必须不计数、不记录」，当时 `profile` 正是被跳过的类型。
-//! **M4 起已知类型全部可落库**（spec §6.5.1），那条口径已不适用，改为守两件事：
+//! 起已知类型全部可落库：，那条口径已不适用，改为守两件事：
 //!
 //! - **`content = null` 的已知类型只记变更、不造实体**——它是墓碑的前置形态，
-//!   若在这里凭空造实体，Task 3 的墓碑语义就无从区分。
+//!   若在这里凭空造实体，墓碑语义就无从区分。
 //! - 未知 `entityType` 仍必须整包拒绝（`SyncFormat`）。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;
@@ -44,7 +44,7 @@ fn import_applies_known_types_and_rejects_unknown_ones() {
 
     // ── ① 含 1 条快照 + 1 条配置：两者都计入 applied，但配置 content 为 null ──
     //
-    // M4 起 `profile` 在 `APPLICABLE_ENTITY_TYPES` 内，所以它**不再**计入
+    // `profile` 在 `APPLICABLE_ENTITY_TYPES` 内，所以它**不再**计入
     // `skipped_unsupported`；但这条 change 的 `content` 是 null，因此只记变更、
     // 不写 `profiles` 行——这正是「墓碑之前什么都没有」的形态。
     let mixed = r#"[
@@ -65,7 +65,7 @@ fn import_applies_known_types_and_rejects_unknown_ones() {
     write_bundle(&mixed_path, mixed, 2);
 
     let report = import_bundle(&mut db, "pw", &mixed_path).unwrap();
-    assert_eq!(report.applied, 2, "M4 起已知类型全部可落库");
+    assert_eq!(report.applied, 2, "已知类型全部可落库");
     assert_eq!(
         report.skipped_unsupported, 0,
         "已知类型不得再计入 skipped_unsupported"

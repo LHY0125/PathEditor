@@ -49,7 +49,7 @@ describe('history store', () => {
   });
 
   it('降级模式下 load 记录错误而不抛出', async () => {
-    // parseCoreError 抛出的是普通对象，不是 Error 实例（J-4 的回归守卫）
+    // parseCoreError 抛出的是普通对象，不是 Error 实例
     (backend.historyListEvents as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
       code: 'database',
       message: '历史库不可用，当前处于降级模式',
@@ -73,7 +73,7 @@ describe('history store', () => {
 
     await useHistoryStore.getState().load();
 
-    // spec §8：换机后应提示「密钥不匹配」，而不是笼统的「不可用」
+    // 换机后应提示「密钥不匹配」，而不是笼统的「不可用」
     expect(useHistoryStore.getState().error).toContain('密钥');
   });
 
@@ -90,7 +90,7 @@ describe('history store', () => {
 
     await useHistoryStore.getState().selectEvent(event());
 
-    // 第一个参数必须是快照 uid（J-8），不是事件 uid
+    // 第一个参数必须是快照 uid，不是事件 uid
     expect(backend.historyGetSnapshot).toHaveBeenCalledWith('snap-1', false);
     expect(useHistoryStore.getState().detail).toEqual(snapshot);
   });
@@ -102,7 +102,7 @@ describe('history store', () => {
     expect(useHistoryStore.getState().detail).toBeNull();
   });
 
-  describe('跨会话撤销（P1-7）', () => {
+  describe('跨会话撤销', () => {
     it('undoLast 恢复最近一次可撤销操作前的快照', async () => {
       (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         items: [
@@ -127,7 +127,7 @@ describe('history store', () => {
       const undone = await useHistoryStore.getState().undoLast();
 
       expect(undone?.uid).toBe('e1');
-      // 必须恢复「最近一条」的**操作前**快照（P0-2 的语义）
+      // 必须恢复「最近一条」的**操作前**快照
       expect(backend.historyRestoreSnapshot).toHaveBeenCalledWith('snap-before-1');
     });
 

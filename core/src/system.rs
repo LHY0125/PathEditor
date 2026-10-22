@@ -50,7 +50,7 @@ pub fn expand_env_vars(path: &str) -> String {
     }
 
     // SAFETY: buffer 容量为 required（API 返回的精确大小），wide_path 以 null 结尾，
-    //         且两个指针指向不同的内存区域，不存在重叠
+    //        且两个指针指向不同的内存区域，不存在重叠
     let mut buffer = vec![0_u16; required as usize];
     let result =
         unsafe { ExpandEnvironmentStringsW(wide_path.as_ptr(), buffer.as_mut_ptr(), required) };
@@ -82,7 +82,7 @@ pub fn broadcast_env_change() {
     let env_str: Vec<u16> = "Environment\0".encode_utf16().collect();
 
     // SAFETY: env_str.as_ptr() 指向以 null 结尾的字符串，HWND_BROADCAST 是合法句柄，
-    //         lpdwResult 为 null 表示不需要返回值，其他参数均为常量
+    //        lpdwResult 为 null 表示不需要返回值，其他参数均为常量
     let result = unsafe {
         SendMessageTimeoutW(
             HWND_BROADCAST as _,

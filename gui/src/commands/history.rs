@@ -1,8 +1,8 @@
 //! 历史 / 配置 / 备份的 Tauri 命令。
 //!
-//! **只做参数转换与错误呈现**，业务规则全在 core（spec §3.2 所有权边界）。
+//! **只做参数转换与错误呈现**，业务规则全在 core。
 //!
-//! 降级语义（spec B7 / D16 fail-open）：DB 不可用时 `DbState` 为 `None`，
+//! 降级语义：DB 不可用时 `DbState` 为 `None`，
 //! 所有 `history_*` / `profile_*` / `backup_*` 命令返回 `CoreError { code: database }`；
 //! **注册表编辑命令不受影响**（它们在 `commands::service` / `registry` 里）。
 
@@ -19,7 +19,7 @@ use tauri::State;
 /// 全局 DB 句柄。`None` = 降级模式（打开失败）。
 pub struct DbState(pub Mutex<Option<Db>>);
 
-/// 事件筛选的 IPC 入参；所有字段可选（spec §3.2.1：单个结构体参数）。
+/// 事件筛选的 IPC 入参；所有字段可选。
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventFilterRequest {
@@ -31,19 +31,19 @@ pub struct EventFilterRequest {
     pub action: Option<String>,
     /// 按来源筛选
     pub source: Option<String>,
-    /// 按 hive 筛选（`system` / `user`）——P1-1
+    /// 按 hive 筛选（`system` / `user`）——
     pub hive: Option<String>,
-    /// 按操作目标筛选——P1-1
+    /// 按操作目标筛选——
     pub target: Option<String>,
-    /// 按结果筛选（`success` / `partial` / `failure`）——P1-1
+    /// 按结果筛选（`success` / `partial` / `failure`）——
     pub result: Option<String>,
-    /// 时间范围起点（含，Unix 毫秒）——P1-1
+    /// 时间范围起点（含，Unix 毫秒）——
     pub from_ms: Option<i64>,
-    /// 时间范围终点（含，Unix 毫秒）——P1-1
+    /// 时间范围终点（含，Unix 毫秒）——
     pub to_ms: Option<i64>,
 }
 
-/// 见 spec §3.2.1：默认 50，上限 500。
+/// 见：默认 50，上限 500。
 pub fn from_request(req: Option<EventFilterRequest>) -> EventFilter {
     let req = req.unwrap_or(EventFilterRequest {
         limit: None,
@@ -134,10 +134,10 @@ pub fn history_get_current(state: State<'_, DbState>) -> Result<Option<SnapshotV
     with_db(&state, "history_get_current", history::current_snapshot)
 }
 
-/// 显式 reveal 一个历史快照里的环境变量值（M1 欠账 P2-1）。
+/// 显式 reveal 一个历史快照里的环境变量值。
 ///
 /// **独立命令**：与 `history_get_snapshot` 分离，让「掩码」成为默认，
-/// 「看明文」成为一次可审计的显式动作（spec §3.2.1）。
+/// 「看明文」成为一次可审计的显式动作。
 ///
 /// 与 `history_get_snapshot(reveal=true)` 的区别：后者是**批量**揭示，
 /// 前者是**单个变量**的显式请求。GUI 上对应的是每个被掩码变量旁的「显示」按钮。
@@ -183,7 +183,7 @@ pub fn profile_mark_applied(uid: String, state: State<'_, DbState>) -> Result<bo
 
 /// 配置方案的保存请求（PATH 条目 + 元数据一次写入）。
 ///
-/// **P0-1 方案 A**：UI 从 v5 文件通路切到 DB 后，这是唯一的写入口。
+/// 方案 A：UI 从 v5 文件通路切到 DB 后，这是唯一的写入口。
 /// 快照与 profile 行在**同一事务**内写入（`save_profile_tx`），
 /// 不会出现「配置建了但快照没建」的中间态。
 #[derive(Debug, Deserialize)]
@@ -229,7 +229,7 @@ pub fn profile_save(
     })
 }
 
-/// 把配置导出成 v5 `ProfileData` 的 JSON 字符串（M1 欠账 P2-2）。
+/// 把配置导出成 v5 `ProfileData` 的 JSON 字符串。
 ///
 /// 这是**降级到 v5 的退路**：DB 不可用或需要回到旧版本时，用它可以导出
 /// 与 v5 自身写出的格式完全同构的文件（含 `schemaVersion` 信封）。
@@ -315,13 +315,13 @@ pub fn profile_mark_applied_by_name(
     })
 }
 
-/// 把历史快照恢复回注册表（P0-3）。
+/// 把历史快照恢复回注册表。
 ///
 /// **走既有注册表编排**（`service::save_path_with_sidecar`），不新增写注册表的代码路径。
 /// 双 hive 一次提交：快照里 system / user 都恢复。
 ///
 /// **append-only**：恢复成功后追加**新快照 + 新事件**，旧快照原样保留——
-/// 这样「恢复」本身也可被撤销（spec §6.1）。
+/// 这样「恢复」本身也可被撤销。
 ///
 /// 返回恢复后的结果；失败时注册表可能部分写入（best-effort 语义由 `ApplyOutcome` 表达）。
 #[tauri::command]
@@ -357,7 +357,7 @@ pub fn history_restore_snapshot(
 /// 列出备份索引。
 #[tauri::command]
 pub fn backup_list(state: State<'_, DbState>) -> Result<Vec<BackupView>, CoreError> {
-    // P1-2：每次调用前先增量索引。只在启动时索引会漏掉「启动后新做的备份」——
+    // 每次调用前先增量索引。只在启动时索引会漏掉「启动后新做的备份」——
     // 用户启动 → `env backup` → 打开备份列表，就会看到空列表。
     // `index_backups` 按 `file_path` 去重，重复调用幂等，成本只是目录 stat。
     with_db_mut(&state, "backup_list", |db| {

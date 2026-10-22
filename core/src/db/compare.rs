@@ -1,8 +1,8 @@
-//! N 路快照对比（spec §6.2）。
+//! N 路快照对比。
 //!
 //! **敏感值恒掩码**：对比结果里 env 的 `value` 只对非敏感项填充。
 //!
-//! ## 为什么 system 与 user 必须分开返回（N-8）
+//! ## 为什么 system 与 user 必须分开返回
 //!
 //! 首版实现只比 `left.system`，用户 PATH 的变化**完全不可见**——不报错、
 //! 测试也能过，只有「只有用户 PATH 变了」时会显示「没有差异」。
@@ -12,7 +12,7 @@
 //!
 //! `PathEntry { path, enabled }` 是跨层契约（`CLAUDE.md`：「导入、配置、注册表和
 //! 撤销重做都必须保留 `enabled`」）。计划只比较路径串，会让「同一条路径从启用
-//! 变为禁用」显示成「没有差异」——与 N-8 是同一类遗漏。
+//! 变为禁用」显示成「没有差异」——与是同一类遗漏。
 //! 因此 `PathDiff` 增加 `toggled` 维度。
 
 use super::{history, Db};
@@ -70,7 +70,7 @@ impl PathDiff {
 
 /// 对比结果。
 ///
-/// **N-8**：system 与 user **必须分开返回**。
+/// system 与 user **必须分开返回**。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompareResult {

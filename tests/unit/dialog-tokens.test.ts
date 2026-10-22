@@ -14,8 +14,8 @@ function walk(dir: string): string[] {
 
 const files = walk(ROOT);
 /**
- * 剥离注释后再匹配 —— 与 design-tokens.test.ts 的 B4 口径保持一致。
- * 不剥离时，注释里写「原为 #3b82f6」这类说明会造成假红。
+ * 剥离注释后再匹配 —— 与 design-tokens.test.ts 的口径保持一致。
+ * 不剥离时，注释里写「原为 b82f6」这类说明会造成假红。
  * 注：计划修订稿中的该段正则曾因转义丢失而无效，已由审核窗口修正并与本实现对齐。
  */
 const read = (f: string) =>
@@ -27,7 +27,7 @@ const LEGACY_TOKENS = ['--app-list-bg', '--app-list-alt', '--app-select-row'];
 const LEGACY_APIS = ['btnClass', 'btnStyle', 'tab-active'];
 const HARDCODED_COLOR = /#[0-9a-fA-F]{6}\b|rgba?\(/;
 
-describe('对话框不依赖旧样式设施（Wave 4.1 验收）', () => {
+describe('对话框不依赖旧样式设施', () => {
   it('扫描到全部 14 个对话框文件', () => {
     expect(files.length).toBeGreaterThanOrEqual(14);
   });

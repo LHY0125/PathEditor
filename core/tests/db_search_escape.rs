@@ -1,8 +1,9 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
 // **FTS5 查询转义的回归守卫。**
 //
-// 开工提示词 §六-2 指出：`WHERE search_fts MATCH ?1` 把用户输入当查询语法。
+// FTS5 的 MATCH 会把用户输入当查询语法，因此 `WHERE search_fts MATCH ?1`
+// 必须先把整段输入包成短语并转义内部引号。
 // 裸 `"` 会报 `fts5: syntax error`，`C:\Program Files` 会被拆成两个 token。
 //
 // 我在 core 侧做了 phrase 转义（见 search.rs 的 `escape_query`），

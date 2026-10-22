@@ -39,7 +39,7 @@ export function backupFailed(backup: BackupOutcome): string | null {
 /**
  * Rust `ErrorCode` 的镜像（serde camelCase 序列化）。
  *
- * F-06：错误判定只看 `code`，不匹配 `message` 文本 —— 措辞变化不会静默
+ * 错误判定只看 `code`，不匹配 `message` 文本 —— 措辞变化不会静默
  * 破坏冲突检测等分支。未知 code 由 backend 解析层兜底为 `internal`。
  */
 export type ErrorCode =
@@ -111,7 +111,7 @@ export function envVarKey(meta: EnvVarMeta): string {
  * 按键从快照派生最新 meta。
  *
  * 弹窗/壳层不得长期持有 EnvVarMeta 本体 —— 冲突刷新等场景下快照会换代，
- * 固化旧 meta 会拿旧 revision 反复提交（F-02）。提交前必须经此函数取最新。
+ * 固化旧 meta 会拿旧 revision 反复提交。提交前必须经此函数取最新。
  */
 export function findMetaByKey(snapshot: EnvVarSnapshot, key: string): EnvVarMeta | null {
   return [...snapshot.system, ...snapshot.user].find((m) => envVarKey(m) === key) ?? null;

@@ -1,7 +1,7 @@
 //! 配置方案（profile）元数据与版本，迁入 DB。
 //!
 //! 与 `core::profiles`（v5 文件版）并存：文件版保留为「导出 v5 JSON」的兼容通路，
-//! DB 版承担标签/版本/最近使用/应用次数的查询能力（spec D8）。
+//! DB 版承担标签/版本/最近使用/应用次数的查询能力。
 
 use super::history::{insert_snapshot_tx, NewSnapshot};
 use super::{db_err, Db};
@@ -66,7 +66,7 @@ fn validate_name(name: &str) -> Result<(), CoreError> {
 /// 保存配置方案：快照 + profile 行 + revision 行，**单事务**。
 ///
 /// 快照用 [`insert_snapshot_tx`] 而非 `insert_snapshot` —— 后者自带事务，
-/// 嵌套会因 SQLite 不支持嵌套事务而失败（计划核对 H6）。
+/// 嵌套会因 SQLite 不支持嵌套事务而失败。
 ///
 /// 同名且未删除时**不覆盖**，返回 `NameExists`；调用方应改用更新语义。
 pub fn save_profile(
@@ -130,7 +130,7 @@ pub fn save_profile_tx(
     )
     .map_err(|e| db_err("insert_revision", e))?;
 
-    // ── M3 S-1 接线 ──
+    // ── 接线 ──
     //
     // 两条变更：配置元数据（整实体）+ 它的首个版本。
     //
@@ -171,7 +171,7 @@ pub fn save_profile_tx(
 /// 同步包里的配置内容（接受侧子集）。
 ///
 /// **不含** `applyCount` / `lastAppliedAt`：使用统计是本机数据，不跨设备同步
-/// （spec §6.5.1）。导出方送来的 `ProfileView` 会带这两个字段，
+/// 。导出方送来的 `ProfileView` 会带这两个字段，
 /// serde 默认忽略未知字段，所以可以直接反序列化。
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -201,7 +201,7 @@ pub(crate) struct ProfileSyncContent {
 /// 已存在同 uid 的行时更新元数据并**复活**（`deleted_at = NULL`）——是否符合预期
 /// 由调用方的 LWW 决定，本函数只负责按内容写入。
 ///
-/// 悬空 `snapshotUid` 返回 `SyncFormat`，由调用方整体回滚（spec §6.5.1）。
+/// 悬空 `snapshotUid` 返回 `SyncFormat`，由调用方整体回滚。
 ///
 /// 返回值：`true` 表示因为本地已有同名配置而**自动改名**了。
 pub(crate) fn import_profile_content_tx(
@@ -234,7 +234,7 @@ pub(crate) fn import_profile_content_tx(
     })?;
 
     // 同名不同 uid：给本地行生成一个不冲突的名称。
-    // 只影响本地行，包内 uid 保持不变（spec §6.5.1）。
+    // 只影响本地行，包内 uid 保持不变。
     let name = unique_name_tx(tx, &c.name, uid, device_id)?;
     let renamed = name != c.name;
 
@@ -319,7 +319,7 @@ pub(crate) fn import_profile_content_tx(
 /// 为导入的配置生成一个本机唯一的未删除名称。
 ///
 /// 冲突时改为 `"{desired} (来自 {device_id 前 8 位})"`；仍冲突则追加 ` 2`、` 3`…
-/// 只影响本地行，不改变包内 uid（spec §6.5.1）。
+/// 只影响本地行，不改变包内 uid。
 ///
 /// **按字符取设备 id 前缀**：`device_id` 来自外部包，可能是多字节字符，
 /// `&device_id[..8]` 会在字符边界 panic。
@@ -345,7 +345,7 @@ fn unique_name_tx(
         return Ok(desired.to_string());
     }
 
-    // 名称上限 255 字节（`validate_name`）；给后缀与「 2」这类追加留出空间。
+    // 名称上限 255 字节（`validate_name`）；给后缀与「2」这类追加留出空间。
     let base_name = truncate_name(desired, 200);
     let suffix: String = device_id.chars().take(8).collect();
     let base = format!("{base_name} (来自 {suffix})");
@@ -444,7 +444,7 @@ pub fn get_profile(db: &Db, uid: &str) -> Result<Option<ProfileView>, CoreError>
     Ok(list_profiles(db)?.into_iter().find(|p| p.uid == uid))
 }
 
-/// 软删除配置：写墓碑，允许同名重建（spec B5 的部分唯一索引）。
+/// 软删除配置：写墓碑，允许同名重建。
 ///
 /// 幂等：已删除时返回 `Ok(false)`，不报错。
 pub fn delete_profile(db: &mut Db, uid: &str) -> Result<bool, CoreError> {
@@ -476,7 +476,7 @@ pub fn delete_profile(db: &mut Db, uid: &str) -> Result<bool, CoreError> {
 
 /// 记录一次「配置被应用」：`apply_count + 1`、更新 `last_applied_at`。
 ///
-/// **不写 `events`** —— 事件由 `HistorySink` 统一负责（与 Task 4 的 B2 口径一致）。
+/// **不写 `events`** —— 事件由 `HistorySink` 统一负责。
 pub fn mark_profile_applied(db: &mut Db, uid: &str) -> Result<bool, CoreError> {
     let now = chrono::Utc::now().timestamp_millis();
     db.with_transaction(|tx| {

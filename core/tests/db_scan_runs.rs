@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::scan_history::{diff_runs, list_runs, record_run};
 use path_editor_core::db::Db;
@@ -17,7 +17,7 @@ fn scan_runs_persist_and_diff_between_two_scans() {
     // run2: C:\dup, C:\new          （dup 连续出现）
     // run3: C:\dup, C:\old          （old 消失后又回来）
     //
-    // 对 old：first_seen = run1，last_seen = run3（**两者不同**，正是 N-5 要的区分）
+    // 对 old：first_seen = run1，last_seen = run3
     // 对 dup：first_seen = run1，last_seen = run3
     let r1 = record_run(&mut db, r#"["C:\\dup","C:\\old"]"#, "[]").unwrap();
     let r2 = record_run(&mut db, r#"["C:\\dup","C:\\new"]"#, "[]").unwrap();
@@ -35,7 +35,7 @@ fn scan_runs_persist_and_diff_between_two_scans() {
     assert_eq!(d12.disappeared, vec!["C:\\old".to_string()]);
     assert_eq!(d12.persistent, vec!["C:\\dup".to_string()]);
 
-    // ── N-5：首次出现与最近出现必须都能算，且语义不同 ──
+    // ──：首次出现与最近出现必须都能算，且语义不同 ──
     //
     // 比 r2 与 r3（r1 与 r3 的集合完全相同，是另一个有价值的用例，见下）
     let d23 = diff_runs(&db, &r2, &r3).unwrap();
@@ -77,7 +77,7 @@ fn scan_runs_persist_and_diff_between_two_scans() {
     assert_eq!(last_dup.run_uid, r3, "dup 最近出现是 r3");
     assert_ne!(
         first_dup.run_uid, last_dup.run_uid,
-        "首次与最近必须能指向不同的 run——否则两个字段是同一件事，N-5 没实现"
+        "首次与最近必须能指向不同的 run——否则两个字段是同一件事"
     );
 
     // new 只在 r2 出现过：首次与最近都是 r2
@@ -98,9 +98,9 @@ fn scan_runs_persist_and_diff_between_two_scans() {
         "只出现一次的冲突首末相同"
     );
 
-    // ── M-6：record_run 必须触发 daily_stats 重建 ──
+    // ── ：record_run 必须触发 daily_stats 重建 ──
     //
-    // **N-6**：本断言验证的是「副作用发生了」（SUM 从 0 变非 0），不是「值正确」。
+    // 本断言验证的是「副作用发生了」（SUM 从 0 变非 0），不是「值正确」。
     // 原因：`daily_stats.conflicts` 的口径是「当日扫描次数」，三次 record_run
     // 落在同一天时是 3；跨日时分摊到多行。断言具体值会依赖运行时刻，不稳定。
     let sum: i64 = db

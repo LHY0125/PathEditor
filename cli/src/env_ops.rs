@@ -139,14 +139,14 @@ pub(crate) fn render_name(meta: &EnvVarMeta) -> String {
     }
 }
 
-/// 构造 dry-run 的变更摘要（spec §命令规格 4 的统一 JSON 契约）。
+/// 构造 dry-run 的变更摘要（统一 JSON 契约）。
 ///
 /// 字段固定为 `operation / hive / name / oldValue / newValue / kind / writable / sensitive`；
 /// 无值一侧一律 `null`（`add` 无 oldValue，`remove` 无 newValue）。**判定不在本函数**——
 /// `writable` / `kind` / 敏感标记由调用方从 core 结果传入，本函数只做形状组装。
 ///
 /// **安全（安全审查修正）**：`old` / `new` 必须已在 core 侧经敏感打码与控制字符净化 ——
-/// 本函数不做判定也不做净化，只透传（S3：CLI 零判定）。调用方对 `add` 的新值需经
+/// 本函数不做判定也不做净化，只透传（CLI 零判定）。调用方对 `add` 的新值需经
 /// [`mask_new_value`] 处理后再传入。`sensitive` 用于让消费者区分「敏感打码」与「空值」。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_change_preview(
@@ -184,7 +184,7 @@ pub(crate) fn mask_new_value(name: &str, value: String) -> Option<String> {
     }
 }
 
-/// 把变更摘要渲染成人类可读的一行（spec §命令规格 4 的文本契约）。
+/// 把变更摘要渲染成人类可读的一行（文本契约）。
 ///
 /// 三种操作各自成句；一律以「（未写入任何内容）」收尾，避免用户误以为已生效。
 /// 敏感变量（`sensitive = true`）的值以 `(敏感)` 占位，与 `env list` 的既有打码一致。
@@ -398,7 +398,7 @@ pub(crate) fn parse_kind(raw: &str) -> EnvValueKind {
 /// （最后写入者胜，**不会**产生退出码 3）。
 ///
 /// `--dry-run` 只预览、不写注册表，且**不要求** `--revision`/`--force`
-/// （预览无并发风险，spec D9 / 验收标准 7）。
+/// 。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_env_set(
     name: String,
@@ -546,7 +546,7 @@ pub(crate) fn cmd_env_remove(
 /// `env backup` —— 立即创建一份环境变量备份。
 ///
 /// 与写前自动备份共用同一 core 实现；可在「改之前想手动留个还原点」时使用。
-/// 备份文件含明文（设计文档 D2），落盘位置由 `PATHEDITOR_BACKUP_DIR` 或
+/// 备份文件含明文，落盘位置由 `PATHEDITOR_BACKUP_DIR` 或
 /// `~/.patheditor/backups/` 决定。
 ///
 /// # Returns
@@ -554,7 +554,7 @@ pub(crate) fn cmd_env_remove(
 pub(crate) fn cmd_env_backup(json_out: bool) {
     match core::backup::backup_env_vars() {
         Ok(path) => {
-            // N-2：production 路径优先写 .pebak；回落明文时 core 只 log::warn!，
+            // production 路径优先写 .pebak；回落明文时 core 只 log::warn!，
             // 而 CLI 没有日志后端——必须在这里明说。
             if path
                 .extension()
@@ -625,10 +625,10 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     let path = core::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
 
     if dry_run {
-        // v6 D17：统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`
+        // 统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`
         let (payload, format) = core::backup::read_env_backup_with_format(&path)
             .unwrap_or_else(|e| exit_core_error(&e));
-        // N-2：CLI 没有日志后端，core 的 `log::warn!` 到这里会被丢弃。
+        // CLI 没有日志后端，core 的 `log::warn!` 到这里会被丢弃。
         // 明文警告必须走 stderr 才真的可见（README 承诺的就是这一条）。
         if format == core::backup::BackupFormat::LegacyPlaintext {
             eprintln!(
@@ -653,7 +653,7 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
         return;
     }
 
-    // 手工兜底出口（核对轮 C7）：恢复自己不产生备份（否则每次恢复都新增文件，
+    // 手工兜底出口：恢复自己不产生备份（否则每次恢复都新增文件，
     // 与保留策略互相吞噬），所以「恢复错了」没有自动回退。先把两条命令告诉用户。
     // **只打印、绝不自动执行**——自动备份会与保留策略互相吞噬。
     // 走 stderr：不污染 stdout 的输出契约。
@@ -661,7 +661,7 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     eprintln!("  patheditor backup       # 备份当前 PATH");
     eprintln!("  patheditor env backup   # 备份当前全部环境变量");
 
-    // N-2：明文警告必须在**写入之前**说——恢复完再提示就晚了。
+    // 明文警告必须在**写入之前**说——恢复完再提示就晚了。
     // 这里只看扩展名（不解析内容），代价为零。
     if path
         .extension()
@@ -789,7 +789,7 @@ mod tests {
 
     #[test]
     fn conflict_result_maps_to_exit_3() {
-        // F-06：退出码由 CoreError.exit_code() 决定，冲突码必须映射到 3
+        // 退出码由 CoreError.exit_code 决定，冲突码必须映射到 3
         let e = core::CoreError::new(core::ErrorCode::Conflict, "update_env_var", "冲突");
         assert_eq!(e.exit_code(), 3);
         assert_eq!(
@@ -1109,7 +1109,7 @@ mod tests {
 
     /// 备份列表在空目录下返回空数组而非报错（JSON 输出形状稳定）。
     ///
-    /// B3（核对轮第二轮）：**不取 `core::persist::test_persist_lock`** —— 该函数是
+    /// （核对轮第二轮）：**不取 `core::persist::test_persist_lock`** —— 该函数是
     /// `pub(crate)`（`core/src/lib.rs` 的 `pub(crate) mod persist;`），从 cli crate
     /// 引用会报 `error[E0603]: module persist is private`。而且也不需要：`--bins`
     /// 测试跑在**独立进程**里，与 core 的测试不共享进程级环境变量，那把进程内的锁
@@ -1196,7 +1196,7 @@ mod tests {
                 );
 
                 // 2) 用**同一个** target 目录构建（不显式传 --target-dir，让它走默认解析，
-                //    与 metadata 的答案保持一致）。
+                //   与 metadata 的答案保持一致）。
                 let out = std::process::Command::new("cargo")
                     .args(["build", "-p", "patheditor-cli"])
                     .current_dir(root)
@@ -1346,7 +1346,7 @@ mod tests {
             files.contains(&"env_backup_00000000_000000_000.json"),
             "损坏文件也必须出现在列表里: {files:?}"
         );
-        // 列表不解析内容。`.pebak` 的变量数来自**文件头**（spec §5.3 允许，
+        // 列表不解析内容。`.pebak` 的变量数来自**文件头**（ 允许，
         // 不触发解密）；`.json` 仍恒为 0（S5：解析会让单个损坏文件拖垮整份列表）。
         for item in list.as_array().unwrap() {
             let file = item["file"].as_str().unwrap();
@@ -1408,7 +1408,7 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names.len(), 1, "目录里应恰好一份备份: {names:?}");
-        // v6 D17：生产产物是 DPAPI 加密的 .pebak（spec §7.9 第 1 条）
+        // 生产产物是 DPAPI 加密的 .pebak
         assert!(
             names[0].starts_with("env_backup_") && names[0].ends_with(".pebak"),
             "备份文件命名必须符合 env_backup_*.pebak: {names:?}"
@@ -1485,7 +1485,7 @@ mod tests {
     /// 不足时返回 `None`，由调用方显式失败而不是静默跳过。
     fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         let source = make_backup(dir);
-        // v6 D17：生产备份是 DPAPI 加密的 `.pebak`，不能当 JSON 读。
+        // 生产备份是 DPAPI 加密的 `.pebak`，不能当 JSON 读。
         // 用核心库的统一读入口解密（密钥来自本机 ~/.patheditor —— 测试进程里
         // `env backup` 刚写过同一把密钥），改完再用同一个写入口重新加密。
         let payload = core::backup::read_env_backup_from(&source).ok()?;
@@ -1619,7 +1619,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **N-2 回归守卫**：`env restore --dry-run` 读遗留明文 `.json` 时，
+    /// 回归守卫：`env restore --dry-run` 读遗留明文 `.json` 时，
     /// 明文警告必须出现在 **stderr**。
     ///
     /// 这条测试的存在理由：core 里原本只有 `log::warn!`，而 CLI **没有日志后端**
@@ -1649,7 +1649,7 @@ mod tests {
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
             stderr.contains("遗留明文备份"),
-            "读遗留 .json 必须在 stderr 提示明文风险（N-2）: stderr={stderr:?}"
+            "读遗留 .json 必须在 stderr 提示明文风险: stderr={stderr:?}"
         );
         assert!(
             stderr.contains("pebak"),
@@ -1664,7 +1664,7 @@ mod tests {
     ///
     /// 区分两个分支，两个分支都断言到底：
     /// - 未提权（本机常规情形）：HKLM 无法以写权限打开 → `PermissionDenied` →
-    ///   退出码 1，且此时尚未写入任何内容（core 先开 hive、后写入）；
+    /// 退出码 1，且此时尚未写入任何内容（core 先开 hive、后写入）；
     /// - 已提权：备份即当前状态 → 零变更、零失败。
     #[test]
     fn env_restore_prints_manual_fallback_guidance_to_stderr() {
@@ -1682,7 +1682,7 @@ mod tests {
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
 
-        // C7：兜底指引必须打印，且走 stderr —— 绝不能污染 stdout 的输出契约。
+        // 兜底指引必须打印，且走 stderr —— 绝不能污染 stdout 的输出契约。
         // 这两条断言与退出码无关，两个分支都成立。
         assert!(
             stderr.contains("patheditor backup"),
@@ -1694,7 +1694,7 @@ mod tests {
         );
 
         match out.status.code() {
-            // 未提权：HKLM 写权限错误，退出码 1（spec 允许）。
+            // 未提权：HKLM 写权限错误，退出码 1（这是允许的）。
             // 这条路径**没有成功输出**，所以 stdout 必须干净 —— 指引没有漏进 stdout。
             Some(1) => {
                 assert!(
@@ -1749,9 +1749,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── #36：dry-run 变更预览的 JSON / 文本契约 ──
+    // ── ：dry-run 变更预览的 JSON / 文本契约 ──
 
-    /// #36：预览 JSON 的字段与类型契约（spec §命令规格 4）。
+    /// 预览 JSON 的字段与类型契约。
     ///
     /// 字段名错一个就会破坏脚本消费，故逐字段断言，而非只断言「是合法 JSON」。
     #[test]
@@ -1776,7 +1776,7 @@ mod tests {
         assert_eq!(v["sensitive"], false);
     }
 
-    /// #36：`add` 的 oldValue 为 null、`remove` 的 newValue 为 null（spec 字段表）。
+    /// `add` 的 oldValue 为 null、`remove` 的 newValue 为 null（字段表契约）。
     #[test]
     fn change_preview_nulls_are_correct_per_operation() {
         let add = build_change_preview(
@@ -1804,7 +1804,7 @@ mod tests {
         assert!(rm["newValue"].is_null(), "remove 的 newValue 必须为 null");
     }
 
-    /// #36：文本预览必须点明「未写入任何内容」，且带 hive 标签。
+    /// 文本预览必须点明「未写入任何内容」，且带 hive 标签。
     #[test]
     fn change_preview_text_mentions_no_write() {
         let v = build_change_preview(
@@ -1868,7 +1868,7 @@ mod tests {
         assert!(!text.contains("sk-"), "不得泄漏明文: {text}");
     }
 
-    // ── SP-1：dry-run 的写安全（进程级）──
+    // ── S：dry-run 的写安全（进程级）──
     //
     // 上面三条测的是**纯函数**（打码 / 净化 / 渲染）。它们**证明不了**「命令真的
     // 没写注册表、没产生备份、没广播」——那是 `cmd_env_*` 的运行时行为。本组用例
@@ -1877,9 +1877,9 @@ mod tests {
     // 可证伪性（这是本组存在的全部理由）：若有人在 dry-run 分支后误加一行写入
     // 或备份调用，下面的断言会红。
     // - `probe_absent_after_dry_run_*`：dry-run 后该变量在注册表中**不存在**
-    //   （若误写，`env get` 会返回 0 而非 notFound）；
+    //  （若误写，`env get` 会返回 0 而非 notFound）；
     // - `dry_run_produces_no_backup_file`：dry-run 后备份目录**为空**
-    //   （若误触发写前备份，目录会出现 env_backup_*.json）。
+    //  （若误触发写前备份，目录会出现 env_backup_*.json）。
     //
     // 安全边界：`env add --dry-run` **确定不写注册表**（这正是被断言的性质），
     // 故本用例不触碰真实注册表；备份目录经 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。

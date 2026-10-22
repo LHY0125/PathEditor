@@ -1,6 +1,6 @@
 //! 导入：两个独立库之间搬数据，幂等，且篡改的包整体拒绝。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::sync::export::export_bundle;

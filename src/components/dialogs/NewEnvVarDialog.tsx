@@ -8,7 +8,7 @@ import { validateVarName, type EnvHive, type EnvValueKind } from '@/core/env-var
 interface NewEnvVarDialogProps {
   /** 系统 hive 不可写时禁用「系统」来源（Spec 权限矩阵：非管理员不得新建系统变量）。 */
   canWriteSystem: boolean;
-  /** 用户 hive 不可写时禁用「用户」来源（F-08：此前只门禁系统侧）。 */
+  /** 用户 hive 不可写时禁用「用户」来源。 */
   canWriteUser: boolean;
   onCancel: () => void;
   /** 返回是否创建成功；失败时弹窗保留并显示 store 的错误消息。 */

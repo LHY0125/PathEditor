@@ -1,13 +1,13 @@
 #![cfg(windows)]
 // 一文件一测试：同一进程内跑第二个 SQLCipher 测试会 STATUS_STACK_OVERFLOW
-// （GNU/MSVC 均已复现）。见 M0 结果 §5.3。
+// （GNU/MSVC 均已复现）。见测试约束说明。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::Db;
 use tempfile::TempDir;
 
 #[test]
 fn key_is_created_once_and_persists_across_reloads() {
-    // 用独立目录，避免污染真实 ~/.patheditor（H4：显式传 home，不用 set_var）
+    // 用独立目录，避免污染真实 ~/.patheditor
     let dir = TempDir::new().unwrap();
 
     let a = load_or_create_key(dir.path()).expect("首次创建失败");
@@ -40,7 +40,7 @@ fn key_is_created_once_and_persists_across_reloads() {
         "用另一份密钥必须打不开"
     );
 
-    // V-1：密钥文件 DACL 必须只授权当前用户 + SYSTEM（spec §5.1）。
+    // 密钥文件 DACL 必须只授权当前用户 + SYSTEM。
     // 计划把这个断言放在 db_key_lifecycle 里；但它不触碰 SQLCipher，
     // 因此与「一文件一测试」的 SQLCipher 约束无关，可以同文件。
     let key_path = dir.path().join("keys").join("db.key.dpapi");

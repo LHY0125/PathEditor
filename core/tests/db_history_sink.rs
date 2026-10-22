@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{list_events, EventFilter};
 use path_editor_core::db::history_sink::DbHistory;
@@ -41,7 +41,7 @@ fn db_history_records_events_and_counts_total() {
     assert_eq!(page.items[0].hive.as_deref(), Some("user"));
     assert_eq!(page.items[0].target.as_deref(), Some("Path"));
 
-    // H1：limit=2 时本页 2 条，但 total 仍是全量 3
+    // limit=2 时本页 2 条，但 total 仍是全量 3
     let paged = list_events(
         &db,
         &EventFilter {
@@ -54,7 +54,7 @@ fn db_history_records_events_and_counts_total() {
     )
     .unwrap();
     assert_eq!(paged.items.len(), 2, "limit 生效");
-    assert_eq!(paged.total, 3, "H1：total 必须独立计数，不等于本页条数");
+    assert_eq!(paged.total, 3, "total 必须独立计数，不等于本页条数");
 
     // 筛选与 total 用同一 WHERE
     let filtered = list_events(

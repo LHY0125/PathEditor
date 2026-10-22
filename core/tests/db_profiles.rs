@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{
@@ -69,7 +69,7 @@ fn profile_create_delete_recreate_with_same_name() {
         "软删除后不应出现在列表"
     );
 
-    // 软删除后允许同名重建（B5 的部分唯一索引）
+    // 软删除后允许同名重建
     let uid2 = save_profile(&mut db, "Work", None, &[], snap()).unwrap();
     assert_ne!(uid1, uid2, "重建必须是新行");
     assert_eq!(list_profiles(&db).unwrap().len(), 1);

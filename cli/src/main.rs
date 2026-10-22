@@ -149,7 +149,7 @@ enum Command {
     Maintenance(MaintenanceCmd),
 }
 
-/// 维护子命令（spec §6.5.3）。
+/// 维护子命令。
 #[derive(Subcommand)]
 enum MaintenanceCmd {
     /// 清理过期的变更与冲突（已导出 90 天 / 已解决 30 天）
@@ -532,9 +532,9 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
                 enabled: true,
             })
             .collect();
-        // D14（行为变化）：收口到 `save_path_write` 后**顺带提交 sidecar 快照**——
+        // （行为变化）：收口到 `save_path_write` 后**顺带提交 sidecar 快照**——
         // 此前 `clean` 只写注册表、不落快照，导致 `disabled.json` 陈旧（已修）。
-        // Wave 3.1：不传 expected（CLI 无并发窗口，见 `save_path_write`）。
+        // 不传 expected（CLI 无并发窗口，见 `save_path_write`）。
         save_path_write(Some(entries), None);
         println!(
             "{label} PATH 清理完成：移除 {} 条，保留 {} 条",
@@ -561,7 +561,7 @@ fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
         exit_err(&format!("索引 {index} 超出范围 (共 {} 条)", entries.len()));
     }
 
-    // Wave 3.1：不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
+    // 不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
     entries[index].enabled = enable;
     let path = entries[index].path.clone();
 
@@ -701,11 +701,11 @@ mod help_tests {
     //!
     //! 放在 `main.rs`（crate root）而非 `env_ops.rs`：bin-only crate 的 root 模块
     //! 对子模块是私有的，`struct Cli` 未 `pub`，子模块里写 `crate::Cli` 不可见。
-    //! root 内可直接取用（plan Task 4 Step 2 预留的退路）。
+    //! root 内可直接取用。
     use super::*;
     use clap::CommandFactory;
 
-    /// #35 / #38：`env add --help` 必须写明「纯新建语义」与「省略值会报错」。
+    ///  / ：`env add --help` 必须写明「纯新建语义」与「省略值会报错」。
     ///
     /// 可证伪性：删掉 `Add` 变体的文档注释或字段注释，对应片段消失，断言失败。
     /// 这是把「豁免理由」从源码注释提升为**用户可见契约**的回归测试。
@@ -727,7 +727,7 @@ mod help_tests {
         );
     }
 
-    /// #33：`env list --help` 不得声称「不含明文」，须限定为「敏感变量不含明文」。
+    /// `env list --help` 不得声称「不含明文」，须限定为「敏感变量不含明文」。
     ///
     /// 可证伪性：把描述行改回旧文案，`敏感变量不含明文` 消失，断言失败。
     #[test]

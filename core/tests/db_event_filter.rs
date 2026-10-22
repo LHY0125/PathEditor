@@ -1,8 +1,8 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **P1-1 回归守卫**：EventFilter 必须支持 spec §6.1 要求的全部 5 个筛选维度。
+// 回归守卫：EventFilter 必须支持要求的全部 5 个筛选维度。
 //
-// 缺口清单 P1-1：首版只有 `action` / `source` 两个，缺
+// 缺口清单：首版只有 `action` / `source` 两个，缺
 // `hive` / `target` / `result` / 时间范围。本测试逐个断言它们真的生效，
 // 并确认 `total` 与分页用同一段 WHERE（旧代码的注释警告过这一点）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};

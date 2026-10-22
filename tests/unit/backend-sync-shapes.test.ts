@@ -7,7 +7,7 @@ import {
 } from '@/services/backend';
 
 /**
- * M3 同步 IPC 的形状校验（Task 9）。
+ *  同步 IPC 的形状校验。
  *
  * 每个 `parseXxx` 覆盖四类输入：正常 / 缺字段 / 类型错 / 非法值。
  * 与 `backend-analytics-shapes.test.ts` 同一口径：校验的价值在于
@@ -65,12 +65,12 @@ describe('parseSyncImportReport', () => {
     ).toBe(0);
   });
 
-  it('拒绝缺字段（含 skippedUnsupported 与 M4 新增的 renamedProfiles）', () => {
+  it('拒绝缺字段（含 skippedUnsupported 与 renamedProfiles）', () => {
     expect(() => parseSyncImportReport({ applied: 1, skipped: 2 })).toThrow(/无效的导入结果/);
     expect(() => parseSyncImportReport({ applied: 1, skipped: 2, conflicts: 0 })).toThrow(
       /无效的导入结果/,
     );
-    // 有 skippedUnsupported 但缺 renamedProfiles：M4 的后端必须两个都给
+    // 有 skippedUnsupported 但缺 renamedProfiles：后端必须两个都给
     expect(() =>
       parseSyncImportReport({ applied: 1, skipped: 2, conflicts: 0, skippedUnsupported: 0 }),
     ).toThrow(/无效的导入结果/);

@@ -1,6 +1,6 @@
 //! 把 [`HistorySink`] 落到数据库。
 //!
-//! **`record` 失败不阻断主流程** —— 调用方（服务层）只记 warn（spec D16 fail-open）。
+//! **`record` 失败不阻断主流程** —— 调用方（服务层）只记 warn。
 
 use super::history::{action_str, result_str, source_str};
 use super::Db;
@@ -14,18 +14,18 @@ use uuid::Uuid;
 ///
 /// **为什么内部是 `RefCell<&mut Db>` 而不是裸 `&mut Db`**：
 /// `HistorySink::record` 的签名是 `&self`（服务层以 `&dyn HistorySink` 持有它），
-/// 而从 `&self` 无法借出 `&mut Db`（计划核对 H5 暴露的同类问题）。
+/// 而从 `&self` 无法借出 `&mut Db`。
 /// `RefCell` 把「共享引用 + 内部可变」这件事显式化，且它**不是 `Sync`**，
-/// 恰好与「trait 不要求 `Send + Sync`、同步单线程调用」的 M1 前提一致。
+/// 恰好与「trait 不要求 `Send + Sync`、同步单线程调用」的前提一致。
 ///
 /// 运行期借用冲突（同一 sink 上重入 `record`）会 panic —— 但调用链里
 /// `record` 只在服务层操作结束时调用一次，不存在重入路径。
 pub struct DbHistory<'a> {
     db: RefCell<&'a mut Db>,
-    /// 本次操作关联的快照 uid（P0-2）。
+    /// 本次操作关联的快照 uid。
     ///
     /// 由命令层在调用服务**之前**建好快照并传入——快照记录的是**操作前的状态**，
-    /// 因此恢复它等于撤销该操作（spec §6.1：「撤销/重做以『新快照 + 事件』表示」）。
+    /// 因此恢复它等于撤销该操作。
     ///
     /// 事件自带的 `snapshot_uid` 优先；为 `None` 时用这里的值。
     snapshot_uid: Option<String>,
@@ -59,11 +59,11 @@ impl HistorySink for DbHistory<'_> {
         let changed_fields =
             serde_json::to_string(&event.changed_fields).unwrap_or_else(|_| "[]".to_string());
 
-        // 事件行不携带任何明文值（spec D6）：只有字段名、revision 与结果。
+        // 事件行不携带任何明文值：只有字段名、revision 与结果。
         db.with_transaction(|tx| {
-            // J-8：把快照 uid 解析成本地整数主键。找不到时写 NULL 而不是让整条
+            // 把快照 uid 解析成本地整数主键。找不到时写 NULL 而不是让整条
             // 事件失败 —— 事件本身仍有价值，不该因为快照被删就一并丢弃。
-            // 事件自带的优先；否则用命令层预绑定的（P0-2）
+            // 事件自带的优先；否则用命令层预绑定的
             let uid = event
                 .snapshot_uid
                 .as_deref()

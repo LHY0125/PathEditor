@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::migrate_v5::migrate_legacy;
 use path_editor_core::db::Db;
@@ -8,7 +8,7 @@ use tempfile::TempDir;
 fn legacy_files_import_once_and_are_idempotent() {
     let dir = TempDir::new().unwrap();
 
-    // B3：旧文件是 `Versioned<T>` 信封（persist.rs:37，serde flatten），
+    // 旧文件是 `Versioned<T>` 信封（persist.rs:37，serde flatten），
     // 正常路径必须带 schemaVersion；裸 JSON 只是「无版本头的旧格式」，
     // 两种都要覆盖。
     std::fs::create_dir_all(dir.path().join("profiles")).unwrap();
@@ -87,7 +87,7 @@ fn legacy_files_import_once_and_are_idempotent() {
     assert!(dir.path().join("profiles").join("Work.json").exists());
     assert!(dir.path().join("profiles").join("Legacy.json").exists());
 
-    // ── D-6：新装用户没有 disabled.json 时，迁移不产生 kind=current 快照 ──
+    // ──：新装用户没有 disabled.json 时，迁移不产生 kind=current 快照 ──
     //
     // 这是**已知边界**，不是缺陷：建基线是启动序列（`setup_database` 的 ③b）
     // 的职责，不是迁移的。此处把边界钉下来，避免将来有人误以为迁移会兜底。
@@ -115,7 +115,7 @@ fn legacy_files_import_once_and_are_idempotent() {
             .unwrap();
         assert_eq!(
             has_current, 0,
-            "D-6：无 disabled.json 时迁移不产生 current 快照——建基线由启动序列负责"
+            "无 disabled.json 时迁移不产生 current 快照——建基线由启动序列负责"
         );
     }
 }

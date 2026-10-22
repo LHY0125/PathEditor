@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
 // **DB 当前快照读取守卫**：`load_path_snapshot_db` 必须从
 // `app_state.current_snapshot_id` 读取完整有序快照（含禁用项），而不是

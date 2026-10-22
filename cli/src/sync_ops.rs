@@ -1,6 +1,6 @@
 //! `sync` 子命令：同步包的导出、导入、状态与冲突处理。
 //!
-//! **口令安全**（spec §5.2 / 计划 Task 8）：
+//! **口令安全**：
 //! - 用 `rpassword` 隐藏输入，不进 shell history、不出现在 `ps`；
 //! - 口令只存在于内存，不落盘、不写日志；
 //! - 错误文案**不得包含口令**——`core` 的错误消息本就不含，这里也不拼接。
@@ -14,7 +14,7 @@ use path_editor_core::db::sync::conflict::{list_conflicts, resolve_conflict, Res
 use path_editor_core::db::sync::{export_bundle, import_bundle};
 use std::path::Path;
 
-/// 打开默认库；失败按 CLI 退出码约定退出（spec §8：Crypto → 5，其余 → 1）。
+/// 打开默认库；失败按 CLI 退出码约定退出。
 fn open_db() -> core::db::Db {
     core::db::open_and_migrate().unwrap_or_else(|e| exit_core_error(&e))
 }
@@ -74,7 +74,7 @@ pub(crate) fn sync_import(file: &str) {
     );
     if report.skipped_unsupported > 0 {
         // 必须显式告知：这些变更**没有**同步过来，不要计入「成功」。
-        // M4 起已知类型全部可落库，这条分支只在「对端用了更新的实体类型」时出现。
+        // 已知类型全部可落库，这条分支只在「对端用了更新的实体类型」时出现。
         eprintln!(
             "提示: {} 条变更的实体类型本版本还不支持同步，未应用也未记录",
             report.skipped_unsupported

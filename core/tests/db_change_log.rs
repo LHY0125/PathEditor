@@ -1,6 +1,6 @@
 //! `changes` 变更日志：seq/lamport 单调推进、待导出查询、标记已导出。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::change_log::{
     current_lamport, mark_exported, pending_export, record_change_tx, NewChange,

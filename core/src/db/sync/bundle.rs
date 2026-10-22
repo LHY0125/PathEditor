@@ -1,4 +1,4 @@
-//! 同步包的加密格式（spec §5.2 / §6.4）。
+//! 同步包的加密格式。
 //!
 //! ## 布局
 //!
@@ -31,7 +31,7 @@ use crate::error::{CoreError, ErrorCode};
 
 /// 包魔数。
 ///
-/// spec §5.2 写的是 `magic "PESYNC1" (8)`，但 `PESYNC1` 只有 **7 个字符**——
+/// 写的是 `magic "PESYNC1" (8)`，但 `PESYNC1` 只有 **7 个字符**——
 /// 这是规格里的一处笔误。取 8 字节定长（尾随 NUL）以便按 `u64` 对齐比较，
 /// 并让「8 字节 magic」的文字描述成立。
 const MAGIC: &[u8; 8] = b"PESYNC1\0";
@@ -65,7 +65,7 @@ pub struct BundleHeader {
 
 /// Argon2id 派生 32 字节密钥。
 ///
-/// 参数由 spec §5.2 **写死**（m=65536 KiB, t=3, p=1）：它们决定 bundle 的
+/// 参数由 **写死**（m=65536 KiB, t=3, p=1）：它们决定 bundle 的
 /// 跨设备兼容性，调高会让旧客户端解不开、调低会削弱抗暴力破解。
 pub fn derive_key(passphrase: &str, salt: &[u8; SALT_LEN]) -> Result<[u8; KEY_LEN], CoreError> {
     let params = Params::new(65536, 3, 1, Some(KEY_LEN))
@@ -199,7 +199,7 @@ fn split(
 
 /// 用 OS 熵源取 N 字节。
 ///
-/// 不用 `rand` crate：`getrandom` 已是依赖（M1 的密钥生成在用），
+/// 不用 `rand` crate：`getrandom` 已是依赖，
 /// 少一个传递依赖就少一处供应链面。
 fn random_bytes<const N: usize>() -> Result<[u8; N], CoreError> {
     let mut buf = [0u8; N];

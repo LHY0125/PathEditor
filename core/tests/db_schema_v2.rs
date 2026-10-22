@@ -1,6 +1,6 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// 本测试守的是「M2 的派生表在新库上建得出来」与「迁移幂等」两件事。
+// 本测试守的是「派生表在新库上建得出来」与「迁移幂等」两件事。
 // 版本号断言用 `CURRENT_SCHEMA_VERSION` 而非硬编码 `2`——schema 每升一版
 // 都不该让它失败；「v1→v2 是否落版本号」由 `db_schema_v1_to_v2.rs` 专门守。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};

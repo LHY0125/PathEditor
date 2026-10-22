@@ -1,6 +1,6 @@
 //! `.v5.bak` 归档：只改名、幂等、不覆盖已有备份。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::archive_v5::archive_v5_sources;
 use tempfile::TempDir;
 

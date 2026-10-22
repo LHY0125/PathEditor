@@ -1,7 +1,7 @@
 use crate::env_var::EnvHive;
 use crate::error::{CoreError, ErrorCode};
 
-/// 修订冲突统一错误消息。判定按 `CoreError.code == Conflict`（Task 3 迁移后），
+/// 修订冲突统一错误消息。判定按 `CoreError.code == Conflict`，
 /// message 的 `[E_CONFLICT]` 前缀仅为过渡期展示文本，中文正文仅供人工阅读。
 pub(crate) const ERR_CONFLICT: &str = "[E_CONFLICT] 变量已被其他进程修改，请重新加载";
 

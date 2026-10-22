@@ -30,14 +30,14 @@ pub struct ExportReport {
     pub path: PathBuf,
 }
 
-/// bundle 里的一条变更（**对外形状**，spec §6.4）。
+/// bundle 里的一条变更。
 ///
 /// **禁止出现本地整数主键**：`id` 是各设备自己的自增列，跨设备毫无意义。
 /// 所有引用一律用 uid（`uid` / `deviceId` / `entityUid`）。
 ///
-/// ## `content` 是对 spec §6.4 的补充
+/// ## `content` 是对补充
 ///
-/// spec 的 Change 只有 `oldValue` / `newValue` 两个自由文本字段，**不足以
+/// `Change` 只有 `oldValue` / `newValue` 两个自由文本字段，**不足以
 /// 让导入方重建实体**：变更日志只知道「某快照被创建了」，不知道它里面有哪些
 /// PATH 条目。若只导出变更行，接收端解密成功后只能记一条 `changes` 行，
 /// 却无法写出对应的 `snapshots` / `path_entries`——同步「成功」但什么都没同步。
@@ -118,7 +118,7 @@ fn entity_content(
     }
 }
 
-/// payload 顶层结构（spec §6.4）。
+/// payload 顶层结构。
 #[derive(Debug, Serialize)]
 struct BundlePayload<'a> {
     changes: Vec<BundleChange<'a>>,
@@ -141,7 +141,7 @@ pub fn export_bundle(
     // ② 构建 payload + header
     //
     // 每条变更都带上实体的**当前内容**，使 bundle 自包含（见 `BundleChange`
-    // 的文档：spec 的 oldValue/newValue 不足以重建实体）。
+    // 的文档：`oldValue`/`newValue` 不足以重建实体）。
     let mut changes = Vec::with_capacity(pending.len());
     for c in &pending {
         let content = entity_content(db, &c.entity_type, &c.entity_uid)?;

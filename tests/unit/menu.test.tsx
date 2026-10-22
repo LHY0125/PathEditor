@@ -125,7 +125,7 @@ describe('Menu', () => {
   });
 });
 
-describe('Menu 键盘导航（spec N4）', () => {
+describe('Menu 键盘导航', () => {
   /** 两个分组共四个条目，其中「条目乙」禁用，用于验证焦点跳过。 */
   function keyboardGroups(): MenuGroupDef[] {
     const noop = vi.fn();

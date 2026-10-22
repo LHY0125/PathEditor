@@ -1,4 +1,4 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 use path_editor_core::db::compare::compare;
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
@@ -50,13 +50,13 @@ fn compare_reports_both_hives_added_removed_and_reorder() {
     assert!(r.system.removed.is_empty(), "system 没有删除");
     assert!(!r.system.reordered.is_empty(), "system 的 A/B 顺序变了");
 
-    // user 侧（N-8：必须分开断言，只比 system 时这里会全空而不报错）
+    // user 侧
     assert_eq!(r.user.added.len(), 1, "user 新增 C:\\U2");
     assert_eq!(r.user.added[0].path, "C:\\U2");
     assert!(r.user.removed.is_empty());
     assert!(r.user.reordered.is_empty(), "user 顺序没变");
 
-    // env 三字段恒为空（T-3）
+    // env 三字段恒为空
     assert!(r.env_added.is_empty() && r.env_removed.is_empty() && r.env_modified.is_empty());
 
     // 自比对：两侧都为空

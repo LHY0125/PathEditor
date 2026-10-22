@@ -1,6 +1,6 @@
 //! schema v3：新库建到 v3，且重复迁移幂等。
 //!
-//! 一文件一测试：见 M0 §5.3（同一进程内第二个 SQLCipher 测试会 STATUS_STACK_OVERFLOW）。
+//! 一文件一测试（SQLCipher）（同一进程内第二个 SQLCipher 测试会 STATUS_STACK_OVERFLOW）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::Db;
 use tempfile::TempDir;

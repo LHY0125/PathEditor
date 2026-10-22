@@ -55,7 +55,7 @@ export async function loadPathSnapshot(): Promise<LoadSnapshot> {
 
 /** 按 hive 计算并提交保存计划；禁用状态只在注册表成功后持久化。
  *
- * **Wave 3.0-B（F-08 收口）**：编排已下沉到 `core::service::save_path_with_sidecar`
+ * -B：编排已下沉到 `core::service::save_path_with_sidecar`
  * （经 `backend.savePathWithSidecar`）。本函数**只保留三件 core 表达不了的事**：
  * 1. 权限预检（`kind: 'blocked'`，来自 `canWriteTarget`）；
  * 2. 组合长度软提醒（`kind: 'warning'`，可 `force` 放行）；
@@ -98,7 +98,7 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
     };
   }
 
-  // ── 2. 组合长度软提醒（core 表达不了：比 Windows 更严的应用层约束，K1）──
+  // ── 2. 组合长度软提醒──
   const enabledSys = sysPaths.filter((entry) => entry.enabled).map((entry) => entry.path);
   const enabledUser = userPaths.filter((entry) => entry.enabled).map((entry) => entry.path);
   const sysJoined = enabledSys.join(';');
@@ -140,8 +140,8 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
   // 两类问题分开处理（复审裁断 ④）：
   // - **hive 失败**（注册表未写入）→ 进 `errors`，把结果降级为 failure/partial；
   // - **sidecar 异常**（注册表**已写入**，仅快照未落盘）→ **非阻断提示**：
-  //   不降级结果，只改 `statusMessage`。core 会在下次命令时经
-  //   `retry_pending_path_state` 自动补写（D6）。静默持久化失败是回归，故必须提示。
+  //  不降级结果，只改 `statusMessage`。core 会在下次命令时经
+  //  `retry_pending_path_state` 自动补写。静默持久化失败是回归，故必须提示。
   const errors: string[] = [];
   const sysApplied = hiveApplied(outcome.system);
   const userApplied = hiveApplied(outcome.user);

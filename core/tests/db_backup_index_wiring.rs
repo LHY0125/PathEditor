@@ -1,9 +1,9 @@
 #![cfg(windows)]
-// 一文件一测试：见 M0 §5.3。`.pebak` 走 DPAPI，因此整体限定 Windows。
+// 一文件一测试（SQLCipher）。`.pebak` 走 DPAPI，因此整体限定 Windows。
 //
-// **P1-2 回归守卫**：备份索引必须有生产调用者。
+// 回归守卫：备份索引必须有生产调用者。
 //
-// 缺口清单 P1-2：首版 `index_backups` 只被测试调用，`backup_list` 读 `backups`
+// 缺口清单：首版 `index_backups` 只被测试调用，`backup_list` 读 `backups`
 // 表但没人往里写，命令恒返回空。修复在 `setup_database`（启动时）与
 // `backup_list`（每次调用前增量）两处。
 //

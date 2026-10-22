@@ -13,7 +13,7 @@ import {
  * 从 backend 解析层的 rejection 产物中取错误码。
  *
  * 只做形状收窄，不做判定 —— 「冲突整批中止」「未提权写不了 HKLM」这些规则
- * 都在 Rust 侧；这里读到的 code 仅用于**选择提示文案**（F-06：判定只认 code，
+ * 都在 Rust 侧；这里读到的 code 仅用于**选择提示文案**（判定只认 code，
  * 不匹配 message 文本）。
  */
 function errorCode(err: unknown): string | null {
@@ -50,7 +50,7 @@ export function buildRestoreConfirm(
       );
     }
   }
-  // 恢复不产生新备份（设计文档 C7）：手工兜底出口必须在确认前给到。
+  // 恢复不产生新备份：手工兜底出口必须在确认前给到。
   lines.push('', labels.manualFallback, '  patheditor backup', '  patheditor env backup');
   return lines.join('\n');
 }
@@ -212,7 +212,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
   const restore = useCallback(async () => {
     if (!selected) return;
     // 恢复不可逆且**不产生新备份**：确认文案里必须同时给出差异摘要、
-    // 将被删除的变量名，以及手工兜底出口（spec §手工兜底出口）。
+    // 将被删除的变量名，以及手工兜底出口。
     const text = buildRestoreConfirm(t('envBackup.confirmRestore'), summaryOf(preview), {
       deleteWarning: t('envBackup.deleteWarning'),
       deleteHint: t('envBackup.deleteWarningHint'),

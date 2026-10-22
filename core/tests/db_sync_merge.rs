@@ -1,7 +1,7 @@
 //! 字段级 LWW 判定的四种情况。
 //!
 //! 本文件测试**纯函数**，不建库——因此不受 SQLCipher 栈溢出约束，
-//! 但仍遵守一文件一测试（见 M0 §5.3）。
+//! 但仍遵守一文件一测试（SQLCipher 约束）。
 use path_editor_core::db::sync::change_log::ChangeRow;
 use path_editor_core::db::sync::merge::{resolve, MergeDecision};
 

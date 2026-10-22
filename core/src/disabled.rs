@@ -345,7 +345,7 @@ pub fn has_pending_path_snapshot() -> bool {
     pending_path().exists()
 }
 
-// merge_hive 的 golden 用例（F-10 第 5 类禁用项兼容性）。
+// merge_hive 的 golden 用例。
 // merge_hive 是本文件私有 fn，只有子模块可访问。
 #[cfg(test)]
 #[path = "registry/golden/merge_golden_tests.rs"]
@@ -364,7 +364,7 @@ mod tests {
 
     // disabled.json 持久化原语（roundtrip / schemaVersion / .bak / quarantine）
     // 按 pending 快照原语的同款约定合并为一个生命周期测试：所有测试共享固定
-    // 临时路径（std::env::temp_dir()），F-11 测试还会直接写原始文件内容，
+    // 临时路径（std::env::temp_dir）， 测试还会直接写原始文件内容，
     // 拆成多个测试会有并行竞态。
     #[test]
     fn disabled_state_lifecycle_with_schema_backup_and_quarantine() {

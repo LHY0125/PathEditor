@@ -1,6 +1,6 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **Task 12 的验收判据**：清空三张派生表 → 跑一遍重建 → 数据恢复。
+// 的验收判据：清空三张派生表 → 跑一遍重建 → 数据恢复。
 //
 // 与 `gui/src/lib.rs::rebuild_derived_tables` 的关系：那个函数是启动序列里的
 // 薄编排（依次调下面三个 core 函数 + 打日志 + 失败只告警），它的正确性完全
@@ -108,7 +108,7 @@ fn all_three_derived_tables_recover_after_being_cleared() {
         .unwrap();
     assert_eq!(empty_edges, 0, "var_references 已清空");
 
-    // ── 重建：数据必须完全恢复（这是 spec §4.2 第 5 条的验收）──
+    // ── 重建：数据必须完全恢复──
     rebuild_index(&mut db).unwrap();
     rebuild_daily(&mut db).unwrap();
     rebuild_refs(&mut db).unwrap();

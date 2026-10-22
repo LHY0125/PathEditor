@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchStore } from '@/store/search-store';
 
 /**
- * 全文检索面板（Task 10）。
+ * 全文检索面板。
  *
  * **高亮由 Rust 侧产出**：`SearchHit.snippet` 是 FTS5 的 `snippet()` 结果，
  * 命中处已用 `[]` 包裹。前端只负责把 `[...]` 渲染成 `<mark>`，

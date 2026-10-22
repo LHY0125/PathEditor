@@ -1,6 +1,6 @@
 //! 墓碑与旧内容：删除之后，低 lamport 的内容变更不得让配置「复活」。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;

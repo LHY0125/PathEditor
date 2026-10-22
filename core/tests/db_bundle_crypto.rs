@@ -1,6 +1,6 @@
 //! 同步包加密：往返、错误口令、篡改密文、篡改 header 四种情况。
 //!
-//! 一文件一测试：见 M0 §5.3。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::sync::bundle::{open, seal, BundleHeader};
 use path_editor_core::ErrorCode;
 

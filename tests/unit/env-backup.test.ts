@@ -79,7 +79,7 @@ describe('备份差异摘要', () => {
   });
 
   it('modified 恒为 0 时按真实计数如实渲染，不做换算', () => {
-    // Task 5 裁断：revision 取值使「值变了」≡「备份过期」→ 一律计 conflict。
+    // 裁断：revision 取值使「值变了」≡「备份过期」→ 一律计 conflict。
     // 前端不得把 conflict 折算成 modified（那是复制判定逻辑）。
     const s = summarizePreview(preview({ conflicts: 4 }));
 

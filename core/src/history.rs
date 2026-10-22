@@ -1,7 +1,7 @@
 //! 历史记录接缝：服务层通过 `HistorySink` 上报事件，不直接依赖数据库。
 //!
 //! 这样 `core::service::save_path_with_sidecar` 无需知道 `Db` 的存在：
-//! 生产注入 `DbHistory`（M1 Task 5），测试注入 `NoopHistory`，既有测试零改动。
+//! 生产注入 `DbHistory`，测试注入 `NoopHistory`，既有测试零改动。
 
 use crate::env_var::EnvHive;
 use crate::error::CoreError;
@@ -63,7 +63,7 @@ pub enum EventResult {
     Failure,
 }
 
-/// 一次可记录的操作。**不得包含环境变量明文值**（spec D6）。
+/// 一次可记录的操作。**不得包含环境变量明文值**。
 #[derive(Debug, Clone, Default)]
 pub struct HistoryEvent {
     /// 事件来源
@@ -84,7 +84,7 @@ pub struct HistoryEvent {
     pub result: EventResult,
     /// 本次操作产生的快照 uid。
     ///
-    /// **J-8 整改**：没有它，历史面板点击事件后无法定位到快照——只能拿事件 uid
+    /// 整改：没有它，历史面板点击事件后无法定位到快照——只能拿事件 uid
     /// 去查快照，必然 `NotFound`，右侧详情恒空。
     /// 由服务层在写完快照后回填；`None` 表示该操作没有产生快照（如纯查询类事件）。
     pub snapshot_uid: Option<String>,
@@ -92,8 +92,8 @@ pub struct HistoryEvent {
 
 /// 历史写入端口。实现方负责持久化；调用方不感知存储形态。
 ///
-/// **H5：不要求 Send + Sync** —— M1 的 `DbHistory` 持有内部可变句柄，
-/// 同步调用即可。将来若需跨线程，改为 `Mutex<Db>` 并重新评估（M3）。
+/// **：不要求 Send + Sync** —— `DbHistory` 持有内部可变句柄，
+/// 同步调用即可。将来若需跨线程，改为 `Mutex<Db>` 并重新评估。
 pub trait HistorySink {
     /// 记录一次事件。失败不应影响主流程（调用方只记日志）。
     fn record(&self, event: HistoryEvent) -> Result<(), CoreError>;

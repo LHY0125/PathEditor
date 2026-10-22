@@ -110,7 +110,7 @@ pub struct EnvVarMeta {
 /// 单个变量的完整明文及其读取时的 revision。
 ///
 /// 编辑弹窗用 `revision` 绑定「这个值是在哪一版读到的」，避免用陈旧值
-/// 配新 revision 提交、覆盖外部更新（F-01）。
+/// 配新 revision 提交、覆盖外部更新。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RevealedValue {
@@ -195,7 +195,7 @@ pub fn revision_of(name: &str, vtype: RegType, value: &str) -> String {
 
 /// 净化并截断展示摘要。剔除控制字符；净化后为空则返回 `None`。
 ///
-/// 剔除范围是**全部 C0 控制字符**（U+0000–U+001F）与 DEL（U+007F）——
+/// 剔除范围是**全部控制字符**（U+0000–U+001F）与 DEL（U+007F）——
 /// 既涵盖 `\r` / `\n` / `\0`（防多行日志注入），也涵盖 `\x1b`（ESC，防终端
 /// ANSI 转义序列注入：注册表值若含 `\x1b[2J` 可在展示时清屏、改标题）。安全审查修正。
 pub fn sanitize_preview(value: &str) -> Option<String> {

@@ -1,9 +1,9 @@
-//! 同步包里的配置名称必须过与本地保存同一套校验（J-1）。
+//! 同步包里的配置名称必须过与本地保存同一套校验。
 //!
 //! 包虽然用口令加密，但发送端可能是更新版本、有 bug 的版本，或被分享口令的
 //! 另一台机器——名称属于**跨信任边界的外部输入**，且会持久化并被 UI 渲染。
 //!
-//! 一文件一测试（M0 §5.3）。
+//! 一文件一测试（SQLCipher）。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;

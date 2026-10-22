@@ -1,6 +1,6 @@
-// 一文件一测试：见 M0 §5.3。
+// 一文件一测试（SQLCipher）。
 //
-// **M-2 时区约束**：`date(..., 'localtime')` 取 C 运行时时区，代码里没有任何地方
+// ** 时区约束**：`date(..., 'localtime')` 取 C 运行时时区，代码里没有任何地方
 // 强制 `Asia/Shanghai`。本测试**不使用固定的日期字面量**，只断言「有且只有一天」
 // 与「该天的值是确定的」——避免在 23:59 附近跑时因跨日而假失败。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
@@ -41,7 +41,7 @@ fn daily_stats_aggregates_events_and_is_rebuildable() {
     )
     .unwrap();
 
-    // 把它设为当前快照——`current_*` 字段依赖 `app_state.current_snapshot_id`（N-4）
+    // 把它设为当前快照——`current_*` 字段依赖 `app_state.current_snapshot_id`
     let version = path_editor_core::db::history::app_state_version(&db).unwrap();
     path_editor_core::db::history::set_current_snapshot(&mut db, &snap_uid, version).unwrap();
 
@@ -69,7 +69,7 @@ fn daily_stats_aggregates_events_and_is_rebuildable() {
     assert_eq!(d.days[0].events, 3, "当天 3 条事件");
     assert_eq!(d.days[0].path_items, 2, "当日最后一条快照有 2 条 PATH");
 
-    // ── N-4：新增字段必须有断言，否则「看起来对、语义错」没人守 ──
+    // ──：新增字段必须有断言，否则「看起来对、语义错」没人守 ──
     assert_eq!(d.current_path_items, 2, "当前快照 2 条 PATH");
     // C:\A 是 4 个字符、C:\BB 是 5 个字符，平均 4.5。
     // 用 AVG(length(path)) 算的是**字符数**（SQLite 的 length 对 TEXT 返回字符数）。

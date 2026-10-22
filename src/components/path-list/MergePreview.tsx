@@ -64,7 +64,7 @@ export function MergePreview() {
           return (
             <div
               key={`${source}-${displayIndex}`}
-              // 与 PathTable 同规则：交替底色按逻辑索引，不用 :nth-child（H1）
+              // 与 PathTable 同规则：交替底色按逻辑索引，不用 :nth-child
               data-state={enabled ? 'ok' : 'off'}
               data-odd={rowIdx % 2 === 1}
               className="path-row"

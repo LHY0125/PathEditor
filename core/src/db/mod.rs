@@ -1,6 +1,6 @@
 //! SQLCipher 数据库句柄。
 //!
-//! **所有写事务 `BEGIN IMMEDIATE`**（spec D14：WAL 不代替业务并发控制）；
+//! **所有写事务 `BEGIN IMMEDIATE`**；
 //! 读-改-写必须带 `version` CAS。
 
 pub mod archive_v5;
@@ -38,7 +38,7 @@ pub struct Db {
 impl Db {
     /// 用 32 字节十六进制密钥打开（或创建）加密库。
     ///
-    /// 打开序列与 M0 探针（`probes/v6-sqlcipher/src/lib.rs`）已验证的顺序一致：
+    /// 打开序列已由 `probes/v6-sqlcipher` 探针验证：
     /// 先只设 key，再**做一次只读查询**让 SQLCipher 用 HMAC 校验密钥，
     /// 最后才设 PRAGMA —— 否则错误密钥会先被 `journal_mode=WAL` 的写操作触发，
     /// 报出的错误语义模糊。
@@ -64,8 +64,8 @@ impl Db {
                 format!("密钥错误或数据库损坏: {e}"),
             )
         })?;
-        // cipher_memory_security 默认 OFF：M0 实测 ON 在受限进程里 VirtualLock 失败，
-        // 且 ON/OFF 性能无显著差异（M0 结果 §四）。
+        // cipher_memory_security 默认 OFF：实测 ON 在受限进程里 VirtualLock 失败，
+        // 且 ON/OFF 性能无显著差异。
         conn.execute_batch(
             "PRAGMA cipher_memory_security = OFF;
              PRAGMA journal_mode = WAL;
@@ -76,7 +76,7 @@ impl Db {
         Ok(Self { conn })
     }
 
-    /// 只读版本号（spec B2：启动序列中**不得**写 `user_version`）。
+    /// 只读版本号。
     pub fn schema_version(&self) -> Result<u32, CoreError> {
         self.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
@@ -105,20 +105,20 @@ impl Db {
             if current < 1 {
                 tx.execute_batch(schema::DDL_V1)
                     .map_err(|e| db_err("ddl_v1", e))?;
-                // J-7：建库即写 app_state 单行。否则 `set_current_snapshot` 的
-                // CAS 永远匹配 0 行、恒返回 false（spec §十二 的 CAS 验收不可达）。
+                // 建库即写 app_state 单行。否则 `set_current_snapshot` 的
+                // CAS 永远匹配 0 行、恒返回 false。
                 tx.execute(
                     schema::SEED_APP_STATE_SQL,
                     rusqlite::params![uuid::Uuid::now_v7().to_string()],
                 )
                 .map_err(|e| db_err("seed_app_state", e))?;
             }
-            // v2：M2 的派生表（scan_runs / var_references / daily_stats / search_fts）
+            // v2：派生表（scan_runs / var_references / daily_stats / search_fts）
             if current < 2 {
                 tx.execute_batch(schema::DDL_V2)
                     .map_err(|e| db_err("ddl_v2", e))?;
             }
-            // v3：M3 的同步表（changes / sync_conflicts）
+            // v3：同步表（changes / sync_conflicts）
             if current < 3 {
                 tx.execute_batch(schema::DDL_V3)
                     .map_err(|e| db_err("ddl_v3", e))?;
@@ -210,14 +210,14 @@ impl Db {
 /// 统一把 `rusqlite::Error` 包装为 `CoreError`。
 ///
 /// 刻意写成**二元函数**而非返回闭包：`map_err` 需要一元 `FnOnce(E) -> F`，
-/// 直接传 `db_err` 会类型不匹配（计划核对 B1）。
+/// 直接传 `db_err` 会类型不匹配。
 pub(crate) fn db_err(op: &'static str, e: rusqlite::Error) -> CoreError {
     CoreError::new(ErrorCode::Database, op, format!("{op} 失败: {e}"))
 }
 
 /// 用默认路径与 DPAPI 密钥打开数据库。
 ///
-/// 失败时返回错误 —— **GUI 据此进入降级模式**（spec D16 fail-open），
+/// 失败时返回错误 —— **GUI 据此进入降级模式**，
 /// CLI 对需要 DB 的命令返回 exit 5（Crypto）或 1（Database）。
 ///
 /// **不静默重建空库**：密钥丢失/DPAPI 不可用时必须明确报错，否则会静默丢失历史。
@@ -225,7 +225,7 @@ pub fn open_default() -> Result<Db, CoreError> {
     let home = crypto::config_dir();
     let material = crypto::load_or_create_key(&home)?;
 
-    // 启动时校验密钥文件 DACL（spec §5.1：过宽只告警，**不自动修改**——
+    // 启动时校验密钥文件 DACL（过宽只告警，**不自动修改**——
     // 避免误伤用户自建的目录权限）。
     #[cfg(windows)]
     {
@@ -253,7 +253,7 @@ pub fn open_default() -> Result<Db, CoreError> {
 /// 序列的职责（`retry_pending_path_state` 会写 `disabled.json`，CLI 单次命令
 /// 不该有这种副作用）。
 ///
-/// 失败返回 `Err`：CLI 对需要 DB 的命令应据此报错退出（spec §8）。
+/// 失败返回 `Err`：CLI 对需要 DB 的命令应据此报错退出。
 pub fn open_and_migrate() -> Result<Db, CoreError> {
     let mut db = open_default()?;
     db.migrate_to_current()?;

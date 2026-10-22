@@ -3,7 +3,7 @@
 //! **纯函数，不碰数据库**——因此可以脱离 SQLCipher 单测，不受「一进程一个
 //! SQLCipher 测试」的约束。
 //!
-//! ## 判定规则（spec §6.3）
+//! ## 判定规则
 //!
 //! 1. 远端 `lamport` 更大 → [`MergeDecision::TakeRemote`]
 //! 2. 远端 `lamport` 更小 → [`MergeDecision::KeepLocal`]
