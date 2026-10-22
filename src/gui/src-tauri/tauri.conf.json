@@ -4,7 +4,7 @@
   "version": "6.0.0",
   "identifier": "com.liuhangyu.patheditor",
   "build": {
-    "frontendDist": "../../../dist",
+    "frontendDist": "../web/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"

@@ -1,6 +1,6 @@
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
-import { version } from '../../../package.json';
+import { version } from '../../../../../../package.json';
 
 export function TitleBar() {
   const { t } = useTranslation();

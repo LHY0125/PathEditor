@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "core",
+    "src/core",
     "src/gui/src-tauri",
-    "cli",
+    "src/cli",
 ]
 # v6 SQLCipher 风险探针是独立 crate（需要 Perl/OpenSSL 构建链），
 # 刻意排除出 workspace，避免污染 `cargo test --workspace`

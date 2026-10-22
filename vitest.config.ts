@@ -4,18 +4,18 @@ import path from 'node:path';
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(__dirname, 'src/gui/web/src'),
     },
   },
   test: {
     environment: 'jsdom',
-    setupFiles: ['./tests/setup.ts'],
-    exclude: ['e2e/**', 'node_modules/**', 'gui/**', '.claude/**'],
+    setupFiles: ['./src/gui/web/tests/setup.ts'],
+    exclude: ['src/gui/web/e2e/**', 'node_modules/**', 'src/gui/src-tauri/**', '.claude/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'cobertura'],
-      include: ['src/core/**', 'src/store/**', 'src/hooks/**'],
-      exclude: ['src/main.tsx', 'src/vite-env.d.ts'],
+      include: ['src/gui/web/src/core/**', 'src/gui/web/src/store/**', 'src/gui/web/src/hooks/**'],
+      exclude: ['src/gui/web/src/main.tsx', 'src/gui/web/src/vite-env.d.ts'],
       thresholds: {
         lines: 80,
       },

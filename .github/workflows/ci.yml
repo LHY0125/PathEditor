@@ -62,7 +62,7 @@ jobs:
         run: npm ci
 
       # CLI 的 `env restore` 夹具要求本机至少有 4 个用户环境变量
-      # （`cli/src/env_ops.rs` 的 `craft_preview_fixture` 在不足时**显式失败**，
+      # （`src/cli/src/env_ops.rs` 的 `craft_preview_fixture` 在不足时**显式失败**，
       #  这是有意的：静默跳过会让「计数器字段串位」这类缺陷漏网）。
       # 干净的 runner 用户变量很少，这里补 4 个。
       # 用 SetEnvironmentVariable(User) 而不是 setx：没有 1024 字符上限，也不弹提示。

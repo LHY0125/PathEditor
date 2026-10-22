@@ -79,7 +79,7 @@ jobs:
         run: |
           $version = $env:VERSION
           $packageVersion = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
-          $tauriVersion = (Get-Content -LiteralPath 'gui\tauri.conf.json' -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content -LiteralPath 'src\gui\src-tauri\tauri.conf.json' -Raw | ConvertFrom-Json).version
 
           $cargoToml = Get-Content -LiteralPath 'Cargo.toml' -Raw
           if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
@@ -89,7 +89,7 @@ jobs:
 
           $mismatches = @()
           if ($packageVersion -ne $version) { $mismatches += "package.json=$packageVersion" }
-          if ($tauriVersion -ne $version) { $mismatches += "gui/tauri.conf.json=$tauriVersion" }
+          if ($tauriVersion -ne $version) { $mismatches += "src/gui/src-tauri/tauri.conf.json=$tauriVersion" }
           if ($cargoVersion -ne $version) { $mismatches += "Cargo.toml=$cargoVersion" }
 
           if ($mismatches.Count -gt 0) {

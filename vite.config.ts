@@ -21,10 +21,11 @@ function appVersionPlugin(): Plugin {
 }
 
 export default defineConfig({
+  root: 'src/gui/web',
   plugins: [react(), tailwindcss(), appVersionPlugin()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(__dirname, './src/gui/web/src'),
     },
   },
   clearScreen: false,

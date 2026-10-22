@@ -50,7 +50,7 @@ review-*.diff
 .superpowers/brainstorm/*/state/
 
 # Platform
-e2e/debug-screenshot.png
+src/gui/web/e2e/debug-screenshot.png
 target/
 
 # v6 SQLCipher 探针：构建产物与本地 Perl 模块补丁不入库（可重新生成）

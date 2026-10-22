@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import packageJson from '../../../package.json';
+import packageJson from '../../../../../../package.json';
 
 interface HelpDialogProps {
   open: boolean;
