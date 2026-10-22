@@ -9,7 +9,7 @@ use path_editor_core::history::NoopHistory;
 use path_editor_core::service::{self, ApplyOutcome, PathHiveWrite};
 use tauri::State;
 
-use super::history::DbState;
+use super::db_state::DbState;
 
 /// 同时写注册表与 sidecar（best-effort 多 hive，partial 语义按 hive 分字段）。
 ///

@@ -1,6 +1,9 @@
+use super::db_state::{with_db_mut, DbState};
 use path_editor_core::backup;
 use path_editor_core::backup::{EnvBackupInfo, RestoreOutcome, RestorePreview};
+use path_editor_core::db::backups::{self, BackupView};
 use path_editor_core::error::CoreError;
+use tauri::State;
 
 #[tauri::command]
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
@@ -63,4 +66,20 @@ pub fn preview_env_backup(file: String) -> Result<RestorePreview, CoreError> {
 pub fn restore_env_backup(file: String, force: bool) -> Result<RestoreOutcome, CoreError> {
     let path = backup::validate_backup_path(&file)?;
     backup::restore_env_backup_from(&path, force)
+}
+
+/// 列出备份索引。
+///
+/// 每次调用前先增量索引：只在启动时索引会漏掉「启动后新做的备份」。
+/// `index_backups` 按 `file_path` 去重，重复调用幂等，成本只是目录 stat。
+#[tauri::command]
+pub fn backup_list(state: State<'_, DbState>) -> Result<Vec<BackupView>, CoreError> {
+    with_db_mut(&state, "backup_list", |db| {
+        let dir = path_editor_core::backup::env_backup_dir();
+        // 索引失败不阻断列表：已有索引行仍然有价值
+        if let Err(e) = backups::index_backups(db, &dir) {
+            log::warn!("备份索引刷新失败（展示已有索引）: {}", e.message);
+        }
+        backups::list_backups(db)
+    })
 }

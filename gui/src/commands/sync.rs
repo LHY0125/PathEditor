@@ -15,8 +15,7 @@ use path_editor_core::db::sync::ImportReport;
 use path_editor_core::CoreError;
 use tauri::State;
 
-use super::history::DbState;
-use super::history::{with_db, with_db_mut};
+use super::db_state::{with_db, with_db_mut, DbState};
 
 /// 同步状态（同步中心首屏）。
 #[derive(Debug, Clone, serde::Serialize)]

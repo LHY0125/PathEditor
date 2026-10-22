@@ -1,23 +1,15 @@
-//! 历史 / 配置 / 备份的 Tauri 命令。
+//! 历史快照的 Tauri 命令。
 //!
 //! **只做参数转换与错误呈现**，业务规则全在 core。
 //!
-//! 降级语义：DB 不可用时 `DbState` 为 `None`，
-//! 所有 `history_*` / `profile_*` / `backup_*` 命令返回 `CoreError { code: database }`；
-//! **注册表编辑命令不受影响**（它们在 `commands::service` / `registry` 里）。
+//! 降级语义：DB 不可用时 `DbState` 为 `None`，所有 `history_*` 命令返回
+//! `CoreError { code: database }`；注册表编辑命令不受影响。
 
-use path_editor_core::db::backups::{self, BackupView};
+use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::db::history::{self, EventFilter, EventPage, SnapshotView};
-use path_editor_core::db::profiles::{self, ProfileView};
-use path_editor_core::db::Db;
-use path_editor_core::{CoreError, ErrorCode};
+use path_editor_core::CoreError;
 use serde::Deserialize;
-use std::sync::Mutex;
-
 use tauri::State;
-
-/// 全局 DB 句柄。`None` = 降级模式（打开失败）。
-pub struct DbState(pub Mutex<Option<Db>>);
 
 /// 事件筛选的 IPC 入参；所有字段可选。
 #[derive(Debug, Default, Deserialize)]
@@ -43,7 +35,7 @@ pub struct EventFilterRequest {
     pub to_ms: Option<i64>,
 }
 
-/// 见：默认 50，上限 500。
+/// 把 IPC 入参归一化为 core 的事件筛选器；默认 50 条，上限 500。
 pub fn from_request(req: Option<EventFilterRequest>) -> EventFilter {
     let req = req.unwrap_or(EventFilterRequest {
         limit: None,
@@ -67,42 +59,6 @@ pub fn from_request(req: Option<EventFilterRequest>) -> EventFilter {
         from_ms: req.from_ms,
         to_ms: req.to_ms,
     }
-}
-
-/// 从共享状态取 DB；降级模式返回结构化错误。
-///
-/// `pub(crate)` 供 `commands::analytics` 复用——**不要复制第二份**：
-/// 锁中毒与降级（`DbState::None`）的判定必须在一处，否则两个模块会对
-/// 「什么算降级」产生分歧。
-pub(crate) fn with_db<T>(
-    state: &State<'_, DbState>,
-    op: &'static str,
-    f: impl FnOnce(&Db) -> Result<T, CoreError>,
-) -> Result<T, CoreError> {
-    let guard = state
-        .0
-        .lock()
-        .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
-    let db = guard
-        .as_ref()
-        .ok_or_else(|| CoreError::new(ErrorCode::Database, op, "历史库不可用，当前处于降级模式"))?;
-    f(db)
-}
-
-/// 从共享状态取可变 DB（写入路径）。`pub(crate)` 供 `commands::analytics` 复用。
-pub(crate) fn with_db_mut<T>(
-    state: &State<'_, DbState>,
-    op: &'static str,
-    f: impl FnOnce(&mut Db) -> Result<T, CoreError>,
-) -> Result<T, CoreError> {
-    let mut guard = state
-        .0
-        .lock()
-        .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
-    let db = guard
-        .as_mut()
-        .ok_or_else(|| CoreError::new(ErrorCode::Database, op, "历史库不可用，当前处于降级模式"))?;
-    f(db)
 }
 
 /// 列出事件（分页、时间倒序）。
@@ -156,154 +112,9 @@ pub fn history_reveal_env_value(
     })
 }
 
-/// 列出配置方案。
-#[tauri::command]
-pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreError> {
-    with_db(&state, "profile_list", profiles::list_profiles)
-}
-
-/// 软删除配置方案。
-#[tauri::command]
-pub fn profile_delete(uid: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_delete", |db| {
-        profiles::delete_profile(db, &uid)
-    })
-}
-
-/// 记录配置被应用（应用次数 + 最后应用时间）。
-///
-/// **不在此处写注册表**：前端先读取 `profile_paths`，再经 `save_path_with_sidecar`
-/// 写入注册表；成功后才调用本命令记账，避免把「记账」和「真写」混在一个命令里。
-#[tauri::command]
-pub fn profile_mark_applied(uid: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_mark_applied", |db| {
-        profiles::mark_profile_applied(db, &uid)
-    })
-}
-
-/// 配置方案的保存请求（PATH 条目 + 元数据一次写入）。
-///
-/// 配置方案统一走 DB；快照与 profile 行在**同一事务**内写入
-/// （`save_profile_tx`），不会出现「配置建了但快照没建」的中间态。
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProfileSaveRequest {
-    /// 配置名称（未删除的同名配置已存在时返回 `NameExists`）
-    pub name: String,
-    /// 描述
-    pub description: Option<String>,
-    /// 标签
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// 系统 PATH 条目
-    #[serde(default)]
-    pub system: Vec<path_editor_core::PathEntry>,
-    /// 用户 PATH 条目
-    #[serde(default)]
-    pub user: Vec<path_editor_core::PathEntry>,
-}
-
-/// 保存配置方案（PATH 条目 + 元数据，单事务）。
-#[tauri::command]
-pub fn profile_save(
-    request: ProfileSaveRequest,
-    state: State<'_, DbState>,
-) -> Result<String, CoreError> {
-    with_db_mut(&state, "profile_save", |db| {
-        let snap = history::NewSnapshot {
-            kind: history::SnapshotKind::Profile,
-            source: path_editor_core::history::EventSource::Gui,
-            system: request.system,
-            user: request.user,
-            env: Vec::new(),
-            parent_uid: None,
-        };
-        profiles::save_profile(
-            db,
-            &request.name,
-            request.description.as_deref(),
-            &request.tags,
-            snap,
-        )
-    })
-}
-
-/// 读取配置的 PATH 条目（UI 预览与应用用）。
-///
-/// 返回 `null` 表示配置不存在或没有 revision。
-#[tauri::command]
-pub fn profile_paths(
-    name: String,
-    state: State<'_, DbState>,
-) -> Result<Option<ProfilePathsView>, CoreError> {
-    with_db(&state, "profile_paths", |db| {
-        // 名称查一次即可拿到 updated_at 与 PATH 条目
-        let view = profiles::get_profile_by_name(db, &name)?;
-        let Some(view) = view else {
-            return Ok(None);
-        };
-        let Some((system, user)) = profiles::profile_paths(db, &name)? else {
-            return Ok(None);
-        };
-        Ok(Some(ProfilePathsView {
-            name: view.name,
-            updated_at: view.updated_at,
-            system,
-            user,
-        }))
-    })
-}
-
-/// 配置的 PATH 条目视图（形状对齐前端既有的 `ProfileData`）。
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProfilePathsView {
-    /// 配置名称
-    pub name: String,
-    /// 最后更新时间（Unix 毫秒）；UI 展示用
-    pub updated_at: i64,
-    /// 系统 PATH
-    pub system: Vec<path_editor_core::PathEntry>,
-    /// 用户 PATH
-    pub user: Vec<path_editor_core::PathEntry>,
-}
-
-/// 重命名配置（UI 用名称标识）。
-#[tauri::command]
-pub fn profile_rename(
-    old_name: String,
-    new_name: String,
-    state: State<'_, DbState>,
-) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_rename", |db| {
-        profiles::rename_profile(db, &old_name, &new_name)
-    })
-}
-
-/// 按**名称**删除配置（软删除）。
-///
-/// 与 `profile_delete`（按 uid）并存：UI 用名称，测试与未来同步用 uid。
-#[tauri::command]
-pub fn profile_delete_by_name(name: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_delete_by_name", |db| {
-        profiles::delete_profile_by_name(db, &name)
-    })
-}
-
-/// 按**名称**记录配置被应用。
-#[tauri::command]
-pub fn profile_mark_applied_by_name(
-    name: String,
-    state: State<'_, DbState>,
-) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_mark_applied_by_name", |db| {
-        profiles::mark_profile_applied_by_name(db, &name)
-    })
-}
-
 /// 把历史快照恢复回注册表。
 ///
-/// **走既有注册表编排**（`service::save_path_with_sidecar`），不新增写注册表的代码路径。
+/// **走既有注册表编排**（`service::save_path_with_db`），不新增写注册表的代码路径。
 /// 双 hive 一次提交：快照里 system / user 都恢复。
 ///
 /// **append-only**：恢复成功后追加**新快照 + 新事件**，旧快照原样保留——
@@ -337,23 +148,6 @@ pub fn history_restore_snapshot(
     })?;
 
     Ok(outcome)
-}
-
-///
-/// 列出备份索引。
-#[tauri::command]
-pub fn backup_list(state: State<'_, DbState>) -> Result<Vec<BackupView>, CoreError> {
-    // 每次调用前先增量索引。只在启动时索引会漏掉「启动后新做的备份」——
-    // 用户启动 → `env backup` → 打开备份列表，就会看到空列表。
-    // `index_backups` 按 `file_path` 去重，重复调用幂等，成本只是目录 stat。
-    with_db_mut(&state, "backup_list", |db| {
-        let dir = path_editor_core::backup::env_backup_dir();
-        // 索引失败不阻断列表：已有索引行仍然有价值
-        if let Err(e) = backups::index_backups(db, &dir) {
-            log::warn!("备份索引刷新失败（展示已有索引）: {}", e.message);
-        }
-        backups::list_backups(db)
-    })
 }
 
 #[cfg(test)]

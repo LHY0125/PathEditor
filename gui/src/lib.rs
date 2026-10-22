@@ -180,7 +180,7 @@ pub fn run() {
                     None
                 }
             };
-            app.manage(commands::history::DbState(std::sync::Mutex::new(db)));
+            app.manage(commands::db_state::DbState(std::sync::Mutex::new(db)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -212,11 +212,11 @@ pub fn run() {
             commands::history::history_get_snapshot,
             commands::history::history_get_current,
             commands::history::history_reveal_env_value,
-            commands::history::profile_list,
-            commands::history::profile_delete,
-            commands::history::profile_mark_applied,
-            commands::history::backup_list,
-            commands::history::profile_save,
+            commands::profiles::profile_list,
+            commands::profiles::profile_delete,
+            commands::profiles::profile_mark_applied,
+            commands::backup::backup_list,
+            commands::profiles::profile_save,
             // ── 检索 / 统计 / 对比 / 引用图 / 冲突历史 ──
             commands::analytics::search,
             commands::analytics::stats_dashboard,
@@ -230,10 +230,10 @@ pub fn run() {
             commands::analytics::scan_history_list,
             commands::analytics::scan_history_diff,
             commands::analytics::scan_history_record,
-            commands::history::profile_paths,
-            commands::history::profile_rename,
-            commands::history::profile_delete_by_name,
-            commands::history::profile_mark_applied_by_name,
+            commands::profiles::profile_paths,
+            commands::profiles::profile_rename,
+            commands::profiles::profile_delete_by_name,
+            commands::profiles::profile_mark_applied_by_name,
             commands::history::history_restore_snapshot,
             // ── 同步中心 ──
             commands::sync::sync_status,

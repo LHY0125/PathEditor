@@ -19,7 +19,7 @@ use path_editor_core::db::{
 use path_editor_core::CoreError;
 use tauri::State;
 
-use super::history::{with_db, with_db_mut, DbState};
+use super::db_state::{with_db, with_db_mut, DbState};
 
 /// 全文检索（FTS5）。
 ///

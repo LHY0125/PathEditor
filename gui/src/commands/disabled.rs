@@ -2,7 +2,7 @@ use path_editor_core::disabled;
 use path_editor_core::PathSnapshot;
 use tauri::State;
 
-use super::history::DbState;
+use super::db_state::DbState;
 
 /// 读取完整 PATH 快照（注册表 + DB 当前快照；DB 不可用时只读注册表）。
 #[tauri::command]
