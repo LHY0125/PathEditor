@@ -8,7 +8,6 @@ pub mod fs;
 pub mod history;
 pub mod path_entry;
 pub(crate) mod persist;
-pub mod reg_store;
 pub mod registry;
 pub mod scanner;
 pub mod service;

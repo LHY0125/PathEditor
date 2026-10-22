@@ -1,7 +1,7 @@
 use crate::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
 use crate::error::{CoreError, ErrorCode};
 use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
-use crate::reg_store::{EnvHiveStore, WinregHive};
+use crate::registry::store::{EnvHiveStore, WinregHive};
 // 经 registry 根 re-export —— 不能写 crate::registry::env_var::X（E0603）。
 // 三个 `*_in_store` 是恢复执行的写入口：保护名单 / 类型 / 名称合法性判定
 // 只在它们内部实现一处，恢复层不得复制判定规则。
@@ -1443,9 +1443,9 @@ pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
 mod tests {
     use super::*;
     use crate::env_var::{revision_of, EnvHive, EnvValueKind};
-    // `MemoryHive` 定义在 `reg_store::memory`（`#[cfg(test)] pub(crate) mod`），
-    // 未经根 re-export —— brief 写的 `crate::reg_store::MemoryHive` 不成立。
-    use crate::reg_store::memory::MemoryHive;
+    // `MemoryHive` 定义在 `registry::store::memory`（`#[cfg(test)] pub(crate) mod`），
+    // 未经根 re-export。
+    use crate::registry::store::memory::MemoryHive;
     // `RegType` 经 `winreg::enums::*` 已在文件顶部导入，测试模块经 `use super::*` 可见。
     use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_MULTI_SZ, REG_SZ};
 

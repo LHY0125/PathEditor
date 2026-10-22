@@ -13,6 +13,7 @@ mod access;
 mod conflict;
 mod env_var;
 mod path;
+pub(crate) mod store;
 
 // ── 对外公开 API（gui/cli 经 `core::registry::*` 引用，路径保持不变）──
 pub use access::can_write_user;
@@ -27,7 +28,7 @@ pub use path::{
     save_user_paths,
 };
 
-// ── crate 内部共享（backup.rs / reg_store.rs / env_var.rs 等使用）──
+// ── crate 内部共享（backup.rs / store.rs / env_var.rs 等使用）──
 pub(crate) use access::hive_location;
 // 恢复执行（`backup.rs`）需要逐变量调用这三个写函数，且**保护名单 / 类型 /
 // 名称合法性判定只在它们内部实现一处。必须经根模块重导出：

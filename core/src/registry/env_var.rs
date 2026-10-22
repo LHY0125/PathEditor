@@ -1,10 +1,10 @@
+use super::store::{EnvHiveStore, WinregHive};
 use crate::backup::{backup_env_vars, BackupOutcome};
 use crate::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
     EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
 };
 use crate::error::{CoreError, ErrorCode};
-use crate::reg_store::{EnvHiveStore, WinregHive};
 use serde::{Deserialize, Serialize};
 use winreg::enums::*;
 use winreg::types::{FromRegValue, ToRegValue};
@@ -387,7 +387,7 @@ pub fn preview_env_change(hive: EnvHive, name: &str) -> Result<EnvChangePreview,
     let revealed = reveal_env_var_in_store(&store, hive, name)?;
     // 类型标签：经 read 路径取真实注册表类型（判定在 core）。
     let kind = env_kind_label(&store, name)?;
-    // 写权限：hive 级只读判定（复用 reg_store 的权限来源），不掺保护名单。
+    // 写权限：hive 级只读判定（复用 registry::store 的权限来源），不掺保护名单。
     let writable = env_hive_writable(hive);
     // 敏感值保护：命中敏感规则时不回传明文；否则净化控制字符后回传。
     let sensitive = is_sensitive(name);
@@ -419,8 +419,8 @@ fn env_kind_label(store: &dyn EnvHiveStore, name: &str) -> Result<String, CoreEr
 
 /// 该 hive 对当前用户是否可写（hive 级，只读探测）。
 ///
-/// 与 `reg_store::hive_writable` 同源（`check_admin` / `can_write_user`）；
-/// 此处独立一份以保持 `env_var` 模块不依赖 `reg_store` 私有项。
+/// 与 `registry::store::hive_writable` 同源（`check_admin` / `can_write_user`）；
+/// 此处独立一份以保持 `env_var` 模块不依赖 `store` 私有项。
 ///
 /// 供 CLI 的 `env add --dry-run` 预览写权限用（该变量可能尚不存在，
 /// 不能走 [`preview_env_change`]，后者对不存在变量返回 `Err`）。
@@ -956,10 +956,10 @@ pub(crate) fn delete_env_var_force_in_store(
 
 #[cfg(test)]
 mod env_var_tests {
+    use crate::registry::store::memory::MemoryHive;
     use super::*;
     use crate::backup::BackupOutcome;
     use crate::env_var::{EnvHive, EnvValueKind};
-    use crate::reg_store::memory::MemoryHive;
     use crate::registry::conflict::ERR_CONFLICT;
     use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
     use winreg::types::FromRegValue;
