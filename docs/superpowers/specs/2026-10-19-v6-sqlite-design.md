@@ -556,6 +556,9 @@ M4 补齐配置同步，并完成 v6.0.0 的清理与发布项。
 - **uid 保留**：远端 uid 直接写入本地 `profiles.uid`，引用不重新生成。
   `profile_revisions.uid` 在本地生成（bundle 不引用 revision uid）；
   `profile_revisions(profile_id, version)` 用 upsert 更新 `snapshot_id`。
+- **名称校验**：`profile.name` 必须过与本地保存同一套校验（非空、≤255 字节、无控制字符）。
+  非法名称 → `SyncFormat` 整包回滚；**不映射为 `InvalidName`**——包里的坏名称是「包格式错」，
+  不是「用户输入错」。
 - **使用统计不同步**：`apply_count` / `last_applied_at` 是本机使用数据，保留本地值；
   新建行取 `0` / `NULL`。
 - **同名不同 uid**：自动改名为 `"{name} (来自 {deviceId 前 8 位})"`；若仍冲突，

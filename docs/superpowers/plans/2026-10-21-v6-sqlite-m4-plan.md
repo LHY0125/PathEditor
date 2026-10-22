@@ -2323,3 +2323,22 @@ git commit -m "chore(v6): 版本号升至 6.0.0"
 - 实际测试数：Rust **56 binaries / 349 passed / 0 failed / 2 ignored**（基线 48/340）；
   前端 **33 files / 398 passed**（基线 397）；E2E **54 passed**（基线 54）。
   `npm run verify:all` exit 0；覆盖率 Lines 82.7%（门槛 80%）。
+
+### 复审轮补充（2026-10-22，据复审回执 §3/§4.3）
+
+- D-14 J-1 名称校验：`import_profile_content_tx` 对 `c.name` 调用 `validate_name`，
+  错误码映射为 `SyncFormat`；新增 `core/tests/db_sync_profile_invalid_name.rs`。
+- D-15 `gui/build.rs` 新增 MSVC 清单分支：`/MANIFEST:EMBED` + `/MANIFESTINPUT`，
+  **仅在 `PATHEDITOR_MSVC_TEST_MANIFEST=1` 时注入**（无条件注入会与 Tauri 的
+  `resource.lib` 撞出 `CVT1100`）。
+- D-16 新增 `.github/workflows/ci.yml`：push main / PR / 手动触发，MSVC 质量门。
+- D-17 `core/tests/db_v5_read_from_db.rs` 的路径断言改为 `eq_ignore_ascii_case`
+  （CI 暴露的既有断言缺陷，不是 M4 回归）。
+- D-18 CI 在测试前预置 4 个用户环境变量（`env_ops` 夹具要求 ≥4 个）。
+- U-5 更新：MSVC 已由 CI 覆盖（run `39639157635` / `39641907325` success）。
+- U-9 新增：CI 只跑测试，**不覆盖 `tauri build` + NSIS 打包**（发布流水线仍未预演）。
+- R-10「CI 首次可能红」已闭环；R-11（prune dry-run 创建密钥+空库）、R-12（S-2 顺序
+  无回归测试）见复审回执 §6。
+- 复审后测试数：Rust **57 binaries / 350 passed / 0 failed / 2 ignored**；
+  前端 **33 / 398**；E2E **54**。CI 四次运行：三次失败（清单注入 / 路径大小写 /
+  夹具环境变量）→ 第四次 success。
