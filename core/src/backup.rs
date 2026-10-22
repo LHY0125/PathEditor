@@ -64,8 +64,8 @@ fn config_file_path() -> PathBuf {
 /// 口径（两种情形必须分开）：
 /// - `NotFound` —— 文件不存在是首次使用的正常情形，**静默**回落（且不得创建文件）；
 /// - 其它（`PermissionDenied`、路径指向目录、I/O 错误等）—— 用户可修复的异常，
-/// **必须 warn**，否则配置写坏了在 CLI 下完全不可见（CLI 未初始化
-/// logger，core 的 warn 会被丢弃，但仍须按 GUI/服务侧能收到的口径发出）。
+///   **必须 warn**，否则配置写坏了在 CLI 下完全不可见（CLI 未初始化
+///   logger，core 的 warn 会被丢弃，但仍须按 GUI/服务侧能收到的口径发出）。
 fn should_warn_on_read_error(e: &std::io::Error) -> bool {
     e.kind() != std::io::ErrorKind::NotFound
 }
@@ -218,7 +218,7 @@ pub struct EnvBackupPayload {
 /// # Returns
 /// - `Ok(Vec<EnvBackupVar>)` — 该 hive 的可恢复变量，含明文与 revision
 /// - `Err(CoreError)` — 枚举失败（`Io`）或读取/解码失败（`Io`/`Parse`）；
-/// **不含** `UnsupportedType`
+///   **不含** `UnsupportedType`
 pub(crate) fn collect_hive_vars_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
@@ -276,7 +276,7 @@ pub(crate) fn collect_hive_vars_in_store(
 /// # Returns
 /// - `Ok(EnvBackupPayload)` — system 与 user 两个 hive 的可恢复变量
 /// - `Err(CoreError)` — 任一 hive 采集失败即整体失败（沿用 fail-fast：
-/// 不产出「成功但不完整」的备份）
+///   不产出「成功但不完整」的备份）
 pub fn collect_env_backup() -> Result<EnvBackupPayload, CoreError> {
     let sys_store = WinregHive::open(EnvHive::System, false)?;
     let usr_store = WinregHive::open(EnvHive::User, false)?;
@@ -304,13 +304,13 @@ pub fn collect_env_backup() -> Result<EnvBackupPayload, CoreError> {
 ///
 /// # Returns
 /// - `Ok(PathBuf)` — 写入的备份文件路径。是 `dir.join(...)` 的**原样结果**：
-/// `dir` 是相对路径时返回值也是相对路径，**不保证绝对**（`backup_env_vars()`
-/// 传入的 `env_backup_dir()` 通常绝对，但可被 `PATHEDITOR_BACKUP_DIR` 设成
-/// 相对路径）。调用方若需要绝对路径须自行解析。
+///   `dir` 是相对路径时返回值也是相对路径，**不保证绝对**（`backup_env_vars()`
+///   传入的 `env_backup_dir()` 通常绝对，但可被 `PATHEDITOR_BACKUP_DIR` 设成
+///   相对路径）。调用方若需要绝对路径须自行解析。
 /// - `Err(CoreError)` — 目录创建、写文件或轮换失败（code=`Io`）；
-/// 另有一条序列化失败路径返回 code=`Internal`（正常载荷不会走到）。
-/// **注意轮换失败这一路**：此时新备份文件**已经在磁盘上**，返回值只表示
-/// 「保留策略未能执行」，**不等于**备份未落盘。调用方措辞须按此理解。
+///   另有一条序列化失败路径返回 code=`Internal`（正常载荷不会走到）。
+///   **注意轮换失败这一路**：此时新备份文件**已经在磁盘上**，返回值只表示
+///   「保留策略未能执行」，**不等于**备份未落盘。调用方措辞须按此理解。
 pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<PathBuf, CoreError> {
     // 优先写 DPAPI 加密的 `.pebak`。只有拿不到密钥时（降级模式/
     // 密钥文件不可用）才回落明文 `.json` —— 那条路径**必须**留下明确日志，
@@ -541,7 +541,7 @@ pub struct EnvBackupInfo {
     ///
     /// - `.pebak`：从**文件头**读出；
     /// - `.json`：**恒为 0**——列表不解析内容，一旦解析，
-    /// 单个损坏文件就会让列表整体失败。
+    ///   单个损坏文件就会让列表整体失败。
     pub variable_count: u64,
     /// 是否为 DPAPI 加密的 `.pebak`。
     pub encrypted: bool,
@@ -635,9 +635,9 @@ pub fn list_env_backups() -> Result<Vec<EnvBackupInfo>, CoreError> {
 ///
 /// # Returns
 /// - `Ok(PathBuf)` — 校验通过的路径，**原样返回**（不做 canonicalize / 绝对化）：
-/// 入参是相对路径时返回值仍是相对路径。调用方若需要绝对路径须自行解析；
-/// 校验与后续读取之间 cwd 变化导致的 TOCTOU 属**已知未覆盖项**
-/// （单线程 CLI 下为理论问题，本波不解决）。
+///   入参是相对路径时返回值仍是相对路径。调用方若需要绝对路径须自行解析；
+///   校验与后续读取之间 cwd 变化导致的 TOCTOU 属**已知未覆盖项**
+///   （单线程 CLI 下为理论问题，本波不解决）。
 /// - `Err(CoreError)` — 路径非法（code=`InvalidValue`）或文件不存在/过大（code=`NotFound`/`InvalidValue`）
 pub fn validate_backup_path(path: &str) -> Result<PathBuf, CoreError> {
     let p = PathBuf::from(path);
@@ -717,7 +717,7 @@ pub enum BackupOutcome {
 ///
 /// # Returns
 /// - `Ok(PathBuf)` — 备份文件路径。**不保证绝对**：由 `env_backup_dir()` 决定，
-/// 该目录可被 `PATHEDITOR_BACKUP_DIR` 设成相对路径。需要绝对路径须自行解析。
+///   该目录可被 `PATHEDITOR_BACKUP_DIR` 设成相对路径。需要绝对路径须自行解析。
 /// - `Err(CoreError)` — 采集或落盘失败
 pub fn backup_env_vars() -> Result<PathBuf, CoreError> {
     let payload = collect_env_backup()?;
@@ -792,7 +792,7 @@ pub struct RestorePreview {
 /// # Returns
 /// - `Ok(EnvBackupPayload)` — 校验通过的内容
 /// - `Err(CoreError)` — 读取失败（code=`Io`）、解析失败（code=`Parse`，
-/// 损坏文件会被 `persist` 隔离为 `<file>.corrupt-<ts>`）、版本过高（code=`Parse`）
+///   损坏文件会被 `persist` 隔离为 `<file>.corrupt-<ts>`）、版本过高（code=`Parse`）
 ///
 /// **不做路径来源校验**（扩展名 / 是否在备份目录内）：那是
 /// [`validate_backup_path`] 的职责。本函数只负责「读出并验版本」。
@@ -910,12 +910,12 @@ pub(crate) fn preview_restore_in_stores(
 ///
 /// **行为契约（每条都必须成立）**：
 /// 1. 当前注册表中的**保留名**（`Path`，用 [`is_reserved`] 判定）与 **`Unsupported`
-///  类型**不参与差异计算 —— 既不产生 `Removed`，也不产生其他任何变体；
+///    类型**不参与差异计算 —— 既不产生 `Removed`，也不产生其他任何变体；
 /// 2. 备份中有、当前无 → `Added`；
 /// 3. 备份的 revision 与当前值的 revision **相同** → 不进差异（无变化）；
 /// 4. 备份的 revision 与当前**不同** → `Conflict`；
 /// 5. 当前有、备份无 → `Removed`，且 `Removed` 条目必须携带**注册表返回的原始大小写
-///  名字**（不能是小写化的比较键）；
+///    名字**（不能是小写化的比较键）；
 /// 6. 变量名比较**忽略大小写**（Windows 注册表语义），但输出保留原始大小写。
 ///
 /// **不判定保护名单**：保护名单变量照常出现在差异中，拒绝发生在恢复执行的写函数内
@@ -1119,7 +1119,7 @@ pub fn write_env_backup_for_test(dir: &Path, payload: &EnvBackupPayload) -> Opti
 /// # Returns
 /// - `Ok(RestorePreview)` — 差异摘要
 /// - `Err(CoreError)` — 读取/解析备份失败（见 [`read_env_backup`]），
-/// 或打开注册表键/枚举失败（见 [`preview_restore`]）
+///   或打开注册表键/枚举失败（见 [`preview_restore`]）
 pub fn preview_restore_file(path: &Path) -> Result<RestorePreview, CoreError> {
     let payload = read_env_backup_any(path)?;
     preview_restore(&payload)
@@ -1196,10 +1196,10 @@ fn find_backup_var<'a>(
 ///
 /// - **单变量失败不中止整体**：`Err` 被记入 `RestoreOutcome.failures`，继续处理下一条。
 /// - **单 hive 失败不影响另一 hive**：差异列表本身带 hive 标记，两个 hive 的条目
-/// 各自独立写入，一个 hive 的变量全数失败不会阻止另一个 hive 的写入。
+///   各自独立写入，一个 hive 的变量全数失败不会阻止另一个 hive 的写入。
 /// - 但**差异计算阶段的失败是整体的**：`preview_restore_in_stores` 对任一 hive
-/// 枚举失败即返回 `Err`，此时恢复在写入前就中止 —— 这是刻意的，宁可什么都不做，
-/// 也不留下「半个 hive 已改、另一个没动」的注册表。
+///   枚举失败即返回 `Err`，此时恢复在写入前就中止 —— 这是刻意的，宁可什么都不做，
+///   也不留下「半个 hive 已改、另一个没动」的注册表。
 ///
 /// # 空备份（**后果已被显式固定，不是疏漏**）
 ///
@@ -1210,10 +1210,10 @@ fn find_backup_var<'a>(
 ///
 /// **本任务裁定：不在恢复层加防护。** 理由：
 /// 1. 与既有 `env remove --force` 同构：两者都能造成同等幅度的破坏，也都靠
-///  「用户显式指定目标 + 自行复核」把关，而不是在 core 里猜测用户意图；
+///    「用户显式指定目标 + 自行复核」把关，而不是在 core 里猜测用户意图；
 /// 2. 在恢复层加「两 hive 皆空即拒绝」会引入**第二个**「什么备份算合法」的规则源，
-///  与「判定只在 core 一处」的硬约束冲突（E5 裁断同源），且没有 natural owner ——
-///  真正的疑点（文件是否被截断/损坏）无法在恢复层可靠判定。
+///    与「判定只在 core 一处」的硬约束冲突（E5 裁断同源），且没有 natural owner ——
+///    真正的疑点（文件是否被截断/损坏）无法在恢复层可靠判定。
 ///
 /// **默认模式不构成对空备份清空的保护**（勿按直觉推断）：空备份产生**零冲突**
 /// （备份侧没有任何条目，`diff_one_hive` 无从产出 `Conflict`），而下面的中止
@@ -1239,7 +1239,7 @@ fn find_backup_var<'a>(
 /// # Returns
 /// - `Ok(RestoreOutcome)` — 恢复结果（可能含逐条失败）
 /// - `Err(CoreError)` — 读取/解析备份失败，差异计算失败（code=`Io`），
-/// 或**默认模式下检测到冲突**（code=`Conflict`，注册表零改动）
+///   或**默认模式下检测到冲突**（code=`Conflict`，注册表零改动）
 fn restore_in_stores(
     sys: &dyn EnvHiveStore,
     usr: &dyn EnvHiveStore,
@@ -1364,8 +1364,8 @@ fn restore_should_broadcast(outcome: &RestoreOutcome) -> bool {
 /// # Returns
 /// - `Ok(RestoreOutcome)` — 恢复结果（含逐条失败）
 /// - `Err(CoreError)` — 路径非法（`InvalidValue`/`NotFound`）、读取或解析备份失败
-/// （`Io`/`Parse`）、打开 hive 失败（`PermissionDenied`/`Io`）、差异计算失败（`Io`），
-/// 或默认模式下检测到冲突（`Conflict`，注册表零改动）
+///   （`Io`/`Parse`）、打开 hive 失败（`PermissionDenied`/`Io`）、差异计算失败（`Io`），
+///   或默认模式下检测到冲突（`Conflict`，注册表零改动）
 pub fn restore_env_backup_from(path: &Path, force: bool) -> Result<RestoreOutcome, CoreError> {
     let verified = validate_backup_path(&path.to_string_lossy())?;
     let sys = WinregHive::open(EnvHive::System, true)?;
@@ -1472,10 +1472,10 @@ mod tests {
     ///
     /// **两条硬要求**：
     /// 1. **必须隔离**：默认目录是用户的 `~/.patheditor/backups/`，那里有 **20 份轮换上限**
-    ///  ——无隔离地跑一次就会**挤掉一份真实备份**（不只是「污染」，是**数据被静默淘汰**）。
-    ///  故经 `with_temp_backup_dir` 把 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。
+    ///    ——无隔离地跑一次就会**挤掉一份真实备份**（不只是「污染」，是**数据被静默淘汰**）。
+    ///    故经 `with_temp_backup_dir` 把 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。
     /// 2. **必须断言**：丢弃返回值等于什么都没验证（注册表不可读时也「通过」）。
-    ///  可读时断言备份文件**落在隔离目录内**；不可读时断言不 panic 并说明原因。
+    ///    可读时断言备份文件**落在隔离目录内**；不可读时断言不 panic 并说明原因。
     #[test]
     fn backup_registry_default_dir_uses_redirected_dir_without_panic() {
         with_temp_backup_dir(|dir| {
@@ -1727,7 +1727,7 @@ mod tests {
             // 另一个 .bak 落在保留区间内（新于 20 份中最旧的一份），
             // 验证「保留区间内的外部文件同样不会被删」。
             std::fs::write(dir.join("env_backup_old.json.bak"), "BAK").unwrap();
-            std::fs::write(dir.join("disabled.json.corrupt-20260920-120000000"), "C").unwrap();
+            std::fs::write(dir.join("random_file.corrupt-20260920-120000000"), "C").unwrap();
             std::fs::write(dir.join("我的笔记.txt"), "note").unwrap();
             std::fs::write(dir.join("env_backup_note.md"), "md").unwrap();
 
@@ -1761,8 +1761,7 @@ mod tests {
                 ".bak 不得删除（保留区间内）"
             );
             assert!(
-                dir.join("disabled.json.corrupt-20260920-120000000")
-                    .exists(),
+                dir.join("random_file.corrupt-20260920-120000000").exists(),
                 "损坏隔离文件不得删除"
             );
             assert!(dir.join("我的笔记.txt").exists(), "无关文件不得删除");
@@ -2144,11 +2143,11 @@ mod tests {
     ///
     /// 可证伪性（逐条对应一个会失败的实现改动）：
     /// - 删掉 `config_file_path` 里的环境变量分支 → `config_file_path()` 返回真实
-    /// `~/.patheditor/config.ini`，第一处 `assert_eq` 失败；
+    ///   `~/.patheditor/config.ini`，第一处 `assert_eq` 失败；
     /// - 把重定向当成**目录**（再拼 `config.ini`）→ 返回的是 `..\config.ini` 而非
-    /// 给定的完整路径，同样在第一处失败；
+    ///   给定的完整路径，同样在第一处失败；
     /// - 让 `env_backup_keep()` 绕过 `config_file_path()` 直接读真实路径 → 第三处
-    /// 读到的是真实配置（或默认 20）而非 3，失败。
+    ///   读到的是真实配置（或默认 20）而非 3，失败。
     ///
     /// 第三处断言是本用例的关键：它证明「重定向 → 生产入口 `env_backup_keep()`」
     /// 这条链路真的通了，而不是只有 `config_file_path()` 这个访问器改了。
@@ -2575,7 +2574,7 @@ mod tests {
     /// 契约第 6 条：变量名比较**忽略大小写**，两个方向都要成立。
     ///
     /// - 备份写 `MixedCaseVar`、注册表存 `mixedcasevar` → 应认出是**同一个**变量
-    /// （不进 Added），且因 revision 相同而**零差异**；
+    ///   （不进 Added），且因 revision 相同而**零差异**；
     /// - 备份写 `SAMEVAR`、注册表存 `samevar` → 同上。
     ///
     /// **可证伪性**：把实现里的 `to_ascii_lowercase()` 换成直接比较名字（区分大小写），
@@ -3198,7 +3197,7 @@ mod tests {
     ///
     /// **可证伪性**：
     /// - 把「revision 相同 → 不进差异」改错（例如恒 push `Modified`），`changes` 非空
-    /// → `applied` 不再为 0，第一条断言失败，广播门控也随之变 true；
+    ///   → `applied` 不再为 0，第一条断言失败，广播门控也随之变 true；
     /// - 把 `restore_should_broadcast` 改成恒 `true`，最后一条断言失败。
     #[test]
     fn restore_noop_does_not_broadcast() {

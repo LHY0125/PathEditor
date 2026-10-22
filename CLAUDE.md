@@ -58,19 +58,17 @@ PathEditor/
 ├── core/src/
 │   ├── registry/     # 注册表访问统一入口
 │   ├── db/           # v6 SQLCipher 数据层（schema/history/profiles/backups/
-│   │                 #   search/stats/refs/compare/scan_history/migrate_v5/
-│   │                 #   v5_export/v5_import/maintenance/archive_v5/sync）
-│   ├── service.rs    # 保存编排（save_path_with_db / save_path_with_sidecar）
+│   │                 #   search/stats/refs/compare/scan_history/maintenance/sync）
+│   ├── service.rs    # 保存编排（save_path_with_db / save_path_registry_only）
 │   ├── disabled.rs / env_var.rs / path_entry.rs / scanner.rs / persist.rs
-│   ├── backup.rs     # 注册表备份、env 备份（.pebak）
-│   └── profiles.rs   # v5 文件版配置（兼容通路；DB 版在 db/profiles.rs）
+│   └── backup.rs     # 注册表备份、env 备份（.pebak）
 ├── gui/src/commands/ # Tauri 薄包装（registry/system/backup/fs/disabled/scanner/
 │                     #   env_var/service/history/analytics/sync）
 ├── cli/src/          # Clap + 分派（runtime/env_ops/profile_ops/sync_ops/
 │                     #   maintenance_ops/scan_ops/import_export）
 ├── src/              # React（core/services/store/components/hooks/i18n）
 ├── tests/unit / tests/fixtures / e2e/tests
-├── probes/v6-sqlcipher（不在 workspace；M0 证据）
+├── probes/v6-sqlcipher（不在 workspace；v6 探针证据）
 └── docs/{superpowers,dev,审核和开发}
 ```
 
@@ -88,12 +86,12 @@ PathEditor/
 - 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`。前端与 CLI **不得**自行实现并发校验；冲突判定只认 `CoreError.code`，`[E_CONFLICT]` 前缀仅是展示文本。
 - Windows 注册表无 CAS，读-比-写是两次独立调用，仍有毫秒级竞态窗口。缩小影响不等于消除 TOCTOU，不要宣称原子性。
 - **v6 数据层是 sidecar**：所有 DB 访问在 `core/src/db/`；GUI/CLI 不得直接打开 SQL。注册表仍是唯一真相源，DB 不可用时 fail-open。
-- **同步导入是单事务，且不写注册表**：导入只改 DB；用户要生效必须另走 `apply_path_snapshot` / `apply_profile`。
+- **同步导入是单事务，且不写注册表**：导入只改 DB；用户要生效必须另走 `apply_path_snapshot` 或前端保存编排。
 - **维护命令的删除类操作必须显式确认**：`cleanup-legacy-backups` 需 `--yes`；测试一律用 `TempDir`，不碰真实 `~/.patheditor`。
-- **v5 文件已停写**：`disabled.json` / `profiles/*.json` 不再由应用写入；迁移成功后归档为 `.v5.bak`。
+- **DB 是唯一持久化状态**：`disabled.json` / `profiles/*.json` 不再读写。
 - `.codegraph/` 存在时，优先使用 CodeGraph 理解符号和调用路径，再决定是否读取文件。
 
-## 设计系统（v5.1.7 起，v6 沿用）
+## 设计系统（v6）
 
 - 语义 token 全部在 `src/styles/globals.css` 的 `:root` 与 `:root.dark`；组件**只允许**使用 `--app-*` 语义变量，禁止硬编码色值。
 - 主界面控件类：`.toolbar` / `.toolbar-sep` / `.toolbar-search` / `.tab-pill`。
@@ -108,7 +106,7 @@ PathEditor/
 - **密钥**：`~/.patheditor/keys/db.key.dpapi`，DPAPI 当前用户作用域；DACL 限当前用户 + SYSTEM。
 - **schema**：`CURRENT_SCHEMA_VERSION = 3`；`PRAGMA user_version` 只在建库/迁移事务内写。
 - **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件只放一个 `#[test]`（同进程第二个会 `STATUS_STACK_OVERFLOW`）。
-- **v5 迁移**：`migrate_v5` 幂等导入，迁移期间不改名；成功后 `archive_v5` 在启动序列末尾把原件改名为 `.v5.bak`。
+- **DB 初始化**：`migrate_to_current` 只做 schema 迁移；首次启动用注册表当前状态建 `kind=current` 基线。
 - **同步**：bundle = `PESYNC1\0 + version + header_len + header JSON + salt + nonce + ciphertext + tag`；Argon2id + ChaCha20-Poly1305；LWW；`snapshot`/`profile` 按整实体比较；导入不写注册表。
 - **保留策略**：已导出 `changes` 90 天、已解决 `sync_conflicts` 30 天；**待导出队列永不删**。
 
@@ -124,7 +122,7 @@ PathEditor/
 
 ## 数据与安全红线
 
-- PATH 的唯一保存编排在 core：DB 可用时 `save_path_with_db`（写注册表 + current 快照 + 事件），DB 不可用时 `save_path_with_sidecar`（v5 文件 sidecar）。注册表成功但快照失败 → 落 pending，下次补写。
+- PATH 的唯一保存编排在 core：DB 可用时 `save_path_with_db`（写注册表 + current 快照 + 事件），DB 不可用时 `save_path_registry_only`（只写注册表，禁用状态不持久化）。注册表成功但快照失败 → 落 pending，下次补写。
 - 保存前用原始值检测外部修改；清理/禁用/启用必须保留 `PathEntry`。
 - env 备份默认 `.pebak`（DPAPI）；密钥不可用时回落明文 `.json` 并告警。遗留 `.json` 清理需 `--yes`。
 - E2E 使用 mock IPC，**不得写真实注册表**；同步导入同样不写注册表。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果。
@@ -136,7 +134,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v6.0.0）：Rust **57 binaries / 350 passed**；前端 **33 files / 398**；E2E **54**。
+- 基线（v6.0.0）：Rust **322 passed / 2 ignored**；前端 **33 files / 398**；E2E **54**。
 - **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 

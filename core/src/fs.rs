@@ -1,13 +1,12 @@
 // TS 端 src/core/import-export.ts 仅保留为历史测试夹具；GUI/CLI 运行时统一使用本模块。
 
 use crate::path_entry::PathEntry;
-use crate::profiles::ProfilePathEntry;
 
 /// 过滤导入条目：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
-fn sanitize_entries(entries: Vec<ProfilePathEntry>) -> Vec<ProfilePathEntry> {
+fn sanitize_entries(entries: Vec<PathEntry>) -> Vec<PathEntry> {
     entries
         .into_iter()
-        .map(|e| ProfilePathEntry {
+        .map(|e| PathEntry {
             path: e.path.trim().to_string(),
             enabled: e.enabled,
         })
@@ -67,10 +66,7 @@ pub fn read_text_file_scoped(path: &str) -> Result<String, String> {
 }
 
 /// 导入路径文件（JSON / CSV / TXT），返回 (系统条目, 用户条目)
-pub fn import_paths(
-    path: &str,
-    content: &str,
-) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
+pub fn import_paths(path: &str, content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry>), String> {
     let ext = std::path::Path::new(path)
         .extension()
         .map(|e| e.to_ascii_lowercase())
@@ -85,7 +81,7 @@ pub fn import_paths(
     }
 }
 
-fn import_json(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
+fn import_json(content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry>), String> {
     #[derive(serde::Deserialize)]
     struct ImportItem {
         path: String,
@@ -105,10 +101,10 @@ fn import_json(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathE
     }
     let data: ImportData =
         serde_json::from_str(content).map_err(|e| format!("JSON 解析失败: {}", e))?;
-    let into_entries = |items: Vec<ImportItem>| -> Vec<ProfilePathEntry> {
+    let into_entries = |items: Vec<ImportItem>| -> Vec<PathEntry> {
         items
             .into_iter()
-            .map(|i| ProfilePathEntry {
+            .map(|i| PathEntry {
                 path: i.path,
                 enabled: i.enabled,
             })
@@ -153,7 +149,7 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     fields
 }
 
-fn import_csv(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
+fn import_csv(content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry>), String> {
     let mut sys = Vec::new();
     let mut usr = Vec::new();
     let mut first = true;
@@ -188,7 +184,7 @@ fn import_csv(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEn
             } else {
                 true
             };
-            let entry = ProfilePathEntry { path, enabled };
+            let entry = PathEntry { path, enabled };
             match fields[0].trim().to_lowercase().as_str() {
                 "system" | "sys" => sys.push(entry),
                 "user" | "usr" => usr.push(entry),
@@ -208,12 +204,12 @@ fn import_csv(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEn
     Ok((sys, usr))
 }
 
-fn import_txt(content: &str) -> Result<(Vec<ProfilePathEntry>, Vec<ProfilePathEntry>), String> {
-    let entries: Vec<ProfilePathEntry> = content
+fn import_txt(content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry>), String> {
+    let entries: Vec<PathEntry> = content
         .lines()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|path| ProfilePathEntry {
+        .map(|path| PathEntry {
             path,
             enabled: true,
         })
@@ -311,15 +307,15 @@ pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<Stri
 mod tests {
     use super::*;
 
-    fn entry(path: &str) -> ProfilePathEntry {
-        ProfilePathEntry {
+    fn entry(path: &str) -> PathEntry {
+        PathEntry {
             path: path.into(),
             enabled: true,
         }
     }
 
-    fn entry_disabled(path: &str) -> ProfilePathEntry {
-        ProfilePathEntry {
+    fn entry_disabled(path: &str) -> PathEntry {
+        PathEntry {
             path: path.into(),
             enabled: false,
         }

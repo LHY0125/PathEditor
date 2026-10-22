@@ -308,49 +308,6 @@ fn run_case(case: &GoldenCase) {
             let _ = std::fs::remove_dir_all(&dir);
         }
 
-        // ── 第 5 类：profile / 导入导出兼容性 ──
-        "load_profile_legacy_v1" => {
-            // 直接走 profiles.rs 同款持久化原语：Versioned 信封反序列化 + migrate。
-            // 不触临时文件，行为与 read_profile_file 等价。
-            let json = serde_json::to_string(&case.input["profile_json"])
-                .unwrap_or_else(|e| panic!("{name}: 序列化 input 失败: {e}"));
-            let versioned: crate::persist::Versioned<crate::profiles::ProfileData> =
-                serde_json::from_str(&json)
-                    .unwrap_or_else(|e| panic!("{name}: profile_json 反序列化失败: {e}"));
-            match crate::persist::migrate(versioned, "配置文件") {
-                Ok(data) => {
-                    let expect_sys: Vec<PathEntry> =
-                        serde_json::from_value(case.expect["sys"].clone())
-                            .unwrap_or_else(|e| panic!("{name}: expect.sys 解析失败: {e}"));
-                    let expect_user: Vec<PathEntry> =
-                        serde_json::from_value(case.expect["user"].clone())
-                            .unwrap_or_else(|e| panic!("{name}: expect.user 解析失败: {e}"));
-                    assert_eq!(
-                        data.name,
-                        case.expect["name"].as_str().unwrap_or_default(),
-                        "golden 用例 {name}: name 不符"
-                    );
-                    assert_eq!(data.sys, expect_sys, "golden 用例 {name}: sys 不符");
-                    assert_eq!(data.user, expect_user, "golden 用例 {name}: user 不符");
-                }
-                Err(e) => {
-                    let expect_code = case.expect["error_code"].as_str().unwrap_or_else(|| {
-                        panic!("golden 用例 {name}: migrate 意外失败且无 error_code 期望: {e}")
-                    });
-                    assert_eq!(
-                        serde_json::to_value(e.code).unwrap_or_default(),
-                        serde_json::json!(expect_code),
-                        "golden 用例 {name}: 错误码不符（按 camelCase 序列化判定）"
-                    );
-                    let contains = case.expect["message_contains"].as_str().unwrap_or_default();
-                    assert!(
-                        e.message.contains(contains),
-                        "golden 用例 {name}: 错误 `{}` 应包含 `{contains}`",
-                        e.message
-                    );
-                }
-            }
-        }
         "import_paths" => {
             let filename = case.input["filename"].as_str().unwrap_or_default();
             let content = serde_json::to_string(&case.input["content"])
@@ -466,13 +423,3 @@ golden_test!(
 );
 
 // ── 第 5 类：profile / 导入导出兼容性（merge_hive 部分见 merge_golden_tests.rs） ──
-golden_test!(golden_profile_legacy_v1, "golden/profile_legacy_v1.json");
-golden_test!(
-    golden_profile_future_version_rejected,
-    "golden/profile_future_version_rejected.json"
-);
-golden_test!(
-    golden_import_json_sanitizes,
-    "golden/import_json_sanitizes.json"
-);
-golden_test!(golden_export_csv_enabled, "golden/export_csv_enabled.json");

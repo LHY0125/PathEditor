@@ -68,7 +68,7 @@ fn open_db_optional() -> Option<core::db::Db> {
     }
 }
 
-/// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则回落 v5 文件。
+/// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则只读注册表。
 pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreError> {
     match open_db_optional() {
         Some(db) => core::service::load_path_snapshot_db(&db),
@@ -79,7 +79,7 @@ pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreE
 /// 把「完整有序条目」交给 core 的唯一保存编排，并按结果决定退出行为。
 ///
 /// DB 存在时走 `save_path_with_db`（写注册表 + 当前快照 + 事件）；
-/// DB 不存在或打不开时降级为 `save_path_with_sidecar`（v5 文件 sidecar）。
+/// DB 不存在或打不开时降级为 `save_path_registry_only`（只写注册表）。
 ///
 /// CLI 是单次进程，不传 `expected`：每次命令重新读取快照，
 /// `expected == current` 恒成立，校验在 CLI 侧没有真实并发窗口。
@@ -102,7 +102,12 @@ pub(crate) fn save_path_write(
         Some(mut db) => {
             service::save_path_with_db(&mut db, core::history::EventSource::Cli, system, user)
         }
-        None => service::save_path_with_sidecar(system, user, &core::history::NoopHistory),
+        None => service::save_path_registry_only(
+            system,
+            user,
+            core::history::EventSource::Cli,
+            &core::history::NoopHistory,
+        ),
     }
     .unwrap_or_else(|e| exit_core_error(&e));
 

@@ -1,6 +1,5 @@
-//! 版本化持久化原语。
+//! 版本化持久化原语，目前用于 pending PATH 快照。
 //!
-//! `disabled.json` / `pending_path_snapshot.json` / `profiles/*.json` 共用：
 //! - 顶层 `schemaVersion` 信封（[`Versioned`]），无版本头的旧文件按 v1 读取；
 //! - 写入前把上一份主文件轮换为 `<file>.bak`（[`rotate_backup`]）；
 //! - 解析失败时把坏文件隔离为 `<file>.corrupt-<ts>`（[`quarantine`]）。
@@ -11,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 测试专用：序列化所有触碰固定临时持久化路径（disabled.json / pending /
-/// profiles）的测试，消除 disabled.rs 与 service.rs 测试间的并行竞态。
+/// 测试专用：序列化所有触碰固定临时持久化路径（pending）的测试，
+/// 消除 disabled.rs 与 service.rs 测试间的并行竞态。
 ///
 /// 持锁失败的 poisoned 状态直接吞掉（取内层数据继续），避免一个测试 panic
 /// 后连锁污染其他测试。
@@ -49,7 +48,7 @@ fn default_schema_version() -> u32 {
     PERSIST_SCHEMA_VERSION
 }
 
-/// 在文件名末尾追加后缀：`disabled.json` → `disabled.json.bak`。
+/// 在文件名末尾追加后缀：`pending_path_snapshot.json` → `.json.bak`。
 pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path
         .file_name()

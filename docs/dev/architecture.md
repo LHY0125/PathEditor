@@ -17,22 +17,18 @@ PathEditor/
 │   │   ├── profiles.rs          # 配置元数据/版本（DB 版）
 │   │   ├── backups.rs           # .pebak 写入/读取、备份索引
 │   │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
-│   │   ├── migrate_v5.rs        # v5 文件一次性导入（幂等）
-│   │   ├── v5_export.rs / v5_import.rs      # v5 JSON 导出/导入
 │   │   ├── maintenance.rs       # 保留策略 + 遗留明文清理
-│   │   ├── archive_v5.rs        # .v5.bak 归档
 │   │   └── sync/                # bundle / change_log / merge / conflict / export / import
-│   ├── service.rs               # 保存编排：save_path_with_db / save_path_with_sidecar
+│   ├── service.rs               # 保存编排：save_path_with_db / save_path_registry_only
 │   ├── capabilities.rs          # 按 hive 探测 PathCapabilities
 │   ├── system.rs                # 权限、路径验证、变量展开、环境广播
-│   ├── disabled.rs              # 完整快照、禁用状态、旧格式兼容、pending 磁盘文件
+│   ├── disabled.rs              # 快照合并、pending 磁盘文件
 │   ├── env_var.rs               # 通用环境变量契约与保留/保护/敏感判定
 │   ├── path_entry.rs            # PathEntry / PathSnapshot 契约
 │   ├── error.rs                 # 结构化 CoreError / ErrorCode（含 exit_code）
 │   ├── reg_store.rs             # 注册表值类型读写（EnvHiveStore 端口）
 │   ├── persist.rs               # 持久化文件解析与损坏隔离
 │   ├── scanner.rs               # scan_paths 单次枚举、冲突和工具清单
-│   ├── profiles.rs              # v5 文件版配置（兼容通路；DB 版在 db/profiles.rs）
 │   ├── fs.rs                    # 受限文件读取、导入导出
 │   └── backup.rs                # 注册表备份、env 备份（.pebak）
 ├── gui/src/commands/            # #[tauri::command] 薄包装，调用 core
@@ -60,7 +56,7 @@ PathEditor/
 ├── tests/unit/                  # Vitest 测试
 ├── tests/fixtures/              # 跨 Rust/TS 契约夹具
 ├── e2e/tests/                   # Playwright 测试（mock IPC）
-├── probes/v6-sqlcipher/         # v6 SQLCipher 探针（不在 workspace；M0 证据）
+├── probes/v6-sqlcipher/         # v6 SQLCipher 探针（不在 workspace）
 ├── .github/workflows/           # ci.yml（MSVC 质量门）/ release.yml（tag 发布）/ 探针
 ├── docs/superpowers/specs/      # 特性设计文档（YYYY-MM-DD-*-design.md）
 ├── docs/superpowers/plans/      # 实施计划（M1–M4）
@@ -82,12 +78,12 @@ PathEditor/
 
 ```text
 UI 保存 → app store → backend.savePathWithSidecar
-  → core::service::save_path_with_db（DB 可用）/ save_path_with_sidecar（降级）
+  → core::service::save_path_with_db（DB 可用）/ save_path_registry_only（降级）
       ① 写前备份（path_backup_*.txt）
       ② 乐观并发校验（原始值）
       ③ 顺序写 system → user
       ④ SendMessageTimeout(WM_SETTINGCHANGE)
-      ⑤ DB：提交 current 快照 + 事件；降级：写 disabled.json（失败则落 pending）
+      ⑤ DB：提交 current 快照 + 事件；降级：只写注册表，禁用状态不持久化
 ```
 
 完整编码约束以 `CLAUDE.md` 的「关键约束」为准；本文件只补目录与职责。

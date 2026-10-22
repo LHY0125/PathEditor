@@ -2,7 +2,7 @@
 //
 // **DB 当前快照读取守卫**：`load_path_snapshot_db` 必须从
 // `app_state.current_snapshot_id` 读取完整有序快照（含禁用项），而不是
-// 回落到已归档的 `disabled.json`。
+// 回落到其它状态源。
 //
 // **本测试使用 SQLCipher**，因此整个文件只放一个 `#[test]`。
 use path_editor_core::db::history::{

@@ -250,10 +250,9 @@ pub fn insert_snapshot(db: &mut Db, snap: NewSnapshot) -> Result<String, CoreErr
 /// **写入后记一条 `changes`**：快照是同步的实体之一，
 /// 不记的话它永远不会进入待导出队列。
 ///
-/// **但 `EventSource::Migration` 不记**：v5 文件迁移与首次启动建基线走的也是
-/// 这个函数，把它们记成变更会导致「用户升级到 v6 的那一刻，历史配置/备份/PATH
-/// 快照全部涌入待导出队列」——升级不是一次编辑，不该被同步出去。
-/// 判据用现成的 `EventSource`，不新造机制。
+/// **但 `EventSource::Migration` 不记**：首次启动建基线走的也是这个函数，
+/// 把它记成变更会让「升级到新版本的那一刻，历史 PATH 快照全部涌入待导出队列」
+/// ——启动不是一次编辑，不该被同步出去。判据用现成的 `EventSource`，不新造机制。
 pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String, CoreError> {
     let uid = Uuid::now_v7().to_string();
     insert_snapshot_with_uid_tx(tx, snap, &uid, true)

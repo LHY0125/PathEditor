@@ -1,11 +1,6 @@
 //! `profile` 子命令：配置方案的增删改查与应用。
 //!
-//! 方案 A：全部走 **DB**（`core::db::profiles`），不再读写
-//! `~/.patheditor/profiles/*.json`。GUI 与 CLI 共用同一份数据，
-//! 消除「两个真相源」。
-//!
-//! 迁移期说明：v5 的 `profiles/*.json` 由启动时的 `migrate_legacy` 一次性导入，
-//! 之后**不再写入**。旧文件保留在原地不删。
+//! 全部走 **DB**（`core::db::profiles`）。GUI 与 CLI 共用同一份数据。
 
 use crate::runtime::{exit_core_error, exit_persist_error, save_path_write};
 use path_editor_core as core;
@@ -25,7 +20,7 @@ pub(crate) fn profile_list(json_out: bool) {
         println!("暂无配置文件。");
     } else {
         for profile in &list {
-            // DB 版的时间是 Unix 毫秒；展示成本地时间，与 v5 版的字符串口径一致
+            // DB 版的时间是 Unix 毫秒；展示成本地时间
             let when = chrono::DateTime::from_timestamp_millis(profile.updated_at)
                 .map(|t| {
                     t.with_timezone(&chrono::Local)
@@ -40,7 +35,7 @@ pub(crate) fn profile_list(json_out: bool) {
 
 pub(crate) fn profile_save(name: String) {
     let mut db = open_db();
-    // 先合并注册表与 disabled.json，确保已禁用的孤儿条目也进入配置并保留顺序。
+    // 先合并注册表与 DB 当前快照，确保已禁用的孤儿条目也进入配置并保留顺序。
     let snapshot =
         core::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_persist_error(&e));
 
@@ -83,44 +78,6 @@ pub(crate) fn profile_load(name: String) {
             if entry.enabled { "✓" } else { "✗" },
             entry.path
         );
-    }
-}
-
-/// 把一个 DB 配置导出成 v5 `profiles/*.json` 格式。
-///
-/// **按名字**指定配置（与其它 `profile` 子命令一致），内部转成 uid 后交给
-/// `core::db::v5_export::export_profile_v5`。输出到 stdout，可直接重定向成文件。
-///
-/// 这是**降级到 v5 的退路**：DB 不可用或需要回到旧版本时，用它可以导出
-/// 与 v5 自身写出的格式完全同构的文件（含 `schemaVersion` 信封）。
-pub(crate) fn profile_export_v5(name: String) {
-    let db = open_db();
-    let Some(view) =
-        db_profiles::get_profile_by_name(&db, &name).unwrap_or_else(|e| exit_core_error(&e))
-    else {
-        exit_core_error(&core::CoreError::new(
-            core::ErrorCode::NotFound,
-            "profile_export_v5",
-            format!("配置不存在: {name}"),
-        ));
-    };
-    let json = core::db::v5_export::export_profile_v5(&db, &view.uid)
-        .unwrap_or_else(|e| exit_core_error(&e));
-    println!("{json}");
-}
-
-/// 从 v5 `profiles/*.json` 导入一个配置。
-///
-/// **只写 DB，不改注册表**：导入只是「把配置放进库里」，要生效仍需 `profile apply`。
-/// 名称冲突返回 `NameExists`（与 `profile save` 同口径），**不会**自动改名——
-/// 用户指定了这个文件，悄悄改掉它的名字会让「我导入了什么」不可预期。
-pub(crate) fn profile_import(file: String) {
-    let mut db = open_db();
-    let uid = core::db::v5_import::import_profile_v5(&mut db, std::path::Path::new(&file))
-        .unwrap_or_else(|e| exit_core_error(&e));
-    match db_profiles::get_profile(&db, &uid).unwrap_or_else(|e| exit_core_error(&e)) {
-        Some(v) => println!("已导入配置「{}」（{}）", v.name, v.uid),
-        None => println!("已导入配置（{uid}）"),
     }
 }
 

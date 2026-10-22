@@ -96,6 +96,6 @@ fn write_paths_populate_change_log_without_manual_recording() {
     assert_eq!(
         pending_export(&db).unwrap().len(),
         before_migration,
-        "v5 迁移产生的快照不得进入待导出队列"
+        "迁移/基线快照不得进入待导出队列"
     );
 }

@@ -5,7 +5,7 @@
 
 ## 基本形态
 
-- **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；注册表仍是唯一真相源。DB 打不开时 GUI fail-open：编辑照常、历史/同步/检索降级、`disabled.json` 兜底、窗口顶部常驻条幅；**不静默重建空库**。
+- **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；注册表仍是唯一真相源。DB 打不开时 GUI fail-open：编辑照常、历史/同步/检索降级、禁用状态不可恢复、窗口顶部常驻条幅；**不静默重建空库**。
 - **密钥**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+db_key(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。
 - **schema**：`core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 3`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
@@ -23,19 +23,18 @@
 
 **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内跑第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU 与 MSVC 均已复现，`--test-threads=1` 无效）。
 
-CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单开关），覆盖整个 workspace——规则靠文件布局保证，不靠 CI 逐文件调用。依据：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md` §5.3。
+CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单开关），覆盖整个 workspace——规则靠文件布局保证，不靠 CI 逐文件调用。依据：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md` 的测试约束说明。
 
-## v5 迁移与归档
+## 初始化
 
-- `migrate_v5` 一次性导入 `disabled.json` / `profiles/*.json` / `backups/*`，幂等（`migration_imports(source_path, content_hash)`）；迁移期间**不改名、不删除**。
-- 迁移成功且零失败后，`archive_v5` 在**启动序列末尾**（读路径已切到 DB 之后）把原件改名为 `.v5.bak`；目标已存在则跳过，绝不覆盖。
+- 启动时 `migrate_to_current` 只做 schema 迁移；首次启动若没有 `current_snapshot_id`，用注册表当前状态建一条基线。
 - 遗留 `env_backup_*.json` 用 `maintenance cleanup-legacy-backups --yes` 先转 `.pebak` 并回读校验，再删除明文。
 
 ## 同步
 
 `changes` 是变更日志（真相，不可重建），`sync_conflicts` 是待人工决定。
 
-- **bundle 格式**（spec §5.2 / §6.4）：`PESYNC1\0 + version + header_len + header JSON + salt(16) + nonce(12) + ciphertext + tag`
+- **bundle 格式**：`PESYNC1\0 + version + header_len + header JSON + salt(16) + nonce(12) + ciphertext + tag`
 - **加密**：Argon2id（m=65536 KiB, t=3, p=1）+ ChaCha20-Poly1305；AAD 覆盖 header/salt/nonce。
 - **导入**：单事务；冲突写 `sync_conflicts`；失败整体回滚；**不写注册表**。
 - **合并**：LWW（`lamport` 高者胜，同 lamport 按 `device_id`）；`snapshot` / `profile` 按**整实体**比较（墓碑与内容变更同一时间线）。
@@ -57,7 +56,7 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 - **OpenSSL 的唯一作用**：给 SQLCipher 提供 AES-256、HMAC、PBKDF2 等密码学原语。项目**没有任何 TLS / 网络调用**，与「OpenSSL 漏洞」常见的 Web 攻击面不同。
 - `bundled-sqlcipher-vendored-openssl` 把 SQLCipher 与 OpenSSL 的 **C 源码**都打进 crate，构建时用 `cc` 编译。因此需要 `make`、`perl`（MSVC 下还需 NASM），首次全量编译约 45 分钟，二进制 +1–2 MB。
 - 选 `vendored` 是为了「不依赖用户机器上是否装了 OpenSSL、版本是否兼容」，代价是构建工具链与时间——这是有意的权衡，不要改成链接系统 OpenSSL。
-- 密钥：`~/.patheditor/keys/db.key.dpapi`，内容为 `version(1)+db_key(32)+hash_salt(16)`，整体经 DPAPI（**当前 Windows 用户**作用域）加密；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。详见 spec §5.1 与 M1 计划 Task 3。
+- 密钥：`~/.patheditor/keys/db.key.dpapi`，内容为 `version(1)+db_key(32)+hash_salt(16)`，整体经 DPAPI（**当前 Windows 用户**作用域）加密；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。
 
 ## 参考
 
@@ -65,4 +64,4 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 - 计划：`docs/superpowers/plans/`（M1–M4）
 - M0 探针：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md`
 
-- **当前状态**：`app_state.current_snapshot_id` 由 `core::service::save_path_with_db` 维护（GUI 与 CLI 共用）；每次成功写 PATH 后写入 `kind=current` 快照并增量索引。`disabled.json` 只在 DB 不可用时作为降级读源。
+- **当前状态**：`app_state.current_snapshot_id` 由 `core::service::save_path_with_db` 维护（GUI 与 CLI 共用）；每次成功写 PATH 后写入 `kind=current` 快照并增量索引。DB 不可用时只读注册表。

@@ -1664,7 +1664,7 @@ mod tests {
     ///
     /// 区分两个分支，两个分支都断言到底：
     /// - 未提权（本机常规情形）：HKLM 无法以写权限打开 → `PermissionDenied` →
-    /// 退出码 1，且此时尚未写入任何内容（core 先开 hive、后写入）；
+    ///   退出码 1，且此时尚未写入任何内容（core 先开 hive、后写入）；
     /// - 已提权：备份即当前状态 → 零变更、零失败。
     #[test]
     fn env_restore_prints_manual_fallback_guidance_to_stderr() {

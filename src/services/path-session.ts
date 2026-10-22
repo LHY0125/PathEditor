@@ -44,7 +44,7 @@ export function disabledLists(entries: readonly PathEntry[]): string[] {
   return entries.filter((entry) => !entry.enabled).map((entry) => entry.path);
 }
 
-/** 加载注册表与 disabled.json 合并后的完整有序快照。 */
+/** 加载注册表与 DB 当前快照合并后的完整有序快照。 */
 export async function loadPathSnapshot(): Promise<LoadSnapshot> {
   const snapshot = await backend.loadPathSnapshot();
   return {

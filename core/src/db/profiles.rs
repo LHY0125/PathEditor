@@ -1,7 +1,6 @@
-//! 配置方案（profile）元数据与版本，迁入 DB。
+//! 配置方案（profile）元数据与版本，全部存于 DB。
 //!
-//! 与 `core::profiles`（v5 文件版）并存：文件版保留为「导出 v5 JSON」的兼容通路，
-//! DB 版承担标签/版本/最近使用/应用次数的查询能力。
+//! 承担标签/版本/最近使用/应用次数的查询能力。
 
 use super::history::{insert_snapshot_tx, NewSnapshot};
 use super::{db_err, Db};

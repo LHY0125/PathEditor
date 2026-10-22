@@ -2,11 +2,11 @@
 //!
 //! 两个入口共用本模块：
 //! - [`save_path_with_db`]：DB 可用时使用；写注册表后提交 `current` 快照与事件。
-//! - [`save_path_with_sidecar`]：降级/兼容路径；写 v5 `disabled.json` 与 pending。
+//! - [`save_path_registry_only`]：DB 不可用时的降级路径；只写注册表。
 //!
 //! 语义：
 //! - **best-effort 多 hive**：逐 hive 尝试，结果按 hive 分字段；
-//! - **pending**：注册表已写成功但快照未落盘时记录，下次补写（sidecar-only）；
+//! - **pending**：注册表已写成功但快照未落盘时记录，下次补写（只补写快照，不触碰注册表）；
 //! - **广播**：任一 hive 注册表写成功后由服务层广播。
 
 use crate::backup;
@@ -16,17 +16,15 @@ use crate::db::{search, Db};
 use crate::disabled;
 use crate::env_var::EnvHive;
 use crate::error::{CoreError, ErrorCode};
-use crate::history::{
-    EventAction, EventResult, EventSource, HistoryEvent, HistorySink, NoopHistory,
-};
+use crate::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
 use crate::path_entry::{PathEntry, PathSnapshot};
 use crate::registry;
 use crate::system;
 
 /// PATH 读写的可注入缝（仿 `EnvHiveStore` / `registry/env_var.rs` 的 `_with_store` 模式）。
 ///
-/// 存在的理由：`save_path_with_sidecar` 的编排（备份 / 并发校验 / 顺序写 /
-/// sidecar 事务）**必须能在不触碰真实注册表的前提下单测**（Global Constraints：
+/// 存在的理由：保存编排（备份 / 并发校验 / 顺序写 /
+/// 快照事务）**必须能在不触碰真实注册表的前提下单测**（Global Constraints：
 /// 本层测试不写真实注册表。真实 IO 一路硬编码到 `HKEY_LOCAL_MACHINE` /
 /// `HKEY_CURRENT_USER`（`registry::save_system_paths` 等），无法直接注入；
 /// 故在服务层定义此缝，把「读写哪个 hive 的哪段存储」抽象掉。
@@ -120,7 +118,7 @@ pub enum HiveOutcome {
     Failed(CoreError),
 }
 
-/// sidecar（disabled.json / PATH 快照 / pending）的落盘结果。
+/// 快照持久化的落盘结果。
 ///
 /// - `Saved`：快照已落盘；
 /// - `Pending`：快照落盘失败，但待补写状态已成功记录，下次运行可补写；
@@ -136,7 +134,7 @@ pub enum SidecarOutcome {
     Failed(CoreError),
 }
 
-/// 一次 PATH 应用（注册表 + sidecar）的整体结果。
+/// 一次 PATH 应用（注册表 + 快照）的整体结果。
 ///
 /// **按 hive 分字段**：多 hive 应用必须能同时表达「系统成功 / 用户失败」
 /// 这种 partial 结果，单个 `registry:HiveOutcome` 字段装不下。
@@ -147,7 +145,7 @@ pub struct ApplyOutcome {
     pub system: HiveOutcome,
     /// 用户 hive（HKCU）的结果
     pub user: HiveOutcome,
-    /// sidecar 快照的落盘结果
+    /// 快照的落盘结果
     pub sidecar: SidecarOutcome,
 }
 
@@ -167,7 +165,7 @@ pub struct PathHiveWrite {
     /// 期望的注册表现值（**启用**路径，即 `enabled` 条目）。
     ///
     /// - `Some(orig)`：写前读当前启用路径比对，不匹配则以
-    /// [`HiveOutcome::Failed`]（`code = Conflict`）表达，**不写、不产 pending**；
+    ///   [`HiveOutcome::Failed`]（`code = Conflict`）表达，**不写、不产 pending**；
     /// - `None`：跳过并发校验（如 `apply_path_snapshot` / `apply_profile`）。
     pub expected: Option<Vec<String>>,
 }
@@ -184,12 +182,12 @@ pub struct PathHiveWrite {
 /// 顺序敏感死锁修复：比较改为**多重集**（排序后比较）——
 /// 忽略顺序、保留重复计数。理由：
 /// - `expected` 来自 `load_path_snapshot` 的 `merge_hive` 输出，其**成员忠实于
-/// 注册表、唯独顺序取自快照**（`disabled.rs:137`，golden `merge_snapshot_order_wins`）；
-/// 而 `current` 是**注册表顺序**。二者在**任何外部重排**后即不相等。
+///   注册表、唯独顺序取自快照**（`disabled.rs:137`，golden `merge_snapshot_order_wins`）；
+///   而 `current` 是**注册表顺序**。二者在**任何外部重排**后即不相等。
 /// - 顺序敏感比较因此**永久拒绝保存**（存不了 → 快照永不更新 → 一直拒绝），
-/// 且「重新加载后重试」是假解药（reload 走同一合并，产出同一顺序）。
+///   且「重新加载后重试」是假解药（reload 走同一合并，产出同一顺序）。
 /// - PathEditor **拥有 PATH 顺序**（快照是顺序真相源），外部纯重排不是
-/// lost-update，不应据此拒绝。
+///   lost-update，不应据此拒绝。
 ///
 /// ⚠️ **不放宽成员冲突**：外部增删仍拒绝（排序后仍不等）。
 fn check_expected(
@@ -239,68 +237,44 @@ fn write_hive_registry(io: &dyn PathHiveIo, hive: EnvHive, write: &PathHiveWrite
     }
 }
 
-/// 提交 sidecar 快照（仅落盘，不触碰注册表），失败时落 pending。
+/// 只写注册表（DB 不可用时的降级路径）。
 ///
-/// - 快照保存失败 → 先用当前快照把 `None` 侧填充为现有内容再落 pending
-///   （保证补写是无损的整份覆盖），返回 [`SidecarOutcome::Pending`]；
-/// 连 pending 都记录失败则返回 [`SidecarOutcome::Failed`]。
-/// - 快照保存成功 → 防御性清除任何陈旧 pending（其内容已被本快照取代）。
-fn commit_sidecar(system: Option<Vec<PathEntry>>, user: Option<Vec<PathEntry>>) -> SidecarOutcome {
-    if let Err(e) = disabled::save_path_snapshot(system.clone(), user.clone()) {
-        // 「legacy」哨兵分支：为兼容旧错误形状保留的哨兵（operation == "legacy"
-        // 表示 disabled.rs 旧通路产生的自由文本错误）。该分支已无生产调用，
-        // 保留原因见 docs/审核和开发/2026.09.20/PathEditor-Wave2架构收口开发回执.md。
-        let sidecar_err = if matches!(e.code, ErrorCode::Internal) && e.operation == "legacy" {
-            core_err(ErrorCode::Io, "commit_sidecar", e.message)
-        } else {
-            e
-        };
-        // pending 快照是覆盖式整份落盘，`save_pending_path_snapshot` 的 None 语义
-        // 是「空数组」而非「保留该 hive」。若把 None 原样落 pending，补写时会把
-        // 未操作的 hive 清空。因此先用当前快照把 None 侧填充为现有内容。
-        let pending = match disabled::load_path_snapshot() {
-            Ok(snap) => {
-                let sys = system.unwrap_or_else(|| snap.system.clone());
-                let usr = user.unwrap_or_else(|| snap.user.clone());
-                disabled::save_pending_path_snapshot(Some(sys), Some(usr))
-            }
-            // 当前快照读取失败时无法安全构造无损 pending，跳过落盘；
-            // 调用方按 Failed 语义提示手工核对。失败详情不能只落在被吞掉的
-            // `_pe` 上，必须记日志留存。
-            Err(pe) => {
-                log::error!("落 pending 前读取当前快照失败，跳过待补写记录: {pe}");
-                Err(CoreError::new(
-                    ErrorCode::Internal,
-                    "commit_sidecar",
-                    format!("待补写状态构造失败（读取当前快照出错）: {pe}"),
-                ))
-            }
-        };
-        return match pending {
-            Ok(()) => SidecarOutcome::Pending(sidecar_err),
-            Err(_) => SidecarOutcome::Failed(sidecar_err),
-        };
+/// 禁用状态无法持久化，因此只要有一个 hive 写入成功，`sidecar` 就是
+/// `Failed(database)`——诚实报告，而不是假装保存成功。
+pub fn save_path_registry_only(
+    system: Option<PathHiveWrite>,
+    user: Option<PathHiveWrite>,
+    source: EventSource,
+    history: &dyn HistorySink,
+) -> Result<ApplyOutcome, CoreError> {
+    let mut outcome = save_path_registry_io(&RealPathHiveIo, system, user)?;
+    let applied = matches!(outcome.system, HiveOutcome::Applied)
+        || matches!(outcome.user, HiveOutcome::Applied);
+    if applied {
+        outcome.sidecar = SidecarOutcome::Failed(CoreError::new(
+            ErrorCode::Database,
+            "save_path",
+            "数据库不可用，当前 PATH 快照未保存",
+        ));
     }
 
-    // 防御性清理：本次快照已成功落盘，任何陈旧 pending 都已过时，必须清除，
-    // 否则下次补写会用陈旧内容覆盖本次写入。磁盘此时已证明可写，失败概率极低；
-    // 即便失败，下次补写也只是幂等重放已被取代的旧状态。
-    if disabled::has_pending_path_snapshot() {
-        if let Err(e) = disabled::clear_pending_path_snapshot() {
-            log::warn!("清除待补写快照状态失败: {e}");
-        }
+    if let Err(e) = history.record(HistoryEvent {
+        source,
+        action: EventAction::Save,
+        hive: None,
+        target: None,
+        changed_fields: vec!["path_entries".to_string()],
+        before_revision: None,
+        after_revision: None,
+        result: event_result(&outcome.system, &outcome.user),
+        snapshot_uid: None,
+    }) {
+        log::warn!("历史写入失败（保存已成功）: {}", e.message);
     }
-    SidecarOutcome::Saved
+    Ok(outcome)
 }
 
-/// 把某 hive 的 PATH 写入注册表并落盘快照（含 pending 恢复语义）。
-///
-/// 未触及的另一 hive 置为 [`HiveOutcome::Skipped`]。内部先 best-effort 补写
-/// 上次未落盘的 pending，再写注册表、
-/// 广播、提交 sidecar。
-///
-/// 注册表阶段失败（含写入前校验失败）以 `HiveOutcome::Failed` 在结果中诚实表达，
-/// **不产生 pending**；`Err` 保留给无法产出结果的预置失败（当前实现不产生）。
+/// 把某 hive 的 PATH 写入注册表（降级路径，不持久化快照）。
 pub fn apply_path_snapshot(
     hive: EnvHive,
     entries: Vec<PathEntry>,
@@ -311,80 +285,29 @@ pub fn apply_path_snapshot(
         expected: None,
     };
     match hive {
-        EnvHive::System => save_path_with_sidecar(Some(write), None, history),
-        EnvHive::User => save_path_with_sidecar(None, Some(write), history),
+        EnvHive::System => save_path_registry_only(Some(write), None, EventSource::Gui, history),
+        EnvHive::User => save_path_registry_only(None, Some(write), EventSource::Gui, history),
     }
 }
 
-/// 同时写注册表与 sidecar，明确 partial 语义（best-effort，逐 hive 尝试）。
-///
-/// 编排见 [`save_path_with_sidecar_io`]（本函数只是注入真实 IO 的薄壳）。
-///
-/// 乐观并发：`PathHiveWrite.expected = Some(orig)` 时先在 core 内完成
-/// 「读-比-写」校验，不匹配则该 hive 以 `HiveOutcome::Failed(code = Conflict)`
-/// 表达，**不写、不产 pending**（CLI 侧 `verify_and_save` 已由此下沉）。
-pub fn save_path_with_sidecar(
-    system: Option<PathHiveWrite>,
-    user: Option<PathHiveWrite>,
-    history: &dyn HistorySink,
-) -> Result<ApplyOutcome, CoreError> {
-    let outcome = save_path_with_sidecar_io(&RealPathHiveIo, system, user, SidecarMode::File)?;
-    // 上报失败不阻断保存。
-    if let Err(e) = history.record(HistoryEvent {
-        source: EventSource::Gui,
-        action: EventAction::Save,
-        hive: None,
-        target: None,
-        changed_fields: vec!["path_entries".to_string()],
-        before_revision: None,
-        after_revision: None,
-        result: event_result(&outcome.system, &outcome.user),
-        // 保存操作的快照由调用方（GUI/CLI）在拿到 uid 后另行关联；
-        // 本服务函数不知道 DB，因此留 None。
-        snapshot_uid: None,
-    }) {
-        log::warn!("历史写入失败（保存已成功）: {}", e.message);
-    }
-    Ok(outcome)
-}
-
-/// [`save_path_with_sidecar`] 的核心编排：读写经 `io` 注入（生产传 [`RealPathHiveIo`]，
+/// 保存 PATH 的核心编排：读写经 `io` 注入（生产传 [`RealPathHiveIo`]，
 /// 测试传 fake，**全程不碰真实注册表**）。
 ///
 /// 编排顺序：
 /// 1. best-effort 补写上次未落盘的 pending（失败仅告警，不阻断）；
 /// 2. 对需校验的 hive 先做**乐观并发校验**（只读，不写）；校验失败以
-///  [`HiveOutcome::Failed`]（`code = Conflict`）表达，该 hive 不写、不产 pending；
+///    [`HiveOutcome::Failed`]（`code = Conflict`）表达，该 hive 不写、不产 pending；
 /// 3. **至少一个 hive 确实将写入**时，先写前备份（失败仅告警，不阻断）；
 /// 4. 逐 hive 写注册表（`None` 侧跳过）；
-/// 5. 任一 hive 写成功后广播环境变更；
-/// 6. 仅对注册表写成功的 hive 提交 sidecar 快照；快照失败落 pending。
+/// 5. 任一 hive 写成功后广播环境变更。
 ///
 /// **备份时机**：在**校验通过、确实将写入**之后、真正写入之前。这样校验失败的
 /// 调用**不产生无谓备份文件**——否则一次并发冲突就会留下一份没人需要的备份。
-/// sidecar 提交方式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SidecarMode {
-    /// 写 v5 文件（`disabled.json` / pending）。降级与兼容路径使用。
-    File,
-    /// 不写文件；由调用方写 DB 当前快照。
-    None,
-}
-
-pub(crate) fn save_path_with_sidecar_io(
+pub(crate) fn save_path_registry_io(
     io: &dyn PathHiveIo,
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
-    sidecar_mode: SidecarMode,
 ) -> Result<ApplyOutcome, CoreError> {
-    // pending 补写是本次保存的前置内部步骤，不再单独记事件。
-    // 只有文件 sidecar 模式才需要补写 v5 pending；DB 模式由调用方处理。
-    if sidecar_mode == SidecarMode::File {
-        if let Err(e) = retry_pending_path_state(&NoopHistory) {
-            log::warn!("补写上次待落盘快照失败: {}", e.message);
-        }
-    }
-
     // 步骤 2：乐观并发校验（只读）。校验通过则返回 ()，失败返回 Conflict。
     // 单独出来做，是为了让「是否将写入」在备份之前就已知。
     let sys_check = check_expected(io, EnvHive::System, system.as_ref());
@@ -429,28 +352,8 @@ pub(crate) fn save_path_with_sidecar_io(
         system::broadcast_env_change();
     }
 
-    // sidecar 只记录注册表写成功的 hive；注册表是启用路径的真相来源。
-    let sidecar = if sys_applied || usr_applied {
-        match sidecar_mode {
-            SidecarMode::File => {
-                let sys_snap = if sys_applied {
-                    system.map(|w| w.entries)
-                } else {
-                    None
-                };
-                let usr_snap = if usr_applied {
-                    user.map(|w| w.entries)
-                } else {
-                    None
-                };
-                commit_sidecar(sys_snap, usr_snap)
-            }
-            // DB 模式：当前快照由调用方（save_path_with_db）提交。
-            SidecarMode::None => SidecarOutcome::Saved,
-        }
-    } else {
-        SidecarOutcome::Saved
-    };
+    // 当前快照由调用方（save_path_with_db）提交；这里只负责注册表。
+    let sidecar = SidecarOutcome::Saved;
 
     Ok(ApplyOutcome {
         system: sys_outcome,
@@ -459,73 +362,9 @@ pub(crate) fn save_path_with_sidecar_io(
     })
 }
 
-/// 补写上次未落盘的快照（**sidecar-only**，不触碰注册表）。
-///
-/// pending 的产生前提就是注册表已写成功，补写只把完整有序快照写回
-/// `disabled.json` 并清除 pending 文件。无 pending 时返回
-/// 全 `Skipped` + `Saved` 的空结果。
-///
-/// 本函数返回 `Result` 是诚实报告；CLI 策略层把 `Err` 映射为
-/// 警告、不阻断当前命令。
-pub fn retry_pending_path_state(history: &dyn HistorySink) -> Result<ApplyOutcome, CoreError> {
-    let pending = disabled::load_pending_path_snapshot()
-        .map_err(|e| core_err(e.code, "retry_pending_path_state", e.message))?;
-    let Some(pending) = pending else {
-        return Ok(ApplyOutcome {
-            system: HiveOutcome::Skipped,
-            user: HiveOutcome::Skipped,
-            sidecar: SidecarOutcome::Saved,
-        });
-    };
-
-    disabled::save_path_snapshot(Some(pending.system), Some(pending.user))
-        .map_err(|e| core_err(e.code, "retry_pending_path_state", e.message))?;
-    // 清除失败不阻断：pending 是幂等整份快照，下次补写重放同样内容。
-    let _ = disabled::clear_pending_path_snapshot();
-
-    // 补写也是一次可追溯的操作，记一条事件（失败不阻断）。
-    if let Err(e) = history.record(HistoryEvent {
-        source: EventSource::Gui,
-        action: EventAction::Save,
-        hive: None,
-        target: None,
-        changed_fields: vec!["pending_retry".to_string()],
-        before_revision: None,
-        after_revision: None,
-        result: EventResult::Success,
-        snapshot_uid: None,
-    }) {
-        log::warn!("补写历史失败（pending 已补写）: {}", e.message);
-    }
-
-    Ok(ApplyOutcome {
-        system: HiveOutcome::Skipped,
-        user: HiveOutcome::Skipped,
-        sidecar: SidecarOutcome::Saved,
-    })
-}
-
-/// 提交 sidecar 快照（仅落盘、不触碰注册表），供「注册表已另行写入」的调用方使用。
-///
-/// 供「注册表已另行写入」的调用方使用：注册表由调用方写入后，
-/// 本函数提交快照并处理 pending 语义。失败不返回 `Err`——注册表已写成功的事实
-/// 必须完整表达，故以 [`SidecarOutcome::Pending`] / [`SidecarOutcome::Failed`]
-/// 携带错误在 `Ok` 中诚实报告。
-pub fn commit_sidecar_snapshot(
-    system: Option<Vec<PathEntry>>,
-    user: Option<Vec<PathEntry>>,
-) -> Result<ApplyOutcome, CoreError> {
-    let sidecar = commit_sidecar(system, user);
-    Ok(ApplyOutcome {
-        system: HiveOutcome::Skipped,
-        user: HiveOutcome::Skipped,
-        sidecar,
-    })
-}
-
 /// 从 DB 的 `current_snapshot` 加载完整 PATH 快照，并与注册表合并。
 ///
-/// DB 没有当前快照时回落到 v5 文件；这与降级模式的行为一致。
+/// DB 没有当前快照时只读注册表；这与降级模式的行为一致。
 pub fn load_path_snapshot_db(db: &Db) -> Result<PathSnapshot, CoreError> {
     let persisted = history::current_snapshot(db)?.map(|view| PathSnapshot {
         system: view.system,
@@ -620,7 +459,7 @@ fn index_snapshot_by_uid(db: &mut Db, uid: &str) {
     }
 }
 
-/// 保存 PATH 并把当前状态提交到 DB（不做文件 sidecar）。
+/// 保存 PATH 并把当前状态提交到 DB（不做文件持久化）。
 ///
 /// 与 [`save_path_with_db`] 的唯一区别是注册表 IO 可注入，供集成测试使用。
 pub fn save_path_with_db_io(
@@ -657,7 +496,7 @@ pub fn save_path_with_db_io(
 
     let sys_entries = system.as_ref().map(|w| w.entries.clone());
     let usr_entries = user.as_ref().map(|w| w.entries.clone());
-    let mut outcome = save_path_with_sidecar_io(io, system, user, SidecarMode::None)?;
+    let mut outcome = save_path_registry_io(io, system, user)?;
     let applied = matches!(&outcome.system, HiveOutcome::Applied)
         || matches!(&outcome.user, HiveOutcome::Applied);
 
@@ -905,7 +744,7 @@ mod tests {
         }
     }
 
-    // pending / disabled.json 在测试下共享固定 temp 路径，
+    // pending 快照在测试下共享固定 temp 路径，
     // 与 disabled.rs 的生命周期测试存在并行竞态窗口（由
     // `persist::test_persist_lock` 序列化，见 persist.rs）。
 
@@ -922,8 +761,7 @@ mod tests {
         let sys = vec![entry("C:\\svc_seq_sys", true)];
         let usr = vec![entry("D:\\svc_seq_usr", true)];
 
-        save_path_with_sidecar_io(&io, Some(write(sys)), Some(write(usr)), SidecarMode::File)
-            .unwrap();
+        save_path_registry_io(&io, Some(write(sys)), Some(write(usr))).unwrap();
 
         assert_eq!(
             io.write_order(),
@@ -942,7 +780,7 @@ mod tests {
         let io = FakePathIo::new();
         let sys = vec![entry("C:\\svc_bak_sys", true)];
 
-        save_path_with_sidecar_io(&io, Some(write(sys)), None, SidecarMode::File).unwrap();
+        save_path_registry_io(&io, Some(write(sys)), None).unwrap();
 
         assert_eq!(io.backup_count(), 1, "有写入时 backup() 必须被调用恰好一次");
     }
@@ -957,7 +795,7 @@ mod tests {
         let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new();
 
-        save_path_with_sidecar_io(&io, None, None, SidecarMode::File).unwrap();
+        save_path_registry_io(&io, None, None).unwrap();
 
         assert_eq!(
             io.backup_count(),
@@ -969,7 +807,7 @@ mod tests {
     /// 契约 2：并发不匹配 → 该 hive **不写、不备份、不产 pending**。
     ///
     /// 三条「不」缺一不可：只断言「不写」不够——若实现仍备份，等于并发冲突还留下
-    /// 一份无用备份；若仍走 `commit_sidecar`，则污染 sidecar。
+    /// 一份无用备份；若仍写 sidecar，则污染快照。
     #[test]
     fn concurrent_mismatch_writes_nothing_and_no_backup() {
         let _guard = crate::persist::test_persist_lock();
@@ -981,7 +819,7 @@ mod tests {
             expected: Some(vec!["C:\\stale".to_string()]),
         };
 
-        let outcome = save_path_with_sidecar_io(&io, Some(req), None, SidecarMode::File).unwrap();
+        let outcome = save_path_registry_io(&io, Some(req), None).unwrap();
 
         // 不写该 hive，且错误码为 Conflict
         match outcome.system {
@@ -1012,7 +850,7 @@ mod tests {
             expected: Some(vec!["C:\\orig".to_string()]),
         };
 
-        let outcome = save_path_with_sidecar_io(&io, Some(req), None, SidecarMode::File).unwrap();
+        let outcome = save_path_registry_io(&io, Some(req), None).unwrap();
 
         assert!(matches!(outcome.system, HiveOutcome::Applied));
         assert_eq!(io.write_order(), vec![EnvHive::System]);
@@ -1040,7 +878,7 @@ mod tests {
             expected: Some(vec!["C:\\c".into(), "C:\\a".into(), "C:\\b".into()]),
         };
 
-        let outcome = save_path_with_sidecar_io(&io, Some(req), None, SidecarMode::File).unwrap();
+        let outcome = save_path_registry_io(&io, Some(req), None).unwrap();
 
         assert!(
             matches!(outcome.system, HiveOutcome::Applied),
@@ -1063,7 +901,7 @@ mod tests {
             expected: Some(vec!["C:\\a".into()]),
         };
 
-        let outcome = save_path_with_sidecar_io(&io, Some(req), None, SidecarMode::File).unwrap();
+        let outcome = save_path_registry_io(&io, Some(req), None).unwrap();
 
         match outcome.system {
             HiveOutcome::Failed(e) => assert_eq!(e.code, ErrorCode::Conflict),
@@ -1086,7 +924,7 @@ mod tests {
             expected: Some(vec!["C:\\a".into(), "C:\\b".into()]),
         };
 
-        let outcome = save_path_with_sidecar_io(&io, Some(req), None, SidecarMode::File).unwrap();
+        let outcome = save_path_registry_io(&io, Some(req), None).unwrap();
 
         match outcome.system {
             HiveOutcome::Failed(e) => assert_eq!(e.code, ErrorCode::Conflict),
@@ -1150,8 +988,7 @@ mod tests {
         let mut io = FakePathIo::new();
         io.fail_write = true; // 模拟注册表写失败（等价于输入校验失败）
         let entries = vec![entry("C:\\ok", true), entry("C:\0bad", true)];
-        let outcome =
-            save_path_with_sidecar_io(&io, Some(write(entries)), None, SidecarMode::File).unwrap();
+        let outcome = save_path_registry_io(&io, Some(write(entries)), None).unwrap();
         assert!(matches!(outcome.system, HiveOutcome::Failed(_)));
         assert!(matches!(outcome.user, HiveOutcome::Skipped));
         assert!(matches!(outcome.sidecar, SidecarOutcome::Saved));
@@ -1170,40 +1007,11 @@ mod tests {
         let mut io = FakePathIo::new();
         io.fail_write = true;
         let long = format!("D:\\{}", "a".repeat(32767));
-        let outcome = save_path_with_sidecar_io(
-            &io,
-            None,
-            Some(write(vec![entry(&long, true)])),
-            SidecarMode::File,
-        )
-        .unwrap();
+        let outcome =
+            save_path_registry_io(&io, None, Some(write(vec![entry(&long, true)]))).unwrap();
         assert!(matches!(outcome.system, HiveOutcome::Skipped));
         assert!(matches!(outcome.user, HiveOutcome::Failed(_)));
         assert!(!disabled::has_pending_path_snapshot());
-    }
-
-    // flush 重放（sidecar-only）：注入 pending 文件 → retry 补写并清除。
-    // 不触碰注册表：system/user 恒为 Skipped。
-    #[test]
-    fn retry_replays_pending_sidecar_only_and_clears_it() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
-        let sys = vec![
-            entry("C:\\svc_test_sys", true),
-            entry("C:\\svc_test_disabled", false),
-        ];
-        let usr = vec![entry("D:\\svc_test_usr", false)];
-        disabled::save_pending_path_snapshot(Some(sys), Some(usr)).unwrap();
-        assert!(disabled::has_pending_path_snapshot());
-
-        let outcome = retry_pending_path_state(&NoopHistory).unwrap();
-        assert!(matches!(outcome.system, HiveOutcome::Skipped));
-        assert!(matches!(outcome.user, HiveOutcome::Skipped));
-        assert!(matches!(outcome.sidecar, SidecarOutcome::Saved));
-        assert!(
-            !disabled::has_pending_path_snapshot(),
-            "补写成功后 pending 必须被清除"
-        );
     }
 
     #[test]

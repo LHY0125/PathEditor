@@ -153,30 +153,25 @@ PathEditor 的 C 首版行为细节在 git 历史里，`docs/审核和开发/` �
 
 ## 用例清单
 
-| 类  | 用例                            | 断言点                                         |
-| --- | ------------------------------- | ---------------------------------------------- |
-| 1   | split_trims_and_drops_empty     | 逐段 trim + 空段丢弃                           |
-| 1   | split_empty_string              | 空 PATH 值 → 空列表（非 `[""]`）               |
-| 1   | split_keeps_duplicates          | split 不去重                                   |
-| 1   | join_trims_and_drops_empty      | join trim/丢弃空段，split∘join 往返稳定        |
-| 1   | validate_rejects_null_byte      | null 字节拦截 + hive 标签前缀                  |
-| 1   | validate_rejects_oversize       | 32767 UTF-16 上限（按码元计）                  |
-| 1   | clean_dedupes_case_insensitive  | 大小写不敏感去重保首次、空项移除、enabled 保留 |
-| 1   | clean_keeps_percent_paths       | `%` 路径保留（unknown 不误删）、缺失目录移除   |
-| 2   | type_keeps_reg_sz               | 已有 REG_SZ 写回保持 REG_SZ                    |
-| 2   | type_defaults_expand_sz         | 非字符串类型回退 REG_EXPAND_SZ                 |
-| 2   | make_value_utf16_nul            | 值文本逐字节保留 + UTF-16LE + NUL 终止         |
-| 2   | make_value_reg_sz               | REG_SZ 不被暗中改写                            |
-| 3   | caps_writable_allows            | 可写 hive + 普通名 → 放行                      |
-| 3   | caps_nonwritable_denies         | 不可写 hive → 拒绝（查看不受影响）             |
-| 3   | caps_protected_denies           | 保护名单硬拒绝                                 |
-| 3   | caps_reserved_denies            | 保留名 `Path` 硬拒绝                           |
-| 4   | backup_format_contract          | 备份输出文件格式契约（只读注册表）             |
-| 4   | backup_rejects_system_dir       | 系统目录拒绝                                   |
-| 5   | profile_legacy_v1               | 无 schemaVersion 按 v1 读、enabled 往返        |
-| 5   | profile_future_version_rejected | 高版本 Parse 拒绝 + 提示升级（按 code 判定）   |
-| 5   | import_json_sanitizes           | 导入净化 + enabled 保留                        |
-| 5   | export_csv_enabled              | CSV 三列头 + 引号转义 + enabled 往返           |
-| 5   | merge_legacy_orphan             | 旧版字符串-only 的孤儿禁用项恢复               |
-| 5   | merge_snapshot_order_wins       | 快照定序、外部删除不复活、新路径追加           |
-| 5   | merge_legacy_marks_registry     | legacy 禁用串按小写键标记注册表路径            |
+| 类  | 用例                           | 断言点                                         |
+| --- | ------------------------------ | ---------------------------------------------- |
+| 1   | split_trims_and_drops_empty    | 逐段 trim + 空段丢弃                           |
+| 1   | split_empty_string             | 空 PATH 值 → 空列表（非 `[""]`）               |
+| 1   | split_keeps_duplicates         | split 不去重                                   |
+| 1   | join_trims_and_drops_empty     | join trim/丢弃空段，split∘join 往返稳定        |
+| 1   | validate_rejects_null_byte     | null 字节拦截 + hive 标签前缀                  |
+| 1   | validate_rejects_oversize      | 32767 UTF-16 上限（按码元计）                  |
+| 1   | clean_dedupes_case_insensitive | 大小写不敏感去重保首次、空项移除、enabled 保留 |
+| 1   | clean_keeps_percent_paths      | `%` 路径保留（unknown 不误删）、缺失目录移除   |
+| 2   | type_keeps_reg_sz              | 已有 REG_SZ 写回保持 REG_SZ                    |
+| 2   | type_defaults_expand_sz        | 非字符串类型回退 REG_EXPAND_SZ                 |
+| 2   | make_value_utf16_nul           | 值文本逐字节保留 + UTF-16LE + NUL 终止         |
+| 2   | make_value_reg_sz              | REG_SZ 不被暗中改写                            |
+| 3   | caps_writable_allows           | 可写 hive + 普通名 → 放行                      |
+| 3   | caps_nonwritable_denies        | 不可写 hive → 拒绝（查看不受影响）             |
+| 3   | caps_protected_denies          | 保护名单硬拒绝                                 |
+| 3   | caps_reserved_denies           | 保留名 `Path` 硬拒绝                           |
+| 4   | backup_format_contract         | 备份输出文件格式契约（只读注册表）             |
+| 4   | backup_rejects_system_dir      | 系统目录拒绝                                   |
+| 5   | import_json_sanitizes          | 导入净化 + enabled 保留                        |
+| 5   | export_csv_enabled             | CSV 三列头 + 引号转义 + enabled 往返           |

@@ -30,7 +30,6 @@ CREATE TABLE app_state (
   id                  INTEGER PRIMARY KEY CHECK (id = 1),
   current_snapshot_id INTEGER REFERENCES snapshots(id),
   version             INTEGER NOT NULL DEFAULT 1,
-  migrated_v5         INTEGER NOT NULL DEFAULT 0,
   device_id           TEXT NOT NULL,
   lamport             INTEGER NOT NULL DEFAULT 0
 );
@@ -131,7 +130,7 @@ CREATE TABLE migration_imports (
 /// 四张表的性质：
 /// - `scan_runs`：冲突扫描历史，**不是派生表**（是真实记录，无法从别处重建）；
 /// - `var_references` / `daily_stats` / `search_fts`：派生表，必须能从
-/// `snapshots` / `events` / `path_entries` 完整重建。
+///   `snapshots` / `events` / `path_entries` 完整重建。
 pub const DDL_V2: &str = r#"
 CREATE TABLE scan_runs (
   id             INTEGER PRIMARY KEY,
@@ -213,11 +212,11 @@ CREATE INDEX idx_sync_conflicts_unresolved ON sync_conflicts(resolved_at);
 /// **为什么必须在建库时写**：`app_state` 若为空，
 /// - `app_state_version()` 无行可读 → 返回错误；
 /// - `set_current_snapshot()` 的 CAS `WHERE id = 1 AND version = ?` 匹配 0 行
-/// → **恒返回 `false`**，「CAS 冲突返回 conflict」永远不可达；
+///   → **恒返回 `false`**，「CAS 冲突返回 conflict」永远不可达；
 /// - `DbHistory::record` 只能用 `COALESCE(..., 'local')` 兜底 `device_id`。
 ///
 /// `device_id` 在 Rust 侧生成一次（UUIDv7），此后不再变更 —— 同步以它区分设备。
 /// 用 `INSERT OR IGNORE` 保证重复调用幂等（已有行时不覆盖真实 device_id）。
 pub const SEED_APP_STATE_SQL: &str = "INSERT OR IGNORE INTO app_state
-       (id, current_snapshot_id, version, migrated_v5, device_id, lamport)
-     VALUES (1, NULL, 1, 0, ?1, 0)";
+       (id, current_snapshot_id, version, device_id, lamport)
+     VALUES (1, NULL, 1, ?1, 0)";

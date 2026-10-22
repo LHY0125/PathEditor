@@ -225,7 +225,7 @@ pub(crate) fn change_exists_tx(tx: &Transaction, uid: &str) -> Result<bool, Core
 /// 与 [`record_change_tx`] 的区别：
 /// - `origin='remote'`，因此不会进入待导出队列；
 /// - `seq` / `lamport` / `device_id` 全部**沿用远端值**（不重新分配）——
-/// 它们是远端设备的事实，改写会破坏跨设备的 LWW 比较；
+///   它们是远端设备的事实，改写会破坏跨设备的 LWW 比较；
 /// - 不推进本地 `app_state.lamport`（由导入方在整包结束时统一 `max` 提升）。
 #[allow(clippy::too_many_arguments)]
 pub fn record_remote_change_tx(

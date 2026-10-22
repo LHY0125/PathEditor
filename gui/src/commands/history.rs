@@ -183,9 +183,8 @@ pub fn profile_mark_applied(uid: String, state: State<'_, DbState>) -> Result<bo
 
 /// 配置方案的保存请求（PATH 条目 + 元数据一次写入）。
 ///
-/// 方案 A：UI 从 v5 文件通路切到 DB 后，这是唯一的写入口。
-/// 快照与 profile 行在**同一事务**内写入（`save_profile_tx`），
-/// 不会出现「配置建了但快照没建」的中间态。
+/// 配置方案统一走 DB；快照与 profile 行在**同一事务**内写入
+/// （`save_profile_tx`），不会出现「配置建了但快照没建」的中间态。
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileSaveRequest {
@@ -226,19 +225,6 @@ pub fn profile_save(
             &request.tags,
             snap,
         )
-    })
-}
-
-/// 把配置导出成 v5 `ProfileData` 的 JSON 字符串。
-///
-/// 这是**降级到 v5 的退路**：DB 不可用或需要回到旧版本时，用它可以导出
-/// 与 v5 自身写出的格式完全同构的文件（含 `schemaVersion` 信封）。
-///
-/// 返回的字符串由前端负责落盘（`save` 对话框），Rust 侧不写用户文件。
-#[tauri::command]
-pub fn profile_export_v5(uid: String, state: State<'_, DbState>) -> Result<String, CoreError> {
-    with_db(&state, "profile_export_v5", |db| {
-        path_editor_core::db::v5_export::export_profile_v5(db, &uid)
     })
 }
 

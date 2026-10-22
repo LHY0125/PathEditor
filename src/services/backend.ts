@@ -1286,11 +1286,7 @@ export const backend = {
     invoke<[PathEntry[], PathEntry[]]>('clean_path_entries', { entries }),
   scanPaths: (paths: string[], query = '') => invoke<ScanResult>('scan_paths', { paths, query }),
   /**
-   * 配置方案已迁到 DB。
-   *
-   * **不再使用 v5 文件通路的 `list_profiles` / `save_profile` / …**：
-   * 那组命令读写的仍是 `~/.patheditor/profiles/*.json`，与 DB 是两个真相源。
-   * 迁移之后继续用它会让 DB 数据永久冻结（`migration_imports` 保证不重导）。
+   * 配置方案统一走 DB。
    */
   profileList: async () =>
     parseProfileViewList(await parseCoreError(invoke<unknown>('profile_list')), 'profile_list'),
@@ -1429,19 +1425,6 @@ export const backend = {
     );
     if (typeof result !== 'string') {
       throw new Error('history_reveal_env_value 必须返回字符串');
-    }
-    return result;
-  },
-  /**
-   * 把配置导出成 v5 `profiles/*.json` 格式的字符串。
-   *
-   * 返回值可直接用 `save` 对话框写成 `.json` 文件，供降级到 v5 时使用。
-   * **不写用户文件**：落盘由前端负责，Rust 侧只产出内容。
-   */
-  profileExportV5: async (uid: string): Promise<string> => {
-    const result = await parseCoreError(invoke<unknown>('profile_export_v5', { uid }));
-    if (typeof result !== 'string') {
-      throw new Error('profile_export_v5 必须返回字符串');
     }
     return result;
   },

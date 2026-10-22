@@ -10,8 +10,8 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-582%20passed-brightgreen" alt="tests">
-  <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/v5.1/graph/badge.svg" alt="coverage"></a>
+  <img src="https://img.shields.io/badge/tests-720%20passed-brightgreen" alt="tests">
+  <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
 
@@ -70,7 +70,7 @@ graph TB
         System[系统操作<br/>权限检测 / 路径验证 / 环境变量展开]
         Files[文件操作<br/>备份 / 配置 / 导入导出]
         Scanner[分析引擎<br/>冲突检测 / 工具清单]
-        Profiles[配置管理<br/>DB 版 + v5 兼容]
+        Profiles[配置管理<br/>DB 版]
         History[历史 / 事件<br/>HistorySink]
         Analytics[检索 / 统计 / 引用图 / 对比]
         Sync[同步<br/>bundle / LWW / 冲突]
@@ -225,8 +225,6 @@ patheditor conflicts
 # 配置切换
 patheditor profile save "Python开发"
 patheditor profile apply "Python开发"
-patheditor profile export-v5 "Python开发"   # 导出为 v5 profiles/*.json（stdout）
-patheditor profile import <FILE>          # 从 v5 profiles/*.json 导入（只写 DB）
 
 # 通用环境变量（Path 除外）
 patheditor env list     [--system|--user] [--json]
@@ -245,9 +243,8 @@ patheditor sync status
 patheditor sync conflicts [--all]
 patheditor sync resolve <ID> --take local|remote
 
-# 维护任务（保留策略 / v5 归档 / 遗留明文备份）
+# 维护任务（保留策略 / 遗留明文备份）
 patheditor maintenance prune                    [--dry-run]
-patheditor maintenance archive-v5               [--dry-run]
 patheditor maintenance cleanup-legacy-backups   [--dry-run] [--yes]
 ```
 
@@ -393,8 +390,6 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 - **保留策略**：GUI 每次启动自动清理「已导出超过 90 天」的 `changes` 与「已解决超过 30 天」的
   `sync_conflicts`；**待导出队列（`exported_at IS NULL`）永不删除**。CLI：
   `patheditor maintenance prune [--dry-run]`。
-- **v5 原件归档**：迁移成功且零失败后，首次启动会把 `disabled.json` 与 `profiles/*.json`
-  改名为 `.v5.bak`（只改名、不覆盖、不删除）。CLI：`maintenance archive-v5 [--dry-run]`。
 - **遗留明文备份清理**：把 `env_backup_*.json` 先转成 DPAPI 加密的 `.pebak` 并**回读校验**，
   成功后才删除明文；任一失败保留原文件。必须显式 `--yes`。
 
@@ -462,10 +457,6 @@ scoop install lhy/patheditor-cli
 
 安装后即可在任意终端使用 `patheditor`（CLI 二进制在发布时重命名为 `patheditor-cli_<版本>_x64.exe`，manifest 用 `#/patheditor.exe` 装回原名）。
 
-> **从 v5.1.3 升级**：v5.1.3 的发布流程存在产物覆盖缺陷——CLI 与 GUI 共用 Cargo target 目录，而 NTFS 大小写不敏感使 `patheditor.exe` 与 `PathEditor.exe` 实际是同一条目录项，CLI 链接产物覆盖了 GUI 本体，导致 `scoop install lhy/patheditor-cli` 装出的可执行文件是 GUI（且无法运行，报 `DLL_NOT_FOUND`）。
->
-> 该缺陷已在 v5.1.4 修复（GUI 二进制改名 `PathEditor.exe`，CLI 改用独立 target 目录 `target/cli` 构建）。**若你在 v5.1.3 装过 CLI，执行 `scoop update patheditor-cli` 即可恢复。**
-
 **方式二：从源码安装**
 
 ```bash
@@ -510,7 +501,7 @@ npx tauri build
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
 | 前端测试  | Vitest (33 files / 398) + Playwright (54) |
-| Rust 测试 | cargo test (57 binaries / 350)            |
+| Rust 测试 | cargo test (322 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 
@@ -522,8 +513,7 @@ core/                         # Rust 核心库（零 Tauri 依赖）
 │   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
 │   ├── history.rs / history_sink.rs / profiles.rs / backups.rs
 │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
-│   ├── migrate_v5.rs / v5_export.rs / v5_import.rs
-│   ├── maintenance.rs / archive_v5.rs
+│   ├── maintenance.rs
 │   └── sync/                 # bundle / change_log / merge / conflict / export / import
 ├── error.rs                  # CoreError 结构化错误（code 驱动错误码与前端本地化）
 ├── service.rs                # 应用服务层（多 hive 事务编排 + 侧车快照）
@@ -531,7 +521,7 @@ core/                         # Rust 核心库（零 Tauri 依赖）
 ├── registry/                 # 注册表通路（path / access / env_var / conflict 子模块）
 ├── system.rs                 # 权限检测、路径验证、环境变量展开
 ├── scanner.rs                # 冲突检测、工具清单
-├── profiles.rs               # v5 文件版配置（兼容通路）
+├── profiles.rs               # 配置方案（DB 版）
 ├── backup.rs / disabled.rs   # 备份（.pebak）、禁用状态
 └── fs.rs                     # 文件读写、导入导出解析
 gui/                          # Tauri 桌面应用（bin 产物 PathEditor.exe）

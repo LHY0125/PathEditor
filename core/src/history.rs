@@ -19,7 +19,7 @@ pub enum EventSource {
     Import,
     /// 快照恢复
     Restore,
-    /// v5 文件迁移
+    /// 迁移 / 基线
     Migration,
     /// 同步包导入
     Sync,

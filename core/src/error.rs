@@ -43,7 +43,7 @@ pub enum ErrorCode {
     /// 合并冲突应提示用户解决，格式错误应报告文件损坏、重试无用。
     /// 共用 exit 4 会让自动化无法区分。
     SyncFormat,
-    /// v5 迁移与库版本问题（v6）
+    /// 库版本与 schema 迁移问题
     Migration,
     /// 兜底
     Internal,

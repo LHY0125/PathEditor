@@ -2,7 +2,7 @@
 //!
 //! 只做参数转换与错误呈现。DB 可用时把 PATH 保存交给
 //! `service::save_path_with_db`（写注册表 + 当前快照 + 事件）；DB 不可用时
-//! 降级为文件 sidecar，编辑照常成功，只是不记历史。
+//! 降级为只写注册表，编辑照常成功，但禁用状态与历史无法持久化。
 
 use path_editor_core::history::EventSource;
 use path_editor_core::history::NoopHistory;
@@ -22,13 +22,15 @@ pub fn save_path_with_sidecar(
 ) -> Result<ApplyOutcome, String> {
     let Ok(mut guard) = state.0.lock() else {
         log::warn!("历史库状态锁中毒，本次保存不记录历史");
-        return service::save_path_with_sidecar(system, user, &NoopHistory).map_err(|e| e.message);
+        return service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory)
+            .map_err(|e| e.message);
     };
 
     match guard.as_mut() {
         Some(db) => {
             service::save_path_with_db(db, EventSource::Gui, system, user).map_err(|e| e.message)
         }
-        None => service::save_path_with_sidecar(system, user, &NoopHistory).map_err(|e| e.message),
+        None => service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory)
+            .map_err(|e| e.message),
     }
 }

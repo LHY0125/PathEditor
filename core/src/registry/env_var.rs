@@ -117,11 +117,11 @@ pub(crate) fn reset_write_broadcast() {
 /// 被调方，实测 IR（`rustc --emit=llvm-ir`，同形最小用例）：
 ///
 /// - **非测试构建**：`define void @wrapper() { tail call void @real_broadcast_side_effect() }`
-/// —— 分支**和**真实调用都在。`cargo build`、`cargo build --release`、
-/// `cargo clippy --workspace --all-targets` 的 lint 构建都属此类，
-/// **一律真实广播**。
+///   —— 分支**和**真实调用都在。`cargo build`、`cargo build --release`、
+///   `cargo clippy --workspace --all-targets` 的 lint 构建都属此类，
+///   **一律真实广播**。
 /// - **测试构建**：`define void @wrapper() { ret void }` —— 分支仍在源码里，
-/// 只有调用被消除；被调方符号随之成为死代码。
+///   只有调用被消除；被调方符号随之成为死代码。
 ///
 /// 即：**测试构建跳过真实 Win32 调用，生产构建无条件执行广播。**
 /// 跳过仅省测试期开销，**不改变生产行为**（生产每次写仍付完整广播耗时）。
@@ -586,7 +586,7 @@ fn update_env_var_in_store(
 /// # Returns
 /// - `Ok(WriteOutcome)` — 创建成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 名称非法、已存在（`NameExists`）、保护名单（`Protected`）
-/// 或类型不受支持
+///   或类型不受支持
 pub fn create_env_var(
     hive: EnvHive,
     name: &str,

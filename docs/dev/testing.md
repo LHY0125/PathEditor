@@ -31,7 +31,7 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**。
 - 提交前优先运行 `npm run verify:all`。
-- 当前基线（v6.0.0）：Rust **57 binaries / 350 passed / 0 failed / 2 ignored**；前端 **33 files / 398 passed**；E2E **54 passed**。
+- 当前基线（v6.0.0）：Rust **322 passed / 0 failed / 2 ignored**；前端 **33 files / 398 passed**；E2E **54 passed**。
 
 ## CI
 

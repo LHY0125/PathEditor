@@ -5,7 +5,7 @@
 //! 1. **保留策略**：`changes` 中「已导出且超过 90 天」的变更、`sync_conflicts` 中
 //!    「已解决且超过 30 天」的记录会被删除。待导出队列（`exported_at IS NULL`）
 //!    永远不删——那里面是会永久丢失的变更。
-//! 2. **遗留明文备份清理**：把 v5 时代的 `env_backup_*.json` 转成 DPAPI 加密的
+//! 2. **遗留明文备份清理**：把 `env_backup_*.json` 转成 DPAPI 加密的
 //!    `.pebak`，**回读校验通过后**才删除明文。
 
 use std::path::{Path, PathBuf};

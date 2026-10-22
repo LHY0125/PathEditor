@@ -19,40 +19,10 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
         log::warn!("启动时补写 pending 失败（继续启动）: {}", e.message);
     }
 
-    // ③ v5 遗留文件一次性导入（幂等：migration_imports 保证重跑不重复）
-    let home = path_editor_core::db::crypto::config_dir();
-    // 「迁移零失败」是 ⑦ 归档的前置条件：有文件没导进去就把原件改名，
-    // 用户会以为它已经处理过了。
-    let migration_clean = match path_editor_core::db::migrate_v5::migrate_legacy(db, &home) {
-        Ok(report) => {
-            if report.imported > 0 || report.failed > 0 {
-                log::info!(
-                    "v5 文件迁移完成：导入 {}，跳过 {}，失败 {}",
-                    report.imported,
-                    report.skipped,
-                    report.failed
-                );
-            }
-            report.failed == 0
-        }
-        // 迁移失败不阻断启动：DB 仍可用于新记录，旧文件保持原样等下次重试
-        Err(e) => {
-            log::warn!("v5 文件迁移失败（继续启动）: {}", e.message);
-            false
-        }
-    };
-
-    // ③b 确保 DB 里有「当前状态」基线。
+    // ③ 确保 DB 里有「当前状态」基线。
     //
-    // **为什么必须有**：方案 A 让读路径依赖 `app_state.current_snapshot_id`。
-    // 但 `import_disabled` 只在 `disabled.json` 存在时才产生 `kind=current` 快照——
-    // 新装用户没有这个文件，迁移后 `current_snapshot_id` 就是 NULL。
-    // 此时读路径回落到 `read_state()`，而文件已停写且不存在 → 空状态 →
-    // **注册表里被禁用的条目会显示成启用**（用户可能在第一次写操作之前就禁用过条目）。
-    //
-    // 修法：迁移结束时若仍无 `kind=current` 快照，用**注册表当前状态**建一条基线。
-    // 放在这里而不是 `migrate_v5` 里，是因为迁移的职责是「导入 v5 文件」，
-    // 读注册表属于启动序列。
+    // 新装用户没有 current 快照；读路径没有持久化快照时只能看到注册表当前状态，
+    // 被禁用的条目会显示成启用。这里用注册表当前状态建一条基线。
     ensure_current_snapshot_baseline(db);
 
     // ④ 备份索引：扫描 backups/ 写入 `backups` 表。
@@ -88,21 +58,6 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     //
     // 全部失败只告警：DB 可用性比派生数据新鲜度重要，派生表下次启动会再算。
     rebuild_derived_tables(db);
-
-    // ⑥ v5 原件归档：只在迁移零失败时执行；失败只告警。
-    //
-    // 归档会重命名 `disabled.json`，而读路径在 DB 没有当前快照时仍可能回落
-    // 读它。放在最后意味着所有可能失败的步骤都已跑完，不会出现「文件已改名、
-    // 读路径仍依赖文件」的窗口。
-    if migration_clean {
-        match path_editor_core::db::archive_v5::archive_v5_sources(&home, false) {
-            Ok(r) if !r.archived.is_empty() => {
-                log::info!("v5 原件归档：{} 个文件", r.archived.len())
-            }
-            Ok(_) => {}
-            Err(e) => log::warn!("v5 原件归档失败（继续启动）: {}", e.message),
-        }
-    }
 
     Ok(())
 }
@@ -208,9 +163,10 @@ pub fn run() {
             // 注册表编辑照常，history_*/profile_*/backup_* 命令返回 database 错误。
             //
             // 启动序列：
-            //  ① best-effort 补写 pending（注册表已写、快照未落盘的 gap）
-            //  ② 建库/迁移 schema
-            //  ③ 首次启动时把 v5 遗留文件导入 DB（幂等，可重跑）
+            //  ① 建库/迁移 schema
+            //  ② 补写上次未落盘的 pending 快照
+            //  ③ 建立当前状态基线
+            //  ④ 备份索引 / 保留策略 / 派生表重建
             let db = match path_editor_core::db::open_default() {
                 Ok(mut db) => match setup_database(&mut db) {
                     Ok(()) => Some(db),
@@ -243,9 +199,6 @@ pub fn run() {
             commands::fs::read_text_file,
             commands::fs::import_file,
             commands::fs::export_path_entries,
-            commands::disabled::save_disabled_state,
-            commands::disabled::load_disabled_state,
-            commands::disabled::save_path_snapshot,
             commands::disabled::load_path_snapshot,
             commands::scanner::scan_paths,
             commands::registry::clean_path_entries,
@@ -264,7 +217,6 @@ pub fn run() {
             commands::history::profile_mark_applied,
             commands::history::backup_list,
             commands::history::profile_save,
-            commands::history::profile_export_v5,
             // ── 检索 / 统计 / 对比 / 引用图 / 冲突历史 ──
             commands::analytics::search,
             commands::analytics::stats_dashboard,

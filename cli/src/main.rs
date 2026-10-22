@@ -12,8 +12,7 @@ mod sync_ops;
 
 use import_export::{cmd_export, cmd_import};
 use profile_ops::{
-    profile_apply, profile_delete, profile_export_v5, profile_import, profile_list, profile_load,
-    profile_rename, profile_save,
+    profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
 };
 use runtime::{
     ensure_single_target, exit_err, exit_persist_error, load_and_save, load_operate_save,
@@ -144,7 +143,7 @@ enum Command {
     /// 同步（文件式变更包，跨设备搬运配置）
     #[command(subcommand)]
     Sync(SyncCmd),
-    /// 维护任务（保留策略清理、v5 原件归档、遗留明文备份清理）
+    /// 维护任务（保留策略清理、遗留明文备份清理）
     #[command(subcommand)]
     Maintenance(MaintenanceCmd),
 }
@@ -155,12 +154,6 @@ enum MaintenanceCmd {
     /// 清理过期的变更与冲突（已导出 90 天 / 已解决 30 天）
     Prune {
         /// 只统计，不删除
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// 把 v5 原件（disabled.json / profiles/*.json）归档为 .v5.bak（只改名，不删除）
-    ArchiveV5 {
-        /// 只显示将归档的文件，不改名
         #[arg(long)]
         dry_run: bool,
     },
@@ -227,10 +220,6 @@ enum ProfileCmd {
         #[arg(long)]
         new: String,
     },
-    /// 导出为 v5 `profiles/*.json` 格式（降级退路，输出到 stdout）
-    ExportV5 { name: String },
-    /// 从 v5 `profiles/*.json` 导入配置（只写 DB，不改注册表）
-    Import { file: String },
 }
 
 #[derive(Subcommand)]
@@ -524,7 +513,7 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
         let kept_count = kept.len();
         // N9：`kept` 是 `clean_paths` 输出的**启用**路径（`Vec<String>`），
         // 构造 `PathEntry` 时只能落成 `enabled: true`。这是等价的——输入本就是
-        // 「当前启用路径」，清理不涉及禁用项（禁用项在 `disabled.json` 快照里）。
+        // 「当前启用路径」，清理不涉及禁用项（禁用项在 DB 当前快照里）。
         let entries: Vec<core::PathEntry> = kept
             .iter()
             .map(|p| core::PathEntry {
@@ -532,8 +521,7 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
                 enabled: true,
             })
             .collect();
-        // （行为变化）：收口到 `save_path_write` 后**顺带提交 sidecar 快照**——
-        // 此前 `clean` 只写注册表、不落快照，导致 `disabled.json` 陈旧（已修）。
+        // 收口到 `save_path_write` 后同时提交当前快照；
         // 不传 expected（CLI 无并发窗口，见 `save_path_write`）。
         save_path_write(Some(entries), None);
         println!(
@@ -673,8 +661,6 @@ fn main() {
             ProfileCmd::Apply { name } => profile_apply(name),
             ProfileCmd::Delete { name } => profile_delete(name),
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
-            ProfileCmd::ExportV5 { name } => profile_export_v5(name),
-            ProfileCmd::Import { file } => profile_import(file),
         },
         Command::Sync(cmd) => match cmd {
             SyncCmd::Export { file } => sync_ops::sync_export(&file),
@@ -685,9 +671,6 @@ fn main() {
         },
         Command::Maintenance(cmd) => match cmd {
             MaintenanceCmd::Prune { dry_run } => maintenance_ops::maintenance_prune(dry_run),
-            MaintenanceCmd::ArchiveV5 { dry_run } => {
-                maintenance_ops::maintenance_archive_v5(dry_run)
-            }
             MaintenanceCmd::CleanupLegacyBackups { dry_run, yes } => {
                 maintenance_ops::maintenance_cleanup_legacy(dry_run, yes)
             }
@@ -742,31 +725,6 @@ mod help_tests {
         assert!(
             help.contains("敏感变量不含明文"),
             "list --help 必须把「不含明文」限定到敏感变量: {help}"
-        );
-    }
-
-    /// `profile export-v5 --help` 必须写明「输出到 stdout」与「降级退路」。
-    ///
-    /// 可证伪性：删掉 `ExportV5` 变体的文档注释，对应片段消失，断言失败。
-    /// 断言具体短语而非「解析成功」——后者无法证明文案存在。
-    #[test]
-    fn profile_export_v5_help_documents_stdout_and_fallback() {
-        let mut cmd = Cli::command();
-        let profile = cmd
-            .find_subcommand_mut("profile")
-            .expect("profile 子命令必须存在");
-        let export = profile
-            .find_subcommand_mut("export-v5")
-            .expect("export-v5 子命令必须存在");
-        let help = export.render_long_help().to_string();
-
-        assert!(
-            help.contains("stdout"),
-            "export-v5 --help 必须写明输出到 stdout: {help}"
-        );
-        assert!(
-            help.contains("降级"),
-            "export-v5 --help 必须写明用途是降级退路: {help}"
         );
     }
 }
