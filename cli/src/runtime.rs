@@ -44,26 +44,47 @@ pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
     }
 }
 
+/// 尝试打开已存在的默认数据库；不存在或打不开时返回 `None`。
+///
+/// CLI 的 PATH 命令不应因为 DB 不可用而失败，也不应在首次运行时创建空库
+/// 或密钥文件——DB 是 GUI 建立的 sidecar，CLI 只使用它。
+fn open_db_optional() -> Option<core::db::Db> {
+    let path = core::db::crypto::config_dir().join("patheditor.db");
+    if !path.exists() {
+        return None;
+    }
+    match core::db::open_default() {
+        Ok(mut db) => match db.migrate_to_current() {
+            Ok(()) => Some(db),
+            Err(e) => {
+                eprintln!("警告: 数据库迁移失败（{}），降级为文件快照", e.message);
+                None
+            }
+        },
+        Err(e) => {
+            eprintln!("警告: 数据库不可用（{}），降级为文件快照", e.message);
+            None
+        }
+    }
+}
+
+/// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则回落 v5 文件。
+pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreError> {
+    match open_db_optional() {
+        Some(db) => core::service::load_path_snapshot_db(&db),
+        None => core::disabled::load_path_snapshot(),
+    }
+}
+
 /// 把「完整有序条目」交给 core 的唯一保存编排，并按结果决定退出行为。
 ///
-/// **Wave 3.0-B（D8/N2/N3）**：CLI 的 6 个写 PATH 入口全部经此函数收口到
-/// `core::service::save_path_with_sidecar`。此前各入口自行「读-比-写 + 备份 +
-/// sidecar + 广播」，与 GUI 侧构成两份分叉编排；现统一为单次 core 调用。
+/// DB 存在时走 `save_path_with_db`（写注册表 + 当前快照 + 事件）；
+/// DB 不存在或打不开时降级为 `save_path_with_sidecar`（v5 文件 sidecar）。
 ///
-/// 参数：
-/// - `system` / `user`：`Some(entries)` 表示写该 hive，`None` 表示跳过。
+/// CLI 是单次进程，不传 `expected`：每次命令重新读取快照，
+/// `expected == current` 恒成立，校验在 CLI 侧没有真实并发窗口。
 ///
-/// **不传 `expected`（Wave 3.1，Task 3）**：CLI 是**单次进程**——每次命令重新
-/// `load_path_snapshot()`，若把刚读到的启用路径当期望值，则 `expected == current`
-/// **恒成立**，校验在 CLI 侧**从不因真实并发触发**（只可能因顺序差异误报，后者已由
-/// `check_expected` 的多重集修复消除）。故此处直接传 `expected: None`（跳过校验），
-/// **并由类型消除传 `Some` 的可能**（签名里没有该参数）。
-///
-/// ⚠️ **何时应改回**：若 CLI 未来变为「读一次、多次写」的批处理模式（例如一个进程内
-/// 连续执行多条写命令），就出现了真实的「加载→保存」窗口，届时应把 `expected` 加回
-/// 签名并传入。GUI 侧的并发校验（`expected` 来自界面加载时的 `_savedSys`）不受影响。
-///
-/// 退出行为（与 Wave 1 一致）：
+/// 退出行为：
 /// - 任一 hive `Failed` → `exit_err`（退出码 **1**；**不**用 3，3 专属 `env --revision`）；
 /// - sidecar 为 `Pending` / `Failed` → 打印「注册表已写入」提示并 `exit_err`；
 /// - 全部成功 → 静默返回（广播已由 core 内部完成）。
@@ -75,11 +96,14 @@ pub(crate) fn save_path_write(
         entries,
         expected: None,
     };
-    let outcome = service::save_path_with_sidecar(
-        system.map(to_write),
-        user.map(to_write),
-        &core::history::NoopHistory,
-    )
+    let system = system.map(to_write);
+    let user = user.map(to_write);
+    let outcome = match open_db_optional() {
+        Some(mut db) => {
+            service::save_path_with_db(&mut db, core::history::EventSource::Cli, system, user)
+        }
+        None => service::save_path_with_sidecar(system, user, &core::history::NoopHistory),
+    }
     .unwrap_or_else(|e| exit_core_error(&e));
 
     // 逐 hive 报告失败（best-effort 多 hive：一个失败不掩盖另一个的成功）。
@@ -100,15 +124,12 @@ pub(crate) fn save_path_write(
 }
 
 /// 加载当前快照 → 对目标 hive 施加 `f` → 经 [`save_path_write`] 保存。
-///
-/// Wave 3.0-B（N2）：收口到 core 单一编排；广播、备份、sidecar 提交全部由 core 承担。
-/// **Wave 3.1**：不再计算 `expected`（CLI 单次进程无并发窗口，见 [`save_path_write`]）。
 pub(crate) fn load_and_save(
     system: bool,
     f: impl FnOnce(Vec<core::PathEntry>) -> Vec<core::PathEntry>,
 ) {
     let target = ensure_single_target(system, false);
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
 
     if target == "system" {
         let entries = f(snapshot.system);
@@ -120,15 +141,13 @@ pub(crate) fn load_and_save(
 }
 
 /// 加载、检查索引、操作、保存的通用模式。索引基于完整快照（含禁用项）。
-///
-/// 与 [`load_and_save`] 同属 Wave 3.0-B 收口：单次 core 调用，广播下沉 core。
 pub(crate) fn load_operate_save(
     system: bool,
     index: usize,
     operate: impl FnOnce(Vec<core::PathEntry>, usize) -> (Vec<core::PathEntry>, String),
 ) {
     let target = ensure_single_target(system, false);
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
     let entries = if target == "system" {
         snapshot.system
     } else {

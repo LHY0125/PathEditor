@@ -41,7 +41,8 @@ pub(crate) fn profile_list(json_out: bool) {
 pub(crate) fn profile_save(name: String) {
     let mut db = open_db();
     // 先合并注册表与 disabled.json，确保已禁用的孤儿条目也进入配置并保留顺序。
-    let snapshot = core::disabled::load_path_snapshot().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot =
+        core::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_persist_error(&e));
 
     let snap = core::db::history::NewSnapshot {
         kind: core::db::history::SnapshotKind::Profile,

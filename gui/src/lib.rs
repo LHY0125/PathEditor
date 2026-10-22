@@ -7,16 +7,17 @@ use tauri::Manager;
 /// 拆成独立函数而不是塞进 `setup` 闭包：`setup` 的返回值是 `Result<(), Box<dyn Error>>`，
 /// 把错误类型收窄成 `CoreError` 才能在这里做分步日志，也便于将来加启动自检。
 fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_core::CoreError> {
-    // ① best-effort 补写 pending。失败只告警：它代表的是上一次操作遗留的
-    //    「注册表已写、快照未落盘」，补不上也不该阻止本次启动。
-    if let Err(e) =
-        path_editor_core::service::retry_pending_path_state(&path_editor_core::history::NoopHistory)
-    {
+    // ① schema 建库/迁移
+    db.migrate_to_current()?;
+
+    // ② best-effort 补写上次未落盘的快照。失败只告警：它代表的是上一次操作
+    //    遗留的「注册表已写、DB 当前快照未落盘」，补不上也不该阻止本次启动。
+    if let Err(e) = path_editor_core::service::retry_pending_path_state_db(
+        db,
+        path_editor_core::history::EventSource::Gui,
+    ) {
         log::warn!("启动时补写 pending 失败（继续启动）: {}", e.message);
     }
-
-    // ② schema 建库/迁移
-    db.migrate_to_current()?;
 
     // ③ v5 遗留文件一次性导入（幂等：migration_imports 保证重跑不重复）
     let home = path_editor_core::db::crypto::config_dir();
@@ -78,70 +79,21 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
         Err(e) => log::warn!("保留策略清理失败（继续启动）: {}", e.message),
     }
 
-    // ⑤ v5 文件停写（spec §7.8 H7 / 缺口清单 P1-4）。
+    // ⑤ 派生表重建。
     //
-    // **只有走到这里才停写**：DB 打开成功、schema 迁移完成、v5 文件已导入。
-    // 任何一步失败都会让 `setup_database` 返回 `Err`，调用方进入降级模式并
-    // **不设置**这个标志 —— 那时 `disabled.json` 是唯一的状态兜底（spec §7.8），
-    // 停写会让禁用状态彻底丢失。
-    //
-    // 前置条件：`current_snapshot_id` 必须真的在维护（`commands::service` 的
-    // `update_current_snapshot`），否则停写后 PATH 的当前状态在 DB 里没有落点。
-    path_editor_core::disabled::set_v5_writes_disabled(true);
-    log::info!("v5 文件停写已启用（disabled.json 不再更新）");
-
-    // ⑤ 配套注册「从 DB 读当前状态」的加载器（D-1 方案 A）。
-    //
-    // 停写之后读路径也必须改从 DB 来，否则会读到一份永不更新的文件。
-    // 这里注册的是「拿当前快照的 PATH 条目」：读 `app_state.current_snapshot_id`
-    // 指向的快照，转换为 `(system, user)`。
-    //
-    // **注意**：这个闭包在 `disabled.rs` 内部被调用，届时 `DbState` 已经由
-    // `app.manage` 托管 —— 但闭包拿不到 `AppHandle`。因此这里注册的是一个
-    // **进程级只读缓存**：启动时把当前快照读进内存，之后由写路径刷新。
-    //
-    // 这条路径的正确性依赖 `app_state.current_snapshot_id` 被维护
-    // （`commands::service::update_current_snapshot`，P1-4 前置）。
-    let snapshot_cache: SnapshotCache = std::sync::Arc::new(std::sync::RwLock::new(
-        path_editor_core::db::history::current_snapshot(db)
-            .ok()
-            .flatten()
-            .map(|v| (v.system, v.user)),
-    ));
-    let cache_for_loader = snapshot_cache.clone();
-    path_editor_core::disabled::set_current_snapshot_loader(Box::new(move || {
-        cache_for_loader.read().ok().and_then(|g| g.clone())
-    }));
-    READ_SNAPSHOT_CACHE.set(snapshot_cache).ok();
-    log::info!("当前状态读取已切到 DB（disabled.json 只读归档）");
-
-    // ⑥ 派生表重建（Task 12）。
-    //
-    // 三张派生表（spec §4.2 第 5 条「可随时重建，不是真相」）：
-    // - `search_fts`：只在**为空**时全量重建。每次启动都重建会让搜索索引
-    //   随快照数线性变慢，而它一旦非空就说明已经建过（写入路径会增量维护）。
-    // - `daily_stats`：每次启动全量重建。成本是一次全表扫描，当前数据量下是毫秒级；
-    //   `rebuild_daily` 内部已按 T-1 记录耗时，等真有瓶颈时日志里有基线。
-    // - `var_references`：每次启动全量重建。它只保存当前快照的边，
-    //   而当前快照可能在上次退出后被改过（见未覆盖项 #2）。
+    // 三张派生表都不是真相源，可随时重建：
+    // - `search_fts`：只在为空时全量重建；写入路径会增量维护。
+    // - `daily_stats`：每次启动全量重建，成本是一次全表扫描。
+    // - `var_references`：每次启动全量重建，只保存当前快照的边。
     //
     // 全部失败只告警：DB 可用性比派生数据新鲜度重要，派生表下次启动会再算。
-    //
-    // ⚠️ CLI 的写路径（`cli/src/runtime.rs`）用 `NoopHistory`，不更新 DB 的
-    // 当前快照；在 CLI 接入 DB store 之前，「CLI 改 PATH 后 GUI 的引用图/统计
-    // 仍是旧的」是已知残余风险。修复需要让 CLI 也维护 current 快照。
     rebuild_derived_tables(db);
 
-    // ⑦ v5 原件归档（spec §7.4 / §6.5.2）：只在迁移零失败时执行；失败只告警。
+    // ⑥ v5 原件归档：只在迁移零失败时执行；失败只告警。
     //
-    // **位置是刻意的，与计划原文不同**：归档会重命名 `disabled.json`，而
-    // `load_path_snapshot()` 在 `v5_writes_disabled()` 为 false（降级模式）或
-    // DB 里没有当前快照时**仍然回落读它**（`core/src/disabled.rs` 的 `load_path_snapshot`）。
-    // 若按计划把它放在 ③b 之后，任何在它之后、⑤ 之前的失败都会让
-    // 「文件已改名 + 读路径仍依赖文件」同时成立，用户禁用过的 PATH 条目
-    // 会全部显示成启用。放在最后意味着所有可能失败的步骤都已跑完。
-    //
-    // 依据：M4 核对轮交接 §1.S-2 与 §6.1 的裁断。
+    // 归档会重命名 `disabled.json`，而读路径在 DB 没有当前快照时仍可能回落
+    // 读它。放在最后意味着所有可能失败的步骤都已跑完，不会出现「文件已改名、
+    // 读路径仍依赖文件」的窗口。
     if migration_clean {
         match path_editor_core::db::archive_v5::archive_v5_sources(&home, false) {
             Ok(r) if !r.archived.is_empty() => {
@@ -203,7 +155,7 @@ fn ensure_current_snapshot_baseline(db: &mut path_editor_core::db::Db) {
     }
 
     // 没有基线：用注册表当前状态建一条
-    let (system, user) = match path_editor_core::disabled::load_path_snapshot() {
+    let (system, user) = match path_editor_core::service::load_path_snapshot_db(db) {
         Ok(s) => (s.system, s.user),
         Err(e) => {
             log::warn!("建立当前状态基线失败（读注册表出错）: {}", e.message);
@@ -236,36 +188,6 @@ fn ensure_current_snapshot_baseline(db: &mut path_editor_core::db::Db) {
         Ok(true) => log::info!("已用注册表当前状态建立 current 快照基线"),
         Ok(false) => log::warn!("建立基线的 CAS 冲突（有并发写），读路径将回落到文件"),
         Err(e) => log::warn!("建立当前状态基线失败: {}", e.message),
-    }
-}
-
-/// 进程级的「当前 PATH 快照」缓存。
-///
-/// `disabled.rs` 的加载器是 `fn()` 类型（无参数、无捕获），无法直接持有 `Db`。
-/// 用一个进程级缓存桥接：启动时填充，写路径成功后刷新。
-///
-/// 这不是「全局 Db 单例」——它只缓存一份 `(Vec<PathEntry>, Vec<PathEntry>)`，
-/// 没有任何数据库句柄或服务。
-/// 一份 `(system, user)` 的 PATH 快照。
-type PathPair = (
-    Vec<path_editor_core::PathEntry>,
-    Vec<path_editor_core::PathEntry>,
-);
-
-/// 进程级读缓存：`None` 表示 DB 侧还没有当前快照。
-type SnapshotCache = std::sync::Arc<std::sync::RwLock<Option<PathPair>>>;
-
-static READ_SNAPSHOT_CACHE: std::sync::OnceLock<SnapshotCache> = std::sync::OnceLock::new();
-
-/// 写路径成功后刷新缓存，让 `load_path_snapshot()` 读到最新状态。
-pub fn refresh_read_snapshot(
-    system: Vec<path_editor_core::PathEntry>,
-    user: Vec<path_editor_core::PathEntry>,
-) {
-    if let Some(cache) = READ_SNAPSHOT_CACHE.get() {
-        if let Ok(mut g) = cache.write() {
-            *g = Some((system, user));
-        }
     }
 }
 

@@ -1,3 +1,8 @@
+//! v5 文件版 PATH 状态（`disabled.json` / pending）与注册表合并。
+//!
+//! DB 可用时由 `service` 传入 `current_snapshot`，本模块只负责合并；
+//! DB 不可用时读取文件，作为降级兜底。
+
 use crate::error::{CoreError, ErrorCode};
 use crate::fs::atomic_write;
 use crate::persist::{
@@ -72,77 +77,42 @@ fn read_state() -> Result<DisabledState, CoreError> {
     migrate(versioned, "disabled.json")
 }
 
-/// 本次进程是否应停写 v5 文件（spec §7.8 H7）。
+/// 从 DB 当前快照或 v5 文件加载状态，并与注册表合并。
 ///
-/// **为什么用进程级标志而不是给每个函数加 `Db` 参数**：`disabled` 是模块级无状态
-/// 函数集合，几十个调用点；传 `Db` 会污染整个 API，而它需要知道的只是
-/// 「迁移是否已完成」这一个**只读的启动期事实**。
-///
-/// 这与 spec §3.2 禁止的「全局 Db 单例」不同：这里不持有任何服务或连接，
-/// 只是一个布尔开关，且只能由启动序列设置一次。
-static V5_WRITES_DISABLED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// 由启动序列调用：DB 可用且 v5 迁移已完成时，停写 `disabled.json`（spec §7.8）。
-///
-/// **降级模式（DB 打不开）必须传 `false`** —— 那时 `disabled.json` 是唯一的状态
-/// 兜底（spec §7.8 的兜底要求），停写会让禁用状态彻底丢失。
-///
-/// 用 `AtomicBool` 而非 `OnceLock`：**可测性**。`OnceLock` 只能设一次，
-/// 测试无法在同一进程里验证开与关两种状态。生产路径仍只在启动时设置一次。
-pub fn set_v5_writes_disabled(disabled: bool) {
-    V5_WRITES_DISABLED.store(disabled, std::sync::atomic::Ordering::Relaxed);
+/// `persisted = Some(..)` 表示调用方已从 DB 取得当前快照；`None` 表示走 v5
+/// 文件（降级/兼容路径）。合并规则完全相同。
+pub fn load_path_snapshot_with(persisted: Option<PathSnapshot>) -> Result<PathSnapshot, CoreError> {
+    let registry_system = registry::load_system_paths()?;
+    let registry_user = registry::load_user_paths()?;
+    merge_path_snapshot(registry_system, registry_user, persisted)
 }
 
-/// 当前是否停写 v5 文件。默认 `false`（未设置时保持旧行为，测试零改动）。
-fn v5_writes_disabled() -> bool {
-    V5_WRITES_DISABLED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// 从 DB 取「当前 PATH 状态」的注入点（方案 A）。
+/// 用调用方提供的注册表值与持久化快照合并。
 ///
-/// **为什么用注入而不是直接调 `db` 模块**：`db` 已经依赖 `disabled`
-/// （`migrate_v5` 读它），反向依赖会成环。注入把「状态从哪来」这件事
-/// 交给启动序列决定，`disabled` 只负责调用。
-///
-/// 返回 `(system, user)` 的完整有序快照；`None` 表示 DB 侧没有可用状态
-/// （未注入 / 库不可用 / 尚无 current 快照），此时**回落到读文件**——
-/// 这正是 spec §7.8 的降级兜底要求。
-type CurrentSnapshotLoader =
-    Box<dyn Fn() -> Option<(Vec<PathEntry>, Vec<PathEntry>)> + Send + Sync>;
+/// 抽出来是为了让保存链路可以注入 fake 注册表（集成测试），
+/// 而不必读真实 HKCU/HKLM。
+pub fn merge_path_snapshot(
+    registry_system: Vec<String>,
+    registry_user: Vec<String>,
+    persisted: Option<PathSnapshot>,
+) -> Result<PathSnapshot, CoreError> {
+    let state = match persisted {
+        Some(snapshot) => DisabledState {
+            system: disabled_lists(&snapshot.system),
+            user: disabled_lists(&snapshot.user),
+            system_snapshot: snapshot.system,
+            user_snapshot: snapshot.user,
+        },
+        None => read_state()?,
+    };
 
-static CURRENT_SNAPSHOT_LOADER: std::sync::OnceLock<CurrentSnapshotLoader> =
-    std::sync::OnceLock::new();
-
-/// 由启动序列注册「从 DB 取当前快照」的实现。
-///
-/// 与 [`set_v5_writes_disabled`] 配套：停写生效后，读也必须改从 DB 来，
-/// 否则会读到一份**不再更新**的文件（D-1）。
-pub fn set_current_snapshot_loader(loader: CurrentSnapshotLoader) {
-    let _ = CURRENT_SNAPSHOT_LOADER.set(loader);
-}
-
-/// 尝试从 DB 取当前状态；未注入或取不到时返回 `None`。
-fn load_state_from_db() -> Option<DisabledState> {
-    let loader = CURRENT_SNAPSHOT_LOADER.get()?;
-    let (system, user) = loader()?;
-    // DB 侧存的是**完整有序快照**（含 enabled 标记），直接映射成 DisabledState：
-    // `system`/`user` 两个「禁用名列表」由快照派生，与文件版的语义一致。
-    Some(DisabledState {
-        system: disabled_lists(&system),
-        user: disabled_lists(&user),
-        system_snapshot: system,
-        user_snapshot: user,
+    Ok(PathSnapshot {
+        system: merge_hive(registry_system, state.system, state.system_snapshot),
+        user: merge_hive(registry_user, state.user, state.user_snapshot),
     })
 }
 
 fn write_state(state: &DisabledState) -> Result<(), CoreError> {
-    // spec §7.8 H7：迁移成功后正常模式不再写 disabled.json。
-    // 状态已由 `app_state.current_snapshot_id` 承载（见 `commands::service`）。
-    if v5_writes_disabled() {
-        log::debug!("v5 文件停写已启用，跳过 disabled.json 写入");
-        return Ok(());
-    }
     let path = disabled_file_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
@@ -278,34 +248,12 @@ pub fn save_path_snapshot(
     write_state(&state)
 }
 
-/// 合并注册表当前值与持久化快照，返回包含禁用项和原始顺序的完整快照。
+/// 合并注册表当前值与 v5 文件快照，返回包含禁用项和原始顺序的完整快照。
+///
+/// DB 可用时调用 [`load_path_snapshot_with`] 并传入 DB 的当前快照；
+/// 本函数是降级/兼容路径。
 pub fn load_path_snapshot() -> Result<PathSnapshot, CoreError> {
-    let registry_system = registry::load_system_paths()?;
-    let registry_user = registry::load_user_paths()?;
-    // **D-1（方案 A）**：停写生效后，状态从 DB 来而不是文件。
-    //
-    // 停写让 `disabled.json` 冻结在迁移那一刻；继续读它意味着「读一份永不更新的
-    // 快照」。DB 的 `kind=current` 快照才是活的真相（由 `commands::service` 的
-    // `update_current_snapshot` 维护）。
-    //
-    // DB 取不到时回落读文件 —— 降级模式（spec §7.8 的兜底要求）下文件仍是
-    // 唯一来源，因为那时 `set_v5_writes_disabled(false)` 会让写路径继续更新它。
-    let state = if v5_writes_disabled() {
-        match load_state_from_db() {
-            Some(s) => s,
-            None => {
-                log::debug!("DB 侧无当前快照，回落读 disabled.json");
-                read_state()?
-            }
-        }
-    } else {
-        read_state()?
-    };
-
-    Ok(PathSnapshot {
-        system: merge_hive(registry_system, state.system, state.system_snapshot),
-        user: merge_hive(registry_user, state.user, state.user_snapshot),
-    })
+    load_path_snapshot_with(None)
 }
 
 /// 记录「注册表已写成功、sidecar 快照未落盘」的待补写状态，供下次运行补写。
@@ -412,35 +360,6 @@ mod tests {
             path: path.to_string(),
             enabled,
         }
-    }
-
-    /// **P1-4 行为测试**：停写开关真的阻止文件写入。
-    ///
-    /// 用 `AtomicBool` 而非 `OnceLock` 正是为了这条测试——它需要在同一进程里
-    /// 验证开与关两种状态。测试结束必须复位，否则会污染同进程的其它测试。
-    #[test]
-    fn v5_writes_disabled_skips_file_write() {
-        let _guard = crate::persist::test_persist_lock();
-        let path = disabled_file_path();
-        let _ = fs::remove_file(&path);
-
-        // ① 默认（不停写）：写入真的落盘
-        set_v5_writes_disabled(false);
-        save_path_snapshot(Some(vec![entry("C:\\kept", true)]), None).unwrap();
-        assert!(path.exists(), "默认状态下必须写文件");
-
-        // ② 停写：再写一次，文件内容**不变**（不是被删，是没被更新）
-        let before = fs::read_to_string(&path).unwrap();
-        let _ = fs::remove_file(&path);
-        set_v5_writes_disabled(true);
-        save_path_snapshot(Some(vec![entry("C:\\skipped", true)]), None).unwrap();
-        assert!(!path.exists(), "停写状态下不得创建/更新 disabled.json");
-        // 停写时 `write_state` 提前返回 `Ok(())`，不报错——调用方无感
-
-        // ③ 复位，避免污染同进程其它测试
-        set_v5_writes_disabled(false);
-        let _ = fs::remove_file(&path);
-        let _ = before;
     }
 
     // disabled.json 持久化原语（roundtrip / schemaVersion / .bak / quarantine）

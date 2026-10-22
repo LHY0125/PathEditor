@@ -60,7 +60,7 @@ PathEditor/
 │   ├── db/           # v6 SQLCipher 数据层（schema/history/profiles/backups/
 │   │                 #   search/stats/refs/compare/scan_history/migrate_v5/
 │   │                 #   v5_export/v5_import/maintenance/archive_v5/sync）
-│   ├── service.rs    # 保存编排（save_path_with_sidecar / apply_path_snapshot）
+│   ├── service.rs    # 保存编排（save_path_with_db / save_path_with_sidecar）
 │   ├── disabled.rs / env_var.rs / path_entry.rs / scanner.rs / persist.rs
 │   ├── backup.rs     # 注册表备份、env 备份（.pebak）
 │   └── profiles.rs   # v5 文件版配置（兼容通路；DB 版在 db/profiles.rs）
@@ -124,7 +124,7 @@ PathEditor/
 
 ## 数据与安全红线
 
-- PATH 的唯一保存编排是 `save_path_with_sidecar`；注册表成功但快照失败 → 落 pending，下次补写。
+- PATH 的唯一保存编排在 core：DB 可用时 `save_path_with_db`（写注册表 + current 快照 + 事件），DB 不可用时 `save_path_with_sidecar`（v5 文件 sidecar）。注册表成功但快照失败 → 落 pending，下次补写。
 - 保存前用原始值检测外部修改；清理/禁用/启用必须保留 `PathEntry`。
 - env 备份默认 `.pebak`（DPAPI）；密钥不可用时回落明文 `.json` 并告警。遗留 `.json` 清理需 `--yes`。
 - E2E 使用 mock IPC，**不得写真实注册表**；同步导入同样不写注册表。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果。

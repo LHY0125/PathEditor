@@ -64,3 +64,5 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 - 设计：`docs/superpowers/specs/2026-10-19-v6-sqlite-design.md`
 - 计划：`docs/superpowers/plans/`（M1–M4）
 - M0 探针：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md`
+
+- **当前状态**：`app_state.current_snapshot_id` 由 `core::service::save_path_with_db` 维护（GUI 与 CLI 共用）；每次成功写 PATH 后写入 `kind=current` 快照并增量索引。`disabled.json` 只在 DB 不可用时作为降级读源。

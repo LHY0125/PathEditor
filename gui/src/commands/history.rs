@@ -14,7 +14,6 @@ use path_editor_core::{CoreError, ErrorCode};
 use serde::Deserialize;
 use std::sync::Mutex;
 
-use super::service::{current_path_snapshot, with_history_and_snapshot};
 use tauri::State;
 
 /// 全局 DB 句柄。`None` = 降级模式（打开失败）。
@@ -335,25 +334,21 @@ pub fn history_restore_snapshot(
         history::get_snapshot(db, &uid, false)
     })?;
 
-    // ② 交给既有编排写注册表；事件通过 sink 落库
-    let outcome = with_history_and_snapshot(
-        &state,
-        current_path_snapshot,
-        current_path_snapshot,
-        |sink| {
-            path_editor_core::service::save_path_with_sidecar(
-                Some(path_editor_core::service::PathHiveWrite {
-                    entries: view.system,
-                    expected: None,
-                }),
-                Some(path_editor_core::service::PathHiveWrite {
-                    entries: view.user,
-                    expected: None,
-                }),
-                sink,
-            )
-        },
-    )?;
+    // ② 交给 core 编排写注册表、更新当前快照并记录事件
+    let outcome = with_db_mut(&state, "history_restore_snapshot", |db| {
+        path_editor_core::service::save_path_with_db(
+            db,
+            path_editor_core::history::EventSource::Restore,
+            Some(path_editor_core::service::PathHiveWrite {
+                entries: view.system,
+                expected: None,
+            }),
+            Some(path_editor_core::service::PathHiveWrite {
+                entries: view.user,
+                expected: None,
+            }),
+        )
+    })?;
 
     Ok(outcome)
 }

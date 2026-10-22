@@ -6,7 +6,7 @@
 ## 数据、保存与事务
 
 - `disabled.json` 是 v5 状态文件（`systemSnapshot` / `userSnapshot` / 旧版禁用字符串）。v6 迁移成功后**停写**并归档为 `.v5.bak`；**降级模式下仍是兜底读源**。正常启动以注册表为启用路径真相来源，用 DB 的当前快照恢复禁用项和顺序。
-- **保存 PATH 的唯一编排是 `core::service::save_path_with_sidecar`**（GUI 经 `backend.savePathWithSidecar`、CLI 的所有 PATH 写入口统一调用）。它先写注册表、再提交侧车快照；注册表成功但快照写入失败时，在 **core 侧**落 pending 磁盘文件（`disabled::save_pending_path_snapshot`），下次 PATH 命令开头经 `retry_pending_path_state` 补写。**GUI store 不携带 `_pendingSys/_pendingUser`**；保存成功的状态栏会**非阻断提示**快照未落盘。两个 hive 分别报告成功或失败（`ApplyOutcome` 按 hive 分字段）。
+- **保存 PATH 的编排在 `core::service`**（GUI 经 `backend.savePathWithSidecar`、CLI 的所有 PATH 写入口统一调用）。DB 可用时走 `save_path_with_db`：先写注册表，再提交 `kind=current` 快照与事件；DB 不可用时走 `save_path_with_sidecar`：写 v5 文件 sidecar。两种情况都在注册表成功但快照写入失败时，在 **core 侧**落 pending 磁盘文件（`disabled::save_pending_path_snapshot`），下次 PATH 命令开头经 `retry_pending_path_state`（文件模式）或 `retry_pending_path_state_db`（DB 模式）补写。**GUI store 不携带 `_pendingSys/_pendingUser`**；保存成功的状态栏会**非阻断提示**快照未落盘。两个 hive 分别报告成功或失败（`ApplyOutcome` 按 hive 分字段）。
 - 保存前使用原始值做外部修改检测；不得用旧草稿覆盖其他进程刚写入的内容。
 - 清理、禁用和启用操作必须保留 `PathEntry`，不能只传路径字符串。
 - 通用环境变量写入（CLI 3 命令、GUI 3 命令）前自动产生一份备份，**默认写 DPAPI 加密的 `~/.patheditor/backups/env_backup_<时间戳>.pebak`**；只有拿不到密钥时才回落明文 `.json` 并打印警告。备份失败**不阻断写入**，只记警告并如实返回（`WriteOutcome.backup`）。默认保留最近 20 份（`backup::ENV_BACKUP_KEEP`，可被 `~/.patheditor/config.ini` 的 `env_backup_keep` 覆盖），轮换只删除本功能生成的 `env_backup_*.pebak` / `.json`。恢复默认在 revision 冲突时中止（退出码 3）且零写入；`--force` 跳过 revision 校验但**不豁免**保护名单与类型判定。
@@ -14,7 +14,7 @@
 - 恢复的差异计数有两个**已知的规格级口径问题**，不是已修复项：`RestorePreview.modified` 与 `RestoreOutcome.skipped` **恒为 0**（前者因为 `revision_of` 是 `(name, type, value)` 的纯函数，「值变了」与「备份已过期」是同一条件，后者一律判 `Conflict`；后者因为没有路径会「跳过」）。因此 `--dry-run` 与 GUI 确认弹窗的「修改 N」恒显示 0，而 `--force` 下被冲突覆盖的变量**确实被改写却计入 `conflicts`** —— 两者都会**低报** force 模式的实际改动量。`EnvBackupInfo.variable_count` 同样恒为 0（列表不解析内容）。**未提权时恢复恒失败**：普通用户无法以写权限打开 HKLM，`restore_env_backup_from` 必然返回 `permissionDenied`，且 GUI **不提供**「仅恢复 user hive」这类降级路径。
 - `env restore --dry-run` 对**损坏备份**并非严格纯读：`read_env_backup` 对不可解析文件会经 `persist::parse_error_quarantined` 把文件重命名为 `<file>.corrupt-<ts>`（注册表未触碰）。
 - 备份文件的暴露面：`.pebak` 是 DPAPI 加密的，但**备份目录 ACL 未收紧**；遗留/回落 `.json` 仍是**明文**（spec §S2.1 登记的未覆盖项）。
-- **v5 文件停写与归档**：`disabled.json` / `profiles/*.json` 在迁移成功后不再写入；启动序列末尾把原件改名为 `.v5.bak`（目标已存在则跳过，绝不覆盖）。遗留 `env_backup_*.json` 用 `maintenance cleanup-legacy-backups --yes` 先转 `.pebak` 并回读校验，再删除明文。
+- **v5 文件停写与归档**：DB 可用时 `disabled.json` / `profiles/*.json` 不再写入（降级模式仍写 `disabled.json`）；迁移成功后启动序列末尾把原件改名为 `.v5.bak`（目标已存在则跳过，绝不覆盖）。遗留 `env_backup_*.json` 用 `maintenance cleanup-legacy-backups --yes` 先转 `.pebak` 并回读校验，再删除明文。
 - **同步与保留策略**：见 `docs/dev/sqlite-storage.md`；`maintenance prune` 只删已导出且到期的 `changes` 与已解决且到期的 `sync_conflicts`，**待导出队列（`exported_at IS NULL`）永不删**。
 
 路径验证和环境变量展开使用有界并发队列，不按前 20 条截断；扫描通过 `scan_paths` 共享枚举结果，最多使用 8 个扫描线程。

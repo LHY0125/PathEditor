@@ -22,7 +22,7 @@ PathEditor/
 │   │   ├── maintenance.rs       # 保留策略 + 遗留明文清理
 │   │   ├── archive_v5.rs        # .v5.bak 归档
 │   │   └── sync/                # bundle / change_log / merge / conflict / export / import
-│   ├── service.rs               # 保存编排：save_path_with_sidecar / apply_path_snapshot
+│   ├── service.rs               # 保存编排：save_path_with_db / save_path_with_sidecar
 │   ├── capabilities.rs          # 按 hive 探测 PathCapabilities
 │   ├── system.rs                # 权限、路径验证、变量展开、环境广播
 │   ├── disabled.rs              # 完整快照、禁用状态、旧格式兼容、pending 磁盘文件
@@ -82,12 +82,12 @@ PathEditor/
 
 ```text
 UI 保存 → app store → backend.savePathWithSidecar
-  → core::service::save_path_with_sidecar
+  → core::service::save_path_with_db（DB 可用）/ save_path_with_sidecar（降级）
       ① 写前备份（path_backup_*.txt）
       ② 乐观并发校验（原始值）
       ③ 顺序写 system → user
       ④ SendMessageTimeout(WM_SETTINGCHANGE)
-      ⑤ 提交 sidecar 快照（失败则落 pending，下次启动/命令补写）
+      ⑤ DB：提交 current 快照 + 事件；降级：写 disabled.json（失败则落 pending）
 ```
 
 完整编码约束以 `CLAUDE.md` 的「关键约束」为准；本文件只补目录与职责。
