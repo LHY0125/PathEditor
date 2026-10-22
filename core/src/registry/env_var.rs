@@ -956,11 +956,11 @@ pub(crate) fn delete_env_var_force_in_store(
 
 #[cfg(test)]
 mod env_var_tests {
-    use crate::registry::store::memory::MemoryHive;
     use super::*;
     use crate::backup::BackupOutcome;
     use crate::env_var::{EnvHive, EnvValueKind};
     use crate::registry::conflict::ERR_CONFLICT;
+    use crate::registry::store::memory::MemoryHive;
     use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
     use winreg::types::FromRegValue;
 
