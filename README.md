@@ -41,14 +41,14 @@
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v5.1 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，替代了原有的 C + IUP GUI。
+v6.0.0 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，并新增 **SQLCipher 加密数据库**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
 
 ## 架构
 
 ```mermaid
 graph TB
     subgraph 前端["React 前端"]
-        UI[UI 组件层<br/>AppShell / PathTable / Dialogs]
+        UI[UI 组件层<br/>PATH / 环境变量 / 历史 / 检索 / 统计 / 同步]
         Store[状态管理<br/>Zustand Store]
         Core[纯逻辑层<br/>undo-redo / path-manager / validation]
         UI --> Store
@@ -57,12 +57,12 @@ graph TB
     end
 
     subgraph CLI["CLI 命令行"]
-        Clap[clap 参数解析<br/>17 条顶层命令]
+        Clap[clap 参数解析<br/>19 条顶层命令]
         Atomic[原子性保护<br/>verify_and_save]
     end
 
     subgraph IPC["Tauri IPC 桥接"]
-        invoke[services/backend.ts<br/>统一 IPC 边界]
+        invoke[services/backend.ts<br/>统一 IPC 边界 + 运行时形状校验]
     end
 
     subgraph 后端["Rust core 库"]
@@ -70,12 +70,20 @@ graph TB
         System[系统操作<br/>权限检测 / 路径验证 / 环境变量展开]
         Files[文件操作<br/>备份 / 配置 / 导入导出]
         Scanner[分析引擎<br/>冲突检测 / 工具清单]
-        Profiles[配置管理<br/>save/load/apply/rename]
+        Profiles[配置管理<br/>DB 版 + v5 兼容]
+        History[历史 / 事件<br/>HistorySink]
+        Analytics[检索 / 统计 / 引用图 / 对比]
+        Sync[同步<br/>bundle / LWW / 冲突]
+    end
+
+    subgraph DB["SQLCipher 数据库（sidecar）"]
+        Main[("patheditor.db<br/>snapshots / events / profiles<br/>changes / sync_conflicts")]
+        Derived["派生表<br/>search_fts / daily_stats / var_references"]
     end
 
     subgraph Windows["Windows 系统"]
         Reg[(注册表<br/>SYSTEM / USER PATH)]
-        FS[(文件系统<br/>目录验证 / exe 扫描)]
+        FS[(文件系统<br/>目录验证 / exe 扫描 / 备份)]
     end
 
     UI --> invoke
@@ -84,17 +92,27 @@ graph TB
     invoke --> Files
     invoke --> Scanner
     invoke --> Profiles
+    invoke --> History
+    invoke --> Analytics
+    invoke --> Sync
     Clap --> Atomic
     Atomic --> Registry
     Atomic --> System
     Atomic --> Files
     Atomic --> Scanner
     Atomic --> Profiles
+    Atomic --> History
+    Atomic --> Analytics
+    Atomic --> Sync
     Registry --> Reg
     System --> FS
     Scanner --> FS
     Files --> FS
-    Profiles --> FS
+    Profiles --> Main
+    History --> Main
+    Analytics --> Main
+    Sync --> Main
+    Main -.可重建.-> Derived
 ```
 
 ### 组件树
@@ -105,18 +123,30 @@ graph TD
     Shell["AppShell<br/>布局编排 + 弹窗管理"]
     TitleBar["TitleBar<br/>拖拽区域"]
     ToolBar["ToolBar<br/>搜索 / 操作 / 分析 / 配置"]
+    Tabs["主标签页<br/>PATH / 环境变量 / 历史 / 检索 / 统计 / 同步"]
     PathTable["PathTable<br/>路径列表 + 验证 + 复选框"]
+    EnvVarTable["EnvVarTable<br/>通用环境变量"]
+    HistoryPanel["HistoryPanel<br/>事件时间线 / 快照预览 / 恢复"]
+    SearchPanel["SearchPanel<br/>FTS5 检索"]
+    StatsPanel["StatsPanel<br/>当前状态 / 30 天序列"]
+    SyncCenter["SyncCenter<br/>导出 / 导入 / 冲突"]
     MergePreview["MergePreview<br/>系统+用户合并视图"]
     StatusBar["StatusBar<br/>状态 / 权限 / 重试"]
-    Dialogs["弹窗层<br/>PathEdit / Import / Help / Analyze / Profile"]
+    Dialogs["弹窗层<br/>PathEdit / Import / Help / Analyze / Profile / 引用图"]
 
     App --> Shell
     Shell --> TitleBar
     Shell --> ToolBar
-    Shell --> PathTable
-    Shell --> MergePreview
+    Shell --> Tabs
     Shell --> StatusBar
     Shell --> Dialogs
+    Tabs --> PathTable
+    Tabs --> EnvVarTable
+    Tabs --> HistoryPanel
+    Tabs --> SearchPanel
+    Tabs --> StatsPanel
+    Tabs --> SyncCenter
+    PathTable --> MergePreview
 ```
 
 ### 操作流程
@@ -195,6 +225,7 @@ patheditor conflicts
 # 配置切换
 patheditor profile save "Python开发"
 patheditor profile apply "Python开发"
+patheditor profile export-v5 "Python开发"   # 导出为 v5 profiles/*.json（stdout）
 patheditor profile import <FILE>          # 从 v5 profiles/*.json 导入（只写 DB）
 
 # 通用环境变量（Path 除外）
@@ -235,9 +266,9 @@ patheditor env set JAVA_HOME --value "C:\Java\jdk-21" --dry-run --json
 
 命中敏感规则的变量（如 `*_TOKEN` / `*_KEY`）在预览里不回传明文：`oldValue` / `newValue` 为 `null`、`sensitive` 为 `true`，文本预览显示 `(敏感)`。这与 `env list` 的打码一致 —— 预览不新开明文出口。
 
-CLI 退出码约定：`0` 成功、`1` 一般错误、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）。`--force` 不携带 revision，不会因并发冲突产生退出码 3。
+CLI 退出码约定：`0` 成功、`1` 一般错误、`2` clap 参数解析失败、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）、`4` 同步合并冲突（需人工解决）、`5` 密钥/DPAPI。`--force` 不携带 revision，不会因并发冲突产生退出码 3；同步包格式/口令/篡改 → `1`（重试无用）。
 
-完整 17 条顶层命令（另有 `env` / `profile` 子命令组）：`patheditor --help`
+完整 19 条顶层命令（另有 `env` / `profile` / `sync` / `maintenance` 子命令组）：`patheditor --help`
 
 ### 环境变量备份与恢复
 
@@ -249,15 +280,17 @@ patheditor env backup
 patheditor env backups
 
 # 先看差异，不写注册表
-patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json --dry-run
+patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.pebak --dry-run
 
 # 执行恢复（默认模式：任一变量被外部改动则整批中止，退出码 3）
-patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
+patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.pebak
 ```
 
-此外，**每一次环境变量写入前都会自动备份**：CLI 的 `env set` / `env add` / `env remove` 与 GUI 的编辑 / 新建 / 删除都会先落一份备份，备份失败**不阻断写入**，只在 stderr 或状态栏提示。默认保留最近 20 份（可在 `~/.patheditor/config.ini` 用 `env_backup_keep = N` 覆盖），轮换只删除本工具生成的 `env_backup_*.json`。
+此外，**每一次环境变量写入前都会自动备份**：CLI 的 `env set` / `env add` / `env remove` 与 GUI 的编辑 / 新建 / 删除都会先落一份备份，备份失败**不阻断写入**，只在 stderr 或状态栏提示。默认保留最近 20 份（可在 `~/.patheditor/config.ini` 用 `env_backup_keep = N` 覆盖），轮换只删除本工具生成的 `env_backup_*.pebak` / `.json`。
 
-> ⚠️ `~/.patheditor/backups/` 下的 `env_backup_*.json` 含环境变量的**明文值**，可能包括 API key、token 等敏感信息。请勿将该目录同步到云端或提交到版本库。
+**新备份默认是 DPAPI 加密的 `.pebak`**；只有拿不到密钥时才回落明文 `.json` 并打印警告。`.pebak` 与当前 Windows 用户绑定，换用户/换机器后无法解密。遗留的 `env_backup_*.json` 仍可一次性恢复。
+
+> ⚠️ **遗留/回落的 `env_backup_*.json` 含环境变量明文**（API key、token 等）。请勿同步到云端或提交到版本库。确认不再需要后，用 `patheditor maintenance cleanup-legacy-backups --dry-run` 预览，再加 `--yes` 转为 `.pebak` 并删除明文。
 
 `env restore --dry-run` 的「修改 N」恒显示 0 —— 备份的 revision 与注册表不一致时一律判为「冲突」而非「修改」，两者在实现中是同一个条件。`--force` 下被冲突覆盖的变量会被改写却计入「冲突」，所以 dry-run 会**低报** force 模式的实际改动量。另需注意：**未提权时恢复恒失败**（无法以写权限打开系统 hive），请以管理员身份运行。
 
@@ -296,12 +329,10 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 - PATH 快照与操作事件持久化到 **SQLCipher 加密数据库**（`~/.patheditor/patheditor.db`）
 - 「历史记录」标签页按时间倒序浏览事件
 - **敏感变量的值默认掩码**（`••••`），掩码在 Rust 侧完成 —— 前端从不接收未要求的明文
-- **数据库是 sidecar，注册表仍是唯一真相源**：DB 打不开时 GUI 照常工作，只把历史/备份降级，
+- **数据库是 sidecar，注册表仍是唯一真相源**：DB 打不开时 GUI 照常工作，只把历史/检索/统计/同步降级，
   并在窗口顶部显示常驻降级条幅
 
-> **M1 的已知限制**（M2 已解决）：事件列表可以浏览，但**点击事件暂时看不到快照详情** ——
-> 事件与快照的关联（`snapshotUid`）要到 M2 才接通，当前按钮为禁用状态。
-> **M2 已接通**：每条事件都指向「操作前」快照，点击可展开详情并恢复。
+> **事件与快照已接通**：每条事件都指向「操作前」快照，点击可展开详情并恢复。
 
 ### 检索与统计（v6 M2）
 
@@ -357,6 +388,16 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 >
 > **环境变量的 N 路对比尚未提供**（本版本未纳入范围），环境变量对比面板会显式说明这一点。
 
+### 维护任务（v6 M4）
+
+- **保留策略**：GUI 每次启动自动清理「已导出超过 90 天」的 `changes` 与「已解决超过 30 天」的
+  `sync_conflicts`；**待导出队列（`exported_at IS NULL`）永不删除**。CLI：
+  `patheditor maintenance prune [--dry-run]`。
+- **v5 原件归档**：迁移成功且零失败后，首次启动会把 `disabled.json` 与 `profiles/*.json`
+  改名为 `.v5.bak`（只改名、不覆盖、不删除）。CLI：`maintenance archive-v5 [--dry-run]`。
+- **遗留明文备份清理**：把 `env_backup_*.json` 先转成 DPAPI 加密的 `.pebak` 并**回读校验**，
+  成功后才删除明文；任一失败保留原文件。必须显式 `--yes`。
+
 ### 导入/导出
 
 - **JSON**：结构化导出，含版本和时间戳
@@ -367,7 +408,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.json
 
 - 保存前自动备份注册表到 `~/.patheditor/backups/`（文件名含时间戳，如 `path_backup_20260921_200437_062.txt`）；同类备份默认保留最近 20 份，可在 `~/.patheditor/config.ini` 用 `path_backup_keep = N` 覆盖。轮换只删除本工具生成的 `path_backup_*.txt`，且**仅在默认备份目录生效**（用户指定目录不轮换）
 - **CLI 的 `add` / `remove` / `edit` / `move-up` / `move-down` / `clean` / `enable` / `disable` / `import` / `profile apply` 每次成功写入 PATH 前也自动产生一份 `path_backup_*.txt`**（与 GUI 保存、与 `env` 侧写入前备份对称）
-- 环境变量写入前自动备份到同一目录（`env_backup_*.json`），支持差异预览与一键恢复；**该文件含敏感值明文**，请勿同步到云端或提交到版本库
+- 环境变量写入前自动备份到同一目录（默认 `.pebak`，DPAPI 加密；密钥不可用时回落明文 `.json`），支持差异预览与一键恢复；遗留/回落的 `.json` 含敏感值明文，请勿同步到云端或提交到版本库
 - PATH 长度检查（Windows 单变量上限 32767 字符）
 - 非管理员仅系统 PATH 只读，用户 PATH 仍可编辑
 - 保存中途失败精确提示哪个注册表 hive 出错
@@ -457,46 +498,61 @@ npx tauri build
 
 ### 技术栈
 
-| 层        | 技术                              |
-| --------- | --------------------------------- |
-| 前端框架  | React 19 + TypeScript (strict)    |
-| UI 样式   | Tailwind CSS 4                    |
-| 状态管理  | Zustand                           |
-| 国际化    | i18next                           |
-| 桌面框架  | Tauri 2.x                         |
-| 核心库    | Rust workspace (core + gui + cli) |
-| 前端测试  | Vitest + Playwright (305 + 30)    |
-| Rust 测试 | cargo test (264 个测试)           |
-| 构建      | Vite + Cargo                      |
-| 打包      | NSIS                              |
+| 层        | 技术                                      |
+| --------- | ----------------------------------------- |
+| 前端框架  | React 19 + TypeScript (strict)            |
+| UI 样式   | Tailwind CSS 4                            |
+| 状态管理  | Zustand                                   |
+| 国际化    | i18next                                   |
+| 桌面框架  | Tauri 2.x                                 |
+| 核心库    | Rust workspace (core + gui + cli)         |
+| 数据库    | SQLCipher（rusqlite + bundled OpenSSL）   |
+| 同步加密  | Argon2id + ChaCha20-Poly1305              |
+| 检索      | SQLite FTS5                               |
+| 前端测试  | Vitest (33 files / 398) + Playwright (54) |
+| Rust 测试 | cargo test (57 binaries / 350)            |
+| 构建      | Vite + Cargo                              |
+| 打包      | NSIS                                      |
 
 ### 项目结构
 
 ```
 core/                         # Rust 核心库（零 Tauri 依赖）
+├── db/                       # v6 SQLCipher 数据层
+│   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
+│   ├── history.rs / history_sink.rs / profiles.rs / backups.rs
+│   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
+│   ├── migrate_v5.rs / v5_export.rs / v5_import.rs
+│   ├── maintenance.rs / archive_v5.rs
+│   └── sync/                 # bundle / change_log / merge / conflict / export / import
 ├── error.rs                  # CoreError 结构化错误（code 驱动错误码与前端本地化）
 ├── service.rs                # 应用服务层（多 hive 事务编排 + 侧车快照）
 ├── persist.rs                # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
 ├── registry/                 # 注册表通路（path / access / env_var / conflict 子模块）
 ├── system.rs                 # 权限检测、路径验证、环境变量展开
 ├── scanner.rs                # 冲突检测、工具清单
-├── profiles.rs               # 配置文件管理
-├── backup.rs / disabled.rs   # 备份、禁用状态
+├── profiles.rs               # v5 文件版配置（兼容通路）
+├── backup.rs / disabled.rs   # 备份（.pebak）、禁用状态
 └── fs.rs                     # 文件读写、导入导出解析
 gui/                          # Tauri 桌面应用（bin 产物 PathEditor.exe）
-└── src/commands/             # 薄包装 → 调用 core
+└── src/commands/             # 薄包装 → 调用 core（registry / system / backup / fs /
+                              #   disabled / scanner / env_var / service / history / m2 / sync）
 cli/                          # 命令行工具（bin 产物 patheditor.exe）
 ├── src/main.rs               # Clap 定义、CRUD、分派
-└── src/                      # runtime / import_export / profile_ops / scan_ops / env_ops
+└── src/                      # runtime / import_export / profile_ops / scan_ops / env_ops /
+                              #   sync_ops / maintenance_ops
 src/                          # React 前端
 ├── core/                     # 纯逻辑 — 零框架依赖
-├── store/                    # Zustand 状态管理
+├── store/                    # Zustand：app / env / history / search / sync / theme
 ├── services/                 # backend IPC + path session
-├── components/               # UI 组件
+├── components/               # layout / path-list / env-list / toolbar / dialogs /
+│                             #   history / search / stats / sync / ui
 ├── hooks/                    # useAppActions、useKeyboard、usePathValidation
 ├── i18n/                     # zh-CN / en
 └── config/                   # default.json
 tests/unit/                   # 前端单元测试
+e2e/tests/                    # Playwright E2E（mock IPC）
+docs/dev/                     # 开发细节（架构/存储/接口/安全/测试/发布，按需读取）
 docs/审核和开发/                # 审查与开发记录
 ```
 
@@ -518,9 +574,10 @@ docs/审核和开发/                # 审查与开发记录
 
 ### 本地开发环境
 
-- Node.js 22+
-- Rust 1.95+ (stable-x86_64-pc-windows-gnu)
-- MinGW-w64 (GCC 15.x 需配置 `-lmcfgthread` 链接标志)
+- Node.js 20+（CI 使用 Node 20）
+- Rust 1.95+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
+- MinGW-w64（GNU 下测试需要 `windres`；MSVC 下由链接器清单处理）
+- 首次全量构建需要 `make`、`perl`（MSVC 下还需 NASM），约 45 分钟
 
 ### 代码规范
 

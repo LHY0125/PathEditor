@@ -4,11 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # PathEditor 开发指南
 
-> 本文件是开发窗口的仓库说明。`AGENTS.md` 是同一份内容的副本，**不要求逐字节一致**：仓库约束的改动可以只落在其中一份，另一份按需同步。
+> 本文件是开发窗口的仓库说明，也是每轮开工默认加载的上下文。
+> 详细参考已拆到 `docs/dev/`，**按需读取**（见文末「文档索引」），不要为了查细节把全文读一遍。
+> `AGENTS.md` 是同一份内容的副本，当前保持字节级一致。
 
 ## 项目概述
 
-PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json`。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json`（v6.0.0）。
+
+v6 起数据层是一个 **SQLCipher 加密数据库（sidecar）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -43,287 +47,123 @@ npm run verify:all                  # verify + Playwright E2E
 npx vitest run tests/unit/<file>.test.ts          # 单个前端测试文件
 npx vitest run -t "<test name>"                   # 按测试名过滤
 cargo test -p <crate> <test_name>                 # 单个 Rust 测试
+cargo test -p path-editor-core --test <file>      # core 集成测试（包名是连字符，不是下划线）
 cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins）
 ```
 
-## 架构与模块边界
-
-Cargo workspace 分为 `core`、`gui`、`cli` 三个 crate，前端通过 Tauri IPC 调用 GUI command。`probes/v6-sqlcipher` 是 v6 探针 crate，**刻意排除在 workspace 之外**（见 `Cargo.toml` 的 `exclude`）。
+## 架构速览
 
 ```text
 PathEditor/
-├── core/src/                    # Rust 核心库（零 Tauri 依赖）
-│   ├── registry/                # 注册表访问统一入口（path/access/env_var/conflict 子模块）
-│   ├── service.rs               # 保存编排：save_path_with_sidecar / apply_path_snapshot
-│   ├── capabilities.rs          # 按 hive 探测 PathCapabilities
-│   ├── system.rs                # 权限、路径验证、变量展开、环境广播
-│   ├── disabled.rs              # 完整快照、禁用状态、旧格式兼容、pending 磁盘文件
-│   ├── env_var.rs               # 通用环境变量契约与保留/保护/敏感判定
-│   ├── path_entry.rs            # PathEntry / PathSnapshot 契约
-│   ├── error.rs                 # 结构化 CoreError / ErrorCode
-│   ├── reg_store.rs             # 注册表值类型读写（EnvHiveStore 端口）
-│   ├── persist.rs               # 持久化文件解析与损坏隔离
-│   ├── scanner.rs               # scan_paths 单次枚举、冲突和工具清单
-│   ├── profiles.rs              # 配置保存/加载/重命名/删除
-│   ├── fs.rs                    # 受限文件读取、导入导出
-│   └── backup.rs                # 注册表备份
-├── gui/src/commands/            # #[tauri::command] 薄包装，调用 core
-├── cli/src/                     # Clap 定义 + 命令分派（bin-only crate，无 lib target）
-│   ├── runtime.rs               # 注册表安全保存、错误退出、快照提交
-│   ├── env_ops.rs               # env 子命令：值通道/并发选项/表格与 JSON 渲染
-│   ├── import_export.rs         # 导入导出命令
-│   ├── profile_ops.rs           # profile 子命令
-│   └── scan_ops.rs              # 冲突、扫描、权限检查
-├── src/                         # React 前端
-│   ├── core/                    # 纯逻辑，零 React/Tauri 依赖（env-var、path-entry、undo-redo…）
-│   ├── services/backend.ts      # 唯一 IPC 适配入口 + 运行时形状校验
-│   ├── services/path-session.ts # 保存计划前置（权限预检 + 组合长度软提醒 + 文案映射）
-│   ├── store/                   # Zustand：app-store / env-store / theme-store
-│   ├── components/              # layout / path-list / env-list / toolbar / dialogs / ui
-│   ├── hooks/                   # useAppActions、useKeyboard、usePathValidation
-│   └── i18n/                    # zh-CN / en
-├── tests/unit/                  # Vitest 测试
-├── tests/fixtures/              # 跨 Rust/TS 契约夹具
-├── e2e/tests/                   # Playwright 测试（mock IPC）
-├── probes/v6-sqlcipher/         # v6 SQLCipher 探针（不在 workspace；M0 证据）
-├── docs/superpowers/specs/      # 特性设计文档（YYYY-MM-DD-*-design.md）
-├── docs/superpowers/plans/      # 实施计划（YYYY-MM-DD-*-implementation.md）
-└── docs/审核和开发/YYYY.MM.DD/  # 审核与开发记录
+├── core/src/
+│   ├── registry/     # 注册表访问统一入口
+│   ├── db/           # v6 SQLCipher 数据层（schema/history/profiles/backups/
+│   │                 #   search/stats/refs/compare/scan_history/migrate_v5/
+│   │                 #   v5_export/v5_import/maintenance/archive_v5/sync）
+│   ├── service.rs    # 保存编排（save_path_with_sidecar / apply_path_snapshot）
+│   ├── disabled.rs / env_var.rs / path_entry.rs / scanner.rs / persist.rs
+│   ├── backup.rs     # 注册表备份、env 备份（.pebak）
+│   └── profiles.rs   # v5 文件版配置（兼容通路；DB 版在 db/profiles.rs）
+├── gui/src/commands/ # Tauri 薄包装（registry/system/backup/fs/disabled/scanner/
+│                     #   env_var/service/history/m2/sync）
+├── cli/src/          # Clap + 分派（runtime/env_ops/profile_ops/sync_ops/
+│                     #   maintenance_ops/scan_ops/import_export）
+├── src/              # React（core/services/store/components/hooks/i18n）
+├── tests/unit / tests/fixtures / e2e/tests
+├── probes/v6-sqlcipher（不在 workspace；M0 证据）
+└── docs/{superpowers,dev,审核和开发}
 ```
 
-关键约束：
+**完整目录树、模块职责与数据流**：`docs/dev/architecture.md`。
+
+### 关键约束（始终生效）
 
 - `src/core/` 保持纯函数和零框架依赖；组件和 Store 不得直接调用 `invoke`，统一走 `src/services/backend.ts`。
-- `gui` 和 `cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `core`。CLI 侧**零安全判定逻辑**：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 core 判定，CLI 仅透传错误文本。新增 CLI 命令时不要复制任何判定规则。
-- `patheditor-cli` 是 **bin-only crate**（`[[bin]] name = "patheditor"`，无 `[lib]`）。对 CLI 跑单测必须用 `cargo test -p patheditor-cli --bins`，`--lib` 会报 `no library targets found`。
+- `gui` 和 `cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `core`。CLI 侧**零安全判定逻辑**：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 core 判定；CLI 仅透传错误文本，新增命令时不要复制任何判定规则。
+- `patheditor-cli` 是 **bin-only crate**；对 CLI 跑单测必须用 `--bins`。
 - `PathCapabilities` 使用 camelCase 序列化；共享契约见 `tests/fixtures/path-capabilities.json`。
 - 正式 PATH 解析以 Rust `registry::split_path` 为准；TS 的 `split_path` 仅保留为兼容/测试夹具。
 - `PathEntry { path, enabled }` 是跨层契约；导入、配置、注册表和撤销重做都必须保留 `enabled`。
-- 通用环境变量通路（`EnvVar`）与 PATH 通路（`PathEntry`）并存：`Path` 列入 `RESERVED_NAMES`，`list_all_env_vars` 过滤掉它，Rust 写入口拒绝 —— **PATH 只能经专用通路编辑**，否则会绕过 `disabled.json` 与快照事务。`EnvVarMeta` 契约上不含 `value` 字段，命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
-- 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`（FNV-1a 散列 `name+type+value`），在**同一 core 调用内**完成「读→算→比对→校验→写」。GUI 与 CLI 共用该契约，前端与 CLI 都**不得**自行实现并发校验。冲突判定**只认 `CoreError.code`（serde camelCase）**：前端判 `err.code === 'conflict'`，CLI 经 `CoreError::exit_code()` 判定；`[E_CONFLICT]` 消息前缀（`core::registry::conflict_message()`）仅为过渡期展示文本（保留给旧文本路径），不是判定机制。
-- Windows 注册表无 CAS，读-比-写是两次独立注册表调用，仍有毫秒级竞态窗口。revision 校验缩小影响，不能完全消除 TOCTOU —— 文档与注释须如实措辞，不要宣称原子性。
+- 通用环境变量通路（`EnvVar`）与 PATH 通路（`PathEntry`）并存：`Path` 列入 `RESERVED_NAMES`，**PATH 只能经专用通路编辑**。`EnvVarMeta` 契约上不含 `value` 字段；命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
+- 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`。前端与 CLI **不得**自行实现并发校验；冲突判定只认 `CoreError.code`，`[E_CONFLICT]` 前缀仅是展示文本。
+- Windows 注册表无 CAS，读-比-写是两次独立调用，仍有毫秒级竞态窗口。缩小影响不等于消除 TOCTOU，不要宣称原子性。
+- **v6 数据层是 sidecar**：所有 DB 访问在 `core/src/db/`；GUI/CLI 不得直接打开 SQL。注册表仍是唯一真相源，DB 不可用时 fail-open。
+- **同步导入是单事务，且不写注册表**：导入只改 DB；用户要生效必须另走 `apply_path_snapshot` / `apply_profile`。
+- **维护命令的删除类操作必须显式确认**：`cleanup-legacy-backups` 需 `--yes`；测试一律用 `TempDir`，不碰真实 `~/.patheditor`。
+- **v5 文件已停写**：`disabled.json` / `profiles/*.json` 不再由应用写入；迁移成功后归档为 `.v5.bak`。
 - `.codegraph/` 存在时，优先使用 CodeGraph 理解符号和调用路径，再决定是否读取文件。
 
-## 设计系统（5.1.7 起）
+## 设计系统（v5.1.7 起，v6 沿用）
 
 - 语义 token 全部在 `src/styles/globals.css` 的 `:root` 与 `:root.dark`；组件**只允许**使用 `--app-*` 语义变量，禁止硬编码色值。
 - 主界面控件类：`.toolbar` / `.toolbar-sep` / `.toolbar-search` / `.tab-pill`。
 - 对话框控件类：`.modal-overlay` / `.modal-surface` / `.field-input` / `.dialog-list-item` / `.btn-block`。
-- 按钮统一使用 `src/components/ui/Button.tsx`（`buttonVariants` 在本仓库内解析变体）；`btnClass` / `btnStyle` 已在 Wave 4.1 删除，不要再引用。
-- **陷阱**：上述工具类是**未分层规则**，会覆盖 Tailwind `@layer utilities`。给同一元素追加 Tailwind 工具类（如 `text-xs`）前，必须先确认它会不会被覆盖——`field-input text-xs` 曾是一个永不生效的死类名。
+- 按钮统一使用 `src/components/ui/Button.tsx`（`buttonVariants` 在本仓库内解析变体）；`btnClass` / `btnStyle` 已删除，不要再引用。
+- **陷阱**：上述工具类是**未分层规则**，会覆盖 Tailwind `@layer utilities`。追加 Tailwind 工具类前先确认它不会失效——`field-input text-xs` 曾是一个永不生效的死类名。
 - 对话框的视觉规格由 CSS 类承载，`Modal.tsx` 只负责挂载与 Escape 关闭；改视觉时改 `globals.css`，不要往组件里塞内联样式。
 
-## v6 SQLite 存储
+## v6 数据层（速览）
 
-- **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内跑第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU 与 MSVC 均已复现，`--test-threads=1` 无效）；CI 逐文件调用。依据：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md` §5.3。
-- `probes/v6-sqlcipher` 是 M0 探针 crate，**刻意不在 workspace members**（`Cargo.toml` 的 `exclude`）；`target/`、`target2/`、`perl5lib/` 已加入 `.gitignore`。
-- `cipher_memory_security` 默认 **OFF**：M0 实测 ON 在受限进程里 `VirtualLock` 失败（`ERROR_NOT_ENOUGH_MEMORY`），且 ON/OFF 性能无显著差异。
-- v6 的 DB 是 **sidecar**，注册表仍是唯一真相源；数据库不可用时应用 fail-open（编辑照常、历史/同步降级）。
-- 设计与计划：`docs/superpowers/specs/2026-10-19-v6-sqlite-design.md`、`docs/superpowers/plans/2026-10-19-v6-sqlite-m1-plan.md`。
+- **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；DB 打不开时 fail-open，不静默重建空库。
+- **密钥**：`~/.patheditor/keys/db.key.dpapi`，DPAPI 当前用户作用域；DACL 限当前用户 + SYSTEM。
+- **schema**：`CURRENT_SCHEMA_VERSION = 3`；`PRAGMA user_version` 只在建库/迁移事务内写。
+- **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件只放一个 `#[test]`（同进程第二个会 `STATUS_STACK_OVERFLOW`）。
+- **v5 迁移**：`migrate_v5` 幂等导入，迁移期间不改名；成功后 `archive_v5` 在启动序列末尾把原件改名为 `.v5.bak`。
+- **同步**：bundle = `PESYNC1\0 + version + header_len + header JSON + salt + nonce + ciphertext + tag`；Argon2id + ChaCha20-Poly1305；LWW；`snapshot`/`profile` 按整实体比较；导入不写注册表。
+- **保留策略**：已导出 `changes` 90 天、已解决 `sync_conflicts` 30 天；**待导出队列永不删**。
 
-### 为什么依赖 OpenSSL（构建成本来源）
+**完整 schema、迁移、同步与构建成本**：`docs/dev/sqlite-storage.md`。
 
-依赖链：`rusqlite → libsqlite3-sys → SQLCipher（C）→ OpenSSL（C）`。
+## 接口速览（IPC / CLI）
 
-- **OpenSSL 的唯一作用**：给 SQLCipher 提供 AES-256、HMAC、PBKDF2 等密码学原语。项目**没有任何 TLS / 网络调用**，与「OpenSSL 漏洞」常见的 Web 攻击面不同。
-- `bundled-sqlcipher-vendored-openssl` 把 SQLCipher 与 OpenSSL 的 **C 源码**都打进 crate，构建时用 `cc` 编译。因此需要 `make`、`perl`（MSVC 下还需 NASM），首次全量编译约 45 分钟，二进制 +1–2 MB。
-- 选 `vendored` 是为了「不依赖用户机器上是否装了 OpenSSL、版本是否兼容」，代价是构建工具链与时间——这是有意的权衡，不要改成链接系统 OpenSSL。
-- 密钥：`~/.patheditor/keys/db.key.dpapi`，内容为 `version(1)+db_key(32)+hash_salt(16)`，整体经 DPAPI（**当前 Windows 用户**作用域）加密；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。详见 spec §5.1 与 M1 计划 Task 3。
+- **IPC 唯一入口**：`src/services/backend.ts` + 运行时形状校验；v6 的 DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
+- **CLI 退出码**：0 成功 / 1 一般错误（含 `SyncFormat`）/ 2 clap / 3 revision 冲突 / 4 同步合并冲突 / 5 密钥。
+- **同步与维护**：`patheditor sync …`、`patheditor maintenance …`；同步只改 DB，不写注册表。
 
-## Tauri IPC 接口
+**完整 IPC 表、CLI 命令与语义**：`docs/dev/interfaces.md`。
 
-| Command                                                                                 | 参数 / 返回值                                        | 说明                                                                                         |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `load_system_paths` / `load_user_paths`                                                 | `() -> Result<Vec<String>, String>`                  | 读取注册表原始路径                                                                           |
-| `save_path_with_sidecar`                                                                | `(system?, user?) -> Result<ApplyOutcome, String>`   | **唯一保存编排**：写前备份 + 乐观并发校验 + 顺序写 system→user + 广播 + sidecar 事务         |
-| `apply_path_snapshot` / `apply_profile`                                                 | 快照 / 配置名                                        | 服务层事务编排（GUI 与 CLI 共用）                                                            |
-| `retry_pending_path_state`                                                              | `() -> Result<(), String>`                           | 补写上次注册表成功但快照失败的 pending 状态                                                  |
-| `clean_path_entries`                                                                    | `Vec<PathEntry> -> (kept, removed)`                  | 统一清理语义，展开变量后检查目录                                                             |
-| `get_path_capabilities`                                                                 | `() -> PathCapabilities`                             | 按 hive 返回读写能力                                                                         |
-| `check_admin` / `validate_path` / `expand_env_vars` / `broadcast_env_change`            | 系统工具接口                                         | 权限、目录验证、变量展开、环境通知                                                           |
-| `load_path_snapshot`                                                                    | `() -> Result<PathSnapshot, String>`                 | 合并注册表、禁用状态和有序快照                                                               |
-| `save_path_snapshot`                                                                    | `(system?, user?) -> Result<(), String>`             | 保存完整有序快照，`None` 保留对应 hive                                                       |
-| `load_disabled_state` / `save_disabled_state`                                           | 旧版字符串接口                                       | 仅用于兼容                                                                                   |
-| `import_file` / `export_path_entries` / `read_text_file`                                | 文件路径 / `PathEntry` + 格式                        | Rust 统一导入导出与受限文本读取                                                              |
-| `scan_paths`                                                                            | `(paths, query) -> ScanResult`                       | 一次枚举生成冲突和工具清单                                                                   |
-| `backup_registry`                                                                       | `() -> Result<String, String>`                       | 备份当前注册表 PATH 值                                                                       |
-| `list_profiles` / `save_profile` / `load_profile` / `delete_profile` / `rename_profile` | 配置 CRUD                                            | 配置保存 `PathEntry[]`                                                                       |
-| `list_all_env_vars`                                                                     | `() -> Result<EnvVarSnapshot, CoreError>`            | 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）                                       |
-| `reveal_env_var`                                                                        | `(hive, name) -> Result<RevealedValue, CoreError>`   | 按需读取单个变量明文及读取时的 revision；`Unsupported` 类型返回 `CoreError`                  |
-| `update_env_var`                                                                        | `(hive, name, value, expectedRevision)`              | 写入已有变量；类型从注册表读取，revision 不匹配则拒绝（返回 `[E_CONFLICT]` 前缀错误）        |
-| `create_env_var`                                                                        | `(hive, name, value, kind)`                          | 新建变量；写入前检查名称是否存在（检查与写入是两步操作，存在竞态窗口；重复创建由 Rust 拒绝） |
-| `delete_env_var`                                                                        | `(hive, name, expectedRevision)`                     | 删除变量；revision 不匹配则拒绝                                                              |
-| `backup_env_vars`                                                                       | `() -> Result<String, CoreError>`                    | 立即创建一份 env 备份，返回文件路径（不保证绝对：受 PATHEDITOR_BACKUP_DIR 影响）             |
-| `list_env_backups`                                                                      | `() -> Result<Vec<EnvBackupInfo>, CoreError>`        | 列出备份文件，按时间倒序；只枚举与 stat，**不解析内容**（`variableCount` 恒为 0）            |
-| `preview_env_backup`                                                                    | `(file) -> Result<RestorePreview, CoreError>`        | 读取备份并计算差异（纯读）。先做路径来源校验；对不可解析文件会经 persist 层重命名隔离        |
-| `restore_env_backup`                                                                    | `(file, force) -> Result<RestoreOutcome, CoreError>` | 执行恢复。未提权时打开 HKLM 必然失败，恒返回 `permissionDenied`；GUI 只提示需管理员          |
+## 数据与安全红线
 
-> 服务层命令 `apply_path_snapshot` / `save_path_with_sidecar` / `retry_pending_path_state` / `apply_profile` 定义在 `gui/src/commands/service.rs`，**GUI 前端已接线**（`path-session.ts` 经 `backend.savePathWithSidecar` 调用）；CLI 的 6 个 PATH 写入口也统一经 `save_path_with_sidecar`。
->
-> 已退役的 IPC 命令：`save_system_paths` / `save_user_paths`（由 `save_path_with_sidecar` 取代）、`scan_conflicts` / `scan_tools`（由 `scan_paths` 取代）、`get_appdata_dir`（前端零调用）。对应的 core 函数（`scanner::scan_conflicts` / `scan_tools`、`backup::get_appdata_dir`）**仍保留**，被内部使用。
->
-> v6 将新增 `history_*` / `profile_*` / `backup_*` 命令（细粒度 IPC，每命令一方法 + 运行时形状校验）；设计见 spec §3.2.1，尚未实现。
+- PATH 的唯一保存编排是 `save_path_with_sidecar`；注册表成功但快照失败 → 落 pending，下次补写。
+- 保存前用原始值检测外部修改；清理/禁用/启用必须保留 `PathEntry`。
+- env 备份默认 `.pebak`（DPAPI）；密钥不可用时回落明文 `.json` 并告警。遗留 `.json` 清理需 `--yes`。
+- E2E 使用 mock IPC，**不得写真实注册表**；同步导入同样不写注册表。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果。
+- 所有 `unsafe` 块必须有 `// SAFETY:` 注释；所有 `pub fn` / `pub(crate) fn` 有中文 `///`。
+- `backend.ts` 必须拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝）。
 
-## CLI 命令
+**完整的数据/事务/安全规则**：`docs/dev/data-and-security.md`。
 
-```text
-patheditor list          [--system|--user] [--json]
-patheditor add           <PATH> [--system|--user]
-patheditor remove        <INDEX> [--system]
-patheditor edit          <INDEX> <NEW> [--system]
-patheditor move-up       <INDEX> [--steps N] [--system]
-patheditor move-down     <INDEX> [--steps N] [--system]
-patheditor clean         [--system|--user] [--dry-run] [--json]
-patheditor enable        <INDEX> [--system|--user]
-patheditor disable       <INDEX> [--system|--user]
-patheditor import        <FILE> [--target system|user|both]
-patheditor export        [--format json|csv|txt] [--output <FILE>]
-patheditor backup
-patheditor conflicts     [--json]
-patheditor scan          [--query <NAME>] [--json]
-patheditor check-admin   [--json]
-patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|delete <NAME>|rename --old <OLD> --new <NEW>}
-patheditor env list      [--system|--user] [--json]
-patheditor env get       <NAME> [--system]
-patheditor env set       <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force) [--dry-run] [--json]
-patheditor env add       <NAME> [<VALUE>] [--kind string|expand] [--system] [--dry-run] [--json]
-patheditor env remove    <NAME> (--revision <R>|--force) [--dry-run] [--json]
-patheditor env backup    [--json]
-patheditor env backups   [--json]
-patheditor env restore   <FILE> [--dry-run] [--force] [--json]
-```
+## 测试与质量门（速览）
 
-`remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
+- 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
+- 基线（v6.0.0）：Rust **57 binaries / 350 passed**；前端 **33 files / 398**；E2E **54**。
+- **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
+- CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 
-`env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；`--force` 跳过 revision 校验直接覆盖（最后写入者胜，仍受保护名单/类型/权限约束），不会因并发冲突产生退出码 3；退出码 3 仅在 `--revision` 不匹配时出现，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。`set`/`add`/`remove` 支持 `--dry-run` 只预览变更、不写注册表、不产生备份、不广播；预览**不要求** `--revision`/`--force`，且不含保护名单/类型判定（`writable` 如实标记，真正的拒绝留给执行阶段）。预览**不新开明文出口**：命中 `is_sensitive` 的变量不回传明文（`oldValue` 为 `null`、文本显示 `(敏感)`），非敏感值经 `sanitize_preview` 剔除控制字符（含 ESC，防 ANSI 注入）。`--json` 需与 `--dry-run` 同用（clap `requires`，单独用退出码 2），输出统一结构 `{operation, hive, name, oldValue, newValue, kind, writable, sensitive}`。
+**完整测试布局与 CI 步骤**：`docs/dev/testing.md`。
 
-`env restore` 默认模式在备份中有变量被外部改动（revision 不匹配）时整批中止且**注册表零改动**（退出码 3）；`--force` 跳过 revision 校验直接覆盖，但**不豁免**保护名单与类型判定，也不会因并发冲突产生退出码 3。`--dry-run` 只打印差异、不写注册表。**逐条失败不改变退出码**（仍是 0）——恢复是 best-effort，单变量失败只进 `failures` 并以 stderr 警告呈现，脚本无法从退出码检出部分失败。
+## 发布（速览）
 
-## 数据、保存与事务
-
-- `disabled.json` 同时保存 `systemSnapshot`、`userSnapshot` 和旧版禁用字符串。启动时以注册表为启用路径真相来源，用快照恢复禁用项和顺序；旧格式仍可读取。
-- **保存 PATH 的唯一编排是 `core::service::save_path_with_sidecar`**（GUI 经 `backend.savePathWithSidecar`、CLI 经 6 个入口统一调用）。它先写注册表、再提交侧车快照；注册表成功但快照写入失败时，在 **core 侧**落 pending 磁盘文件（`disabled::save_pending_path_snapshot`），下次 PATH 命令开头经 `retry_pending_path_state` 补写。**GUI store 不再携带 `_pendingSys/_pendingUser`**（Wave 3.0 / D6 前移）；保存成功的状态栏会**非阻断提示**快照未落盘。两个 hive 分别报告成功或失败（`ApplyOutcome` 按 hive 分字段）。
-- 保存前使用原始值做外部修改检测；不得用旧草稿覆盖其他进程刚写入的内容。
-- 清理、禁用和启用操作必须保留 `PathEntry`，不能只传路径字符串。
-- 通用环境变量写入（CLI 3 命令、GUI 3 命令）前自动产生一份 JSON 备份，落在 `~/.patheditor/backups/env_backup_<时间戳>.json`，含两个 hive 全部可写变量的**明文值**与 revision。备份失败**不阻断写入**，只记警告并如实返回（`WriteOutcome.backup`）。默认保留最近 20 份（`backup::ENV_BACKUP_KEEP`，可被 `~/.patheditor/config.ini` 的 `env_backup_keep` 覆盖），轮换只删除本功能生成的 `env_backup_*.json`。恢复默认在 revision 冲突时中止（退出码 3）且零写入；`--force` 跳过 revision 校验但**不豁免**保护名单与类型判定。
-- PATH 备份（`path_backup_<时间戳>.txt`，由 `backup_registry` 写入，含两个 hive 的完整 PATH 明文）同样写后自动轮换：默认保留最近 20 份（`backup::PATH_BACKUP_KEEP`，可被 `~/.patheditor/config.ini` 的 `path_backup_keep` 覆盖，回落语义同 `env_backup_keep`），只删除本功能生成的 `path_backup_*.txt`，且**仅作用于默认备份目录**——用户通过 `custom_dir` 指定的目录不参与轮换（可能混有用户自己的文件）。
-- 恢复的差异计数有两个**已知的规格级口径问题**，不是已修复项：`RestorePreview.modified` 与 `RestoreOutcome.skipped` **恒为 0**（前者因为 `revision_of` 是 `(name, type, value)` 的纯函数，「值变了」与「备份已过期」是同一条件，后者一律判 `Conflict`；后者因为没有路径会「跳过」）。因此 `--dry-run` 与 GUI 确认弹窗的「修改 N」恒显示 0，而 `--force` 下被冲突覆盖的变量**确实被改写却计入 `conflicts`** —— 两者都会**低报** force 模式的实际改动量。`EnvBackupInfo.variable_count` 同样恒为 0（列表不解析内容）。**未提权时恢复恒失败**：普通用户无法以写权限打开 HKLM，`restore_env_backup_from` 必然返回 `permissionDenied`，且 GUI **不提供**「仅恢复 user hive」这类降级路径。
-- `env restore --dry-run` 对**损坏备份**并非严格纯读：`read_env_backup` 对不可解析文件会经 `persist::parse_error_quarantined` 把文件重命名为 `<file>.corrupt-<ts>`（注册表未触碰）。
-- 备份文件的暴露面：含敏感值明文，**目录 ACL 未收紧**（spec §S2.1 登记的未覆盖项）。
-
-路径验证和环境变量展开使用有界并发队列，不按前 20 条截断；扫描通过 `scan_paths` 共享枚举结果，最多使用 8 个扫描线程。
-
-## 错误处理与安全
-
-- `backend.ts` 对能力对象、快照、禁用状态和 `PathEntry` 做运行时形状校验，不能只依赖 TypeScript 断言。
-- Rust/IPC 仍主要返回自由文本 `Result<T, String>`；后续统一错误码 + 前端本地化尚未完成。
-- 导入文件读取限制在用户目录、临时目录或当前工作目录，并继续校验扩展名。
-- Tauri CSP 不允许设置为 `null`；不要放松 `gui/tauri.conf.json` 的安全配置。
-- 所有 `unsafe` 块必须有 `// SAFETY:` 注释。PATH 写入前检查 null 字节和 32767 字符上限。
-- 所有 `pub fn` 必须有 `///` 文档注释；`pub(crate)` 同样补注释（CONTRIBUTING.md 硬性要求）。
-- 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
-- E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果（样本见 `docs/审核和开发/2026.09.18/`）。
-- CLI 退出码：0 成功、1 一般错误、2 clap 参数解析失败、3 revision 冲突（仅 `env set`/`env remove` 且使用 `--revision` 时；`--force` 不会因并发冲突产生退出码 3；PATH 命令恒为 1）。冲突判定按 `CoreError.code`（`CoreError::exit_code()`），`[E_CONFLICT]` 前缀仅为过渡期展示文本。
-- `env get` 读取不存在的变量时，返回 `ErrorCode::NotFound`、message 为 `{用户|系统}环境变量 <NAME> 不存在`（不泄漏 `os error` 原生串、变量名只出现一次），退出码 1。判定只认 `code`，**不得**匹配 message 文本——NotFound 的结构信息由 `reg_store::get_raw_kind` 分类上传。
-
-## 测试与质量门
-
-- TypeScript 使用 Vitest + jsdom，测试放在 `tests/unit/*.test.ts` 或 `*.test.tsx`；行为变化必须有回归测试。跑单个文件：`npx vitest run tests/unit/<file>.test.ts`；按名字过滤：`npx vitest run -t "<name>"`。
-- **一文件一测试**（v6 SQLCipher）：见上文「v6 SQLite 存储」。
-- Playwright 测试放在 `e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程，不等同于真实 Tauri 集成验证。
-- Rust 测试放在模块内或 workspace test target，运行 `cargo test --workspace`。CLI 单测需 `--bins`（见上），跑单个测试：`cargo test -p <crate> <name>`。
-- 覆盖率门槛为 80% 行覆盖；`npm run verify` 依次执行 Prettier、ESLint、构建、覆盖率、`cargo fmt`、Clippy 和 Rust 测试。提交前优先运行 `npm run verify:all`。
-- 代码风格：UTF-8、CRLF；TS 2 空格，Rust/TOML 4 空格；Prettier 使用单引号、尾逗号和 100 列。
-- 从仓库根目录跑 `npm test` 时，`vitest.config.ts` 的 `exclude` 必须包含 `.claude/**`——否则会扫到 `.claude/worktrees/` 下嵌套 worktree 的 e2e 文件并大面积假失败。
-- **测试不得触碰用户真实目录**。`dirs::home_dir()` 走 `SHGetKnownFolderPath(FOLDERID_Profile)` 读注册表，**`HOME` 与 `USERPROFILE` 两个环境变量都不读**——`config_dir()` 无法被任何环境变量重定向。因此凡是走它的测试（密钥、备份、数据库），必须**显式传路径**（`load_or_create_key(&tempdir)`、`write_env_backup_to_with_key(dir, payload, &material)`），不能在测试里调用会内部走 `config_dir()` 的入口（`backup_env_vars()`、`open_default()`）。只有 `PATHEDITOR_BACKUP_DIR` 这类项目自定义变量是可重定向的。
-
-## 版本号升级清单
-
-当前版本以 `package.json` 的 `version` 为准。升级时至少检查：
-
-| 文件                  | 字段                                                            |
-| --------------------- | --------------------------------------------------------------- |
-| `package.json`        | `version`                                                       |
-| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）             |
-| `Cargo.toml`          | `[workspace.package] version`                                   |
-| `Cargo.lock`          | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
-| `gui/tauri.conf.json` | `version`、窗口 `title`                                         |
-| `README.md`           | 版本徽章和安装包说明                                            |
-
-其他位置通常从 `package.json` 或 `env!("CARGO_PKG_VERSION")` 动态读取，不要手工制造第二套版本源。
-
-## 发布流程
-
-**发布由 CI 自动完成，不要在本地手工构建或创建 Release。** `.github/workflows/release.yml` 在推送 `v*` tag 时触发，自动执行：校验版本号一致性 → `npx tauri build` → `cargo build --release -p patheditor-cli` → 整理产物 → 生成发布日志 → 创建 GitHub Release。
-
-### 唯一正确的发布步骤
-
-```powershell
-# 1. 确认版本号四处一致（package.json / Cargo.toml / gui/tauri.conf.json / README）
-# 2. 在 CHANGELOG.md 顶部写入当前版本的段落（见下）
-# 3. 提交并推送 main
-git push origin main
-
-# 4. 打 annotated tag 并推送 —— 这一步触发 CI
-git tag -a v<VERSION> -m "PathEditor v<VERSION>" -m "- 变更要点..."
-git push origin v<VERSION>
-
-# 5. 等 CI 跑完，用 gh 确认结果
-gh run list --limit 3
-gh release view v<VERSION>
-```
-
-**推送 tag 后不要做任何事，等 CI 完成。** 本地构建、手动创建 Release 都是重复劳动，且会与 CI 冲突。
-
-### 禁止事项（2026-09-18 事故教训）
-
-| 禁止                                                              | 原因                                                                                                                                         |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **推送 tag 后用 `gh release create` 手动建 Release**              | 会与 CI 抢同一个 Release。CI 走到最后一步会以 `a release with the same tag name already exists` 失败，留下红色的 CI 历史，且无法通过重跑消除 |
-| **推送 tag 前手动跑 `npx tauri build` / `cargo build --release`** | CI 会做同样的事。本地构建只用于**验证能否构建通过**，产物不要用于发布                                                                        |
-| **在没读 `.github/workflows/` 的情况下规划发布**                  | 仓库有 tag 触发的自动发布。不了解它就会重复构建、或与它冲突                                                                                  |
-
-**若确实需要手动发布**（CI 不可用时）：先确认该 tag 的 Release 不存在，再执行 `gh release create`，然后**不要**推送 tag（或推 tag 后接受 CI 会跳过）。两者只能选其一。
-
-### CHANGELOG.md 是发布日志的来源
-
-`release.yml` 的「生成发布日志」步骤**优先**用正则从 `CHANGELOG.md` 抽取当前版本段落：
-
-```powershell
-$pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)"
-```
-
-匹配 `## <VERSION>` 或 `## <VERSION> (YYYY-MM-DD)` 开头的段落。**若找不到，会回退到 `git log <上一 tag>..<本 tag>` 逐条列 commit 标题**——日志质量明显下降。
-
-所以发版前**必须在 CHANGELOG.md 顶部写好当前版本段落**，小节标题沿用最近几版的中文风格（`### 新增` / `### 变更` / `### 修复` / `### 说明`）。
-
-### CI 各步骤的前置依赖
-
-| 步骤         | 依赖                                                                                                                                                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 校验项目版本 | `package.json`、`gui/tauri.conf.json`、`Cargo.toml` 三处版本必须与 tag 一致，否则整条流水线失败                                                                                                       |
-| Tauri Build  | 需要 `npm ci` 与 Node 20                                                                                                                                                                              |
-| 整理发布产物 | 需要 `target\release\bundle\nsis\PathEditor_<VERSION>_x64-setup.exe`、`target\release\PathEditor.exe`（GUI 本体，portable zip 用）与 `target\cli\release\patheditor.exe`（CLI，独立 target 目录构建） |
-| 生成发布日志 | 读 `CHANGELOG.md`（缺失则回退 git log）                                                                                                                                                               |
-
-工作流使用 MSVC 工具链（覆盖 `rust-toolchain.toml` 的 GNU 设置），因为 GitHub Windows runner 上 MSVC 更稳定。这是刻意的，不要"修正"它。
-
-### 产物命名
-
-| 文件                                 | 说明                                                                                                            |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `PathEditor_<VERSION>_x64-setup.exe` | NSIS 安装包（GUI），产物目录中原始名                                                                            |
-| `PathEditor.exe`                     | GUI 本体（tauri bin 产物，portable zip 装的就是它）                                                             |
-| `patheditor-cli_<VERSION>_x64.exe`   | CLI 二进制，CI 在整理产物时重命名——**本地产物为 `target\cli\release\patheditor.exe`，不要据此判断发布包的名称** |
-
-### Release 已存在时的行为
-
-工作流有两道检查：开头的「检查 Release 是否已存在」（`exists` 输出）与末尾「创建 GitHub Release」步骤内的幂等再确认。已存在时后续步骤全部跳过、CI 正常变绿。
-
-但**开头检查与末尾创建之间隔着数分钟的构建**，期间状态可能变化——这正是 2026-09-18 事故的成因。末尾的二次确认是为此加的防护。
+- **发布由 CI 自动完成**：`release.yml` 在 `v*` tag 触发（校验版本 → `npx tauri build` → CLI → 产物 → 日志 → Release）。
+- 打 tag 前：版本四处一致、`CHANGELOG.md` 有当前版本段落、**该提交的 CI 已绿**。
+- **禁止**手工 `gh release create`；产物命名与故障处理见 `docs/dev/release.md`。
 
 ## 提交与协作
 
 使用 Conventional Commits：`<type>: <description>`，允许 `feat`、`fix`、`refactor`、`docs`、`test`、`chore`、`perf`、`ci`、`style`、`revert`。Husky + lint-staged 会在提交前运行 Prettier/ESLint；不要绕过失败的质量门。
 
 审查或开发大改动前先看 `docs/审核和开发/` 的历史记录，说明风险、验证证据和未覆盖项。特性开发先写 `docs/superpowers/specs/` 下的设计文档、再写 `docs/superpowers/plans/` 下的实施计划，然后按任务逐步实施。未经明确要求不要提交、推送、升级版本或执行真实注册表写入。
+
+## 文档索引
+
+| 文档                            | 内容                                           |
+| ------------------------------- | ---------------------------------------------- |
+| `docs/dev/architecture.md`      | 完整目录树、模块职责、保存数据流               |
+| `docs/dev/sqlite-storage.md`    | schema、迁移、同步、保留策略、OpenSSL 构建成本 |
+| `docs/dev/interfaces.md`        | Tauri IPC 全表、CLI 命令与退出码               |
+| `docs/dev/data-and-security.md` | 保存/事务、备份、错误处理与安全边界            |
+| `docs/dev/testing.md`           | 测试布局、一文件一测试、CI 步骤、基线          |
+| `docs/dev/release.md`           | 版本号清单、发布流程、产物与事故教训           |
+| `docs/superpowers/specs/`       | v6 设计文档                                    |
+| `docs/superpowers/plans/`       | M1–M4 实施计划                                 |
+| `docs/审核和开发/`              | 审查与开发记录                                 |
