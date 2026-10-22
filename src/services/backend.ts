@@ -1242,20 +1242,6 @@ export const backend = {
   loadUserPaths: async () =>
     parseStringArray(await invoke<unknown>('load_user_paths'), 'load_user_paths'),
   loadPathSnapshot: async () => parsePathSnapshot(await invoke<unknown>('load_path_snapshot')),
-  loadDisabledState: async () => {
-    const result = await invoke<unknown>('load_disabled_state');
-    if (!Array.isArray(result) || result.length !== 2) {
-      throw new Error('load_disabled_state 返回了无效的元组契约');
-    }
-    return [
-      parseStringArray(result[0], 'load_disabled_state.system'),
-      parseStringArray(result[1], 'load_disabled_state.user'),
-    ] as [string[], string[]];
-  },
-  saveDisabledState: (system: string[], user: string[]) =>
-    invoke<void>('save_disabled_state', { system, user }),
-  savePathSnapshot: (system: PathEntry[] | null, user: PathEntry[] | null) =>
-    invoke<void>('save_path_snapshot', { system, user }),
   /**
    * 唯一的「保存 PATH + sidecar」编排入口。
    *

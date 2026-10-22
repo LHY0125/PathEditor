@@ -150,9 +150,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
             ],
             user: [{ path: 'C:\\\\Users\\\\me\\\\AppData', enabled: true }]
           };
-          case 'load_disabled_state': return [[], []];
-          case 'save_disabled_state': return undefined;
-          case 'save_path_snapshot': return undefined;
           case 'save_path_with_sidecar': return { system: 'applied', user: 'applied', sidecar: 'saved' };
           case 'backup_registry': return 'C:\\\\backup\\\\path.txt';
           case 'broadcast_env_change': return undefined;

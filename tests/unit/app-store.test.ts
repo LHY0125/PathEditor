@@ -249,7 +249,7 @@ describe('savePaths', () => {
 
   it('保存成功', async () => {
     // -B：单次 `save_path_with_sidecar` 调用（取代旧的
-    // backup_registry + save_*_paths + save_path_snapshot 序列）。
+    // backup_registry + save_path_with_sidecar 序列）。
     mockedInvoke.mockResolvedValueOnce({
       system: 'applied',
       user: 'applied',
