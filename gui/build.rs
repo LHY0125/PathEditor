@@ -38,7 +38,8 @@ fn main() {
 ///   再叠一份会 CVT1100 重复资源。详见下方分支处的注释。
 ///
 /// 两条路的资源身份不同（GNU 侧的 `.rc` 用中性语言 0），因此不会与 Tauri 的
-/// `libresource.a` 撞车；MSVC 侧则是把两份清单**合并**，不是替换。
+/// `libresource.a` 撞车；MSVC 侧**不参与那份清单**——它只在 bin 不参与链接的那次
+/// 调用里，给 lib 的 test harness 补一份。
 fn embed_manifest_for_test_binaries() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
