@@ -1,3 +1,4 @@
+use crate::output::print_json;
 use crate::runtime::exit_err;
 use path_editor_core as core;
 use serde_json::json;
@@ -12,7 +13,7 @@ pub(crate) fn cmd_conflicts(json_out: bool) {
     }
     let conflicts = core::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_err(&e));
     if json_out {
-        println!("{}", serde_json::to_string_pretty(&conflicts).unwrap());
+        print_json(&conflicts);
     } else if conflicts.is_empty() {
         println!("未发现可执行文件冲突。");
     } else {
@@ -46,7 +47,7 @@ pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
     let groups = core::scanner::scan_tools(paths, query.unwrap_or_default())
         .unwrap_or_else(|e| exit_err(&e));
     if json_out {
-        println!("{}", serde_json::to_string_pretty(&groups).unwrap());
+        print_json(&groups);
     } else {
         for group in &groups {
             if !group.exists {

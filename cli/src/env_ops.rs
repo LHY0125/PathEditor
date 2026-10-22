@@ -3,6 +3,7 @@
 //! 本模块**不实现任何安全判定**（保留 / 保护 / 敏感 / 权限 / revision 校验），
 //! 全部由 `path_editor_core` 负责，此处仅透传错误文本。
 
+use crate::output::print_json;
 use crate::runtime::{exit_core_error, exit_err, warn_if_backup_failed};
 use path_editor_core as core;
 use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
@@ -214,10 +215,7 @@ pub(crate) fn render_change_preview_text(v: &serde_json::Value) -> String {
 /// dry-run 的统一出口：`--json` 打 JSON，否则打文本。**不写注册表、不备份、不广播。**
 pub(crate) fn emit_preview(preview: &serde_json::Value, json_out: bool) {
     if json_out {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(preview).unwrap_or_else(|_| "{}".to_string())
-        );
+        print_json(preview);
     } else {
         println!("{}", render_change_preview_text(preview));
     }
@@ -327,7 +325,7 @@ pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
     let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         let value = snapshot_json(&snapshot, system, user);
-        println!("{}", serde_json::to_string_pretty(&value).unwrap());
+        print_json(&value);
         return;
     }
     let show_sys = system || !user;
@@ -586,7 +584,7 @@ pub(crate) fn cmd_env_backup(json_out: bool) {
 pub(crate) fn cmd_env_backups(json_out: bool) {
     let list = core::backup::list_env_backups().unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
-        println!("{}", serde_json::to_string_pretty(&list).unwrap());
+        print_json(&list);
         return;
     }
     if list.is_empty() {
@@ -640,7 +638,7 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
         let preview =
             core::backup::preview_restore(&payload).unwrap_or_else(|e| exit_core_error(&e));
         if json_out {
-            println!("{}", serde_json::to_string_pretty(&preview).unwrap());
+            print_json(&preview);
             return;
         }
         println!(
@@ -679,7 +677,7 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
         core::backup::restore_env_backup_from(&path, force).unwrap_or_else(|e| exit_core_error(&e));
 
     if json_out {
-        println!("{}", serde_json::to_string_pretty(&outcome).unwrap());
+        print_json(&outcome);
     } else {
         println!("恢复完成: 成功 {} 个", outcome.applied);
     }

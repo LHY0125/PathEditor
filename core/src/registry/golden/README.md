@@ -1,6 +1,6 @@
-# Golden 用例（F-10：C→Rust 行为等价基线）
+# Golden 用例（C→Rust 行为等价基线）
 
-> Wave 2 Task 7 产出。PathEditor 首版是 C/IUP（源码仅存于 git 历史），
+> PathEditor 首版是 C/IUP（源码仅存于 git 历史），
 > Rust 版与「旧 C 行为」之间无可执行的行为对照。本目录以**数据驱动**
 > 的 golden 测试固定「输入快照 + 操作 → 期望结果」，防止后续重构
 > 无意中改变这些语义。

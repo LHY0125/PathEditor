@@ -1,4 +1,4 @@
-use crate::runtime::{exit_err, exit_persist_error, load_path_snapshot_any, save_path_write};
+use crate::runtime::{exit_core_error, exit_err, load_path_snapshot_any, save_path_write};
 use path_editor_core as core;
 
 pub(crate) fn cmd_import(file: String, target: String) {
@@ -27,7 +27,7 @@ pub(crate) fn cmd_import(file: String, target: String) {
 }
 
 pub(crate) fn cmd_export(format: String, output: Option<String>) {
-    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
     let content = core::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
         .unwrap_or_else(|e| exit_err(&e));
     if let Some(path) = output {

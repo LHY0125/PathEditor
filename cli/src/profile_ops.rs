@@ -2,7 +2,8 @@
 //!
 //! 全部走 **DB**（`core::db::profiles`）。GUI 与 CLI 共用同一份数据。
 
-use crate::runtime::{exit_core_error, exit_persist_error, save_path_write};
+use crate::output::print_json;
+use crate::runtime::{exit_core_error, save_path_write};
 use path_editor_core as core;
 use path_editor_core::db::profiles as db_profiles;
 
@@ -15,7 +16,7 @@ pub(crate) fn profile_list(json_out: bool) {
     let db = open_db();
     let list = db_profiles::list_profiles(&db).unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
-        println!("{}", serde_json::to_string_pretty(&list).unwrap());
+        print_json(&list);
     } else if list.is_empty() {
         println!("暂无配置文件。");
     } else {
@@ -37,7 +38,7 @@ pub(crate) fn profile_save(name: String) {
     let mut db = open_db();
     // 先合并注册表与 DB 当前快照，确保已禁用的孤儿条目也进入配置并保留顺序。
     let snapshot =
-        core::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_persist_error(&e));
+        core::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_core_error(&e));
 
     let snap = core::db::history::NewSnapshot {
         kind: core::db::history::SnapshotKind::Profile,

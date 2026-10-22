@@ -2629,6 +2629,7 @@ dependencies = [
  "clap",
  "path-editor-core",
  "rpassword",
+ "serde",
  "serde_json",
 ]
 

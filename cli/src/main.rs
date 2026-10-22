@@ -5,17 +5,19 @@ use serde_json::json;
 mod env_ops;
 mod import_export;
 mod maintenance_ops;
+mod output;
 mod profile_ops;
 mod runtime;
 mod scan_ops;
 mod sync_ops;
 
 use import_export::{cmd_export, cmd_import};
+use output::print_json;
 use profile_ops::{
     profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
 };
 use runtime::{
-    ensure_single_target, exit_err, exit_persist_error, load_and_save, load_operate_save,
+    ensure_single_target, exit_core_error, exit_err, load_and_save, load_operate_save,
     load_path_snapshot_any, save_path_write,
 };
 use scan_ops::{cmd_check_admin, cmd_conflicts, cmd_scan};
@@ -341,7 +343,7 @@ enum EnvCmd {
 // ── 命令实现 ──
 
 fn cmd_list(system: bool, user: bool, json_out: bool) {
-    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
     let mut sys = Vec::new();
     let mut usr = Vec::new();
     if system || !user {
@@ -371,7 +373,7 @@ fn cmd_list(system: bool, user: bool, json_out: bool) {
                 "enabledCount": usr.iter().filter(|entry| entry.enabled).count(),
             },
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        print_json(&output);
     } else {
         if !sys.is_empty() {
             let disabled = sys.iter().filter(|entry| !entry.enabled).count();
@@ -539,7 +541,7 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
 
 fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
     let target = ensure_single_target(system, user);
-    let mut snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
+    let mut snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
     let entries = if target == "system" {
         &mut snapshot.system
     } else {

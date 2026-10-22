@@ -6,19 +6,11 @@ pub(crate) fn exit_err(msg: &str) -> ! {
     std::process::exit(1);
 }
 
-/// core 侧持久化错误（`CoreError`）统一出口：透传 message，退出码由错误码映射。
-///
-/// PATH 命令的注册表错误恒为退出码 1（CLAUDE.md 契约）；sidecar/pending 等
-/// 持久化错误沿用 `CoreError::exit_code()`（冲突 3、其余 1），message 语义不变。
-pub(crate) fn exit_persist_error(err: &core::CoreError) -> ! {
-    eprintln!("错误: {}", err.message);
-    std::process::exit(err.exit_code());
-}
-
 /// 按结构化错误决定退出码与输出。
 ///
 /// 退出码由 `CoreError::exit_code()` 统一映射（冲突 3，其余 1），
 /// 不再匹配 `[E_CONFLICT]` 文本前缀 —— 判定只看 `code`。
+/// PATH 命令的注册表错误恒为 1；sidecar/pending 等持久化错误沿用同一映射。
 pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
     eprintln!("错误: {}", err.message);
     std::process::exit(err.exit_code());
@@ -134,7 +126,7 @@ pub(crate) fn load_and_save(
     f: impl FnOnce(Vec<core::PathEntry>) -> Vec<core::PathEntry>,
 ) {
     let target = ensure_single_target(system, false);
-    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
 
     if target == "system" {
         let entries = f(snapshot.system);
@@ -152,7 +144,7 @@ pub(crate) fn load_operate_save(
     operate: impl FnOnce(Vec<core::PathEntry>, usize) -> (Vec<core::PathEntry>, String),
 ) {
     let target = ensure_single_target(system, false);
-    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_persist_error(&e));
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
     let entries = if target == "system" {
         snapshot.system
     } else {
