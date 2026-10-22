@@ -7,14 +7,14 @@
 
 当前版本以 `package.json` 的 `version` 为准。升级时至少检查：
 
-| 文件                  | 字段                                                            |
-| --------------------- | --------------------------------------------------------------- |
-| `package.json`        | `version`                                                       |
-| `package-lock.json`   | `version`（`npm install --package-lock-only` 同步）             |
-| `Cargo.toml`          | `[workspace.package] version`                                   |
-| `Cargo.lock`          | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
-| `gui/tauri.conf.json` | `version`、窗口 `title`                                         |
-| `README.md`           | 版本徽章和安装包说明                                            |
+| 文件                                | 字段                                                            |
+| ----------------------------------- | --------------------------------------------------------------- |
+| `package.json`                      | `version`                                                       |
+| `package-lock.json`                 | `version`（`npm install --package-lock-only` 同步）             |
+| `Cargo.toml`                        | `[workspace.package] version`                                   |
+| `Cargo.lock`                        | 三个 workspace crate 的 `version`（`cargo update -p ...` 同步） |
+| `src/gui/src-tauri/tauri.conf.json` | `version`、窗口 `title`                                         |
+| `README.md`                         | 版本徽章和安装包说明                                            |
 
 其他位置通常从 `package.json` 或 `env!("CARGO_PKG_VERSION")` 动态读取，不要手工制造第二套版本源。
 
@@ -27,7 +27,7 @@
 ### 唯一正确的发布步骤
 
 ```powershell
-# 1. 确认版本号四处一致（package.json / Cargo.toml / gui/tauri.conf.json / README）
+# 1. 确认版本号四处一致（package.json / Cargo.toml / src/gui/src-tauri/tauri.conf.json / README）
 # 2. 在 CHANGELOG.md 顶部写入当前版本的段落（见下）
 # 3. 提交并推送 main，确认该提交的 CI（.github/workflows/ci.yml）已绿
 git push origin main
@@ -73,7 +73,7 @@ $pattern = "(?ms)^##\s+v?$([regex]::Escape($version))(?:\s|\(|$).*?(?=^##\s+|\z)
 
 | 步骤         | 依赖                                                                                                                                                                                                  |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 校验项目版本 | `package.json`、`gui/tauri.conf.json`、`Cargo.toml` 三处版本必须与 tag 一致，否则整条流水线失败                                                                                                       |
+| 校验项目版本 | `package.json`、`src/gui/src-tauri/tauri.conf.json`、`Cargo.toml` 三处版本必须与 tag 一致，否则整条流水线失败                                                                                         |
 | Tauri Build  | 需要 `npm ci` 与 Node 20                                                                                                                                                                              |
 | 整理发布产物 | 需要 `target\release\bundle\nsis\PathEditor_<VERSION>_x64-setup.exe`、`target\release\PathEditor.exe`（GUI 本体，portable zip 用）与 `target\cli\release\patheditor.exe`（CLI，独立 target 目录构建） |
 | 生成发布日志 | 读 `CHANGELOG.md`（缺失则回退 git log）                                                                                                                                                               |

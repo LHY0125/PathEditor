@@ -508,40 +508,39 @@ npx tauri build
 ### 项目结构
 
 ```
-core/                         # Rust 核心库（零 Tauri 依赖）
-├── db/                       # v6 SQLCipher 数据层
-│   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
-│   ├── history.rs / history_sink.rs / profiles.rs / backups.rs
-│   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
-│   ├── maintenance.rs
-│   └── sync/                 # bundle / change_log / merge / conflict / export / import
-├── error.rs                  # CoreError 结构化错误（code 驱动错误码与前端本地化）
-├── service.rs                # 应用服务层（多 hive 事务编排 + 侧车快照）
-├── persist.rs                # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
-├── registry/                 # 注册表通路（path / access / env_var / conflict 子模块）
-├── system.rs                 # 权限检测、路径验证、环境变量展开
-├── scanner.rs                # 冲突检测、工具清单
-├── profiles.rs               # 配置方案（DB 版）
-├── backup.rs / disabled.rs   # 备份（.pebak）、禁用状态
-└── fs.rs                     # 文件读写、导入导出解析
-gui/                          # Tauri 桌面应用（bin 产物 PathEditor.exe）
-└── src/commands/             # 薄包装 → 调用 core（registry / system / backup / fs /
-                              #   disabled / scanner / env_var / service / history / m2 / sync）
-cli/                          # 命令行工具（bin 产物 patheditor.exe）
-├── src/main.rs               # Clap 定义、CRUD、分派
-└── src/                      # runtime / import_export / profile_ops / scan_ops / env_ops /
-                              #   sync_ops / maintenance_ops
-src/                          # React 前端
-├── core/                     # 纯逻辑 — 零框架依赖
-├── store/                    # Zustand：app / env / history / search / sync / theme
-├── services/                 # backend IPC + path session
-├── components/               # layout / path-list / env-list / toolbar / dialogs /
-│                             #   history / search / stats / sync / ui
-├── hooks/                    # useAppActions、useKeyboard、usePathValidation
-├── i18n/                     # zh-CN / en
-└── config/                   # default.json
-tests/unit/                   # 前端单元测试
-e2e/tests/                    # Playwright E2E（mock IPC）
+src/                          # 全部源码
+├── core/                     # Rust 核心库（零 Tauri 依赖）
+│   ├── db/                   # v6 SQLCipher 数据层
+│   │   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
+│   │   ├── history.rs / history_sink.rs / profiles.rs / backups.rs
+│   │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
+│   │   ├── maintenance.rs
+│   │   └── sync/             # bundle / change_log / merge / conflict / export / import
+│   ├── error.rs              # CoreError 结构化错误（code 驱动错误码与前端本地化）
+│   ├── service.rs            # 应用服务层（多 hive 事务编排 + 侧车快照）
+│   ├── persist.rs            # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
+│   ├── registry/             # 注册表通路（path / access / env_var / conflict / store）
+│   ├── system.rs             # 权限检测、路径验证、环境变量展开
+│   ├── scanner.rs            # 冲突检测、工具清单
+│   ├── backup.rs / disabled.rs # 备份（.pebak）、禁用状态
+│   └── fs.rs                 # 文件读写、导入导出解析
+├── cli/                      # 命令行工具（bin 产物 patheditor.exe）
+│   └── src/                  # cli / path_ops / runtime / env_ops / import_export /
+│                             #   profile_ops / scan_ops / sync_ops / maintenance_ops
+└── gui/
+    ├── src-tauri/            # Tauri 桌面应用（bin 产物 PathEditor.exe）
+    │   └── src/commands/     # 薄包装 → 调用 core
+    └── web/                  # React 前端
+        ├── src/core/         # 纯逻辑 — 零框架依赖
+        ├── src/store/        # Zustand：app / env / history / search / sync / theme
+        ├── src/services/     # backend IPC + path session
+        ├── src/components/   # layout / path-list / env-list / toolbar / dialogs /
+        │                     #   history / search / stats / sync / ui
+        ├── src/hooks/        # useAppActions、useKeyboard、usePathValidation
+        ├── src/i18n/         # zh-CN / en
+        ├── src/config/       # default.json
+        ├── tests/unit/       # 前端单元测试
+        └── e2e/tests/        # Playwright E2E（mock IPC）
 docs/dev/                     # 开发细节（架构/存储/接口/安全/测试/发布，按需读取）
 docs/审核和开发/                # 审查与开发记录
 ```
@@ -573,7 +572,7 @@ docs/审核和开发/                # 审查与开发记录
 
 - TypeScript `strict: true`，零编译错误
 - 所有 Rust `unsafe` 块必须有 `// SAFETY:` 注释
-- 前端核心逻辑在 `src/core/`，纯函数，零依赖，可独立测试
+- 前端核心逻辑在 `src/gui/web/src/core/`，纯函数，零依赖，可独立测试
 
 ## 许可证
 

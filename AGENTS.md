@@ -44,7 +44,7 @@ npm run verify:all                  # verify + Playwright E2E
 跑单个测试：
 
 ```powershell
-npx vitest run tests/unit/<file>.test.ts          # 单个前端测试文件
+npx vitest run src/gui/web/tests/unit/<file>.test.ts   # 单个前端测试文件
 npx vitest run -t "<test name>"                   # 按测试名过滤
 cargo test -p <crate> <test_name>                 # 单个 Rust 测试
 cargo test -p path-editor-core --test <file>      # core 集成测试（包名是连字符，不是下划线）
@@ -55,19 +55,22 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 
 ```text
 PathEditor/
-├── core/src/
-│   ├── registry/     # 注册表访问统一入口
-│   ├── db/           # v6 SQLCipher 数据层（schema/history/profiles/backups/
-│   │                 #   search/stats/refs/compare/scan_history/maintenance/sync）
-│   ├── service.rs    # 保存编排（save_path_with_db / save_path_registry_only）
-│   ├── disabled.rs / env_var.rs / path_entry.rs / scanner.rs / persist.rs
-│   └── backup.rs     # 注册表备份、env 备份（.pebak）
-├── gui/src/commands/ # Tauri 薄包装（registry/system/backup/fs/disabled/scanner/
-│                     #   env_var/service/history/analytics/sync）
-├── cli/src/          # Clap + 分派（runtime/env_ops/profile_ops/sync_ops/
-│                     #   maintenance_ops/scan_ops/import_export）
-├── src/              # React（core/services/store/components/hooks/i18n）
-├── tests/unit / tests/fixtures / e2e/tests
+├── src/
+│   ├── core/src/     # Rust 核心库（零 Tauri 依赖）
+│   │   ├── registry/ # 注册表访问统一入口
+│   │   ├── db/       # v6 SQLCipher 数据层（schema/history/profiles/backups/
+│   │   │             #   search/stats/refs/compare/scan_history/maintenance/sync）
+│   │   ├── service.rs # 保存编排（save_path_with_db / save_path_registry_only）
+│   │   ├── disabled.rs / env_var.rs / path_entry.rs / scanner.rs / persist.rs
+│   │   └── backup.rs # 注册表备份、env 备份（.pebak）
+│   ├── cli/src/      # Clap + 分派（cli/path_ops/runtime/env_ops/profile_ops/
+│   │                 #   sync_ops/maintenance_ops/scan_ops/import_export）
+│   └── gui/
+│       ├── src-tauri/src/commands/ # Tauri 薄包装（registry/system/backup/fs/
+│       │                           #   disabled/scanner/env_var/service/history/
+│       │                           #   profiles/analytics/sync）
+│       └── web/      # React + Vite（src/core/services/store/components/hooks/i18n）
+├── src/gui/web/tests/unit / src/gui/web/tests/fixtures / src/gui/web/e2e/tests
 ├── probes/v6-sqlcipher（不在 workspace；v6 探针证据）
 └── docs/{superpowers,dev,审核和开发}
 ```
@@ -76,16 +79,16 @@ PathEditor/
 
 ### 关键约束（始终生效）
 
-- `src/core/` 保持纯函数和零框架依赖；组件和 Store 不得直接调用 `invoke`，统一走 `src/services/backend.ts`。
-- `gui` 和 `cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `core`。CLI 侧**零安全判定逻辑**：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 core 判定；CLI 仅透传错误文本，新增命令时不要复制任何判定规则。
+- `src/gui/web/src/core/` 保持纯函数和零框架依赖；组件和 Store 不得直接调用 `invoke`，统一走 `src/gui/web/src/services/backend.ts`。
+- `src/gui/src-tauri` 和 `src/cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `src/core`。CLI 侧**零安全判定逻辑**：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 core 判定；CLI 仅透传错误文本，新增命令时不要复制任何判定规则。
 - `patheditor-cli` 是 **bin-only crate**；对 CLI 跑单测必须用 `--bins`。
-- `PathCapabilities` 使用 camelCase 序列化；共享契约见 `tests/fixtures/path-capabilities.json`。
+- `PathCapabilities` 使用 camelCase 序列化；共享契约见 `src/gui/web/tests/fixtures/path-capabilities.json`。
 - 正式 PATH 解析以 Rust `registry::split_path` 为准；TS 的 `split_path` 仅保留为兼容/测试夹具。
 - `PathEntry { path, enabled }` 是跨层契约；导入、配置、注册表和撤销重做都必须保留 `enabled`。
 - 通用环境变量通路（`EnvVar`）与 PATH 通路（`PathEntry`）并存：`Path` 列入 `RESERVED_NAMES`，**PATH 只能经专用通路编辑**。`EnvVarMeta` 契约上不含 `value` 字段；命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
 - 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`。前端与 CLI **不得**自行实现并发校验；冲突判定只认 `CoreError.code`，`[E_CONFLICT]` 前缀仅是展示文本。
 - Windows 注册表无 CAS，读-比-写是两次独立调用，仍有毫秒级竞态窗口。缩小影响不等于消除 TOCTOU，不要宣称原子性。
-- **v6 数据层是 sidecar**：所有 DB 访问在 `core/src/db/`；GUI/CLI 不得直接打开 SQL。注册表仍是唯一真相源，DB 不可用时 fail-open。
+- **v6 数据层是 sidecar**：所有 DB 访问在 `src/core/src/db/`；GUI/CLI 不得直接打开 SQL。注册表仍是唯一真相源，DB 不可用时 fail-open。
 - **同步导入是单事务，且不写注册表**：导入只改 DB；用户要生效必须另走 `apply_path_snapshot` 或前端保存编排。
 - **维护命令的删除类操作必须显式确认**：`cleanup-legacy-backups` 需 `--yes`；测试一律用 `TempDir`，不碰真实 `~/.patheditor`。
 - **DB 是唯一持久化状态**：`disabled.json` / `profiles/*.json` 不再读写。
@@ -93,10 +96,10 @@ PathEditor/
 
 ## 设计系统（v6）
 
-- 语义 token 全部在 `src/styles/globals.css` 的 `:root` 与 `:root.dark`；组件**只允许**使用 `--app-*` 语义变量，禁止硬编码色值。
+- 语义 token 全部在 `src/gui/web/src/styles/globals.css` 的 `:root` 与 `:root.dark`；组件**只允许**使用 `--app-*` 语义变量，禁止硬编码色值。
 - 主界面控件类：`.toolbar` / `.toolbar-sep` / `.toolbar-search` / `.tab-pill`。
 - 对话框控件类：`.modal-overlay` / `.modal-surface` / `.field-input` / `.dialog-list-item` / `.btn-block`。
-- 按钮统一使用 `src/components/ui/Button.tsx`（`buttonVariants` 在本仓库内解析变体）；`btnClass` / `btnStyle` 已删除，不要再引用。
+- 按钮统一使用 `src/gui/web/src/components/ui/Button.tsx`（`buttonVariants` 在本仓库内解析变体）；`btnClass` / `btnStyle` 已删除，不要再引用。
 - **陷阱**：上述工具类是**未分层规则**，会覆盖 Tailwind `@layer utilities`。追加 Tailwind 工具类前先确认它不会失效——`field-input text-xs` 曾是一个永不生效的死类名。
 - 对话框的视觉规格由 CSS 类承载，`Modal.tsx` 只负责挂载与 Escape 关闭；改视觉时改 `globals.css`，不要往组件里塞内联样式。
 
@@ -114,7 +117,7 @@ PathEditor/
 
 ## 接口速览（IPC / CLI）
 
-- **IPC 唯一入口**：`src/services/backend.ts` + 运行时形状校验；v6 的 DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
+- **IPC 唯一入口**：`src/gui/web/src/services/backend.ts` + 运行时形状校验；v6 的 DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
 - **CLI 退出码**：0 成功 / 1 一般错误（含 `SyncFormat`）/ 2 clap / 3 revision 冲突 / 4 同步合并冲突 / 5 密钥。
 - **同步与维护**：`patheditor sync …`、`patheditor maintenance …`；同步只改 DB，不写注册表。
 

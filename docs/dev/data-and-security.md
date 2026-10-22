@@ -23,7 +23,7 @@
 - `backend.ts` 对能力对象、快照、禁用状态和 `PathEntry` 做运行时形状校验，不能只依赖 TypeScript 断言。
 - 旧命令仍返回自由文本 `Result<T, String>`；v6 的 DB / 同步命令返回结构化 `CoreError`，前端按 `code` 判定（`conflict` / `sync` / `syncFormat` / `crypto` …），**不要匹配 message 文本**。
 - 导入文件读取限制在用户目录、临时目录或当前工作目录，并继续校验扩展名。
-- Tauri CSP 不允许设置为 `null`；不要放松 `gui/tauri.conf.json` 的安全配置。
+- Tauri CSP 不允许设置为 `null`；不要放松 `src/gui/src-tauri/tauri.conf.json` 的安全配置。
 - 所有 `unsafe` 块必须有 `// SAFETY:` 注释。PATH 写入前检查 null 字节和 32767 字符上限。
 - 所有 `pub fn` 必须有 `///` 文档注释；`pub(crate)` 同样补注释（CONTRIBUTING.md 硬性要求）。
 - 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。

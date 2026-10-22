@@ -5,10 +5,10 @@
 
 ## 测试布局
 
-- **前端**：Vitest + jsdom，测试放在 `tests/unit/*.test.ts` 或 `*.test.tsx`；行为变化必须有回归测试。
-  - 单个文件：`npx vitest run tests/unit/<file>.test.ts`
+- **前端**：Vitest + jsdom，测试放在 `src/gui/web/tests/unit/*.test.ts` 或 `*.test.tsx`；行为变化必须有回归测试。
+  - 单个文件：`npx vitest run src/gui/web/tests/unit/<file>.test.ts`
   - 按名字过滤：`npx vitest run -t "<name>"`
-- **E2E**：Playwright，测试放在 `e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程（mock IPC），不等同于真实 Tauri 集成验证。
+- **E2E**：Playwright，测试放在 `src/gui/web/e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程（mock IPC），不等同于真实 Tauri 集成验证。
 - **Rust**：测试放在模块内或 workspace test target，运行 `cargo test --workspace`。
   - 单个测试：`cargo test -p <crate> <test_name>`
   - core 集成测试：`cargo test -p path-editor-core --test <file>`（包名是连字符，不是下划线）

@@ -7,7 +7,7 @@
 
 - **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；注册表仍是唯一真相源。DB 打不开时 GUI fail-open：编辑照常、历史/同步/检索降级、禁用状态不可恢复、窗口顶部常驻条幅；**不静默重建空库**。
 - **密钥**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+db_key(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。
-- **schema**：`core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 3`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
+- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 3`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
 ## 表
 
