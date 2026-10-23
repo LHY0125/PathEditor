@@ -2,7 +2,7 @@
 //
 // 配置应用编排：读配置 → 只写变化的 hive → 记账；重复应用同内容不重复写注册表。
 use path_editor_core::db::history::NewSnapshot;
-use path_editor_core::db::profiles::{list_profiles, save_profile};
+use path_editor_core::db::profiles::{get_profile_paths_view, list_profiles, save_profile};
 use path_editor_core::db::Db;
 use path_editor_core::history::EventSource;
 use path_editor_core::service::{self, PathHiveIo};
@@ -136,4 +136,13 @@ fn apply_profile_writes_changed_hive_then_skips_identical_second_apply() {
         .find(|p| p.name == "Work")
         .expect("配置必须存在");
     assert_eq!(view.apply_count, 2, "每次应用都必须记账（即使无写入）");
+
+    // 视图与配置内容一致：名称、更新时间与两个 hive 的条目都来自同一次读取。
+    let paths = get_profile_paths_view(&db, "Work")
+        .unwrap()
+        .expect("配置视图必须存在");
+    assert_eq!(paths.name, "Work");
+    assert_eq!(paths.updated_at, view.updated_at);
+    assert_eq!(paths.system.len(), 2);
+    assert_eq!(paths.user, vec![entry("D:\\U", true)]);
 }

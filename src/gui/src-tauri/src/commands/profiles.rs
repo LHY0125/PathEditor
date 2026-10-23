@@ -90,37 +90,10 @@ pub fn profile_save(
 pub fn profile_paths(
     name: String,
     state: State<'_, DbState>,
-) -> Result<Option<ProfilePathsView>, CoreError> {
+) -> Result<Option<profiles::ProfilePathsView>, CoreError> {
     with_db(&state, "profile_paths", |db| {
-        // 名称查一次即可拿到 updated_at 与 PATH 条目
-        let view = profiles::get_profile_by_name(db, &name)?;
-        let Some(view) = view else {
-            return Ok(None);
-        };
-        let Some((system, user)) = profiles::profile_paths(db, &name)? else {
-            return Ok(None);
-        };
-        Ok(Some(ProfilePathsView {
-            name: view.name,
-            updated_at: view.updated_at,
-            system,
-            user,
-        }))
+        profiles::get_profile_paths_view(db, &name)
     })
-}
-
-/// 配置的 PATH 条目视图（形状对齐前端既有的 `ProfileData`）。
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProfilePathsView {
-    /// 配置名称
-    pub name: String,
-    /// 最后更新时间（Unix 毫秒）；UI 展示用
-    pub updated_at: i64,
-    /// 系统 PATH
-    pub system: Vec<PathEntry>,
-    /// 用户 PATH
-    pub user: Vec<PathEntry>,
 }
 
 /// 重命名配置（UI 用名称标识）。

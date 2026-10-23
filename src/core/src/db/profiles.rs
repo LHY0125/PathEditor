@@ -586,6 +586,40 @@ pub fn rename_profile(db: &mut Db, old_name: &str, new_name: &str) -> Result<boo
 /// 提取成别名是为了避开 clippy 的 `type_complexity`（嵌套 `Vec` 的元组）。
 pub type ProfilePaths = (Vec<PathEntry>, Vec<PathEntry>);
 
+/// 配置的 PATH 视图（UI 预览与应用共用）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePathsView {
+    /// 配置名称
+    pub name: String,
+    /// 最后更新时间（Unix 毫秒）
+    pub updated_at: i64,
+    /// 系统 PATH
+    pub system: Vec<PathEntry>,
+    /// 用户 PATH
+    pub user: Vec<PathEntry>,
+}
+
+/// 按名称读取配置的 PATH 视图；配置不存在或没有 revision 时返回 `Ok(None)`。
+///
+/// 一次 `get_profile_by_name` 同时拿到名称、更新时间与 snapshot uid，
+/// 外层不需要再查一遍。
+pub fn get_profile_paths_view(db: &Db, name: &str) -> Result<Option<ProfilePathsView>, CoreError> {
+    let Some(p) = get_profile_by_name(db, name)? else {
+        return Ok(None);
+    };
+    let Some(snapshot_uid) = p.snapshot_uid else {
+        return Ok(None);
+    };
+    let view = crate::db::history::get_snapshot(db, &snapshot_uid, false)?;
+    Ok(Some(ProfilePathsView {
+        name: p.name,
+        updated_at: p.updated_at,
+        system: view.system,
+        user: view.user,
+    }))
+}
+
 /// 读取配置最新版本对应的快照 PATH 条目（供 UI 预览与应用）。
 ///
 /// 返回 `(system, user)`；配置不存在或没有 revision 时返回 `None`。
