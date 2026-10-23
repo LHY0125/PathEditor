@@ -77,8 +77,8 @@ pub(crate) fn collect_hive_vars_in_store(
 
     let names = store.enum_names().map_err(|e| {
         with_hive(
-            ErrorCode::Io,
-            format!("读取{}环境变量列表失败: {}", label, e),
+            e.code,
+            format!("读取{}环境变量列表失败: {}", label, e.message),
         )
     })?;
 
@@ -89,8 +89,8 @@ pub(crate) fn collect_hive_vars_in_store(
         }
         let raw = store.get_raw(&name).map_err(|e| {
             with_hive(
-                ErrorCode::Io,
-                format!("读取{}环境变量 {} 失败: {}", label, name, e),
+                e.code,
+                format!("读取{}环境变量 {} 失败: {}", label, name, e.message),
             )
             .with_target(hive, &name)
         })?;

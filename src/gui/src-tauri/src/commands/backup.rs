@@ -6,7 +6,7 @@ use path_editor_core::error::CoreError;
 use tauri::State;
 
 #[tauri::command]
-pub fn backup_registry(custom_dir: Option<String>) -> Result<String, String> {
+pub fn backup_registry(custom_dir: Option<String>) -> Result<String, CoreError> {
     backup::backup_registry(custom_dir)
 }
 

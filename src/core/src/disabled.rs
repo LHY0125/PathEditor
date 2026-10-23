@@ -95,8 +95,10 @@ fn merge_hive(registry_paths: Vec<String>, snapshot: Vec<PathEntry>) -> Vec<Path
 
 /// 读取注册表当前值，并与持久化快照合并。
 pub fn load_path_snapshot_with(persisted: Option<PathSnapshot>) -> Result<PathSnapshot, CoreError> {
-    let registry_system = registry::load_system_paths()?;
-    let registry_user = registry::load_user_paths()?;
+    let registry_system = registry::load_system_paths()
+        .map_err(|m| CoreError::new(ErrorCode::Io, "load_path_snapshot", m))?;
+    let registry_user = registry::load_user_paths()
+        .map_err(|m| CoreError::new(ErrorCode::Io, "load_path_snapshot", m))?;
     merge_path_snapshot(registry_system, registry_user, persisted)
 }
 

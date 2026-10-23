@@ -232,9 +232,9 @@ pub(crate) fn diff_one_hive(
     let mut current: HashMap<String, (String, String)> = HashMap::new();
     let names = store.enum_names().map_err(|e| {
         CoreError::new(
-            ErrorCode::Io,
+            e.code,
             "preview_restore",
-            format!("读取{}环境变量列表失败: {}", label, e),
+            format!("读取{}环境变量列表失败: {}", label, e.message),
         )
         .with_hive(hive)
     })?;

@@ -95,9 +95,7 @@ impl PathHiveIo for RealPathHiveIo {
     fn backup(&self) -> Result<(), CoreError> {
         // 传 None 走默认备份目录，从而沿用 `rotate_path_backups` 的默认目录限定
         // （N4 裁断：自定义目录不参与轮换，可能混有用户自己的文件）。
-        backup::backup_registry(None)
-            .map(|_| ())
-            .map_err(|e| core_err(ErrorCode::Io, "backup", e))
+        backup::backup_registry(None).map(|_| ())
     }
 }
 

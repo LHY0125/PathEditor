@@ -57,8 +57,7 @@ fn backup_registry_default_dir_uses_redirected_dir_without_panic() {
             Err(e) => {
                 // 无权限读取注册表（如 CI 无交互会话）时无法生成备份，属预期；
                 // 关键是**不 panic**，且错误信息可读。
-                // 注：`backup_registry` 返回 `String` 错误。
-                assert!(!e.is_empty(), "失败路径也必须给出可读的错误信息");
+                assert!(!e.message.is_empty(), "失败路径也必须给出可读的错误信息");
             }
         }
     });

@@ -1,5 +1,6 @@
 // TS 端 src/core/import-export.ts 仅保留为历史测试夹具；GUI/CLI 运行时统一使用本模块。
 
+use crate::error::{CoreError, ErrorCode};
 use crate::path_entry::PathEntry;
 
 /// 过滤导入条目：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
@@ -24,25 +25,44 @@ pub fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()
 
 /// 读取文本文件内容（供前端原生对话框选择文件后使用）
 /// 仅允许 .json / .csv / .txt 扩展名，防止任意文件读取
-pub fn read_text_file(path: &str) -> Result<String, String> {
+pub fn read_text_file(path: &str) -> Result<String, CoreError> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
     if !matches!(ext.as_str(), "json" | "csv" | "txt") {
-        return Err(format!(
-            "不支持的文件类型: .{}（仅允许 .json/.csv/.txt）",
-            ext
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "read_text_file",
+            format!("不支持的文件类型: .{}（仅允许 .json/.csv/.txt）", ext),
         ));
     }
-    std::fs::read_to_string(path).map_err(|e| format!("无法读取文件: {}", e))
+    std::fs::read_to_string(path).map_err(|e| {
+        let code = if e.kind() == std::io::ErrorKind::NotFound {
+            ErrorCode::NotFound
+        } else {
+            ErrorCode::Io
+        };
+        CoreError::new(code, "read_text_file", format!("无法读取文件: {}", e))
+    })
 }
 
 /// 读取导入文件时限制在用户目录、临时目录或当前工作目录内。
-pub fn read_text_file_scoped(path: &str) -> Result<String, String> {
+pub fn read_text_file_scoped(path: &str) -> Result<String, CoreError> {
     let requested = std::path::Path::new(path);
-    let canonical = std::fs::canonicalize(requested).map_err(|e| format!("无法读取文件: {}", e))?;
+    let canonical = std::fs::canonicalize(requested).map_err(|e| {
+        let code = if e.kind() == std::io::ErrorKind::NotFound {
+            ErrorCode::NotFound
+        } else {
+            ErrorCode::Io
+        };
+        CoreError::new(
+            code,
+            "read_text_file_scoped",
+            format!("无法读取文件: {}", e),
+        )
+    })?;
 
     let mut roots = Vec::new();
     if let Some(home) = dirs::home_dir() {
@@ -59,26 +79,40 @@ pub fn read_text_file_scoped(path: &str) -> Result<String, String> {
             .unwrap_or(false)
     });
     if !allowed {
-        return Err("仅允许读取用户目录、临时目录或当前工作目录中的导入文件".into());
+        return Err(CoreError::new(
+            ErrorCode::PermissionDenied,
+            "read_text_file_scoped",
+            "仅允许读取用户目录、临时目录或当前工作目录中的导入文件",
+        ));
     }
 
     read_text_file(path)
 }
 
 /// 导入路径文件（JSON / CSV / TXT），返回 (系统条目, 用户条目)
-pub fn import_paths(path: &str, content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry>), String> {
+pub fn import_paths(
+    path: &str,
+    content: &str,
+) -> Result<(Vec<PathEntry>, Vec<PathEntry>), CoreError> {
     let ext = std::path::Path::new(path)
         .extension()
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
     let ext = ext.to_string_lossy();
 
-    match ext.as_ref() {
+    let result = match ext.as_ref() {
         "json" => import_json(content),
         "csv" => import_csv(content),
         "txt" => import_txt(content),
-        _ => Err(format!("不支持的格式: .{}", ext)),
-    }
+        _ => {
+            return Err(CoreError::new(
+                ErrorCode::InvalidValue,
+                "import_paths",
+                format!("不支持的格式: .{}", ext),
+            ))
+        }
+    };
+    result.map_err(|m| CoreError::new(ErrorCode::Parse, "import_paths", m))
 }
 
 fn import_json(content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry>), String> {
@@ -235,7 +269,7 @@ pub fn export_path_entries(
     sys: &[PathEntry],
     usr: &[PathEntry],
     format: &str,
-) -> Result<String, String> {
+) -> Result<String, CoreError> {
     match format {
         "json" => {
             let data = serde_json::json!({
@@ -280,12 +314,16 @@ pub fn export_path_entries(
             }
             Ok(out)
         }
-        _ => Err(format!("不支持的导出格式: {}", format)),
+        _ => Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "export_path_entries",
+            format!("不支持的导出格式: {}", format),
+        )),
     }
 }
 
 /// 导出字符串路径列表；兼容旧 CLI 调用，默认全部启用。
-pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<String, String> {
+pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<String, CoreError> {
     let sys = sys
         .iter()
         .map(|path| PathEntry {
@@ -457,7 +495,7 @@ mod tests {
     fn read_text_file_rejects_non_whitelisted_ext() {
         let result = read_text_file("C:\\Windows\\System32\\evil.dll");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("不支持的文件类型"));
+        assert!(result.unwrap_err().message.contains("不支持的文件类型"));
     }
 
     #[test]

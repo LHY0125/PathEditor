@@ -201,8 +201,9 @@ fn run_case(case: &GoldenCase) {
                 .expect_err(&format!("golden 用例 {name}: 应拒绝系统目录"));
             let contains = case.expect["error_contains"].as_str().unwrap_or_default();
             assert!(
-                err.contains(contains),
-                "golden 用例 {name}: 错误 `{err}` 应包含 `{contains}`"
+                err.message.contains(contains),
+                "golden 用例 {name}: 错误 `{}` 应包含 `{contains}`",
+                err.message
             );
         }
         "backup_format_contract" => {
@@ -212,7 +213,10 @@ fn run_case(case: &GoldenCase) {
                 .unwrap_or_else(|e| panic!("{name}: 创建临时目录失败: {e}"));
             let filepath = crate::backup::backup_registry(Some(dir.to_string_lossy().into_owned()))
                 .unwrap_or_else(|e| {
-                    panic!("golden 用例 {name}: backup_registry 失败: {e}（本用例需可读取注册表，仅读不写）")
+                    panic!(
+                        "golden 用例 {name}: backup_registry 失败: {}（本用例需可读取注册表，仅读不写）",
+                        e.message
+                    )
                 });
             let content = std::fs::read_to_string(&filepath)
                 .unwrap_or_else(|e| panic!("{name}: 读取备份文件失败: {e}"));

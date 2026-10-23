@@ -154,16 +154,14 @@ fn broadcast_after_write() {
 /// 读取失败 → `Io`、类型不支持 → `UnsupportedType`、解码失败 → `Parse`。
 /// 调用方直接 `?` 传播，不再整体包成 `Io`；hive 标签由调用侧补（W2-B3b）。
 ///
-/// （2026-10-16）：读取失败一路改走 [`EnvHiveStore::get_raw_kind`]，使「变量不存在」
+/// （2026-10-16）：读取失败一路走 [`EnvHiveStore::get_raw`]，使「变量不存在」
 /// 以 `NotFound` 码上传，而非被稀释成通用 `Io`（此即的根因：旧代码恒包 `Io`，
 /// 与声明的行为不符）。
 ///
 /// **⚠️ 邻近改动禁区**：同文件的 `list_env_vars`（以及 `backup.rs` 的采集/恢复预览路径）
-/// **刻意保持 `get_raw` + 统一 `Io` 文案** —— 列表级路径不需要逐变量分类，
-/// 看到两套读法时**不要**「统一」，那会把列表的错误文案也改掉（非预期回归）。
+/// 对单条读取失败按列表语义跳过，不逐变量分类；两类路径的错误策略不同是刻意的。
 fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String), CoreError> {
-    // `get_raw_kind` 已把 NotFound 与 Io 分类，此处**不得**再统一包成 Io。
-    let raw = store.get_raw_kind(name)?;
+    let raw = store.get_raw(name)?;
     // `RegType` 非 Copy（`winreg-0.52.0/src/enums.rs:20`），必须先
     // `.clone()` 取值再借用 `&raw`，否则 `from_reg_type(raw.vtype)` 会部分
     // 移出 `raw`，后面 `&raw` 与 `Ok((raw.vtype, …))` 都会编译失败。
@@ -197,7 +195,7 @@ fn attach_read_context(e: CoreError, hive: EnvHive, name: &str) -> CoreError {
     e
 }
 
-/// 写入单个值，保持调用方给定的注册表类型。端口层返回 String，此处转 `Io`。
+/// 写入单个值，保持调用方给定的注册表类型。错误已由端口层结构化。
 fn write_env_var(
     store: &dyn EnvHiveStore,
     name: &str,
@@ -206,9 +204,7 @@ fn write_env_var(
 ) -> Result<(), CoreError> {
     let mut raw = value.to_reg_value();
     raw.vtype = vtype;
-    store
-        .set_raw(name, &raw)
-        .map_err(|m| CoreError::new(ErrorCode::Io, "write_env_var", m))
+    store.set_raw(name, &raw)
 }
 
 /// 通用环境变量名校验。
@@ -274,11 +270,11 @@ fn list_env_vars_in_store(
 
     let names = store.enum_names().map_err(|e| {
         // warning 日志保留，但不再是唯一反馈；Err 继续向上传播。
-        log::warn!("{}环境变量列表读取失败: {}", label, e);
+        log::warn!("{}环境变量列表读取失败: {}", label, e.message);
         with_hive(
-            ErrorCode::Io,
+            e.code,
             "list_env_vars",
-            format!("读取{}环境变量列表失败: {}", label, e),
+            format!("读取{}环境变量列表失败: {}", label, e.message),
         )
     })?;
 
@@ -289,11 +285,11 @@ fn list_env_vars_in_store(
         }
 
         let raw = store.get_raw(&name).map_err(|e| {
-            log::warn!("{}环境变量列表读取失败: {}", label, e);
+            log::warn!("{}环境变量列表读取失败: {}", label, e.message);
             with_hive(
-                ErrorCode::Io,
+                e.code,
                 "list_env_vars",
-                format!("读取{}环境变量列表失败: {}", label, e),
+                format!("读取{}环境变量列表失败: {}", label, e.message),
             )
             .with_target(hive, &name)
         })?;
@@ -409,7 +405,7 @@ pub fn preview_env_change(hive: EnvHive, name: &str) -> Result<EnvChangePreview,
 /// `Unsupported` 类型回落 `"string"`（无法区分具体类型时的兜底标签）；
 /// **读取失败经 `?` 传播**，不回落 —— 变量不存在已在 `reveal_env_var_in_store` 处返回 `Err`。
 fn env_kind_label(store: &dyn EnvHiveStore, name: &str) -> Result<String, CoreError> {
-    let raw = store.get_raw_kind(name)?;
+    let raw = store.get_raw(name)?;
     Ok(match EnvValueKind::from_reg_type(raw.vtype) {
         EnvValueKind::ExpandString => "expand",
         _ => "string",
@@ -679,7 +675,7 @@ pub(crate) fn create_env_var_in_store(
     // 写入前检查：忽略大小写地确认该名不存在（非原子，见函数文档）
     let existing = store
         .enum_names()
-        .map_err(|e| CoreError::new(ErrorCode::Io, "create_env_var", e).with_target(hive, name))?
+        .map_err(|e| e.with_target(hive, name))?
         .iter()
         .any(|n| n.eq_ignore_ascii_case(name));
     if existing {
@@ -783,7 +779,7 @@ fn delete_env_var_in_store(
 
     store
         .delete_value(name)
-        .map_err(|m| CoreError::new(ErrorCode::Io, "delete_env_var", m).with_target(hive, name))
+        .map_err(|e| e.with_target(hive, name))
 }
 
 /// 强制写入已有变量（**最后写入者胜**）。不做 revision 比对。
@@ -949,9 +945,9 @@ pub(crate) fn delete_env_var_force_in_store(
         .with_target(hive, name));
     }
 
-    store.delete_value(name).map_err(|m| {
-        CoreError::new(ErrorCode::Io, "delete_env_var_force", m).with_target(hive, name)
-    })
+    store
+        .delete_value(name)
+        .map_err(|e| e.with_target(hive, name))
 }
 
 #[cfg(test)]

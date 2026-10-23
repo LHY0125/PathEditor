@@ -12,37 +12,25 @@ use crate::error::{CoreError, ErrorCode};
 
 /// 单个 hive 的环境变量键抽象。
 ///
-/// 只覆盖环境变量读写所需的 5 个操作；PATH 通路仍走 `registry.rs` 的
+/// 只覆盖环境变量读写所需的 4 个操作；PATH 通路仍走 `registry.rs` 的
 /// `load_paths` / `save_paths`，本版不纳入端口。
 pub trait EnvHiveStore {
     /// 当前用户对该 hive 是否可写（供 capabilities 计算，避免逐变量探测注册表）。
     fn writable(&self) -> bool;
 
     /// 枚举该 hive 下所有值名，保持注册表返回的原始大小写。
-    fn enum_names(&self) -> Result<Vec<String>, String>;
+    fn enum_names(&self) -> Result<Vec<String>, CoreError>;
 
     /// 读取值的原始字节与真实类型。
-    fn get_raw(&self, name: &str) -> Result<RegValue, String>;
-
-    /// 读取值的原始字节与真实类型，并携带结构化错误分类。
     ///
-    /// 与 [`get_raw`] 的**唯一区别**是错误类型：本方法把 winreg 的
-    /// `io::ErrorKind::NotFound` 映射为 [`ErrorCode::NotFound`]，其余为 [`ErrorCode::Io`]。
-    /// `get_raw` 保持 `Result<_, String>` 不动（ 端口边界裁断，本文件 `WinregHive::open`
-    /// 的文档注释）。
-    ///
-    /// 默认实现退回 `get_raw`（给不关心分类的实现用）；`WinregHive` 与 `MemoryHive` 各自覆写。
-    /// 判定只认 `code`，**不得**匹配 message 文本（Global Constraints）。
-    fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
-        self.get_raw(name)
-            .map_err(|m| CoreError::new(ErrorCode::Io, "read_env_var", m))
-    }
+    /// `NotFound` 与其它 IO 错误按 `io::ErrorKind` 分类，调用方直接按 `code` 判定。
+    fn get_raw(&self, name: &str) -> Result<RegValue, CoreError>;
 
     /// 写入值，类型由调用方给定。
-    fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String>;
+    fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), CoreError>;
 
     /// 删除值。
-    fn delete_value(&self, name: &str) -> Result<(), String>;
+    fn delete_value(&self, name: &str) -> Result<(), CoreError>;
 }
 
 /// 生产实现：把 winreg 的 `RegKey` 适配为 [`EnvHiveStore`]。
@@ -57,9 +45,8 @@ impl WinregHive {
     /// `write` 为 `true` 时请求 `KEY_READ | KEY_WRITE`，否则只请求 `KEY_READ`。
     ///
     /// （2026-09-20 裁断）：本方法是固有方法、不在 [`EnvHiveStore`] trait
-    /// 上，可单独迁移到 `CoreError`。winreg 错误按 `io::ErrorKind` 诚实分类：
+    /// 上。winreg 错误按 `io::ErrorKind` 诚实分类：
     /// `PermissionDenied` → [`ErrorCode::PermissionDenied`]，其余 → [`ErrorCode::Io`]。
-    /// trait 的其他方法保持 `Result<_, String>`。
     pub fn open(hive: EnvHive, write: bool) -> Result<Self, CoreError> {
         let (root, sub_path, label) = crate::registry::hive_location(hive);
         let flags = if write {
@@ -102,25 +89,23 @@ impl EnvHiveStore for WinregHive {
         self.writable
     }
 
-    fn enum_names(&self) -> Result<Vec<String>, String> {
+    fn enum_names(&self) -> Result<Vec<String>, CoreError> {
         let mut names = Vec::new();
         for item in self.key.enum_values() {
-            let (name, _) = item.map_err(|e| format!("无法枚举环境变量: {}", e))?;
+            let (name, _) = item.map_err(|e| {
+                CoreError::new(
+                    ErrorCode::Io,
+                    "enum_env_vars",
+                    format!("无法枚举环境变量: {}", e),
+                )
+            })?;
             names.push(name);
         }
         Ok(names)
     }
 
-    fn get_raw(&self, name: &str) -> Result<RegValue, String> {
-        self.key
-            .get_raw_value(name)
-            .map_err(|e| format!("无法读取环境变量 {}: {}", name, e))
-    }
-
-    /// 与 [`get_raw`](Self::get_raw) 同源，但按 `io::ErrorKind` 分类错误码。
-    ///
-    /// 非 `NotFound` 分支的 message 与 `get_raw` **逐字节相同**（不变量 2）。
-    fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
+    /// 读取值；`NotFound` 与其它 IO 错误按 `io::ErrorKind` 分类。
+    fn get_raw(&self, name: &str) -> Result<RegValue, CoreError> {
         self.key.get_raw_value(name).map_err(|e| {
             let code = if e.kind() == std::io::ErrorKind::NotFound {
                 ErrorCode::NotFound
@@ -135,16 +120,24 @@ impl EnvHiveStore for WinregHive {
         })
     }
 
-    fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String> {
-        self.key
-            .set_raw_value(name, value)
-            .map_err(|e| format!("无法写入环境变量 {}: {}", name, e))
+    fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), CoreError> {
+        self.key.set_raw_value(name, value).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "write_env_var",
+                format!("无法写入环境变量 {}: {}", name, e),
+            )
+        })
     }
 
-    fn delete_value(&self, name: &str) -> Result<(), String> {
-        self.key
-            .delete_value(name)
-            .map_err(|e| format!("无法删除环境变量 {}: {}", name, e))
+    fn delete_value(&self, name: &str) -> Result<(), CoreError> {
+        self.key.delete_value(name).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "delete_env_var",
+                format!("无法删除环境变量 {}: {}", name, e),
+            )
+        })
     }
 }
 
@@ -239,9 +232,13 @@ pub(crate) mod memory {
             self.writable
         }
 
-        fn enum_names(&self) -> Result<Vec<String>, String> {
+        fn enum_names(&self) -> Result<Vec<String>, CoreError> {
             if self.fail_enum {
-                return Err("无法枚举环境变量: 注入的枚举失败".into());
+                return Err(CoreError::new(
+                    ErrorCode::Io,
+                    "enum_env_vars",
+                    "无法枚举环境变量: 注入的枚举失败",
+                ));
             }
             Ok(self
                 .values
@@ -251,25 +248,8 @@ pub(crate) mod memory {
                 .collect())
         }
 
-        fn get_raw(&self, name: &str) -> Result<RegValue, String> {
-            if self
-                .fail_get
-                .as_deref()
-                .is_some_and(|n| n.eq_ignore_ascii_case(name))
-            {
-                return Err(format!("无法读取环境变量 {}: 注入的读取失败", name));
-            }
-            self.values
-                .borrow()
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| dup_reg_value(v))
-                .ok_or_else(|| format!("无法读取环境变量 {}: 找不到", name))
-        }
-
-        /// 与 [`get_raw`](Self::get_raw) 同源，但把「找不到」分类为 `NotFound`、
-        /// 注入失败分类为 `Io`。message 文本与 `get_raw` 逐字节相同（不变量 2）。
-        fn get_raw_kind(&self, name: &str) -> Result<RegValue, CoreError> {
+        /// 与生产实现同语义：找不到 → `NotFound`，注入失败 → `Io`。
+        fn get_raw(&self, name: &str) -> Result<RegValue, CoreError> {
             if self
                 .fail_get
                 .as_deref()
@@ -295,7 +275,7 @@ pub(crate) mod memory {
                 })
         }
 
-        fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), String> {
+        fn set_raw(&self, name: &str, value: &RegValue) -> Result<(), CoreError> {
             let mut values = self.values.borrow_mut();
             if let Some(slot) = values
                 .iter_mut()
@@ -308,12 +288,16 @@ pub(crate) mod memory {
             Ok(())
         }
 
-        fn delete_value(&self, name: &str) -> Result<(), String> {
+        fn delete_value(&self, name: &str) -> Result<(), CoreError> {
             let mut values = self.values.borrow_mut();
             let before = values.len();
             values.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
             if values.len() == before {
-                return Err(format!("无法删除环境变量 {}: 找不到", name));
+                return Err(CoreError::new(
+                    ErrorCode::NotFound,
+                    "delete_env_var",
+                    format!("无法删除环境变量 {}: 找不到", name),
+                ));
             }
             Ok(())
         }
@@ -373,6 +357,7 @@ mod memory_tests {
         assert!(hive
             .get_raw("MY_VAR")
             .unwrap_err()
+            .message
             .contains("注入的读取失败"));
     }
 
@@ -380,11 +365,11 @@ mod memory_tests {
     ///
     /// 这是 `env get` 能给出「该变量不存在」而非「os error 2」的前提。
     #[test]
-    fn get_raw_kind_missing_name_yields_not_found_code() {
+    fn get_raw_missing_name_yields_not_found_code() {
         let hive = MemoryHive::new(true);
         hive.seed("PRESENT", "v", REG_SZ);
 
-        let err = hive.get_raw_kind("ABSENT").expect_err("不存在应返回 Err");
+        let err = hive.get_raw("ABSENT").expect_err("不存在应返回 Err");
         assert_eq!(
             err.code,
             crate::error::ErrorCode::NotFound,
@@ -393,22 +378,17 @@ mod memory_tests {
         );
     }
 
-    ///  不变量 2：其它读取错误的 message 文本必须保持原样（不因新增方法而改变用户可见文案）。
-    ///
-    /// N1 裁断后：`fail_get` 注入场景下 `get_raw_kind` 默认实现直接复用 `get_raw`
-    /// 的错误字符串，故 message 与 `get_raw` 逐字节相同。
+    /// 读取失败的 message 文本保持原样，不因端口错误类型变化而改变用户可见文案。
     #[test]
-    fn get_raw_kind_error_message_text_matches_get_raw() {
-        // 既有测试 `memory_hive_injects_failures` 直接 `hive.fail_get = Some(...)`；
-        // 该字段在测试模块内可见，本用例沿用同一手法（plan 初稿的 seed_fail_get 假设已删）。
-        // 故障注入需要可变绑定（同既有测试的 `mut` 说明）。
+    fn get_raw_error_message_text_is_stable() {
+        // 故障注入需要可变绑定（同 `memory_hive_injects_failures`）。
         let mut hive = MemoryHive::new(true);
         hive.fail_get = Some("BROKEN".to_string());
 
-        let err = hive.get_raw_kind("BROKEN").expect_err("注入失败应返回 Err");
+        let err = hive.get_raw("BROKEN").expect_err("注入失败应返回 Err");
         assert_eq!(
             err.message, "无法读取环境变量 BROKEN: 注入的读取失败",
-            "message 文本不得因 #34 而改变"
+            "message 文本不得因端口错误类型变化而改变"
         );
     }
 }

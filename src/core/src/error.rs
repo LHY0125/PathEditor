@@ -109,14 +109,6 @@ impl std::fmt::Display for CoreError {
     }
 }
 
-/// 过渡期转换：旧自由文本错误降级为 `Internal`，`message` 原样保留。
-/// 迁移完成后应移除。
-impl From<String> for CoreError {
-    fn from(message: String) -> Self {
-        CoreError::new(ErrorCode::Internal, "legacy", message)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

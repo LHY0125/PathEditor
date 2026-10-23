@@ -2,9 +2,9 @@ use crate::runtime::{exit_core_error, exit_err, load_path_snapshot_any, save_pat
 use path_editor_core as core;
 
 pub(crate) fn cmd_import(file: String, target: String) {
-    let content = core::fs::read_text_file(&file).unwrap_or_else(|e| exit_err(&e));
+    let content = core::fs::read_text_file(&file).unwrap_or_else(|e| exit_core_error(&e));
     let (sys_entries, usr_entries) =
-        core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_err(&e));
+        core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_core_error(&e));
     match target.as_str() {
         "system" => {
             save_path_write(Some(sys_entries), None);
@@ -29,7 +29,7 @@ pub(crate) fn cmd_import(file: String, target: String) {
 pub(crate) fn cmd_export(format: String, output: Option<String>) {
     let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
     let content = core::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
-        .unwrap_or_else(|e| exit_err(&e));
+        .unwrap_or_else(|e| exit_core_error(&e));
     if let Some(path) = output {
         let normalized = path.replace('/', "\\").to_lowercase();
         if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\")
