@@ -68,6 +68,12 @@ export function MergePreview() {
               data-state={enabled ? 'ok' : 'off'}
               data-odd={rowIdx % 2 === 1}
               className="path-row"
+              // `.path-row` 是 position:absolute + top:0（见 globals.css），
+              // 虚拟列表必须自己写 height 与 translateY，否则所有行叠在 y=0。
+              style={{
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
             >
               <div className="w-10 px-2 py-0.5 text-xs opacity-50">{rowIdx + 1}</div>
               <div className="path-text">{path}</div>

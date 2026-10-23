@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PathEditor v6.0.0",
+        "title": "PathEditor",
         "width": 900,
         "height": 700,
         "minWidth": 800,

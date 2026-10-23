@@ -48,4 +48,18 @@ describe('MergePreview', () => {
     const text = container.textContent || '';
     expect(text).toContain('C:\\Disabled');
   });
+
+  // 回归：`.path-row` 是 `position: absolute; top: 0`，虚拟列表必须给每行
+  // 写 height + translateY。漏掉时所有行叠在 y=0，渲染成一片重影。
+  // jsdom 不算 CSS 布局，所以这里钉的是「组件是否把虚拟偏移写进内联样式」。
+  it('每行按虚拟滚动偏移定位，不得全部叠在 y=0', () => {
+    const { container } = render(<MergePreview />);
+    const rows = container.querySelectorAll<HTMLElement>('.path-row');
+
+    expect(rows.length).toBe(3);
+    rows.forEach((row, index) => {
+      expect(row.style.height).toBe('28px');
+      expect(row.style.transform).toBe(`translateY(${index * 28}px)`);
+    });
+  });
 });
