@@ -1,5 +1,36 @@
 # Changelog
 
+## 6.1.0 (2026-10-23)
+
+### 重构与清理
+
+- **目录整合**：源码统一到 `src/{core,cli,gui}`，前端位于 `src/gui/web`； Cargo workspace、Vite/Vitest/ESLint/Prettier/Playwright、CI 与文档路径同步更新。
+- **移除 v5 过渡层**：迁移、归档、导出/导入、`disabled.json`、全局 loader/flag、 v5 CLI/IPC 与 golden 用例全部删除，DB 成为唯一持久化状态。
+- **保存编排统一**：CLI 与 GUI 共用 `service::save_path_with_db`； CLI 打开 DB 失败时才走 `save_path_registry_only`。
+- **错误模型统一**：`registry/path.rs`、`scanner.rs`、`validate_env_*` 与 `backup_registry` 全部返回 `CoreError`；删除 `From<String>` 隐式降级。
+- **结构拆分**：`backend.ts` 拆为 `backend/{index,parse-core,parse-data}`； `backup.rs` 拆为 `config/env/path/restore`；CLI 的 clap 定义与命令实现分离； GUI 命令按领域拆分。
+- **注释清理**：生产代码与测试中的里程碑、工单号、计划任务号全部移除，只保留解释「做什么 / 为什么」的注释。
+- **测试隔离**：删除 `test_persist_lock`，pending 路径与备份目录改为显式注入，测试统一使用 `TempDir`，可并行运行。
+- **派生表水位**：`daily_stats` / `var_references` 按事件/快照的计数与最大 id 判断是否需要重建，水位未变时跳过。
+
+### 修复
+
+- CLI 保存写入 DB 当前快照与 `changes`（此前只写注册表，跨设备同步看不到 CLI 修改）。
+- GUI 每次读取 DB 当前快照，不再使用进程级缓存。
+- 保存结果全失败时记为 `Failure`，不再误报 `Partial`。
+- PATH 命令错误从纯文本改为结构化 `CoreError`，前端按 `code` 判定。
+
+### 测试
+
+- 新增 IPC 契约差集测试：`invoke_handler` 与 `backend/` 的命令集合双向一致。
+- 新增派生表水位集成测试。
+- 基线：Rust 320 passed / 2 ignored；前端 34 files / 399；E2E 54。
+
+### 说明
+
+- **v5 数据不再自动迁移**：从 v5 直接升级到 6.1.0 的用户不会读到 `disabled.json` / `profiles/*.json`；从 6.0.0 升级不受影响。
+- PATH 相关命令的 rejection 从字符串变为对象；`parseCoreError` 同时兼容两种形状。
+
 ## 6.0.0 (2026-10-22)
 
 ### M4 配置同步、清理与发布
@@ -9,31 +40,18 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 
 #### 新增
 
-- **配置同步落库**（`core/src/db/sync/import.rs`、`core/src/db/profiles.rs`）：
-  `profile` 的 `content` 按远端 uid 落库，`snapshotUid` 解析成本地快照主键。
-  导入前按 `snapshot → profile → profile_revision → path_entry → env_value`
-  **稳定排序**，包内顺序颠倒也能正确解析依赖。
-- **同名自动改名**：与本地未删除配置同名时改为 `"{name} (来自 {设备前 8 位})"`，
-  仍冲突则追加 ` 2`、` 3`…。改名只影响本地行，包内 uid 不变；
-  `ImportReport.renamed_profiles` 计数并在 UI/CLI 明示。
-- **墓碑软删除**：`content = null` **且** `field = "deleted_at"` 时软删除
-  `profiles` / `snapshots`，名称随之释放。
-- **保留策略**（`core/src/db/maintenance.rs`）：删除「已导出超过 90 天」的
-  `changes` 与「已解决超过 30 天」的 `sync_conflicts`。GUI 每次启动执行一次，
-  失败只告警；CLI 提供 `maintenance prune [--dry-run]`。
-- **v5 原件归档**（`core/src/db/archive_v5.rs`）：迁移零失败时把 `disabled.json`
-  与 `profiles/*.json` 改名为 `.v5.bak`，目标已存在则跳过，**绝不覆盖**。
-- **遗留明文备份清理**：`env_backup_YYYYMMDD_HHMMSS_mmm.json` 先转成 DPAPI 加密的
-  `.pebak` 并**回读校验**，成功后才删除明文；CLI 必须 `--yes`。
+- **配置同步落库**（`core/src/db/sync/import.rs`、`core/src/db/profiles.rs`）： `profile` 的 `content` 按远端 uid 落库，`snapshotUid` 解析成本地快照主键。导入前按 `snapshot → profile → profile_revision → path_entry → env_value` **稳定排序**，包内顺序颠倒也能正确解析依赖。
+- **同名自动改名**：与本地未删除配置同名时改为 `"{name} (来自 {设备前 8 位})"`，仍冲突则追加 ` 2`、` 3`…。改名只影响本地行，包内 uid 不变； `ImportReport.renamed_profiles` 计数并在 UI/CLI 明示。
+- **墓碑软删除**：`content = null` **且** `field = "deleted_at"` 时软删除 `profiles` / `snapshots`，名称随之释放。
+- **保留策略**（`core/src/db/maintenance.rs`）：删除「已导出超过 90 天」的 `changes` 与「已解决超过 30 天」的 `sync_conflicts`。GUI 每次启动执行一次，失败只告警；CLI 提供 `maintenance prune [--dry-run]`。
+- **v5 原件归档**（`core/src/db/archive_v5.rs`）：迁移零失败时把 `disabled.json` 与 `profiles/*.json` 改名为 `.v5.bak`，目标已存在则跳过，**绝不覆盖**。
+- **遗留明文备份清理**：`env_backup_YYYYMMDD_HHMMSS_mmm.json` 先转成 DPAPI 加密的 `.pebak` 并**回读校验**，成功后才删除明文；CLI 必须 `--yes`。
 - **v5 配置导入**：`patheditor profile import <FILE>`，从 `profiles/*.json` 读回 DB。
-- **维护命令**：`patheditor maintenance archive-v5 [--dry-run]`、
-  `maintenance cleanup-legacy-backups [--dry-run] [--yes]`。
+- **维护命令**：`patheditor maintenance archive-v5 [--dry-run]`、 `maintenance cleanup-legacy-backups [--dry-run] [--yes]`。
 
 #### 变更
 
-- 同步导入的**实体级 LWW**：`snapshot` / `profile` 取该实体最新一条变更（不限 field），
-  否则墓碑（`field = "deleted_at"`）与内容变更（`field = null`）互不可见，
-  已删除的配置会被旧内容「复活」。
+- 同步导入的**实体级 LWW**：`snapshot` / `profile` 取该实体最新一条变更（不限 field），否则墓碑（`field = "deleted_at"`）与内容变更（`field = null`）互不可见，已删除的配置会被旧内容「复活」。
 - 已知实体类型**全部可落库**，`skippedUnsupported` 对它们恒为 0。
 
 #### 修复
@@ -48,43 +66,22 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 
 #### 新增
 
-- **schema v3**（`core/src/db/schema.rs`）：`changes`（变更日志，含
-  `device_id`/`seq`/`lamport`/`origin` 与三条索引）与 `sync_conflicts`（冲突记录）。
-  `changes` 是**真相**而非派生表，不能重建。
-- **变更日志**（`core/src/db/sync/change_log.rs`）：`record_change_tx` 在业务
-  事务内写入，`seq` 按设备取 `MAX+1`，`lamport` 与之同源推进并写回 `app_state`。
-  `pending_export` / `mark_exported` 支撑导出队列。
-- **写路径接线（S-1）**：`save_profile_tx` / `delete_profile` / `rename_profile` /
-  `insert_snapshot_tx` 各自在**自己的事务内**记变更。
-  **`EventSource::Migration` 不记**——v5 迁移与首次启动建基线不该进入同步队列。
-- **同步包加密**（`core/src/db/sync/bundle.rs`）：`PESYNC1` 格式，
-  Argon2id（m=65536, t=3, p=1）派生 + ChaCha20-Poly1305。
-  **AAD 覆盖 header**（magic / version / header_len / header JSON / salt / nonce），
-  否则 header 可被篡改而不被发现。
-- **导出**（`core/src/db/sync/export.rs`）：收集 → 加密 → 写文件 →
-  **成功后**才 `mark_exported`。顺序反了会在写失败时永久丢失变更。
-- **导入**（`core/src/db/sync/import.rs`）：单事务、按 `changes.uid` 幂等、
-  实体类型白名单、与本地比较做 LWW、导入后把本地 lamport 提到至少导出方的值。
-- **LWW 合并**（`core/src/db/sync/merge.rs`）：纯函数；`lamport` 高者胜，
-  相等时同设备视为同源、不同设备且值相同按 `device_id` 字典序确定性取一个、
-  值不同才记 `Conflict`。
-- **冲突处理**（`core/src/db/sync/conflict.rs`）：列表 / 未解决计数 / 解决。
-  解决时**追加一条 lamport 更高的变更**，否则第三台设备会按原 lamport 重新判一次。
-- **退出码拆分**：`Sync`（合并冲突）→ 4；`SyncFormat`（包格式/口令/篡改）→ 1。
-  拆开的原因是脚本要能区分「需要人工介入」与「重试无用」。
-- **CLI**：`patheditor sync export|import|status|conflicts|resolve`。
-  口令用 `rpassword` 隐藏输入、两次确认、不落盘、不进 shell 历史。
-- **同步中心 UI**：密码输入不写入 store、冲突按实体类型分组、界面明示
-  「导入不改注册表」。
+- **schema v3**（`core/src/db/schema.rs`）：`changes`（变更日志，含 `device_id`/`seq`/`lamport`/`origin` 与三条索引）与 `sync_conflicts`（冲突记录）。 `changes` 是**真相**而非派生表，不能重建。
+- **变更日志**（`core/src/db/sync/change_log.rs`）：`record_change_tx` 在业务事务内写入，`seq` 按设备取 `MAX+1`，`lamport` 与之同源推进并写回 `app_state`。 `pending_export` / `mark_exported` 支撑导出队列。
+- **写路径接线（S-1）**：`save_profile_tx` / `delete_profile` / `rename_profile` / `insert_snapshot_tx` 各自在**自己的事务内**记变更。 **`EventSource::Migration` 不记**——v5 迁移与首次启动建基线不该进入同步队列。
+- **同步包加密**（`core/src/db/sync/bundle.rs`）：`PESYNC1` 格式， Argon2id（m=65536, t=3, p=1）派生 + ChaCha20-Poly1305。 **AAD 覆盖 header**（magic / version / header_len / header JSON / salt / nonce），否则 header 可被篡改而不被发现。
+- **导出**（`core/src/db/sync/export.rs`）：收集 → 加密 → 写文件 → **成功后**才 `mark_exported`。顺序反了会在写失败时永久丢失变更。
+- **导入**（`core/src/db/sync/import.rs`）：单事务、按 `changes.uid` 幂等、实体类型白名单、与本地比较做 LWW、导入后把本地 lamport 提到至少导出方的值。
+- **LWW 合并**（`core/src/db/sync/merge.rs`）：纯函数；`lamport` 高者胜，相等时同设备视为同源、不同设备且值相同按 `device_id` 字典序确定性取一个、值不同才记 `Conflict`。
+- **冲突处理**（`core/src/db/sync/conflict.rs`）：列表 / 未解决计数 / 解决。解决时**追加一条 lamport 更高的变更**，否则第三台设备会按原 lamport 重新判一次。
+- **退出码拆分**：`Sync`（合并冲突）→ 4；`SyncFormat`（包格式/口令/篡改）→ 1。拆开的原因是脚本要能区分「需要人工介入」与「重试无用」。
+- **CLI**：`patheditor sync export|import|status|conflicts|resolve`。口令用 `rpassword` 隐藏输入、两次确认、不落盘、不进 shell 历史。
+- **同步中心 UI**：密码输入不写入 store、冲突按实体类型分组、界面明示「导入不改注册表」。
 
 #### 说明
 
-- 同步包只搬运 `profiles` / `profile_revisions` / `snapshots` / `path_entries` /
-  `env_values`；**`events` 不同步**（本机操作日志，不是用户数据），
-  `backups` 索引与派生表也不同步。
-- ~~当前版本**实体落库只覆盖快照**（`snapshots` + `path_entries` + `env_values`）；
-  配置（`profiles` / `profile_revisions`）的落库尚未接线，属 M3 已知未覆盖项。~~
-  **M4 已闭环**：配置与 revision 现在随包落库，见上文 M4「配置同步落库」。
+- 同步包只搬运 `profiles` / `profile_revisions` / `snapshots` / `path_entries` / `env_values`；**`events` 不同步**（本机操作日志，不是用户数据）， `backups` 索引与派生表也不同步。
+- ~~当前版本**实体落库只覆盖快照**（`snapshots` + `path_entries` + `env_values`）；配置（`profiles` / `profile_revisions`）的落库尚未接线，属 M3 已知未覆盖项。~~ **M4 已闭环**：配置与 revision 现在随包落库，见上文 M4「配置同步落库」。
 
 ### M2 检索与统计
 
@@ -93,38 +90,22 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 
 #### 新增
 
-- **schema v2**（`core/src/db/schema.rs`）：`scan_runs` / `var_references` / `daily_stats` /
-  `search_fts`（FTS5 虚表）。`var_references` 与 `daily_stats` / `search_fts` 是**派生表**，
-  可随时重建（spec §4.2 第 5 条）；`scan_runs` 是真实记录，无法重建。
-  **顺带修复 M1 的一处升级缺陷**：`PRAGMA user_version` 原写在 `if current < 1` 内部，
-  v1 库升级到 v2 会执行 DDL 但不更新版本号，导致下次启动重复建表报错。
-- **FTS5 检索**（`core/src/db/search.rs`）：`rebuild_index` / `index_snapshot_tx` / `search`。
-  只索引 PATH 串、变量名、配置 name/description/tags，**绝不索引 env 的值**。
-  查询串在 core 侧做 FTS5 phrase 转义（裸 `"` 不再触发 `syntax error`）。
-- **统计聚合**（`core/src/db/stats.rs`）：`rebuild_daily` / `dashboard`。
-  `dashboard` 返回历史序列 + 当前状态 + 最常改变量 + 配置应用次数。
-- **引用图**（`core/src/db/refs.rs`）：`parse_refs` / `rebuild_refs` / `dependents` /
-  `dependencies`（递归 CTE）/ `find_cycles`。环做了旋转归一化去重。
-- **快照对比**（`core/src/db/compare.rs`）：`compare` 返回**双 hive** `{ system, user }` +
-  恒为空的 `env_*` 三字段。
-- **冲突历史**（`core/src/db/scan_history.rs`）：`record_run` / `list_runs` / `diff_runs`，
-  支持「首次出现」与「最近出现」两种语义。
+- **schema v2**（`core/src/db/schema.rs`）：`scan_runs` / `var_references` / `daily_stats` / `search_fts`（FTS5 虚表）。`var_references` 与 `daily_stats` / `search_fts` 是**派生表**，可随时重建（spec §4.2 第 5 条）；`scan_runs` 是真实记录，无法重建。 **顺带修复 M1 的一处升级缺陷**：`PRAGMA user_version` 原写在 `if current < 1` 内部， v1 库升级到 v2 会执行 DDL 但不更新版本号，导致下次启动重复建表报错。
+- **FTS5 检索**（`core/src/db/search.rs`）：`rebuild_index` / `index_snapshot_tx` / `search`。只索引 PATH 串、变量名、配置 name/description/tags，**绝不索引 env 的值**。查询串在 core 侧做 FTS5 phrase 转义（裸 `"` 不再触发 `syntax error`）。
+- **统计聚合**（`core/src/db/stats.rs`）：`rebuild_daily` / `dashboard`。 `dashboard` 返回历史序列 + 当前状态 + 最常改变量 + 配置应用次数。
+- **引用图**（`core/src/db/refs.rs`）：`parse_refs` / `rebuild_refs` / `dependents` / `dependencies`（递归 CTE）/ `find_cycles`。环做了旋转归一化去重。
+- **快照对比**（`core/src/db/compare.rs`）：`compare` 返回**双 hive** `{ system, user }` + 恒为空的 `env_*` 三字段。
+- **冲突历史**（`core/src/db/scan_history.rs`）：`record_run` / `list_runs` / `diff_runs`，支持「首次出现」与「最近出现」两种语义。
 - **v5 配置导出**（`core/src/db/v5_export.rs` + `profile export-v5`）：降级到 v5 文件的退路。
-- **`profiles::load_profile_from(path)`**：从指定路径读配置，供集成测试与 v5 导入使用。
-  解析逻辑复用既有的 `read_profile_file`，**没有第二份实现**。
-- **`history_reveal_env_value`**：显式 reveal 历史快照里的单个变量明文。
-  掩码是默认；明文只存在组件局部 state，不写入 store。
-- **IPC**：`search` / `stats_dashboard` / `compare_snapshots` / `refs_*` / `scan_history_*`
-  共 12 条命令 + `backend.ts` 的 7 个 `parseXxx` 形状校验。
-- **前端**：新增「搜索」「统计」标签页；历史面板支持多选对比；
-  引用图对话框展示反向/前向/环三个方向。
+- **`profiles::load_profile_from(path)`**：从指定路径读配置，供集成测试与 v5 导入使用。解析逻辑复用既有的 `read_profile_file`，**没有第二份实现**。
+- **`history_reveal_env_value`**：显式 reveal 历史快照里的单个变量明文。掩码是默认；明文只存在组件局部 state，不写入 store。
+- **IPC**：`search` / `stats_dashboard` / `compare_snapshots` / `refs_*` / `scan_history_*` 共 12 条命令 + `backend.ts` 的 7 个 `parseXxx` 形状校验。
+- **前端**：新增「搜索」「统计」标签页；历史面板支持多选对比；引用图对话框展示反向/前向/环三个方向。
 
 #### 变更
 
-- **对比结果分 hive**：`CompareResult` 从「只比 system」改为 `{ system, user }`。
-  只比一侧会让「只有用户 PATH 变了」显示成「没有差异」——不报错、给出错误结论。
-- **对比增加启用状态维度**：`PathDiff.toggled` 记录「同一条路径从启用变禁用」。
-  `PathEntry { path, enabled }` 是跨层契约，只比路径串会漏掉这类真实变化。
+- **对比结果分 hive**：`CompareResult` 从「只比 system」改为 `{ system, user }`。只比一侧会让「只有用户 PATH 变了」显示成「没有差异」——不报错、给出错误结论。
+- **对比增加启用状态维度**：`PathDiff.toggled` 记录「同一条路径从启用变禁用」。 `PathEntry { path, enabled }` 是跨层契约，只比路径串会漏掉这类真实变化。
 
 #### 测试约定
 
@@ -132,12 +113,9 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 
 #### 已知限制
 
-- **环境变量的 N 路对比未实现**：`env_*` 三字段恒为空数组，界面上显式显示「将在 M3 提供」。
-  掩码值在对比结果里如何呈现需要单独设计。
-- **CLI 不重建派生表**：用 CLI 改过 PATH 后，GUI 的引用图与统计可能仍是旧值，重启 GUI 后对齐。
-  修复需要 CLI 也接 DB 的 current 快照，属范围扩张。
-- **`index_snapshot_tx` 尚未接入写入路径**：启动时按需全量重建，增量函数已实现并有测试，
-  但 `save_path_with_sidecar` 的写入链路尚未调用它。
+- **环境变量的 N 路对比未实现**：`env_*` 三字段恒为空数组，界面上显式显示「将在 M3 提供」。掩码值在对比结果里如何呈现需要单独设计。
+- **CLI 不重建派生表**：用 CLI 改过 PATH 后，GUI 的引用图与统计可能仍是旧值，重启 GUI 后对齐。修复需要 CLI 也接 DB 的 current 快照，属范围扩张。
+- **`index_snapshot_tx` 尚未接入写入路径**：启动时按需全量重建，增量函数已实现并有测试，但 `save_path_with_sidecar` 的写入链路尚未调用它。
 
 ### M1 存储与历史
 
@@ -172,10 +150,7 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 
 - `profile_save` 的 IPC 命令未实现（需要同时传 PATH 条目 + 元数据，形状较重）—— 配置写入在 M1 仍走 v5 文件通路 + 迁移。
 - 历史面板只做「列表 + 预览」；恢复按钮、筛选、分页与 reveal 入口留到 M2。
-- 事件与快照的关联**字段已就位、链路已通，但服务层不填值**：`EventView` 含 `snapshotUid`，
-  `events.snapshot_id` 也会在记录时解析写入；但 4 个写命令当前传入的事件都不带快照 uid
-  （`save_path_with_sidecar` 不知道 DB 存在），所以该字段实际恒为 `null`，
-  历史面板的详情按钮因此为禁用状态。M2 接线。
+- 事件与快照的关联**字段已就位、链路已通，但服务层不填值**：`EventView` 含 `snapshotUid`， `events.snapshot_id` 也会在记录时解析写入；但 4 个写命令当前传入的事件都不带快照 uid （`save_path_with_sidecar` 不知道 DB 存在），所以该字段实际恒为 `null`，历史面板的详情按钮因此为禁用状态。M2 接线。
 
 ## 5.1.7 (2026-10-17)
 
