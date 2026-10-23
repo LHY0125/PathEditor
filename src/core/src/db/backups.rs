@@ -389,6 +389,24 @@ pub fn list_backups(db: &Db) -> Result<Vec<BackupView>, CoreError> {
     Ok(rows)
 }
 
+/// 刷新备份索引并返回列表（生产入口）。
+///
+/// 每次调用前先增量索引：只在启动时索引会漏掉「启动后新做的备份」。
+/// `index_backups` 按 `file_path` 去重，重复调用幂等。
+pub fn refresh_and_list(db: &mut Db) -> Result<Vec<BackupView>, CoreError> {
+    refresh_and_list_at(db, &crate::backup::env_backup_dir())
+}
+
+/// [`refresh_and_list`] 的显式目录版本（测试注入 `TempDir`）。
+///
+/// 索引失败不阻断列表：已有索引行仍然有价值；失败原因记日志。
+pub fn refresh_and_list_at(db: &mut Db, dir: &Path) -> Result<Vec<BackupView>, CoreError> {
+    if let Err(e) = index_backups(db, dir) {
+        log::warn!("备份索引刷新失败（展示已有索引）: {}", e.message);
+    }
+    list_backups(db)
+}
+
 /// 插入或更新一条索引（同一 `file_path` 只保留一行）。
 ///
 /// **不用 `ON CONFLICT(file_path)`**：`backups` 表没有 `file_path`

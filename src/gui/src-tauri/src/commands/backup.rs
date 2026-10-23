@@ -70,16 +70,9 @@ pub fn restore_env_backup(file: String, force: bool) -> Result<RestoreOutcome, C
 
 /// 列出备份索引。
 ///
-/// 每次调用前先增量索引：只在启动时索引会漏掉「启动后新做的备份」。
-/// `index_backups` 按 `file_path` 去重，重复调用幂等，成本只是目录 stat。
+/// 刷新与列表都由 `core::db::backups::refresh_and_list` 完成：
+/// 每次调用前增量索引，索引失败只告警、不阻断列表。
 #[tauri::command]
 pub fn backup_list(state: State<'_, DbState>) -> Result<Vec<BackupView>, CoreError> {
-    with_db_mut(&state, "backup_list", |db| {
-        let dir = path_editor_core::backup::env_backup_dir();
-        // 索引失败不阻断列表：已有索引行仍然有价值
-        if let Err(e) = backups::index_backups(db, &dir) {
-            log::warn!("备份索引刷新失败（展示已有索引）: {}", e.message);
-        }
-        backups::list_backups(db)
-    })
+    with_db_mut(&state, "backup_list", backups::refresh_and_list)
 }
