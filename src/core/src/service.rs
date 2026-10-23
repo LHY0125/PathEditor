@@ -57,7 +57,7 @@ impl PathHiveIo for RealPathHiveIo {
         };
         result.map_err(|e| {
             core_err(
-                ErrorCode::Io,
+                e.code,
                 "read_enabled",
                 format!(
                     "{} PATH 读取失败: {e}",
@@ -78,7 +78,7 @@ impl PathHiveIo for RealPathHiveIo {
         };
         result.map_err(|e| {
             core_err(
-                ErrorCode::Internal,
+                e.code,
                 "write_enabled",
                 format!(
                     "{} PATH 注册表写入失败: {e}",
@@ -458,16 +458,18 @@ fn index_snapshot_by_uid(db: &mut Db, uid: &str) {
 
 /// 保存 PATH 并把当前状态提交到 DB（不做文件持久化）。
 ///
-/// 与 [`save_path_with_db`] 的唯一区别是注册表 IO 可注入，供集成测试使用。
+/// 与 [`save_path_with_db`] 的唯一区别是注册表 IO 与 pending 路径可注入，
+/// 供集成测试使用。
 pub fn save_path_with_db_io(
     io: &dyn PathHiveIo,
     db: &mut Db,
     source: EventSource,
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
+    pending_path: &std::path::Path,
 ) -> Result<ApplyOutcome, CoreError> {
     // 先 best-effort 补写上次失败留下的 pending；失败不阻断本次保存。
-    if let Err(e) = retry_pending_path_state_db(db, source) {
+    if let Err(e) = retry_pending_path_state_db_at(db, source, pending_path) {
         log::warn!("补写上次待落盘的当前快照失败: {}", e.message);
     }
 
@@ -516,12 +518,13 @@ pub fn save_path_with_db_io(
             Ok(uid) => {
                 index_snapshot_by_uid(db, &uid);
                 // 本次 current 已落库，任何陈旧 pending 都被取代。
-                let _ = disabled::clear_pending_path_snapshot();
+                let _ = disabled::clear_pending_path_snapshot_at(pending_path);
                 outcome.sidecar = SidecarOutcome::Saved;
             }
             Err(e) => {
                 // 注册表已写成功但 DB 当前快照没跟上：落 pending，下次补写。
-                outcome.sidecar = match disabled::save_pending_path_snapshot(
+                outcome.sidecar = match disabled::save_pending_path_snapshot_at(
+                    pending_path,
                     Some(pending_snapshot.system),
                     Some(pending_snapshot.user),
                 ) {
@@ -557,7 +560,14 @@ pub fn save_path_with_db(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
 ) -> Result<ApplyOutcome, CoreError> {
-    save_path_with_db_io(&RealPathHiveIo, db, source, system, user)
+    save_path_with_db_io(
+        &RealPathHiveIo,
+        db,
+        source,
+        system,
+        user,
+        &disabled::default_pending_path(),
+    )
 }
 
 /// 把文件 pending 快照补写进 DB 的当前快照（DB 模式）。
@@ -565,7 +575,16 @@ pub fn retry_pending_path_state_db(
     db: &mut Db,
     source: EventSource,
 ) -> Result<ApplyOutcome, CoreError> {
-    let Some(pending) = disabled::load_pending_path_snapshot()? else {
+    retry_pending_path_state_db_at(db, source, &disabled::default_pending_path())
+}
+
+/// [`retry_pending_path_state_db`] 的显式 pending 路径版本（测试注入 `TempDir`）。
+pub fn retry_pending_path_state_db_at(
+    db: &mut Db,
+    source: EventSource,
+    pending_path: &std::path::Path,
+) -> Result<ApplyOutcome, CoreError> {
+    let Some(pending) = disabled::load_pending_path_snapshot_at(pending_path)? else {
         return Ok(ApplyOutcome {
             system: HiveOutcome::Skipped,
             user: HiveOutcome::Skipped,
@@ -593,7 +612,7 @@ pub fn retry_pending_path_state_db(
         ));
     }
     index_snapshot_by_uid(db, &uid);
-    let _ = disabled::clear_pending_path_snapshot();
+    let _ = disabled::clear_pending_path_snapshot_at(pending_path);
 
     Ok(ApplyOutcome {
         system: HiveOutcome::Skipped,
@@ -605,7 +624,6 @@ pub fn retry_pending_path_state_db(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disabled;
     use crate::path_entry::PathEntry;
     use std::cell::RefCell;
 
@@ -741,9 +759,9 @@ mod tests {
         }
     }
 
-    // pending 快照在测试下共享固定 temp 路径，
-    // 与 disabled.rs 的生命周期测试存在并行竞态窗口（由
-    // `persist::test_persist_lock` 序列化，见 persist.rs）。
+    // `save_path_registry_io` 不接收 pending 存储，调用链上不存在任何
+    // pending 写入；「并发冲突 / 注册表失败不产 pending」由函数签名本身保证。
+    // pending 的落盘契约在 `save_path_with_db_io` 层验证（`db_path_save_state`）。
 
     // ── 契约测试：经 fake `PathHiveIo`，零真实注册表 ──
 
@@ -752,8 +770,6 @@ mod tests {
     /// 顺序**无法从终态反推**，故断言 fake 记录的写入事件序列。
     #[test]
     fn writes_are_sequential_system_then_user() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new();
         let sys = vec![entry("C:\\svc_seq_sys", true)];
         let usr = vec![entry("D:\\svc_seq_usr", true)];
@@ -772,8 +788,6 @@ mod tests {
     /// 该测试守护「写入前必须调用备份」这一契约。
     #[test]
     fn backup_called_once_when_write_happens() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new();
         let sys = vec![entry("C:\\svc_bak_sys", true)];
 
@@ -788,8 +802,6 @@ mod tests {
     /// 否则「无条件备份」的实现也能让上一条通过。
     #[test]
     fn no_backup_when_both_hives_skipped() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new();
 
         save_path_registry_io(&io, None, None).unwrap();
@@ -807,8 +819,6 @@ mod tests {
     /// 一份无用备份；若仍写 sidecar，则污染快照。
     #[test]
     fn concurrent_mismatch_writes_nothing_and_no_backup() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         // 注册表当前是 ["C:\\orig"]，但期望是 ["C:\\stale"]（模拟外部已改动）。
         let io = FakePathIo::new().with_current(EnvHive::System, &["C:\\orig"]);
         let req = PathHiveWrite {
@@ -831,16 +841,14 @@ mod tests {
         );
         assert_eq!(io.backup_count(), 0, "并发不匹配时不得备份");
         assert!(
-            !disabled::has_pending_path_snapshot(),
-            "并发不匹配时不得产生 pending"
+            matches!(outcome.sidecar, SidecarOutcome::Saved),
+            "本函数只写注册表，不触碰 sidecar/pending"
         );
     }
 
     /// 契约 2 的补集：`expected` **匹配**时正常写入（证明校验不是恒拒绝）。
     #[test]
     fn concurrent_match_proceeds_with_write() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new().with_current(EnvHive::System, &["C:\\orig"]);
         let req = PathHiveWrite {
             entries: vec![entry("C:\\new", true)],
@@ -866,8 +874,6 @@ mod tests {
     /// 契约：**仅顺序不同**（同集合）→ 校验**通过**。
     #[test]
     fn reorder_only_does_not_conflict() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new().with_current(EnvHive::System, &["C:\\a", "C:\\b", "C:\\c"]);
         // 期望值与当前值同集合，但顺序不同（模拟外部重排 / 快照顺序陈旧）。
         let req = PathHiveWrite {
@@ -889,8 +895,6 @@ mod tests {
     /// 防止修复被误实现成「恒通过」——真实的成员变化必须仍被检出。
     #[test]
     fn membership_change_still_conflicts() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new().with_current(EnvHive::System, &["C:\\a", "C:\\b"]);
         // 期望值少一条（模拟外部删除）；即使排序后也不相等。
         let req = PathHiveWrite {
@@ -912,8 +916,6 @@ mod tests {
     /// 防止修复被误实现成「`HashSet` 集合比较」——那会吞掉重复项。
     #[test]
     fn duplicate_count_matters() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let io = FakePathIo::new().with_current(EnvHive::System, &["C:\\a", "C:\\a", "C:\\b"]);
         // 期望值：`C:\a` 只出现一次（去重后的集合相同，但多重集不同）。
         let req = PathHiveWrite {
@@ -980,8 +982,6 @@ mod tests {
     // —— 违反「本层测试不写真实注册表/不产生真实副作用」。fake 记录调用且零副作用。
     #[test]
     fn registry_stage_failure_reports_failed_without_pending() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let mut io = FakePathIo::new();
         io.fail_write = true; // 模拟注册表写失败（等价于输入校验失败）
         let entries = vec![entry("C:\\ok", true), entry("C:\0bad", true)];
@@ -989,18 +989,13 @@ mod tests {
         assert!(matches!(outcome.system, HiveOutcome::Failed(_)));
         assert!(matches!(outcome.user, HiveOutcome::Skipped));
         assert!(matches!(outcome.sidecar, SidecarOutcome::Saved));
-        assert!(
-            !disabled::has_pending_path_snapshot(),
-            "注册表阶段失败不得产生 pending"
-        );
+        // 注册表阶段失败不产生 pending：本函数无 pending 依赖（见上方说明）。
     }
 
     // 同类注入：超长（>32767 UTF-16）条目，走用户 hive，验证 partial 形态；
     // 同样经 fake IO。
     #[test]
     fn oversized_user_entry_yields_partial_outcome_without_pending() {
-        let _guard = crate::persist::test_persist_lock();
-        let _ = disabled::clear_pending_path_snapshot();
         let mut io = FakePathIo::new();
         io.fail_write = true;
         let long = format!("D:\\{}", "a".repeat(32767));
@@ -1008,7 +1003,7 @@ mod tests {
             save_path_registry_io(&io, None, Some(write(vec![entry(&long, true)]))).unwrap();
         assert!(matches!(outcome.system, HiveOutcome::Skipped));
         assert!(matches!(outcome.user, HiveOutcome::Failed(_)));
-        assert!(!disabled::has_pending_path_snapshot());
+        assert!(matches!(outcome.sidecar, SidecarOutcome::Saved));
     }
 
     #[test]

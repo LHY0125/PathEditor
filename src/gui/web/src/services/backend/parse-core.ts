@@ -49,6 +49,74 @@ export function parsePathSnapshot(value: unknown): PathSnapshot {
   };
 }
 
+export interface ConflictLocation {
+  dir: string;
+  priority: number;
+}
+
+export interface ConflictEntry {
+  name: string;
+  locations: ConflictLocation[];
+}
+
+export interface ToolGroup {
+  dir: string;
+  exists: boolean;
+  exes: string[];
+}
+
+export interface ScanResult {
+  conflicts: ConflictEntry[];
+  tools: ToolGroup[];
+}
+
+function parseConflictLocation(value: unknown, label: string): ConflictLocation {
+  if (!isRecord(value) || typeof value.dir !== 'string' || typeof value.priority !== 'number') {
+    throw new Error(`${label} 返回了无效的 ConflictLocation 契约`);
+  }
+  return { dir: value.dir, priority: value.priority };
+}
+
+/** 校验 `scan_paths` 的冲突/工具清单形状。 */
+export function parseScanResult(value: unknown): ScanResult {
+  if (!isRecord(value)) throw new Error('scan_paths 返回了无效的 ScanResult 契约');
+
+  const conflicts = value.conflicts;
+  if (!Array.isArray(conflicts)) {
+    throw new Error('scan_paths.conflicts 必须是数组');
+  }
+  const parsedConflicts = conflicts.map((entry) => {
+    if (!isRecord(entry) || typeof entry.name !== 'string' || !Array.isArray(entry.locations)) {
+      throw new Error('scan_paths.conflicts 返回了无效的 ConflictEntry 契约');
+    }
+    return {
+      name: entry.name,
+      locations: entry.locations.map((location) =>
+        parseConflictLocation(location, 'scan_paths.conflicts.locations'),
+      ),
+    };
+  });
+
+  const tools = value.tools;
+  if (!Array.isArray(tools)) {
+    throw new Error('scan_paths.tools 必须是数组');
+  }
+  const parsedTools = tools.map((group) => {
+    if (
+      !isRecord(group) ||
+      typeof group.dir !== 'string' ||
+      typeof group.exists !== 'boolean' ||
+      !Array.isArray(group.exes) ||
+      !group.exes.every((exe) => typeof exe === 'string')
+    ) {
+      throw new Error('scan_paths.tools 返回了无效的 ToolGroup 契约');
+    }
+    return { dir: group.dir, exists: group.exists, exes: group.exes as string[] };
+  });
+
+  return { conflicts: parsedConflicts, tools: parsedTools };
+}
+
 /**
  * 单个 hive 的写入请求（对应 core 的 `PathHiveWrite`）。
  *

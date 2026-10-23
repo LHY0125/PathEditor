@@ -1,5 +1,5 @@
 use crate::output::print_json;
-use crate::runtime::exit_err;
+use crate::runtime::exit_core_error;
 use path_editor_core as core;
 use serde_json::json;
 
@@ -11,7 +11,7 @@ pub(crate) fn cmd_conflicts(json_out: bool) {
     if let Ok(usr) = core::registry::load_user_paths() {
         paths.extend(usr);
     }
-    let conflicts = core::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_err(&e));
+    let conflicts = core::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&conflicts);
     } else if conflicts.is_empty() {
@@ -45,7 +45,7 @@ pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
         paths.extend(usr);
     }
     let groups = core::scanner::scan_tools(paths, query.unwrap_or_default())
-        .unwrap_or_else(|e| exit_err(&e));
+        .unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&groups);
     } else {

@@ -91,6 +91,7 @@ fn cli_save_updates_current_snapshot_changes_and_event() {
             expected: None,
         }),
         None,
+        &dir.path().join("pending_path_snapshot.json"),
     )
     .expect("保存失败");
 

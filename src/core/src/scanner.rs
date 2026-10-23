@@ -1,3 +1,4 @@
+use crate::error::CoreError;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -89,7 +90,7 @@ fn enumerate_paths(paths: &[String]) -> Vec<(usize, String, bool, Vec<String>)> 
 }
 
 /// 只枚举一次目录，同时生成冲突和工具清单结果。
-pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, String> {
+pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, CoreError> {
     let query_lower = query.to_lowercase();
     let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
     let mut tools = Vec::new();
@@ -130,12 +131,12 @@ pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, Strin
 }
 
 /// 扫描 PATH 中的可执行文件冲突。
-pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, String> {
+pub fn scan_conflicts(paths: Vec<String>) -> Result<Vec<ConflictEntry>, CoreError> {
     scan_paths(paths, String::new()).map(|result| result.conflicts)
 }
 
 /// 扫描 PATH 中各目录提供的可执行文件。
-pub fn scan_tools(paths: Vec<String>, query: String) -> Result<Vec<ToolGroup>, String> {
+pub fn scan_tools(paths: Vec<String>, query: String) -> Result<Vec<ToolGroup>, CoreError> {
     scan_paths(paths, query).map(|result| result.tools)
 }
 
@@ -144,38 +145,25 @@ mod tests {
     use super::*;
     use std::fs;
 
-    struct TempDirGuard(std::path::PathBuf);
-
-    impl Drop for TempDirGuard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    impl std::ops::Deref for TempDirGuard {
-        type Target = std::path::PathBuf;
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
-    fn make_temp_dir_with_exes(prefix: &str, exe_names: &[&str]) -> TempDirGuard {
-        let dir = std::env::temp_dir().join(format!("patheditor_test_{}", prefix));
-        let _ = fs::remove_dir_all(&dir); // 清理残留
-        fs::create_dir_all(&dir).unwrap();
+    /// 建一个独立的临时目录并放入假可执行文件。
+    ///
+    /// 用 `tempfile::TempDir` 而非固定名字：测试并行时不会互相清理对方目录，
+    /// 测试结束自动删除。
+    fn make_temp_dir_with_exes(exe_names: &[&str]) -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
         for name in exe_names {
-            fs::write(dir.join(name), b"fake").unwrap();
+            fs::write(dir.path().join(name), b"fake").unwrap();
         }
-        TempDirGuard(dir)
+        dir
     }
 
     #[test]
     fn scan_conflicts_no_duplicates() {
-        let d1 = make_temp_dir_with_exes("c_a", &["a.exe"]);
-        let d2 = make_temp_dir_with_exes("c_b", &["b.exe"]);
+        let d1 = make_temp_dir_with_exes(&["a.exe"]);
+        let d2 = make_temp_dir_with_exes(&["b.exe"]);
         let paths = vec![
-            d1.to_string_lossy().to_string(),
-            d2.to_string_lossy().to_string(),
+            d1.path().to_string_lossy().to_string(),
+            d2.path().to_string_lossy().to_string(),
         ];
         let conflicts = scan_conflicts(paths).unwrap();
         assert!(conflicts.is_empty());
@@ -183,11 +171,11 @@ mod tests {
 
     #[test]
     fn scan_conflicts_detects_duplicate() {
-        let d1 = make_temp_dir_with_exes("c_dup1", &["shared.exe"]);
-        let d2 = make_temp_dir_with_exes("c_dup2", &["shared.exe"]);
+        let d1 = make_temp_dir_with_exes(&["shared.exe"]);
+        let d2 = make_temp_dir_with_exes(&["shared.exe"]);
         let paths = vec![
-            d1.to_string_lossy().to_string(),
-            d2.to_string_lossy().to_string(),
+            d1.path().to_string_lossy().to_string(),
+            d2.path().to_string_lossy().to_string(),
         ];
         let conflicts = scan_conflicts(paths).unwrap();
         assert_eq!(conflicts.len(), 1);
@@ -198,8 +186,8 @@ mod tests {
 
     #[test]
     fn scan_tools_returns_groups() {
-        let d1 = make_temp_dir_with_exes("t_a", &["tool.exe", "helper.bat"]);
-        let paths = vec![d1.to_string_lossy().to_string()];
+        let d1 = make_temp_dir_with_exes(&["tool.exe", "helper.bat"]);
+        let paths = vec![d1.path().to_string_lossy().to_string()];
         let groups = scan_tools(paths, String::new()).unwrap();
         assert_eq!(groups.len(), 1);
         assert!(groups[0].exists);
@@ -209,8 +197,8 @@ mod tests {
 
     #[test]
     fn scan_tools_with_query_filters() {
-        let d1 = make_temp_dir_with_exes("t_q", &["apple.exe", "banana.exe"]);
-        let paths = vec![d1.to_string_lossy().to_string()];
+        let d1 = make_temp_dir_with_exes(&["apple.exe", "banana.exe"]);
+        let paths = vec![d1.path().to_string_lossy().to_string()];
         let groups = scan_tools(paths, "apple".into()).unwrap();
         assert_eq!(groups[0].exes.len(), 1);
         assert_eq!(groups[0].exes[0], "apple.exe");

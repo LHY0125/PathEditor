@@ -83,6 +83,12 @@ impl CoreError {
         self
     }
 
+    /// 替换操作名（把底层校验函数的 operation 提升为调用方语义）。
+    pub fn with_operation(mut self, operation: impl Into<String>) -> Self {
+        self.operation = operation.into();
+        self
+    }
+
     /// 仅附加 hive 上下文（无单一目标名，如列表/打开键级别的错误）。
     pub fn with_hive(mut self, hive: EnvHive) -> Self {
         self.hive = Some(hive);

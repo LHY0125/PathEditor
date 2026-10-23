@@ -1,3 +1,4 @@
+use crate::error::{CoreError, ErrorCode};
 use crate::path_entry::PathEntry;
 use std::path::Path;
 use winreg::enums::*;
@@ -9,19 +10,41 @@ pub(crate) const SYS_REG_PATH: &str =
 pub(crate) const USER_REG_PATH: &str = "Environment";
 const PATH_VALUE: &str = "Path";
 
+/// 把注册表 IO 错误映射为稳定错误码。
+///
+/// 注册表 API 的失败本质都是 IO 错误；这里只把两种调用方需要区别对待的
+/// 情形单列出来：目标不存在（只读探测/删除后读取）与权限不足（HKLM 未提权）。
+fn registry_error_code(e: &std::io::Error) -> ErrorCode {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => ErrorCode::NotFound,
+        std::io::ErrorKind::PermissionDenied => ErrorCode::PermissionDenied,
+        _ => ErrorCode::Io,
+    }
+}
+
 pub(crate) fn load_paths(
     root: winreg::HKEY,
     sub_path: &str,
     label: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CoreError> {
     let key = RegKey::predef(root);
     let env_key = key
         .open_subkey_with_flags(sub_path, KEY_READ)
-        .map_err(|e| format!("无法打开{}注册表项: {}", label, e))?;
+        .map_err(|e| {
+            CoreError::new(
+                registry_error_code(&e),
+                "load_paths",
+                format!("无法打开{}注册表项: {}", label, e),
+            )
+        })?;
 
-    let value: String = env_key
-        .get_value(PATH_VALUE)
-        .map_err(|e| format!("无法读取{} PATH: {}", label, e))?;
+    let value: String = env_key.get_value(PATH_VALUE).map_err(|e| {
+        CoreError::new(
+            registry_error_code(&e),
+            "load_paths",
+            format!("无法读取{} PATH: {}", label, e),
+        )
+    })?;
 
     Ok(split_path(&value))
 }
@@ -50,21 +73,31 @@ fn save_paths(
     sub_path: &str,
     label: &str,
     paths: &[String],
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     let value = validate_and_join_paths(paths, label)?;
 
     let key = RegKey::predef(root);
     // 需要同时读取原值类型并写回，因此请求 READ | WRITE。
     let env_key = key
         .open_subkey_with_flags(sub_path, KEY_READ | KEY_WRITE)
-        .map_err(|e| format!("无法写入{}注册表（需要管理员权限）: {}", label, e))?;
+        .map_err(|e| {
+            CoreError::new(
+                registry_error_code(&e),
+                "save_paths",
+                format!("无法写入{}注册表（需要管理员权限）: {}", label, e),
+            )
+        })?;
 
     let vtype = path_value_type(&env_key);
     let raw = make_path_value(&value, vtype);
 
-    env_key
-        .set_raw_value(PATH_VALUE, &raw)
-        .map_err(|e| format!("无法写入{} PATH: {}", label, e))?;
+    env_key.set_raw_value(PATH_VALUE, &raw).map_err(|e| {
+        CoreError::new(
+            registry_error_code(&e),
+            "save_paths",
+            format!("无法写入{} PATH: {}", label, e),
+        )
+    })?;
 
     log::info!("已保存{} PATH，{} 个条目", label, paths.len());
     Ok(())
@@ -73,8 +106,8 @@ fn save_paths(
 ///
 /// # Returns
 /// - `Ok(Vec<String>)` — 系统 PATH 路径列表
-/// - `Err(String)` — 注册表读取失败
-pub fn load_system_paths() -> Result<Vec<String>, String> {
+/// - `Err(CoreError)` — 注册表读取失败（`notFound` / `permissionDenied` / `io`）
+pub fn load_system_paths() -> Result<Vec<String>, CoreError> {
     load_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统")
 }
 
@@ -82,8 +115,8 @@ pub fn load_system_paths() -> Result<Vec<String>, String> {
 ///
 /// # Returns
 /// - `Ok(Vec<String>)` — 用户 PATH 路径列表
-/// - `Err(String)` — 注册表读取失败
-pub fn load_user_paths() -> Result<Vec<String>, String> {
+/// - `Err(CoreError)` — 注册表读取失败（`notFound` / `permissionDenied` / `io`）
+pub fn load_user_paths() -> Result<Vec<String>, CoreError> {
     load_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户")
 }
 
@@ -91,8 +124,8 @@ pub fn load_user_paths() -> Result<Vec<String>, String> {
 ///
 /// # Returns
 /// - `Ok(())` — 保存成功
-/// - `Err(String)` — 写入失败或超过字符上限
-pub fn save_system_paths(paths: Vec<String>) -> Result<(), String> {
+/// - `Err(CoreError)` — 写入失败（`permissionDenied` / `io`）或超过字符上限（`invalidValue`）
+pub fn save_system_paths(paths: Vec<String>) -> Result<(), CoreError> {
     save_paths(HKEY_LOCAL_MACHINE, SYS_REG_PATH, "系统", &paths)
 }
 
@@ -100,8 +133,8 @@ pub fn save_system_paths(paths: Vec<String>) -> Result<(), String> {
 ///
 /// # Returns
 /// - `Ok(())` — 保存成功
-/// - `Err(String)` — 写入失败
-pub fn save_user_paths(paths: Vec<String>) -> Result<(), String> {
+/// - `Err(CoreError)` — 写入失败（`notFound` / `permissionDenied` / `io`）
+pub fn save_user_paths(paths: Vec<String>) -> Result<(), CoreError> {
     save_paths(HKEY_CURRENT_USER, USER_REG_PATH, "用户", &paths)
 }
 
@@ -126,17 +159,25 @@ fn join_path(paths: &[String]) -> String {
 /// 验证路径列表并拼接为分号分隔字符串
 /// - 检查 null 字节
 /// - 检查 UTF-16 总长度不超过 32767
-fn validate_and_join_paths(paths: &[String], label: &str) -> Result<String, String> {
+fn validate_and_join_paths(paths: &[String], label: &str) -> Result<String, CoreError> {
     if let Some(bad) = paths.iter().find(|p| p.contains('\0')) {
-        return Err(format!("{} PATH 包含非法字符（null 字节）: {}", label, bad));
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "validate_paths",
+            format!("{} PATH 包含非法字符（null 字节）: {}", label, bad),
+        ));
     }
     let value = join_path(paths);
     const MAX_PATH_LEN: usize = 32767;
     let utf16_len = value.encode_utf16().count();
     if utf16_len > MAX_PATH_LEN {
-        return Err(format!(
-            "{} PATH 总长度 {} 超出 Windows 限制 {} 字符，请移除部分路径后再保存",
-            label, utf16_len, MAX_PATH_LEN
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "validate_paths",
+            format!(
+                "{} PATH 总长度 {} 超出 Windows 限制 {} 字符，请移除部分路径后再保存",
+                label, utf16_len, MAX_PATH_LEN
+            ),
         ));
     }
     Ok(value)
@@ -246,7 +287,7 @@ mod tests {
         let paths = vec!["C:\\safe".into(), "C:\0invalid".into()];
         let result = validate_and_join_paths(&paths, "测试");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("null 字节"));
+        assert!(result.unwrap_err().message.contains("null 字节"));
     }
 
     #[test]
@@ -263,7 +304,7 @@ mod tests {
         let paths = vec![long_path];
         let result = validate_and_join_paths(&paths, "测试");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("超出 Windows 限制"));
+        assert!(result.unwrap_err().message.contains("超出 Windows 限制"));
     }
 }
 

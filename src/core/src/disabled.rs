@@ -13,19 +13,17 @@ use crate::registry;
 use crate::{PathEntry, PathSnapshot};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-#[cfg(not(test))]
-fn pending_path() -> PathBuf {
+/// 生产用 pending 快照路径（`~/.patheditor/pending_path_snapshot.json`）。
+///
+/// 测试用 [`save_pending_path_snapshot_at`] 等显式路径变体注入 `TempDir`，
+/// 不再通过 `cfg(test)` 改写同一个全局路径。
+pub(crate) fn default_pending_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".patheditor")
         .join("pending_path_snapshot.json")
-}
-
-#[cfg(test)]
-fn pending_path() -> PathBuf {
-    std::env::temp_dir().join("patheditor_test_pending_snapshot.json")
 }
 
 /// 用调用方提供的注册表值与持久化快照合并。
@@ -96,9 +94,9 @@ fn merge_hive(registry_paths: Vec<String>, snapshot: Vec<PathEntry>) -> Vec<Path
 /// 读取注册表当前值，并与持久化快照合并。
 pub fn load_path_snapshot_with(persisted: Option<PathSnapshot>) -> Result<PathSnapshot, CoreError> {
     let registry_system = registry::load_system_paths()
-        .map_err(|m| CoreError::new(ErrorCode::Io, "load_path_snapshot", m))?;
+        .map_err(|e| CoreError::new(e.code, "load_path_snapshot", e.message))?;
     let registry_user = registry::load_user_paths()
-        .map_err(|m| CoreError::new(ErrorCode::Io, "load_path_snapshot", m))?;
+        .map_err(|e| CoreError::new(e.code, "load_path_snapshot", e.message))?;
     merge_path_snapshot(registry_system, registry_user, persisted)
 }
 
@@ -115,7 +113,15 @@ pub fn save_pending_path_snapshot(
     system: Option<Vec<PathEntry>>,
     user: Option<Vec<PathEntry>>,
 ) -> Result<(), CoreError> {
-    let path = pending_path();
+    save_pending_path_snapshot_at(&default_pending_path(), system, user)
+}
+
+/// [`save_pending_path_snapshot`] 的显式路径版本（测试注入 `TempDir`）。
+pub fn save_pending_path_snapshot_at(
+    path: &Path,
+    system: Option<Vec<PathEntry>>,
+    user: Option<Vec<PathEntry>>,
+) -> Result<(), CoreError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             CoreError::new(
@@ -141,8 +147,8 @@ pub fn save_pending_path_snapshot(
             format!("JSON 序列化失败: {e}"),
         )
     })?;
-    rotate_backup(&path)?;
-    atomic_write(&path, &json).map_err(|e| {
+    rotate_backup(path)?;
+    atomic_write(path, &json).map_err(|e| {
         CoreError::new(
             ErrorCode::Io,
             "save_pending_path_snapshot",
@@ -155,12 +161,16 @@ pub fn save_pending_path_snapshot(
 
 /// 读取待补写状态；文件不存在时返回 `Ok(None)`。
 pub fn load_pending_path_snapshot() -> Result<Option<PathSnapshot>, CoreError> {
-    let path = pending_path();
+    load_pending_path_snapshot_at(&default_pending_path())
+}
+
+/// [`load_pending_path_snapshot`] 的显式路径版本（测试注入 `TempDir`）。
+pub fn load_pending_path_snapshot_at(path: &Path) -> Result<Option<PathSnapshot>, CoreError> {
     if !path.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(&path).map_err(|e| {
+    let content = fs::read_to_string(path).map_err(|e| {
         CoreError::new(
             ErrorCode::Io,
             "load_pending_path_snapshot",
@@ -173,14 +183,18 @@ pub fn load_pending_path_snapshot() -> Result<Option<PathSnapshot>, CoreError> {
 
     match serde_json::from_str::<Versioned<PathSnapshot>>(&content) {
         Ok(versioned) => migrate(versioned, "待补写快照").map(Some),
-        Err(e) => Err(parse_error_quarantined(&path, "待补写快照", e)),
+        Err(e) => Err(parse_error_quarantined(path, "待补写快照", e)),
     }
 }
 
 /// 清除待补写状态（补写成功后调用）；文件不存在时同样返回 `Ok(())`。
 pub fn clear_pending_path_snapshot() -> Result<(), CoreError> {
-    let path = pending_path();
-    match fs::remove_file(&path) {
+    clear_pending_path_snapshot_at(&default_pending_path())
+}
+
+/// [`clear_pending_path_snapshot`] 的显式路径版本（测试注入 `TempDir`）。
+pub fn clear_pending_path_snapshot_at(path: &Path) -> Result<(), CoreError> {
+    match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(CoreError::new(
@@ -193,7 +207,12 @@ pub fn clear_pending_path_snapshot() -> Result<(), CoreError> {
 
 /// 是否存在待补写状态。
 pub fn has_pending_path_snapshot() -> bool {
-    pending_path().exists()
+    has_pending_path_snapshot_at(&default_pending_path())
+}
+
+/// [`has_pending_path_snapshot`] 的显式路径版本（测试注入 `TempDir`）。
+pub fn has_pending_path_snapshot_at(path: &Path) -> bool {
+    path.exists()
 }
 
 #[cfg(test)]
@@ -241,13 +260,12 @@ mod tests {
 
     #[test]
     fn pending_snapshot_roundtrip_lifecycle() {
-        let _guard = crate::persist::test_persist_lock();
-        // 上次运行可能残留文件（崩溃遗留），先清掉再断言 missing 前置。
-        let _ = clear_pending_path_snapshot();
-        let bak = pending_path().with_file_name("patheditor_test_pending_snapshot.json.bak");
-        let _ = fs::remove_file(&bak);
-        assert!(!has_pending_path_snapshot());
-        assert!(load_pending_path_snapshot().unwrap().is_none());
+        // 每测试独立 TempDir：不再共享固定临时文件，也不需要全局测试锁。
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("pending_path_snapshot.json");
+        let bak = temp.path().join("pending_path_snapshot.json.bak");
+        assert!(!has_pending_path_snapshot_at(&path));
+        assert!(load_pending_path_snapshot_at(&path).unwrap().is_none());
 
         // save → load 得到同一内容（system/user 各造不同条目，含禁用项以验证 enabled 保留）
         let sys = vec![
@@ -255,30 +273,31 @@ mod tests {
             entry("C:\\pending_sys2", false),
         ];
         let usr = vec![entry("D:\\pending_usr1", false)];
-        save_pending_path_snapshot(Some(sys.clone()), Some(usr.clone())).unwrap();
-        assert!(has_pending_path_snapshot());
-        let loaded = load_pending_path_snapshot()
+        save_pending_path_snapshot_at(&path, Some(sys.clone()), Some(usr.clone())).unwrap();
+        assert!(has_pending_path_snapshot_at(&path));
+        let loaded = load_pending_path_snapshot_at(&path)
             .unwrap()
             .expect("应有待补写快照");
         assert_eq!(loaded.system, sys);
         assert_eq!(loaded.user, usr);
         // 写入端补上 schemaVersion=1；首次保存无 .bak
-        let content = fs::read_to_string(pending_path()).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(v["schemaVersion"], 1);
         assert!(!bak.exists(), "首次保存不应产生 .bak");
 
         // 第二次保存：上一份轮换为 .bak
         let sys2 = vec![entry("C:\\pending_new", true)];
-        save_pending_path_snapshot(Some(sys2.clone()), None).unwrap();
+        save_pending_path_snapshot_at(&path, Some(sys2.clone()), None).unwrap();
         assert!(bak.exists(), "第二次保存应把上一份轮换为 .bak");
-        let loaded2 = load_pending_path_snapshot().unwrap().expect("应有 pending");
+        let loaded2 = load_pending_path_snapshot_at(&path)
+            .unwrap()
+            .expect("应有 pending");
         assert_eq!(loaded2.system, sys2);
 
         // clear → has=false → load 再回 Ok(None)
-        clear_pending_path_snapshot().unwrap();
-        assert!(!has_pending_path_snapshot());
-        assert!(load_pending_path_snapshot().unwrap().is_none());
-        let _ = fs::remove_file(&bak);
+        clear_pending_path_snapshot_at(&path).unwrap();
+        assert!(!has_pending_path_snapshot_at(&path));
+        assert!(load_pending_path_snapshot_at(&path).unwrap().is_none());
     }
 }

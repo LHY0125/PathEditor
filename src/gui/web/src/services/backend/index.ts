@@ -4,27 +4,7 @@ import type { PathEntry } from '@/core/path-entry';
 import type { EnvHive, EnvValueKind } from '@/core/env-var';
 
 export type { PathCapabilities } from '@/core/path-capabilities';
-
-export interface ConflictLocation {
-  dir: string;
-  priority: number;
-}
-
-export interface ConflictEntry {
-  name: string;
-  locations: ConflictLocation[];
-}
-
-export interface ToolGroup {
-  dir: string;
-  exists: boolean;
-  exes: string[];
-}
-
-export interface ScanResult {
-  conflicts: ConflictEntry[];
-  tools: ToolGroup[];
-}
+export type { ConflictEntry, ConflictLocation, ScanResult, ToolGroup } from './parse-core';
 
 export interface ProfileMeta {
   name: string;
@@ -56,6 +36,7 @@ import {
   parseRevealedValue,
   parseRestoreOutcome,
   parseRestorePreview,
+  parseScanResult,
   parseStringArray,
   parseWriteOutcome,
 } from './parse-core';
@@ -82,9 +63,12 @@ import {
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
   loadSystemPaths: async () =>
-    parseStringArray(await invoke<unknown>('load_system_paths'), 'load_system_paths'),
+    parseStringArray(
+      await parseCoreError(invoke<unknown>('load_system_paths')),
+      'load_system_paths',
+    ),
   loadUserPaths: async () =>
-    parseStringArray(await invoke<unknown>('load_user_paths'), 'load_user_paths'),
+    parseStringArray(await parseCoreError(invoke<unknown>('load_user_paths')), 'load_user_paths'),
   loadPathSnapshot: async () => parsePathSnapshot(await invoke<unknown>('load_path_snapshot')),
   /**
    * 唯一的「保存 PATH + sidecar」编排入口。
@@ -114,7 +98,8 @@ export const backend = {
     invoke<string>('export_path_entries', { sys, usr, format }),
   cleanPathEntries: (entries: PathEntry[]) =>
     invoke<[PathEntry[], PathEntry[]]>('clean_path_entries', { entries }),
-  scanPaths: (paths: string[], query = '') => invoke<ScanResult>('scan_paths', { paths, query }),
+  scanPaths: async (paths: string[], query = '') =>
+    parseScanResult(await parseCoreError(invoke<unknown>('scan_paths', { paths, query }))),
   /**
    * 配置方案统一走 DB。
    */

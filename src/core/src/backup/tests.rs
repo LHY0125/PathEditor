@@ -19,30 +19,28 @@ fn get_appdata_dir_returns_non_empty() {
 
 #[test]
 fn backup_registry_with_custom_dir() {
-    let dir = std::env::temp_dir().join("patheditor_test_backup_custom");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = tempfile::TempDir::new().unwrap();
 
-    let result = backup_registry(Some(dir.to_string_lossy().to_string()));
+    let result = backup_registry(Some(dir.path().to_string_lossy().to_string()));
     // 可能因无权限读取注册表而失败，但不应 panic
     if let Ok(path) = result {
-        assert!(path.contains("patheditor_test_backup_custom"));
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            PathBuf::from(&path).starts_with(dir.path()),
+            "自定义目录备份必须落在给定目录内，实为 {path}"
+        );
     }
 }
 
-/// `backup_registry(None)` 走**默认目录**且不 panic。
+/// 显式目录备份：写入指定目录且不 panic。
 ///
-/// **两条硬要求**：
-/// 1. **必须隔离**：默认目录是用户的 `~/.patheditor/backups/`，那里有 **20 份轮换上限**
-///    ——无隔离地跑一次就会**挤掉一份真实备份**（不只是「污染」，是**数据被静默淘汰**）。
-///    故经 `with_temp_backup_dir` 把 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。
-/// 2. **必须断言**：丢弃返回值等于什么都没验证（注册表不可读时也「通过」）。
-///    可读时断言备份文件**落在隔离目录内**；不可读时断言不 panic 并说明原因。
+/// **必须断言**：丢弃返回值等于什么都没验证（注册表不可读时也「通过」）。
+/// 可读时断言备份文件**落在给定目录内**；不可读时断言不 panic 并说明原因。
+/// 「无参入口 `backup_registry(None)` 采用环境变量重定向」由
+/// `env_var_redirects_backup_dir_and_config_file` 覆盖。
 #[test]
-fn backup_registry_default_dir_uses_redirected_dir_without_panic() {
+fn backup_registry_to_writes_into_given_dir_without_panic() {
     with_temp_backup_dir(|dir| {
-        let result = backup_registry(None);
+        let result = backup_registry_to(dir, Some(PATH_BACKUP_KEEP));
 
         match result {
             Ok(path) => {
@@ -63,16 +61,15 @@ fn backup_registry_default_dir_uses_redirected_dir_without_panic() {
     });
 }
 
-///  接线测试：`backup_registry` 写入后**确实调用了** path 轮换。
+///  接线测试：`backup_registry_to` 写入后**确实调用了** path 轮换。
 ///
 /// 单测 `rotate_path_backups_*` 只能证明函数本身正确，**证明不了它被接线**
-/// （若 Step 5 的调用漏写或条件写反，那些测试照样全绿）。本用例在临时目录预置
-/// 超量旧备份，调一次 `backup_registry(None)`，断言目录不再无限增长。
+/// （若调用漏写或条件写反，那些测试照样全绿）。本用例在临时目录预置
+/// 超量旧备份，调一次 `backup_registry_to(dir, Some(PATH_BACKUP_KEEP))`，
+/// 断言目录不再无限增长。
 ///
-/// 无权限读注册表时 `backup_registry` 返回 `Err`（不 panic），此时无法验证接线，
+/// 无权限读注册表时 `backup_registry_to` 返回 `Err`（不 panic），此时无法验证接线，
 /// 故按 `Ok` 分支断言（与 `backup_registry_with_custom_dir` 同手法）。
-/// 注意：本测试用**默认目录**，故必须经 `PATHEDITOR_BACKUP_DIR` 隔离，
-/// 避免触碰用户真实备份目录。
 #[test]
 fn backup_registry_triggers_path_rotation() {
     with_temp_backup_dir(|dir| {
@@ -84,8 +81,8 @@ fn backup_registry_triggers_path_rotation() {
             )
             .unwrap();
         }
-        // backup_registry 会写一份新的；随后应轮换到 keep 份（缺省 20）。
-        if backup_registry(None).is_ok() {
+        // 写入一份新的；随后应轮换到 keep 份。
+        if backup_registry_to(dir, Some(PATH_BACKUP_KEEP)).is_ok() {
             let remaining = std::fs::read_dir(dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
@@ -161,60 +158,121 @@ fn collect_hive_vars_revision_matches_revision_of() {
     assert_eq!(vars[0].revision, expected);
 }
 
-/// 备份目录可用环境变量重定向，供测试隔离；未设置时回落 ~/.patheditor/backups。
+/// 为单个测试建独立备份目录；闭包返回即自动清理。
 ///
-/// **同时重定向配置文件**（`PATHEDITOR_CONFIG_FILE`）指向本临时目录下一个
-/// **不存在**的文件：这 15 个调用 [`write_env_backup_to`] 的用例都没有、也
-/// 不应控制 `env_backup_keep`，若不重定向就会读**开发者真实的**
-/// `~/.patheditor/config.ini`。开发者一旦为手工验证写入 `env_backup_keep = 5`，
-/// 这些用例的轮换就会在运行中途删掉各自的夹具，失败表现与配置毫无关系。
-/// 指向不存在的文件使 `read_env_backup_keep` 走「文件不存在 → 静默回落默认」
-/// 分支，各用例的有效保留份数与重定向之前（默认 20）完全一致。
+/// **不修改进程级环境变量**：每个测试拿到自己的 `TempDir`，并行运行互不干扰。
+/// 「环境变量重定向」本身的行为由 `env_var_redirects_backup_dir_and_config_file`
+/// 一个用例独占验证（它也是唯一允许 `set_var` 的测试）。
 fn with_temp_backup_dir<F: FnOnce(&std::path::Path)>(f: F) {
-    // 环境变量是进程级的，与其他触碰它的测试互斥
-    let _guard = crate::persist::test_persist_lock();
-    let dir =
-        std::env::temp_dir().join(format!("patheditor_test_env_backup_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
-    // 不存在 → read_env_backup_keep 静默回落 ENV_BACKUP_KEEP，隔离开发者真实配置
-    std::env::set_var("PATHEDITOR_CONFIG_FILE", dir.join("no-such-config.ini"));
-    f(&dir);
+    let dir = tempfile::TempDir::new().unwrap();
+    f(dir.path());
+}
+
+/// 进程级环境变量重定向：备份目录与配置文件都必须被生产入口采用。
+///
+/// **本文件唯一允许 `set_var` 的测试**：所有断言在同一次 set/remove 窗口内完成，
+/// 其他测试只用显式路径（`TempDir` / `*_in` / `backup_registry_to`），
+/// 因此并行运行不会互相污染，也不需要全局测试锁。
+///
+/// 可证伪性（逐条对应一个会失败的实现改动）：
+/// - 删掉 `backup_base_dir` 的环境变量分支 → 目录断言失败；
+/// - 删掉 `config_file_path` 的环境变量分支 → 配置路径断言失败；
+/// - 把重定向值当成目录再拼 `config.ini` → 配置路径断言失败；
+/// - 让 `env_backup_keep()` 绕过 `config_file_path()` → keep 断言读回默认值，失败。
+#[test]
+fn env_var_redirects_backup_dir_and_config_file() {
+    let root = tempfile::TempDir::new().unwrap();
+    let backups = root.path().join("backups");
+    std::fs::create_dir_all(&backups).unwrap();
+    // 刻意放在子目录里并取一个不同于 `config.ini` 的文件名：
+    // 若实现把重定向值当成目录用，两处断言都会露馅。
+    let cfg = root.path().join("sub").join("my-config.ini");
+    std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+    std::fs::write(&cfg, "env_backup_keep = 3\n").unwrap();
+
+    std::env::set_var("PATHEDITOR_BACKUP_DIR", &backups);
+    std::env::set_var("PATHEDITOR_CONFIG_FILE", &cfg);
+
+    // 访问器与生产入口都必须采用重定向值。
+    assert_eq!(env_backup_dir(), backups, "备份目录必须被重定向");
+    assert_eq!(
+        get_appdata_dir(),
+        backups.to_string_lossy(),
+        "PATH 备份目录访问器必须继承同一重定向"
+    );
+    assert_eq!(
+        config_file_path(),
+        cfg,
+        "PATHEDITOR_CONFIG_FILE 必须原样作为完整文件路径"
+    );
+    assert_eq!(
+        env_backup_keep(),
+        3,
+        "重定向配置里的 env_backup_keep 必须经生产入口读到"
+    );
+
+    // 无参入口（默认目录）落到被重定向的目录；注册表不可读时跳过。
+    if let Ok(path) = backup_registry(None) {
+        assert!(
+            PathBuf::from(&path).starts_with(&backups),
+            "默认目录备份必须落在隔离目录内，实为 {path}"
+        );
+    }
+    std::fs::write(backups.join("env_backup_20260901_120000_000.json"), "{}").unwrap();
+    let list = list_env_backups().expect("列表失败");
+    assert!(
+        list.iter()
+            .any(|info| info.file == "env_backup_20260901_120000_000.json"),
+        "公开入口必须枚举被重定向的默认目录"
+    );
+
+    // 生产写入入口采用重定向配置的保留份数：
+    // 预置 25 份旧备份，写 1 份后稳态应为 keep=3。
+    //
+    // 用 `write_env_backup_to_with_key` 而非 `write_env_backup_to`：
+    // 后者会真的去读写 `~/.patheditor/keys/`（`config_dir()` 基于
+    // `dirs::home_dir()`，不受环境变量重定向）。
+    for i in 0..25 {
+        std::fs::write(
+            backups.join(format!("env_backup_202601{i:02}_120000_000.json")),
+            "{}",
+        )
+        .unwrap();
+    }
+    let key_dir = tempfile::TempDir::new().unwrap();
+    let key = crate::db::crypto::load_or_create_key(key_dir.path()).unwrap();
+    let written =
+        write_env_backup_to_with_key(&backups, &sample_payload(), &key).expect("写备份失败");
+    assert!(written.exists(), "刚写入的备份必须保留");
+    let count = std::fs::read_dir(&backups)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("env_backup_"))
+        .count();
+    assert_eq!(
+        count, 3,
+        "生产入口必须按重定向配置的 env_backup_keep=3 轮换；若为 26 说明读的是默认 20"
+    );
+
     std::env::remove_var("PATHEDITOR_BACKUP_DIR");
     std::env::remove_var("PATHEDITOR_CONFIG_FILE");
-    let _ = std::fs::remove_dir_all(&dir);
-}
 
-/// `PATHEDITOR_BACKUP_DIR` 必须真正把备份目录整体重定向（否则测试隔离失效，
-/// 所有备份测试会写到用户的真实 `~/.patheditor/backups/`）。
-#[test]
-fn backup_dir_is_redirected_by_env_var() {
-    with_temp_backup_dir(|dir| {
-        assert_eq!(env_backup_dir(), dir, "备份目录必须被重定向到测试临时目录");
-        assert_eq!(
-            get_appdata_dir(),
-            dir.to_string_lossy(),
-            "PATH 备份目录访问器也必须继承同一重定向"
-        );
-    });
-}
+    // 未设置 → 回落默认路径（不得把备份写到当前工作目录）。
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let default_backups = home.join(".patheditor").join("backups");
+    let default_config = home.join(".patheditor").join("config.ini");
+    assert_eq!(env_backup_dir(), default_backups);
+    assert_eq!(config_file_path(), default_config);
 
-/// 重定向变量为空时必须回落到默认目录，而不是把备份写到进程当前工作目录。
-#[test]
-fn backup_dir_empty_env_var_falls_back_to_default() {
-    let _guard = crate::persist::test_persist_lock();
-    let default_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".patheditor")
-        .join("backups");
-
+    // 空值 → 同样回落默认（Windows 上 set_var 空串等价于删除，两条路径结果一致）。
     std::env::set_var("PATHEDITOR_BACKUP_DIR", "");
-    let redirected = env_backup_dir();
+    std::env::set_var("PATHEDITOR_CONFIG_FILE", "");
+    let empty_backups = env_backup_dir();
+    let empty_config = config_file_path();
     std::env::remove_var("PATHEDITOR_BACKUP_DIR");
-
-    assert_eq!(redirected, default_dir, "空值必须回落默认目录");
-    assert!(!redirected.as_os_str().is_empty());
+    std::env::remove_var("PATHEDITOR_CONFIG_FILE");
+    assert_eq!(empty_backups, default_backups, "空值必须回落默认备份目录");
+    assert_eq!(empty_config, default_config, "空值必须回落默认配置文件路径");
 }
 
 fn sample_payload() -> EnvBackupPayload {
@@ -430,58 +488,6 @@ fn write_env_backup_steady_state_is_exactly_keep_files() {
 /// 可证伪性：把 `env_backup_keep()` 里传到 `read_env_backup_keep` 的参数从
 /// `config_file_path()` 改回真实路径 → 保留份数变成真实配置/默认 20，
 /// `count(dir)` 会是 26 而不是 4，断言失败。
-#[test]
-fn write_env_backup_uses_keep_from_redirected_config() {
-    // 环境变量是进程级的；本用例自己管理目录，不套 with_temp_backup_dir
-    let _guard = crate::persist::test_persist_lock();
-    let dir = std::env::temp_dir().join(format!(
-        "patheditor_keep_redirect_{}_{}",
-        std::process::id(),
-        "write"
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let cfg = dir.join("re-directed-config.ini");
-    std::fs::write(&cfg, "env_backup_keep = 4\n").unwrap();
-
-    std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
-    std::env::set_var("PATHEDITOR_CONFIG_FILE", &cfg);
-
-    // 预置 25 份旧备份（遗留明文格式），走同一条轮换路径写 1 份：
-    // 稳态应为 keep=4 份。
-    //
-    // 用 `write_env_backup_to_with_key` 而非 `write_env_backup_to`：
-    // 后者会真的去读写 `~/.patheditor/keys/`（`config_dir()` 基于
-    // `dirs::home_dir()`，不受环境变量重定向）。
-    for i in 0..25 {
-        std::fs::write(
-            dir.join(format!("env_backup_202601{:02}_120000_000.json", i)),
-            "{}",
-        )
-        .unwrap();
-    }
-    let key_dir = tempfile::TempDir::new().unwrap();
-    let key = crate::db::crypto::load_or_create_key(key_dir.path()).unwrap();
-    let written = write_env_backup_to_with_key(&dir, &sample_payload(), &key).expect("写备份失败");
-    assert!(written.exists(), "刚写入的备份必须保留");
-
-    // 轮换同时覆盖 .json 与 .pebak，因此按前缀计数
-    let count = std::fs::read_dir(&dir)
-        .unwrap()
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().starts_with("env_backup_"))
-        .count();
-
-    std::env::remove_var("PATHEDITOR_BACKUP_DIR");
-    std::env::remove_var("PATHEDITOR_CONFIG_FILE");
-    let _ = std::fs::remove_dir_all(&dir);
-
-    assert_eq!(
-        count, 4,
-        "生产入口必须按重定向配置的 env_backup_keep=4 轮换；若为 26 说明读的是默认 20"
-    );
-}
-
 /// 测试用日志捕获器：把 `log::warn!` 的消息收进静态缓冲，供断言。
 ///
 /// 存在的理由：`read_env_backup_keep` 的「不可读要 warn、不存在不 warn」这一
@@ -499,7 +505,7 @@ impl log::Log for CapturingLogger {
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
             // 捕获器是全局的，而 cargo 测试并行跑：锁被 poisoned 时取内层数据
-            // 继续，避免别的测试 panic 后本测试连锁失败（同 persist::test_persist_lock）。
+            // 继续，避免别的测试 panic 后本测试连锁失败。
             let mut buf = match CAPTURED.lock() {
                 Ok(g) => g,
                 Err(poisoned) => poisoned.into_inner(),
@@ -550,11 +556,8 @@ fn captured() -> std::sync::MutexGuard<'static, Vec<String>> {
 #[test]
 fn read_error_warns_only_when_unreadable() {
     install_capture_logger();
-    // 路径含进程 id 与专用前缀，保证与其它测试的临时路径不重叠
-    let dir =
-        std::env::temp_dir().join(format!("patheditor_cfg_warn_probe_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
     let dir_marker = dir.to_string_lossy().into_owned();
 
     // 情形 1：文件不存在 → 必须静默（首次使用的正常情形，不得刷警告）
@@ -583,8 +586,6 @@ fn read_error_warns_only_when_unreadable() {
         !unreadable_msgs.is_empty(),
         "文件不可读必须记一条含该路径的 warn；实测全部日志: {all_msgs:?}"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 读配置失败的分类（`:43` 那处曾把「不存在」与「不可读」合并处理）：
@@ -625,10 +626,8 @@ fn read_error_kind_separates_missing_from_unreadable() {
 /// 「又一次覆盖了不存在的情形」。
 #[test]
 fn config_unreadable_path_falls_back_without_panic() {
-    let dir =
-        std::env::temp_dir().join(format!("patheditor_cfg_unreadable_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
 
     // 前置条件：指向目录必须产生非 NotFound 错误，否则下面断言的不是目标分支
     let probe = std::fs::read_to_string(&dir).expect_err("读取目录必须失败");
@@ -640,31 +639,23 @@ fn config_unreadable_path_falls_back_without_panic() {
 
     // 被测行为：不 panic、回落默认值
     assert_eq!(read_env_backup_keep(&dir), ENV_BACKUP_KEEP);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 配置文件缺失 → 回落默认值，且**不创建文件**。
 #[test]
 fn config_missing_returns_default_and_creates_nothing() {
-    let _guard = crate::persist::test_persist_lock();
-    let dir = std::env::temp_dir().join(format!("patheditor_cfg_missing_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let cfg = dir.join("config.ini");
+    let dir = tempfile::TempDir::new().unwrap();
+    let cfg = dir.path().join("config.ini");
 
     assert_eq!(read_env_backup_keep(&cfg), ENV_BACKUP_KEEP);
     assert!(!cfg.exists(), "读配置不得有副作用");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 五种回落情形（键缺失 / 非整数 / 负数 / 空值 / 未知键）都返回默认值而不是报错。
 #[test]
 fn config_invalid_values_fall_back_to_default() {
-    let dir = std::env::temp_dir().join(format!("patheditor_cfg_invalid_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let cfg = dir.join("config.ini");
+    let dir = tempfile::TempDir::new().unwrap();
+    let cfg = dir.path().join("config.ini");
 
     for body in [
         "; 只有注释\n",            // 键缺失
@@ -680,91 +671,16 @@ fn config_invalid_values_fall_back_to_default() {
             "回落失败: {body:?}"
         );
     }
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 合法值被采纳；`;` 与 `#` 注释、行内两侧空格都能正确解析。
 #[test]
 fn config_reads_valid_value_with_comments_and_spaces() {
-    let dir = std::env::temp_dir().join(format!("patheditor_cfg_valid_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let cfg = dir.join("config.ini");
+    let dir = tempfile::TempDir::new().unwrap();
+    let cfg = dir.path().join("config.ini");
 
     std::fs::write(&cfg, "; 注释行\n# 另一种注释\nenv_backup_keep   =   7   \n").unwrap();
     assert_eq!(read_env_backup_keep(&cfg), 7);
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// `PATHEDITOR_CONFIG_FILE` 必须真正把配置**文件**整体重定向。
-///
-/// 可证伪性（逐条对应一个会失败的实现改动）：
-/// - 删掉 `config_file_path` 里的环境变量分支 → `config_file_path()` 返回真实
-///   `~/.patheditor/config.ini`，第一处 `assert_eq` 失败；
-/// - 把重定向当成**目录**（再拼 `config.ini`）→ 返回的是 `..\config.ini` 而非
-///   给定的完整路径，同样在第一处失败；
-/// - 让 `env_backup_keep()` 绕过 `config_file_path()` 直接读真实路径 → 第三处
-///   读到的是真实配置（或默认 20）而非 3，失败。
-///
-/// 第三处断言是本用例的关键：它证明「重定向 → 生产入口 `env_backup_keep()`」
-/// 这条链路真的通了，而不是只有 `config_file_path()` 这个访问器改了。
-#[test]
-fn config_file_path_is_redirected_by_env_var() {
-    // 环境变量是进程级的，与其他触碰它的测试互斥
-    let _guard = crate::persist::test_persist_lock();
-    let dir = std::env::temp_dir().join(format!("patheditor_cfg_redirect_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    // 刻意放在子目录里并取一个**不同于** `config.ini` 的文件名：
-    // 若实现把重定向值当成目录用，两者都会露馅。
-    let cfg = dir.join("sub").join("my-config.ini");
-    std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
-    std::fs::write(&cfg, "env_backup_keep = 3\n").unwrap();
-
-    std::env::set_var("PATHEDITOR_CONFIG_FILE", &cfg);
-    let resolved = config_file_path();
-    let keep = env_backup_keep();
-    std::env::remove_var("PATHEDITOR_CONFIG_FILE");
-
-    assert_eq!(
-        resolved, cfg,
-        "PATHEDITOR_CONFIG_FILE 必须原样作为完整文件路径返回"
-    );
-    assert_eq!(
-        keep, 3,
-        "重定向后的 config.ini 里的 env_backup_keep 必须经生产入口读到"
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// 重定向变量**未设置**与**设置为空**两种情况都必须回落真实
-/// `~/.patheditor/config.ini`（不得把配置读到当前工作目录）。
-///
-/// 可证伪性：把空值当成合法重定向（去掉 `!file.is_empty()` 判断）→ 空值分支
-/// 返回空路径，第二处断言失败；把回落路径改掉 → 两处断言都失败。
-#[test]
-fn config_file_path_falls_back_to_home_without_env_var() {
-    let _guard = crate::persist::test_persist_lock();
-    let default = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".patheditor")
-        .join("config.ini");
-
-    // 情形 1：未设置
-    std::env::remove_var("PATHEDITOR_CONFIG_FILE");
-    assert_eq!(
-        config_file_path(),
-        default,
-        "未设置 PATHEDITOR_CONFIG_FILE 时必须回落 ~/.patheditor/config.ini"
-    );
-
-    // 情形 2：设置为空（Windows 上 set_var 空串等价于删除，故先 set 再断言）
-    std::env::set_var("PATHEDITOR_CONFIG_FILE", "");
-    let empty = config_file_path();
-    std::env::remove_var("PATHEDITOR_CONFIG_FILE");
-    assert_eq!(empty, default, "空值必须回落默认配置文件路径");
 }
 
 /// 列表只枚举目录、不解析内容：损坏文件不得让列表整体失败。
@@ -862,13 +778,13 @@ fn validate_backup_path_rejects_each_rule_in_isolation() {
         // 规则 2（来源）单独生效：文件存在、体积正常、扩展名为 .json，
         // 唯一的问题是既不在备份目录内、又没有 env_backup_ 前缀。
         // **必须真实存在**——否则会被存在性规则兜住而失去隔离性。
-        let foreign = std::env::temp_dir().join(format!(
+        let foreign_dir = tempfile::TempDir::new().unwrap();
+        let foreign = foreign_dir.path().join(format!(
             "patheditor_foreign_backup_{}.json",
             std::process::id()
         ));
         std::fs::write(&foreign, "{}").unwrap();
         let foreign_result = validate_backup_path(&foreign.to_string_lossy());
-        let _ = std::fs::remove_file(&foreign);
         assert!(
             foreign_result.is_err(),
             "备份目录之外、无 env_backup_ 前缀的 .json 必须被来源规则拒绝\
@@ -892,28 +808,24 @@ fn validate_backup_path_rejects_each_rule_in_isolation() {
 /// 目录不存在不是错误：返回空列表（首次使用时的正常情形）。
 #[test]
 fn list_env_backups_missing_dir_returns_empty() {
-    let missing = std::env::temp_dir().join(format!(
-        "patheditor_no_such_backup_dir_{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&missing);
+    let temp = tempfile::TempDir::new().unwrap();
+    let missing = temp.path().join("no_such_backup_dir");
 
     let list = list_env_backups_in(&missing).expect("目录不存在必须返回空列表，而不是报错");
     assert!(list.is_empty());
 }
 
-/// 公开入口 `list_env_backups()` 必须枚举被重定向的默认目录。
+/// 显式目录版本 `list_env_backups_in` 只枚举给定目录。
+///
+/// 无参入口 `list_env_backups()` 采用环境变量重定向的行为由
+/// `env_var_redirects_backup_dir_and_config_file` 覆盖。
 #[test]
-fn list_env_backups_public_entry_uses_default_dir() {
+fn list_env_backups_in_lists_given_dir() {
     with_temp_backup_dir(|dir| {
         std::fs::write(dir.join("env_backup_20260901_120000_000.json"), "{}").unwrap();
 
-        let list = list_env_backups().expect("列表失败");
-        assert_eq!(
-            list.len(),
-            1,
-            "公开入口必须走默认（被重定向的）备份目录，而不是别处"
-        );
+        let list = list_env_backups_in(dir).expect("列表失败");
+        assert_eq!(list.len(), 1, "必须只枚举给定目录");
         assert_eq!(list[0].file, "env_backup_20260901_120000_000.json");
     });
 }
@@ -2045,8 +1957,8 @@ fn rotate_path_backups_never_deletes_foreign_files() {
 /// `path_backup_keep` 的四种回落与 env 同口径。
 #[test]
 fn read_path_backup_keep_falls_back_like_env() {
-    let missing = std::env::temp_dir().join("patheditor_no_such_cfg_9f3.ini");
-    let _ = std::fs::remove_file(&missing);
+    let temp = tempfile::TempDir::new().unwrap();
+    let missing = temp.path().join("no_such_cfg.ini");
     assert_eq!(
         read_backup_keep(&missing, "path_backup_keep", PATH_BACKUP_KEEP),
         PATH_BACKUP_KEEP
@@ -2060,25 +1972,25 @@ fn read_path_backup_keep_falls_back_like_env() {
     .iter()
     .enumerate()
     {
-        let cfg = std::env::temp_dir().join(format!("patheditor_cfg_path_{}.ini", i));
+        let temp = tempfile::TempDir::new().unwrap();
+        let cfg = temp.path().join(format!("cfg_{i}.ini"));
         std::fs::write(&cfg, bad).unwrap();
         assert_eq!(
             read_backup_keep(&cfg, "path_backup_keep", PATH_BACKUP_KEEP),
             PATH_BACKUP_KEEP,
             "非法值应回落: {bad}"
         );
-        let _ = std::fs::remove_file(&cfg);
     }
 }
 
 /// `env_backup_keep` 的既有解析经 `read_backup_keep` 通用化后逐字不回归。
 #[test]
 fn read_env_backup_keep_generic_refactor_preserves_behavior() {
-    let cfg = std::env::temp_dir().join("patheditor_cfg_env_9f3.ini");
+    let temp = tempfile::TempDir::new().unwrap();
+    let cfg = temp.path().join("config.ini");
     std::fs::write(&cfg, "; c\n# c2\nenv_backup_keep   =   7   \n").unwrap();
     assert_eq!(
         read_backup_keep(&cfg, "env_backup_keep", ENV_BACKUP_KEEP),
         7
     );
-    let _ = std::fs::remove_file(&cfg);
 }

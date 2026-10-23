@@ -419,11 +419,9 @@ fn backup_and_backups_flags_parse() {
 
 /// 备份列表在空目录下返回空数组而非报错（JSON 输出形状稳定）。
 ///
-/// （核对轮第二轮）：**不取 `core::persist::test_persist_lock`** —— 该函数是
-/// `pub(crate)`（`core/src/lib.rs` 的 `pub(crate) mod persist;`），从 cli crate
-/// 引用会报 `error[E0603]: module persist is private`。而且也不需要：`--bins`
-/// 测试跑在**独立进程**里，与 core 的测试不共享进程级环境变量，那把进程内的锁
-/// 跨进程无意义。core 的 `test_persist_lock` 只用于 core crate 内部的同进程测试。
+/// 环境变量重定向只服务本用例：`--bins` 测试跑在**独立进程**里，与 core 的
+/// 测试不共享进程状态；本文件内也只有这一个测试触碰 `PATHEDITOR_BACKUP_DIR`，
+/// 因此不需要全局测试锁。
 ///
 /// 说明：本用例断言的是 core 的契约（空目录不报错、`[]` 形状），
 /// **不是**本任务改动的回归测试 —— 删掉 `cmd_env_backups` 它依然会通过。

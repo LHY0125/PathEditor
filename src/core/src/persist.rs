@@ -10,21 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 测试专用：序列化所有触碰固定临时持久化路径（pending）的测试，
-/// 消除 disabled.rs 与 service.rs 测试间的并行竞态。
-///
-/// 持锁失败的 poisoned 状态直接吞掉（取内层数据继续），避免一个测试 panic
-/// 后连锁污染其他测试。
-#[cfg(test)]
-pub(crate) fn test_persist_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    let mutex = LOCK.get_or_init(|| std::sync::Mutex::new(()));
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
 /// 当前持久化文件 schema 版本。
 pub(crate) const PERSIST_SCHEMA_VERSION: u32 = 1;
 

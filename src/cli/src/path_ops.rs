@@ -159,9 +159,9 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
         "用户"
     };
     let list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_err(&e))
+        core::registry::load_system_paths().unwrap_or_else(|e| exit_core_error(&e))
     } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_err(&e))
+        core::registry::load_user_paths().unwrap_or_else(|e| exit_core_error(&e))
     };
     let (kept, removed) = core::registry::clean_paths(list.clone());
 

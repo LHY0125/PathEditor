@@ -29,7 +29,7 @@ pub struct EnvBackupVar {
 ///
 /// 加 `rename_all = "camelCase"` 与 `EnvVarSnapshot`（`core/src/env_var.rs:127`）
 /// 及本文件的 `EnvBackupPayload` 保持风格一致；`system` / `user` 两个单字字段
-/// 在此宏下不变形，无功能影响（核对轮一致性观察）。
+/// 在此宏下不变形，无功能影响。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvBackupHives {
@@ -511,7 +511,14 @@ pub enum BackupOutcome {
 ///   该目录可被 `PATHEDITOR_BACKUP_DIR` 设成相对路径。需要绝对路径须自行解析。
 /// - `Err(CoreError)` — 采集或落盘失败
 pub fn backup_env_vars() -> Result<PathBuf, CoreError> {
+    backup_env_vars_in(&env_backup_dir())
+}
+
+/// [`backup_env_vars`] 的显式目录版本（测试注入 `TempDir`）。
+///
+/// 备份目录由调用方给出，因此不读取 `PATHEDITOR_BACKUP_DIR`；
+/// 保留份数仍按 `config.ini` 的 `env_backup_keep`（或默认值）决定。
+pub fn backup_env_vars_in(dir: &Path) -> Result<PathBuf, CoreError> {
     let payload = collect_env_backup()?;
-    let dir = env_backup_dir();
-    write_env_backup_to(&dir, &payload)
+    write_env_backup_to(dir, &payload)
 }

@@ -107,15 +107,17 @@ fn run_case(case: &GoldenCase) {
                 for s in contains {
                     let s = s.as_str().unwrap_or_default();
                     assert!(
-                        err.contains(s),
-                        "golden 用例 {name}: 错误 `{err}` 应包含 `{s}`"
+                        err.message.contains(s),
+                        "golden 用例 {name}: 错误 `{}` 应包含 `{s}`",
+                        err.message
                     );
                 }
             }
             if let Some(prefix) = case.expect["label_prefix"].as_str() {
                 assert!(
-                    err.starts_with(prefix),
-                    "golden 用例 {name}: 错误 `{err}` 应以 `{prefix}` 开头"
+                    err.message.starts_with(prefix),
+                    "golden 用例 {name}: 错误 `{}` 应以 `{prefix}` 开头",
+                    err.message
                 );
             }
         }
@@ -206,10 +208,9 @@ fn run_case(case: &GoldenCase) {
             );
         }
         "backup_format_contract" => {
-            let dir = std::env::temp_dir().join("patheditor_golden_backup_fmt");
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir)
+            let _temp = tempfile::TempDir::new()
                 .unwrap_or_else(|e| panic!("{name}: 创建临时目录失败: {e}"));
+            let dir = _temp.path().to_path_buf();
             let filepath = crate::backup::backup_registry(Some(dir.to_string_lossy().into_owned()))
                 .unwrap_or_else(|e| {
                     panic!(
@@ -308,7 +309,6 @@ fn run_case(case: &GoldenCase) {
                     "golden 用例 {name}: 文件名 `{filename}` 时间戳应全为数字"
                 );
             }
-            let _ = std::fs::remove_dir_all(&dir);
         }
 
         "import_paths" => {

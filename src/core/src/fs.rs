@@ -506,11 +506,11 @@ mod tests {
 
     #[test]
     fn read_text_file_scoped_allows_temp_import() {
-        let path = std::env::temp_dir().join("patheditor_scoped_import.json");
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("scoped_import.json");
         std::fs::write(&path, "{\"system\":[]}").unwrap();
         let result = read_text_file_scoped(path.to_string_lossy().as_ref());
         assert!(result.is_ok());
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
