@@ -16,7 +16,3 @@ pub fn validate_path(path: &str) -> bool {
 pub fn expand_env_vars(path: &str) -> String {
     system::expand_env_vars(path)
 }
-#[tauri::command]
-pub fn broadcast_env_change() {
-    system::broadcast_env_change()
-}

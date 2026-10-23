@@ -87,6 +87,50 @@ function invokedCommands(): Set<string> {
   return invoked;
 }
 
+/** 递归收集目录下的 `.ts` / `.tsx` 文件。 */
+function walkTs(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkTs(full, out);
+    } else if (/\.(ts|tsx)$/.test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/** 从 `backend` 对象字面量提取方法名（缩进两格的键）。 */
+function backendMethods(): Set<string> {
+  const source = readFileSync(join(repoRoot, 'src/gui/web/src/services/backend/index.ts'), 'utf8');
+  const start = source.indexOf('export const backend = {');
+  const end = source.indexOf('\n};', start);
+  if (start < 0 || end < 0) {
+    throw new Error('backend 对象字面量解析失败');
+  }
+  const block = source.slice(start, end);
+  const methods = [...block.matchAll(/^ {2}([A-Za-z_$][\w$]*):/gm)].map((m) => m[1]);
+  if (methods.length === 0) {
+    throw new Error('backend 对象中未解析出任何方法，解析规则可能已失效');
+  }
+  return new Set(methods);
+}
+
+/** 收集 `src/` 中所有 `backend.<method>` 的调用点（不含 backend 目录自身）。 */
+function calledBackendMethods(): Set<string> {
+  const backendDir = join(repoRoot, 'src/gui/web/src/services/backend');
+  const used = new Set<string>();
+  for (const file of walkTs(join(repoRoot, 'src/gui/web/src'))) {
+    if (file.startsWith(backendDir)) continue;
+    const source = readFileSync(file, 'utf8');
+    // 允许链式换行：`backend\n  .method(...)`。
+    for (const m of source.matchAll(/\bbackend\s*\.\s*([A-Za-z_$][\w$]*)/g)) {
+      used.add(m[1]);
+    }
+  }
+  return used;
+}
+
 describe('IPC 契约', () => {
   it('invoke_handler 与 backend 调用的命令集合完全一致', () => {
     const registered = registeredCommands();
@@ -99,5 +143,15 @@ describe('IPC 契约', () => {
       { 只注册未调用: deadCommands, 只调用未注册: missingCommands },
       'IPC 差集必须为空；新增命令时同步 lib.rs 与 backend/',
     ).toEqual({ 只注册未调用: [], 只调用未注册: [] });
+  });
+
+  it('backend 的每个方法都有业务调用者', () => {
+    // 上一轮测「注册 ↔ 包装」一致；这里补另一半：
+    // 包装存在但无人调用 = 死命令（例如曾经的 profile_mark_applied）。
+    const methods = backendMethods();
+    const used = calledBackendMethods();
+    const dead = [...methods].filter((name) => !used.has(name)).sort();
+
+    expect(dead, 'backend 包装必须有业务调用者；新增死包装请删除').toEqual([]);
   });
 });

@@ -36,23 +36,25 @@ pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
     }
 }
 
+/// 打开默认库并迁移 schema；失败按 CLI 退出码约定退出。
+pub(crate) fn open_db_or_exit() -> core::db::Db {
+    core::db::open_and_migrate().unwrap_or_else(|e| exit_core_error(&e))
+}
+
 /// 尝试打开已存在的默认数据库；不存在或打不开时返回 `None`。
 ///
 /// CLI 的 PATH 命令不应因为 DB 不可用而失败，也不应在首次运行时创建空库
 /// 或密钥文件——DB 是 GUI 建立的 sidecar，CLI 只使用它。
 fn open_db_optional() -> Option<core::db::Db> {
-    let path = core::db::crypto::config_dir().join("patheditor.db");
-    if !path.exists() {
-        return None;
-    }
-    match core::db::open_default() {
-        Ok(mut db) => match db.migrate_to_current() {
+    match core::db::open_existing() {
+        Ok(Some(mut db)) => match db.migrate_to_current() {
             Ok(()) => Some(db),
             Err(e) => {
                 eprintln!("警告: 数据库迁移失败（{}），降级为文件快照", e.message);
                 None
             }
         },
+        Ok(None) => None,
         Err(e) => {
             eprintln!("警告: 数据库不可用（{}），降级为文件快照", e.message);
             None
@@ -160,15 +162,6 @@ pub(crate) fn load_operate_save(
     }
 
     println!("{message}");
-}
-
-#[allow(dead_code)] // 兼容后续 CLI 调试/导出使用；生产路径统一保存完整快照。
-pub(crate) fn disabled_paths(entries: &[core::PathEntry]) -> Vec<String> {
-    entries
-        .iter()
-        .filter(|entry| !entry.enabled)
-        .map(|entry| entry.path.clone())
-        .collect()
 }
 
 /// 构造 sidecar 快照保存失败时的错误文案（纯函数，便于测试）。

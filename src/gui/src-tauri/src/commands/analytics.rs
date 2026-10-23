@@ -18,7 +18,7 @@ use path_editor_core::db::{
 use path_editor_core::CoreError;
 use tauri::State;
 
-use super::db_state::{with_db, with_db_mut, DbState};
+use super::db_state::{with_db, DbState};
 
 /// 全文检索（FTS5）。
 ///
@@ -49,16 +49,11 @@ pub fn stats_dashboard(
     })
 }
 
-/// 全量重建 `daily_stats`。
-#[tauri::command]
-pub fn stats_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
-    with_db_mut(&state, "stats_rebuild", stats::rebuild_daily)
-}
-
 /// 比较两个快照（按 uid）。
 ///
 /// 返回 `{ system: PathDiff, user: PathDiff, env_* }`——**双 hive 分开**。
-/// env 三字段恒为空，UI 必须显式显示「环境变量对比将在提供」。
+/// env 三字段恒为空：**本版不支持环境变量对比**，UI 必须显式说明，
+/// 不能让用户误以为「环境变量没有变化」。
 #[tauri::command]
 pub fn compare_snapshots(
     left_uid: String,
@@ -91,16 +86,4 @@ pub fn refs_dependencies(
 #[tauri::command]
 pub fn refs_cycles(state: State<'_, DbState>) -> Result<Vec<Vec<String>>, CoreError> {
     with_db(&state, "refs_cycles", refs::find_cycles)
-}
-
-/// 全量重建引用图。
-#[tauri::command]
-pub fn refs_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
-    with_db_mut(&state, "refs_rebuild", refs::rebuild_refs)
-}
-
-/// 全量重建 FTS 索引。
-#[tauri::command]
-pub fn search_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
-    with_db_mut(&state, "search_rebuild", search::rebuild_index)
 }

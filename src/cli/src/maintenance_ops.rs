@@ -2,26 +2,18 @@
 //!
 //! 维护命令只打开库并迁移 schema，不触发额外的文件导入。
 
-use crate::runtime::exit_core_error;
+use crate::runtime::{exit_core_error, open_db_or_exit};
 use path_editor_core as core;
 use path_editor_core::db::maintenance::{
     cleanup_legacy_env_backups, prune, prune_plan, scan_legacy_env_backups,
 };
-
-/// 打开默认库并迁移 schema。
-fn open_db() -> core::db::Db {
-    let mut db = core::db::open_default().unwrap_or_else(|e| exit_core_error(&e));
-    db.migrate_to_current()
-        .unwrap_or_else(|e| exit_core_error(&e));
-    db
-}
 
 /// `maintenance prune [--dry-run]`
 ///
 /// 删除「已导出且超过 90 天」的变更与「已解决超过 30 天」的冲突。
 /// 待导出队列（`exported_at IS NULL`）永远不动。
 pub(crate) fn maintenance_prune(dry_run: bool) {
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     let now = chrono::Utc::now().timestamp_millis();
     let report = if dry_run {
         prune_plan(&db, now).unwrap_or_else(|e| exit_core_error(&e))

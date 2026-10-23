@@ -36,7 +36,12 @@ export function targetForTab(tab: TabId): TargetType | null {
   return null;
 }
 
-/** 判断某个 hive 是否可写；未初始化时回退到旧的 isAdmin 字段。 */
+/** 判断某个 hive 是否可写；未初始化时回退到 `isAdmin`。
+ *
+ * **这是 UI 降级，不是安全判定**：capabilities 加载失败（IPC 不可用）时，
+ * 用 `isAdmin` 兜底以免整个界面变成只读。真正决定写不写得了的是 Rust 侧的
+ * 注册表权限与 `CoreError`；前端不得据此放行任何 core 会拒绝的操作。
+ */
 export function canWriteTarget(
   isAdmin: boolean,
   caps: PathCapabilities,

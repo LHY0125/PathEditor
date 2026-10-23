@@ -1,14 +1,6 @@
-use super::db_state::{with_db_mut, DbState};
 use path_editor_core::backup;
 use path_editor_core::backup::{EnvBackupInfo, RestoreOutcome, RestorePreview};
-use path_editor_core::db::backups::{self, BackupView};
 use path_editor_core::error::CoreError;
-use tauri::State;
-
-#[tauri::command]
-pub fn backup_registry(custom_dir: Option<String>) -> Result<String, CoreError> {
-    backup::backup_registry(custom_dir)
-}
 
 /// 立即创建一份环境变量备份，返回备份文件路径。
 ///
@@ -66,13 +58,4 @@ pub fn preview_env_backup(file: String) -> Result<RestorePreview, CoreError> {
 pub fn restore_env_backup(file: String, force: bool) -> Result<RestoreOutcome, CoreError> {
     let path = backup::validate_backup_path(&file)?;
     backup::restore_env_backup_from(&path, force)
-}
-
-/// 列出备份索引。
-///
-/// 刷新与列表都由 `core::db::backups::refresh_and_list` 完成：
-/// 每次调用前增量索引，索引失败只告警、不阻断列表。
-#[tauri::command]
-pub fn backup_list(state: State<'_, DbState>) -> Result<Vec<BackupView>, CoreError> {
-    with_db_mut(&state, "backup_list", backups::refresh_and_list)
 }

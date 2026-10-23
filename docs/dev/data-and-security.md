@@ -21,7 +21,9 @@
 ## 错误处理与安全
 
 - `backend.ts` 对能力对象、快照、禁用状态和 `PathEntry` 做运行时形状校验，不能只依赖 TypeScript 断言。
-- 旧命令仍返回自由文本 `Result<T, String>`；v6 的 DB / 同步命令返回结构化 `CoreError`，前端按 `code` 判定（`conflict` / `sync` / `syncFormat` / `crypto` …），**不要匹配 message 文本**。
+- **所有命令都返回结构化 `CoreError`**（注册表、扫描、备份、DB、同步一致）；前端按 `code` 判定（`conflict` / `sync` / `syncFormat` / `crypto` …），**不要匹配 message 文本**。
+- **核心业务只在 core**：启动引导、配置应用、保存编排、安全判定（保留名/保护名单/系统目录/空口令）、快照恢复都不得在 CLI/GUI 复制。外层只做参数转换、错误呈现与 UI 降级。
+- **组合长度是 UX 规则，不是安全校验**：`system + user` 启用路径合计长度超过 `appConfig.path.maxCombinedLength` 时前端只做软提醒（可确认继续）；真正的硬上限是 core 对单 hive 32767 字符的校验。
 - 导入文件读取限制在用户目录、临时目录或当前工作目录，并继续校验扩展名。
 - Tauri CSP 不允许设置为 `null`；不要放松 `src/gui/src-tauri/tauri.conf.json` 的安全配置。
 - 所有 `unsafe` 块必须有 `// SAFETY:` 注释。PATH 写入前检查 null 字节和 32767 字符上限。
@@ -33,5 +35,5 @@
 - **同步包安全**：Argon2id + ChaCha20-Poly1305，AAD 覆盖 header/salt/nonce；口令不落盘、不进 shell 历史/`ps`、错误文案不含口令；导入失败整体回滚。
 - **同步导入的外部输入**：`profile.name` 过 `validate_name`，非法名称 → `SyncFormat`；`profile.content.snapshotUid` 悬空 → `SyncFormat` 整包回滚；未知 `entityType` → `SyncFormat`。
 - **维护命令**：`cleanup-legacy-backups` 必须 `--yes`；转换或回读失败保留原文件。
-- `env get` 读取不存在的变量时，返回 `ErrorCode::NotFound`、message 为 `{用户|系统}环境变量 <NAME> 不存在`（不泄漏 `os error` 原生串、变量名只出现一次），退出码 1。判定只认 `code`，**不得**匹配 message 文本——NotFound 的结构信息由 `reg_store::get_raw_kind` 分类上传。
+- `env get` 读取不存在的变量时，返回 `ErrorCode::NotFound`、message 为 `{用户|系统}环境变量 <NAME> 不存在`（不泄漏 `os error` 原生串、变量名只出现一次），退出码 1。判定只认 `code`，**不得**匹配 message 文本——NotFound 的结构信息由 `EnvHiveStore::get_raw` 的分类结果上传。
 - CLI 退出码总表见 `docs/dev/interfaces.md`。

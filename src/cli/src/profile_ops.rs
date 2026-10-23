@@ -3,17 +3,12 @@
 //! 全部走 **DB**（`core::db::profiles`）。GUI 与 CLI 共用同一份数据。
 
 use crate::output::print_json;
-use crate::runtime::exit_core_error;
+use crate::runtime::{exit_core_error, open_db_or_exit};
 use path_editor_core as core;
 use path_editor_core::db::profiles as db_profiles;
 
-/// 打开默认库；失败按 CLI 退出码约定退出。
-fn open_db() -> core::db::Db {
-    core::db::open_and_migrate().unwrap_or_else(|e| exit_core_error(&e))
-}
-
 pub(crate) fn profile_list(json_out: bool) {
-    let db = open_db();
+    let db = open_db_or_exit();
     let list = db_profiles::list_profiles(&db).unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&list);
@@ -35,7 +30,7 @@ pub(crate) fn profile_list(json_out: bool) {
 }
 
 pub(crate) fn profile_save(name: String) {
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     // 先合并注册表与 DB 当前快照，确保已禁用的孤儿条目也进入配置并保留顺序。
     let snapshot =
         core::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_core_error(&e));
@@ -54,7 +49,7 @@ pub(crate) fn profile_save(name: String) {
 }
 
 pub(crate) fn profile_load(name: String) {
-    let db = open_db();
+    let db = open_db_or_exit();
     let Some((system, user)) =
         db_profiles::profile_paths(&db, &name).unwrap_or_else(|e| exit_core_error(&e))
     else {
@@ -83,7 +78,7 @@ pub(crate) fn profile_load(name: String) {
 }
 
 pub(crate) fn profile_apply(name: String) {
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     // 双 hive 一次编排：core 内按「读配置 → 只写变化的 hive → 记账」执行；
     // 记账失败只告警（注册表已写成功的事实优先于统计）。
     core::service::apply_profile(&mut db, &name, core::history::EventSource::Cli)
@@ -93,7 +88,7 @@ pub(crate) fn profile_apply(name: String) {
 }
 
 pub(crate) fn profile_delete(name: String) {
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     let removed =
         db_profiles::delete_profile_by_name(&mut db, &name).unwrap_or_else(|e| exit_core_error(&e));
     if removed {
@@ -108,7 +103,7 @@ pub(crate) fn profile_delete(name: String) {
 }
 
 pub(crate) fn profile_rename(old_name: String, new_name: String) {
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     let renamed = db_profiles::rename_profile(&mut db, &old_name, &new_name)
         .unwrap_or_else(|e| exit_core_error(&e));
     if renamed {

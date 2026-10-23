@@ -17,14 +17,6 @@ pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreE
     with_db(&state, "profile_list", profiles::list_profiles)
 }
 
-/// 软删除配置方案。
-#[tauri::command]
-pub fn profile_delete(uid: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_delete", |db| {
-        profiles::delete_profile(db, &uid)
-    })
-}
-
 /// 应用一个配置方案：读配置内容、写注册表与当前快照、记录应用次数。
 ///
 /// 与 CLI 的 `profile apply` 共用 `core::service::apply_profile`：

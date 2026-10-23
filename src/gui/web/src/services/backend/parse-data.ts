@@ -92,19 +92,6 @@ export interface ProfileView {
   snapshotUid: string | null;
 }
 
-/** 备份索引视图（对应 core 的 `BackupView`）。 */
-export interface BackupView {
-  uid: string;
-  kind: string;
-  createdAt: number;
-  contentHash: string;
-  sizeBytes: number;
-  filePath: string;
-  /** `.pebak`（DPAPI 加密）为 true，遗留 `.json` 为 false。 */
-  encrypted: boolean;
-  variableCount: number;
-}
-
 const EVENT_ACTIONS: readonly EventAction[] = [
   'save',
   'apply',
@@ -236,36 +223,6 @@ export function parseProfileList(value: unknown, label: string): ProfileView[] {
       applyCount: raw.applyCount,
       version: raw.version,
       snapshotUid,
-    };
-  });
-}
-
-/** 校验 `BackupView[]`。 */
-export function parseBackupList(value: unknown, label: string): BackupView[] {
-  if (!Array.isArray(value)) throw new Error(`${label} 必须是数组`);
-  return value.map((raw) => {
-    if (
-      !isRecord(raw) ||
-      typeof raw.uid !== 'string' ||
-      typeof raw.kind !== 'string' ||
-      typeof raw.createdAt !== 'number' ||
-      typeof raw.contentHash !== 'string' ||
-      typeof raw.sizeBytes !== 'number' ||
-      typeof raw.filePath !== 'string' ||
-      typeof raw.encrypted !== 'boolean' ||
-      typeof raw.variableCount !== 'number'
-    ) {
-      throw new Error(`${label} 的条目形状无效`);
-    }
-    return {
-      uid: raw.uid,
-      kind: raw.kind,
-      createdAt: raw.createdAt,
-      contentHash: raw.contentHash,
-      sizeBytes: raw.sizeBytes,
-      filePath: raw.filePath,
-      encrypted: raw.encrypted,
-      variableCount: raw.variableCount,
     };
   });
 }

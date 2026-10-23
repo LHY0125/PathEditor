@@ -8,16 +8,11 @@
 //! **同步不写注册表**：导入只改 DB。要生效必须另跑 `profile apply` 或
 //! PATH 命令。
 
-use crate::runtime::exit_core_error;
+use crate::runtime::{exit_core_error, open_db_or_exit};
 use path_editor_core as core;
 use path_editor_core::db::sync::conflict::{list_conflicts, resolve_conflict, Resolution};
 use path_editor_core::db::sync::{export_bundle, import_bundle};
 use std::path::Path;
-
-/// 打开默认库；失败按 CLI 退出码约定退出。
-fn open_db() -> core::db::Db {
-    core::db::open_and_migrate().unwrap_or_else(|e| exit_core_error(&e))
-}
 
 /// 交互式读口令（两次确认）。空口令直接拒绝。
 ///
@@ -55,7 +50,7 @@ fn prompt_passphrase(confirm: bool) -> String {
 /// `sync export <FILE>`：把待导出变更写成加密包。
 pub(crate) fn sync_export(file: &str) {
     let passphrase = prompt_passphrase(true);
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     let report = export_bundle(&mut db, &passphrase, Path::new(file))
         .unwrap_or_else(|e| exit_core_error(&e));
     println!(
@@ -68,7 +63,7 @@ pub(crate) fn sync_export(file: &str) {
 /// `sync import <FILE>`：解密并应用一个同步包。
 pub(crate) fn sync_import(file: &str) {
     let passphrase = prompt_passphrase(false);
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     let report = import_bundle(&mut db, &passphrase, Path::new(file))
         .unwrap_or_else(|e| exit_core_error(&e));
     println!(
@@ -102,7 +97,7 @@ pub(crate) fn sync_import(file: &str) {
 
 /// `sync status`：待导出数与未解决冲突数。
 pub(crate) fn sync_status() {
-    let db = open_db();
+    let db = open_db_or_exit();
     // 与 GUI 同步中心共用 `core::db::sync::status` 的同一口径。
     let status = core::db::sync::status(&db).unwrap_or_else(|e| exit_core_error(&e));
     println!("待导出变更: {}", status.pending_count);
@@ -111,7 +106,7 @@ pub(crate) fn sync_status() {
 
 /// `sync conflicts [--all]`：列出冲突。
 pub(crate) fn sync_conflicts(include_resolved: bool) {
-    let db = open_db();
+    let db = open_db_or_exit();
     let list = list_conflicts(&db, include_resolved).unwrap_or_else(|e| exit_core_error(&e));
     if list.is_empty() {
         println!("没有冲突。");
@@ -143,7 +138,7 @@ pub(crate) fn sync_resolve(id: i64, take: &str) {
         eprintln!("错误: --take 只能是 local 或 remote");
         std::process::exit(2);
     };
-    let mut db = open_db();
+    let mut db = open_db_or_exit();
     resolve_conflict(&mut db, id, resolution).unwrap_or_else(|e| exit_core_error(&e));
     println!("冲突 {id} 已按 {take} 解决");
 }

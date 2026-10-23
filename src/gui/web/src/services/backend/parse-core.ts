@@ -34,13 +34,6 @@ export function parsePathEntries(value: unknown, label: string): PathEntry[] {
   return value.map((entry) => ({ path: entry.path, enabled: entry.enabled }));
 }
 
-export function parseStringArray(value: unknown, label: string): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-    throw new Error(`${label} 返回了无效的字符串数组契约`);
-  }
-  return value;
-}
-
 export function parsePathSnapshot(value: unknown): PathSnapshot {
   if (!isRecord(value)) throw new Error('load_path_snapshot 返回了无效的快照契约');
   return {

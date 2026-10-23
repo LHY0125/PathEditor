@@ -37,13 +37,11 @@ import {
   parseRestoreOutcome,
   parseRestorePreview,
   parseScanResult,
-  parseStringArray,
   parseWriteOutcome,
 } from './parse-core';
 import type { PathEntryWrite } from './parse-core';
 import type { EventFilter, ProfileView } from './parse-data';
 import {
-  parseBackupList,
   parseCompareResult,
   parseCycleList,
   parseDashboard,
@@ -60,13 +58,6 @@ import {
 
 /** 唯一的 Tauri IPC 边界；组件和 Store 不再直接拼命令字符串。 */
 export const backend = {
-  loadSystemPaths: async () =>
-    parseStringArray(
-      await parseCoreError(invoke<unknown>('load_system_paths')),
-      'load_system_paths',
-    ),
-  loadUserPaths: async () =>
-    parseStringArray(await parseCoreError(invoke<unknown>('load_user_paths')), 'load_user_paths'),
   loadPathSnapshot: async () =>
     parsePathSnapshot(await parseCoreError(invoke<unknown>('load_path_snapshot'))),
   /**
@@ -88,10 +79,6 @@ export const backend = {
   expandEnvVars: (path: string) => invoke<string>('expand_env_vars', { path }),
   /** 异步确认对话框（替代阻塞式 window.confirm）：关窗确认等路径专用，绝不阻塞 JS 线程。 */
   confirmDialog: (message: string) => tauriConfirm(message),
-  broadcastEnvChange: () => invoke<void>('broadcast_env_change'),
-  backupRegistry: (customDir: string | null = null) =>
-    invoke<string | null>('backup_registry', { customDir }),
-  readTextFile: (path: string) => invoke<string>('read_text_file', { path }),
   importFile: (path: string) => invoke<[PathEntry[], PathEntry[]]>('import_file', { path }),
   exportPathEntries: (sys: PathEntry[], usr: PathEntry[], format: string) =>
     invoke<string>('export_path_entries', { sys, usr, format }),
@@ -243,16 +230,7 @@ export const backend = {
     return result;
   },
   /** 软删除配置方案（按 uid）；返回是否真的删除了（已删除返回 false）。 */
-  profileDelete: async (uid: string) => {
-    const result = await parseCoreError(invoke<unknown>('profile_delete', { uid }));
-    if (typeof result !== 'boolean') throw new Error('profile_delete 必须返回布尔值');
-    return result;
-  },
-  /** 列出备份索引（`.pebak` 的变量数来自文件头，无需解密）。 */
-  backupList: async () =>
-    parseBackupList(await parseCoreError(invoke<unknown>('backup_list')), 'backup_list'),
-
-  /* ────────────────────── 检索 / 统计 / 对比 / 引用图 / 冲突历史 ────────────────────── */
+  /* ────────────────────── 检索 / 统计 / 对比 / 引用图 ────────────────────── */
 
   /**
    * FTS5 全文检索。
@@ -272,13 +250,6 @@ export const backend = {
       await parseCoreError(invoke<unknown>('stats_dashboard', { days })),
       'stats_dashboard',
     ),
-
-  /** 全量重建 `daily_stats`。 */
-  statsRebuild: async () => {
-    const n = await parseCoreError(invoke<unknown>('stats_rebuild'));
-    if (typeof n !== 'number') throw new Error('stats_rebuild 必须返回数字');
-    return n;
-  },
 
   /** 比较两个快照（system 与 user 分开返回）。 */
   compareSnapshots: async (leftUid: string, rightUid: string) =>
@@ -304,20 +275,6 @@ export const backend = {
   /** 引用环列表。 */
   refsCycles: async () =>
     parseCycleList(await parseCoreError(invoke<unknown>('refs_cycles')), 'refs_cycles'),
-
-  /** 全量重建引用图。 */
-  refsRebuild: async () => {
-    const n = await parseCoreError(invoke<unknown>('refs_rebuild'));
-    if (typeof n !== 'number') throw new Error('refs_rebuild 必须返回数字');
-    return n;
-  },
-
-  /** 全量重建 FTS 索引。 */
-  searchRebuild: async () => {
-    const n = await parseCoreError(invoke<unknown>('search_rebuild'));
-    if (typeof n !== 'number') throw new Error('search_rebuild 必须返回数字');
-    return n;
-  },
 
   /* ────────────────────── 同步中心 ────────────────────── */
 

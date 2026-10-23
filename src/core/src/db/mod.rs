@@ -244,6 +244,18 @@ pub fn open_default() -> Result<Db, CoreError> {
     Db::open_encrypted(&path, &crypto::key_hex(&material))
 }
 
+/// 打开**已存在**的默认库；不存在时返回 `Ok(None)`。
+///
+/// 与 [`open_default`] 的区别：不存在时**不创建**密钥文件或空库。
+/// CLI 的 PATH 命令据此决定「有 DB 就用、没有就降级」。
+pub fn open_existing() -> Result<Option<Db>, CoreError> {
+    let path = crypto::config_dir().join("patheditor.db");
+    if !path.exists() {
+        return Ok(None);
+    }
+    open_default().map(Some)
+}
+
 /// 打开默认库并确保 schema 就绪（CLI 用）。
 ///
 /// 与 GUI 的 `setup_database` 等价，但**不做 pending 补写**——那是 GUI 启动
