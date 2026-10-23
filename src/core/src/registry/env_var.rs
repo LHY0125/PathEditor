@@ -522,20 +522,33 @@ fn update_env_var_with_store(
 /// 在同一调用内完成「读 → 算 revision → 比对 → 校验 → 写」。
 /// 读与写是两次独立存储调用，仍有竞态窗口；revision 校验缩小影响，
 /// 不能完全消除 TOCTOU。
-fn update_env_var_in_store(
+/// 写入时的并发策略。
+enum RevisionPolicy<'a> {
+    /// 要求 revision 匹配（CAS）
+    Require(&'a str),
+    /// 跳过 revision 校验（`--force` / 恢复）
+    Skip,
+}
+
+/// `update_env_var` / `update_env_var_force` 的共同实现。
+///
+/// 在同一调用内完成「读 → 算 revision → 比对 → 校验 → 写」。
+/// 读与写是两次独立存储调用，仍有竞态窗口；revision 校验缩小影响，
+/// 不能完全消除 TOCTOU。
+fn update_env_var_with_policy(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
     value: &str,
-    expected_revision: &str,
+    policy: RevisionPolicy<'_>,
+    op: &'static str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name).map_err(|m| {
-        CoreError::new(ErrorCode::InvalidName, "update_env_var", m).with_target(hive, name)
-    })?;
+    validate_env_name(name)
+        .map_err(|m| CoreError::new(ErrorCode::InvalidName, op, m).with_target(hive, name))?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
-            "update_env_var",
+            op,
             format!("{} 由专用 PATH 通路管理，请使用 PATH 视图编辑", name),
         )
         .with_target(hive, name));
@@ -543,7 +556,7 @@ fn update_env_var_in_store(
     if is_protected(name) {
         return Err(CoreError::new(
             ErrorCode::Protected,
-            "update_env_var",
+            op,
             format!("{} 是系统内置变量，不允许修改", name),
         )
         .with_target(hive, name));
@@ -552,28 +565,44 @@ fn update_env_var_in_store(
     let (vtype, current) =
         read_env_var(store, name).map_err(|e| attach_read_context(e, hive, name))?;
 
-    // 并发校验：revision 不匹配时拒绝写入，交给前端提示重新加载
-    let current_revision = revision_of(name, vtype.clone(), &current);
-    if current_revision != expected_revision {
-        return Err(conflict_error("update_env_var", hive, name));
+    if let RevisionPolicy::Require(expected_revision) = policy {
+        let current_revision = revision_of(name, vtype.clone(), &current);
+        if current_revision != expected_revision {
+            return Err(conflict_error(op, hive, name));
+        }
     }
 
-    // 类型与值校验
     let kind = EnvValueKind::from_reg_type(vtype.clone());
     if !kind.is_writable() {
         return Err(CoreError::new(
             ErrorCode::UnsupportedType,
-            "update_env_var",
+            op,
             format!("{} 的注册表类型不受支持，无法修改（仅可查看）", name),
         )
         .with_target(hive, name));
     }
-    validate_env_value(value, name).map_err(|m| {
-        CoreError::new(ErrorCode::InvalidValue, "update_env_var", m).with_target(hive, name)
-    })?;
+    validate_env_value(value, name)
+        .map_err(|m| CoreError::new(ErrorCode::InvalidValue, op, m).with_target(hive, name))?;
 
-    // 写入，类型原样保留
     write_env_var(store, name, value, vtype).map_err(|e| e.with_target(hive, name))
+}
+
+/// `update_env_var` 的存储注入版本。
+fn update_env_var_in_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+    value: &str,
+    expected_revision: &str,
+) -> Result<(), CoreError> {
+    update_env_var_with_policy(
+        store,
+        hive,
+        name,
+        value,
+        RevisionPolicy::Require(expected_revision),
+        "update_env_var",
+    )
 }
 
 /// 新建变量。`kind` 仅在此决定。
@@ -731,19 +760,20 @@ fn delete_env_var_with_store(
 /// `delete_env_var` 的核心逻辑，存储可注入。
 ///
 /// 读与删除是两次独立调用，revision 校验缩小竞态影响，不能完全消除 TOCTOU。
-fn delete_env_var_in_store(
+/// `delete_env_var` / `delete_env_var_force` 的共同实现。
+fn delete_env_var_with_policy(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
     name: &str,
-    expected_revision: &str,
+    policy: RevisionPolicy<'_>,
+    op: &'static str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name).map_err(|m| {
-        CoreError::new(ErrorCode::InvalidName, "delete_env_var", m).with_target(hive, name)
-    })?;
+    validate_env_name(name)
+        .map_err(|m| CoreError::new(ErrorCode::InvalidName, op, m).with_target(hive, name))?;
     if is_reserved(name) {
         return Err(CoreError::new(
             ErrorCode::ReservedName,
-            "delete_env_var",
+            op,
             format!("{} 由专用 PATH 通路管理，请使用 PATH 视图编辑", name),
         )
         .with_target(hive, name));
@@ -751,7 +781,7 @@ fn delete_env_var_in_store(
     if is_protected(name) {
         return Err(CoreError::new(
             ErrorCode::Protected,
-            "delete_env_var",
+            op,
             format!("{} 是系统内置变量，不允许删除", name),
         )
         .with_target(hive, name));
@@ -759,18 +789,18 @@ fn delete_env_var_in_store(
 
     let (vtype, current) =
         read_env_var(store, name).map_err(|e| attach_read_context(e, hive, name))?;
-    let current_revision = revision_of(name, vtype.clone(), &current);
-    if current_revision != expected_revision {
-        return Err(conflict_error("delete_env_var", hive, name));
+    if let RevisionPolicy::Require(expected_revision) = policy {
+        let current_revision = revision_of(name, vtype.clone(), &current);
+        if current_revision != expected_revision {
+            return Err(conflict_error(op, hive, name));
+        }
     }
 
     if EnvValueKind::from_reg_type(vtype) == EnvValueKind::Unsupported {
-        // 防御性、当前不可达：`read_env_var` 已对 Unsupported
-        // 类型提前返回 Err，上面的 `?` 会先短路。保留以显式表达删除的前置条件，
-        // 行为与现状一致。
+        // 防御性、当前不可达：`read_env_var` 已对 Unsupported 类型提前返回 Err。
         return Err(CoreError::new(
             ErrorCode::UnsupportedType,
-            "delete_env_var",
+            op,
             format!("{} 的注册表类型不受支持，无法删除", name),
         )
         .with_target(hive, name));
@@ -779,6 +809,22 @@ fn delete_env_var_in_store(
     store
         .delete_value(name)
         .map_err(|e| e.with_target(hive, name))
+}
+
+/// `delete_env_var` 的存储注入版本。
+fn delete_env_var_in_store(
+    store: &dyn EnvHiveStore,
+    hive: EnvHive,
+    name: &str,
+    expected_revision: &str,
+) -> Result<(), CoreError> {
+    delete_env_var_with_policy(
+        store,
+        hive,
+        name,
+        RevisionPolicy::Require(expected_revision),
+        "delete_env_var",
+    )
 }
 
 /// 强制写入已有变量（**最后写入者胜**）。不做 revision 比对。
@@ -832,43 +878,14 @@ pub(crate) fn update_env_var_force_in_store(
     name: &str,
     value: &str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name).map_err(|m| {
-        CoreError::new(ErrorCode::InvalidName, "update_env_var_force", m).with_target(hive, name)
-    })?;
-    if is_reserved(name) {
-        return Err(CoreError::new(
-            ErrorCode::ReservedName,
-            "update_env_var_force",
-            format!("{} 由专用 PATH 通路管理，请使用 PATH 视图编辑", name),
-        )
-        .with_target(hive, name));
-    }
-    if is_protected(name) {
-        return Err(CoreError::new(
-            ErrorCode::Protected,
-            "update_env_var_force",
-            format!("{} 是系统内置变量，不允许修改", name),
-        )
-        .with_target(hive, name));
-    }
-
-    // 读现有类型以便原样保留；**不比对** revision
-    let (vtype, _current) =
-        read_env_var(store, name).map_err(|e| attach_read_context(e, hive, name))?;
-    let kind = EnvValueKind::from_reg_type(vtype.clone());
-    if !kind.is_writable() {
-        return Err(CoreError::new(
-            ErrorCode::UnsupportedType,
-            "update_env_var_force",
-            format!("{} 的注册表类型不受支持，无法修改（仅可查看）", name),
-        )
-        .with_target(hive, name));
-    }
-    validate_env_value(value, name).map_err(|m| {
-        CoreError::new(ErrorCode::InvalidValue, "update_env_var_force", m).with_target(hive, name)
-    })?;
-
-    write_env_var(store, name, value, vtype).map_err(|e| e.with_target(hive, name))
+    update_env_var_with_policy(
+        store,
+        hive,
+        name,
+        value,
+        RevisionPolicy::Skip,
+        "update_env_var_force",
+    )
 }
 
 /// 强制删除变量（**最后写入者胜**）。不做 revision 比对，其余校验照旧。
@@ -911,42 +928,13 @@ pub(crate) fn delete_env_var_force_in_store(
     hive: EnvHive,
     name: &str,
 ) -> Result<(), CoreError> {
-    validate_env_name(name).map_err(|m| {
-        CoreError::new(ErrorCode::InvalidName, "delete_env_var_force", m).with_target(hive, name)
-    })?;
-    if is_reserved(name) {
-        return Err(CoreError::new(
-            ErrorCode::ReservedName,
-            "delete_env_var_force",
-            format!("{} 由专用 PATH 通路管理，请使用 PATH 视图编辑", name),
-        )
-        .with_target(hive, name));
-    }
-    if is_protected(name) {
-        return Err(CoreError::new(
-            ErrorCode::Protected,
-            "delete_env_var_force",
-            format!("{} 是系统内置变量，不允许删除", name),
-        )
-        .with_target(hive, name));
-    }
-
-    let (vtype, _current) =
-        read_env_var(store, name).map_err(|e| attach_read_context(e, hive, name))?;
-    if EnvValueKind::from_reg_type(vtype) == EnvValueKind::Unsupported {
-        // 防御性、当前不可达：`read_env_var` 已对 Unsupported 类型提前返回 Err，
-        // 上面的 `?` 会先短路。保留以显式表达删除的前置条件，行为与现状一致。
-        return Err(CoreError::new(
-            ErrorCode::UnsupportedType,
-            "delete_env_var_force",
-            format!("{} 的注册表类型不受支持，无法删除", name),
-        )
-        .with_target(hive, name));
-    }
-
-    store
-        .delete_value(name)
-        .map_err(|e| e.with_target(hive, name))
+    delete_env_var_with_policy(
+        store,
+        hive,
+        name,
+        RevisionPolicy::Skip,
+        "delete_env_var_force",
+    )
 }
 
 #[cfg(test)]
