@@ -3,7 +3,7 @@
 //! 全部走 **DB**（`core::db::profiles`）。GUI 与 CLI 共用同一份数据。
 
 use crate::output::print_json;
-use crate::runtime::{exit_core_error, save_path_write};
+use crate::runtime::exit_core_error;
 use path_editor_core as core;
 use path_editor_core::db::profiles as db_profiles;
 
@@ -83,25 +83,11 @@ pub(crate) fn profile_load(name: String) {
 }
 
 pub(crate) fn profile_apply(name: String) {
-    let db = open_db();
-    let Some((system, user)) =
-        db_profiles::profile_paths(&db, &name).unwrap_or_else(|e| exit_core_error(&e))
-    else {
-        exit_core_error(&core::CoreError::new(
-            core::ErrorCode::NotFound,
-            "profile_apply",
-            format!("配置不存在或没有内容: {name}"),
-        ));
-    };
-    // 双 hive 一次提交（core 内顺序 system → user，含备份/sidecar/广播）。
-    // 不再取 expected（CLI 无并发窗口，见 `save_path_write`）。
-    save_path_write(Some(system), Some(user));
-
-    // 应用成功后记账（失败只告警——注册表已写成功的事实优先于统计）
-    let mut db = db;
-    if let Err(e) = db_profiles::mark_profile_applied_by_name(&mut db, &name) {
-        eprintln!("警告: 配置应用计数更新失败: {}", e.message);
-    }
+    let mut db = open_db();
+    // 双 hive 一次编排：core 内按「读配置 → 只写变化的 hive → 记账」执行；
+    // 记账失败只告警（注册表已写成功的事实优先于统计）。
+    core::service::apply_profile(&mut db, &name, core::history::EventSource::Cli)
+        .unwrap_or_else(|e| exit_core_error(&e));
 
     println!("配置文件 \"{name}\" 已写入注册表。");
 }

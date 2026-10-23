@@ -108,7 +108,7 @@ pub fn run() {
             commands::history::history_reveal_env_value,
             commands::profiles::profile_list,
             commands::profiles::profile_delete,
-            commands::profiles::profile_mark_applied,
+            commands::profiles::profile_apply,
             commands::backup::backup_list,
             commands::profiles::profile_save,
             // ── 检索 / 统计 / 对比 / 引用图 / 冲突历史 ──
@@ -127,7 +127,6 @@ pub fn run() {
             commands::profiles::profile_paths,
             commands::profiles::profile_rename,
             commands::profiles::profile_delete_by_name,
-            commands::profiles::profile_mark_applied_by_name,
             commands::history::history_restore_snapshot,
             // ── 同步中心 ──
             commands::sync::sync_status,

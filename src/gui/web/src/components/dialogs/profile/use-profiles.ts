@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
+import appConfig from '@/config/default.json';
 import { useAppStore } from '@/store/app-store';
 import { backend, type ProfileView, type ProfilePathsView } from '@/services/backend';
+
+/** 从 `parseCoreError` 抛出的结构化错误或普通异常中取可读文案。 */
+function errorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
 
 export function useProfiles(open: boolean, onClose: () => void) {
   const { t } = useTranslation();
@@ -61,20 +70,26 @@ export function useProfiles(open: boolean, onClose: () => void) {
       return;
     }
 
-    useAppStore.getState().replaceBothPaths(selectedData.system, selectedData.user);
-    const result = await useAppStore.getState().savePaths();
-    if (result.kind === 'success') {
-      onClose();
-      return;
+    // 组合长度是 UX 软提醒（确认后可继续）；单 hive 的 32767 硬上限由 core 校验。
+    const enabled = [...selectedData.system, ...selectedData.user].filter((entry) => entry.enabled);
+    const combinedLength = enabled.reduce(
+      (sum, entry, index) => sum + entry.path.length + (index > 0 ? 1 : 0),
+      0,
+    );
+    if (combinedLength > appConfig.path.maxCombinedLength) {
+      const confirmed = await ask(t('status.saveWarningLongPaths'), {
+        title: t('dialog.backupTitle'),
+        kind: 'warning',
+      });
+      if (!confirmed) return;
     }
-    if (result.kind !== 'warning') return;
 
-    const confirmed = await ask(t('status.saveWarningLongPaths'), {
-      title: t('dialog.backupTitle'),
-      kind: 'warning',
-    });
-    if (confirmed && (await useAppStore.getState().savePaths(true)).kind === 'success') {
+    // 读配置、写注册表、记账全部在 core；这里只负责确认与结果呈现。
+    try {
+      await backend.profileApply(selected);
       onClose();
+    } catch (error) {
+      useAppStore.getState().setStatusMessage(`${t('status.error')}: ${errorMessage(error)}`);
     }
   }, [onClose, selected, selectedData, t]);
 

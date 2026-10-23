@@ -6,6 +6,7 @@ use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{self, ProfileView};
 use path_editor_core::history::EventSource;
+use path_editor_core::service::{self, ApplyOutcome};
 use path_editor_core::{CoreError, PathEntry};
 use serde::Deserialize;
 use tauri::State;
@@ -24,14 +25,14 @@ pub fn profile_delete(uid: String, state: State<'_, DbState>) -> Result<bool, Co
     })
 }
 
-/// 记录配置被应用（应用次数 + 最后应用时间）。
+/// 应用一个配置方案：读配置内容、写注册表与当前快照、记录应用次数。
 ///
-/// **不在此处写注册表**：前端先读取 `profile_paths`，再经 `save_path_with_sidecar`
-/// 写入注册表；成功后才调用本命令记账，避免把「记账」和「真写」混在一个命令里。
+/// 与 CLI 的 `profile apply` 共用 `core::service::apply_profile`：
+/// 「读配置 → 保存 → 记账」只有一份实现。记账失败只告警，不影响保存结果。
 #[tauri::command]
-pub fn profile_mark_applied(uid: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_mark_applied", |db| {
-        profiles::mark_profile_applied(db, &uid)
+pub fn profile_apply(name: String, state: State<'_, DbState>) -> Result<ApplyOutcome, CoreError> {
+    with_db_mut(&state, "profile_apply", |db| {
+        service::apply_profile(db, &name, EventSource::Gui)
     })
 }
 
@@ -141,16 +142,5 @@ pub fn profile_rename(
 pub fn profile_delete_by_name(name: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
     with_db_mut(&state, "profile_delete_by_name", |db| {
         profiles::delete_profile_by_name(db, &name)
-    })
-}
-
-/// 按**名称**记录配置被应用。
-#[tauri::command]
-pub fn profile_mark_applied_by_name(
-    name: String,
-    state: State<'_, DbState>,
-) -> Result<bool, CoreError> {
-    with_db_mut(&state, "profile_mark_applied_by_name", |db| {
-        profiles::mark_profile_applied_by_name(db, &name)
     })
 }

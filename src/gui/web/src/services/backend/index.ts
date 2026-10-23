@@ -126,13 +126,13 @@ export const backend = {
     if (typeof result !== 'boolean') throw new Error('profile_delete_by_name 必须返回布尔值');
     return result;
   },
-  profileMarkAppliedByName: async (name: string) => {
-    const result = await parseCoreError(invoke<unknown>('profile_mark_applied_by_name', { name }));
-    if (typeof result !== 'boolean') {
-      throw new Error('profile_mark_applied_by_name 必须返回布尔值');
-    }
-    return result;
-  },
+  /**
+   * 应用配置方案：core 读配置 → 写注册表与当前快照 → 记录应用次数。
+   *
+   * 与 CLI 的 `profile apply` 共用同一编排；记账失败不影响保存结果。
+   */
+  profileApply: async (name: string) =>
+    parseApplyOutcome(await parseCoreError(invoke<unknown>('profile_apply', { name }))),
   listAllEnvVars: async () => parseEnvVarSnapshot(await invoke<unknown>('list_all_env_vars')),
   revealEnvVar: async (hive: EnvHive, name: string) =>
     parseRevealedValue(
@@ -247,12 +247,6 @@ export const backend = {
   profileDelete: async (uid: string) => {
     const result = await parseCoreError(invoke<unknown>('profile_delete', { uid }));
     if (typeof result !== 'boolean') throw new Error('profile_delete 必须返回布尔值');
-    return result;
-  },
-  /** 记录配置被应用（应用次数 +1）。注册表写入由 `applyProfile` 另行完成。 */
-  profileMarkApplied: async (uid: string) => {
-    const result = await parseCoreError(invoke<unknown>('profile_mark_applied', { uid }));
-    if (typeof result !== 'boolean') throw new Error('profile_mark_applied 必须返回布尔值');
     return result;
   },
   /** 列出备份索引（`.pebak` 的变量数来自文件头，无需解密）。 */
