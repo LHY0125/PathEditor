@@ -142,7 +142,7 @@ jobs:
           $portableStage = Join-Path $env:RUNNER_TEMP "patheditor-portable"
           New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
           Copy-Item -LiteralPath 'target\release\PathEditor.exe' -Destination $portableStage
-          Copy-Item -LiteralPath 'gui\WebView2Loader.dll' -Destination $portableStage
+          Copy-Item -LiteralPath 'src\gui\src-tauri\WebView2Loader.dll' -Destination $portableStage
 
           $zip = Join-Path $assetDir "PathEditor_${env:VERSION}_x64-portable.zip"
           Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $zip -Force
