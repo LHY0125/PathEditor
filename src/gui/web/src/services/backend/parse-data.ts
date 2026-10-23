@@ -2,7 +2,7 @@ import type { PathEntry } from '@/core/path-entry';
 
 import { isRecord, parsePathEntries } from './parse-core';
 
-// ── v6 历史契约 ─────────────────────────────────────────────
+// ── 历史契约 ─────────────────────────────────────────────
 
 /** 事件动作（对应 core 的 `EventAction`，serde camelCase）。 */
 export type EventAction =

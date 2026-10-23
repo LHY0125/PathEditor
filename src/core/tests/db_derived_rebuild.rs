@@ -7,7 +7,7 @@
 // 取决于这三个函数能否独立完成重建。本测试守的是那个更根本的性质。
 //
 // `gui` 侧的编排顺序（search 仅空时重建、daily/refs 每次重建）无法从 core
-// 测试覆盖——那是 `setup_database` 的职责，本轮不新增 gui 内部测试。
+// 测试覆盖——那是 `setup_database` 的职责，本测试不新增 gui 内部测试。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, NewSnapshot, SnapshotKind,

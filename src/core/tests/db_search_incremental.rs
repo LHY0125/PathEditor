@@ -1,5 +1,5 @@
 // 一文件一测试（SQLCipher）。
-// `index_snapshot_tx` 此前只有实现没有测试。
+// `index_snapshot_tx` 该测试覆盖增量索引。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{index_snapshot_tx, rebuild_index, search};

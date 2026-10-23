@@ -174,7 +174,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   'invalidValue',
   'io',
   'parse',
-  // v6：数据库/密钥/同步/迁移。降级模式（DB 不可用）的判定依赖这几个码，
+  // 数据库/密钥/同步/迁移。降级模式（DB 不可用）的判定依赖这几个码，
   // 漏加会让 parseCoreError 静默兜底成 internal，前端再也识别不出降级。
   'database',
   'crypto',

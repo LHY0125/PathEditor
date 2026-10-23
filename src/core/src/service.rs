@@ -94,7 +94,7 @@ impl PathHiveIo for RealPathHiveIo {
 
     fn backup(&self) -> Result<(), CoreError> {
         // 传 None 走默认备份目录，从而沿用 `rotate_path_backups` 的默认目录限定
-        // （N4 裁断：自定义目录不参与轮换，可能混有用户自己的文件）。
+        // （自定义目录不参与轮换，可能混有用户自己的文件）。
         backup::backup_registry(None).map(|_| ())
     }
 }
@@ -147,7 +147,7 @@ pub struct ApplyOutcome {
     pub sidecar: SidecarOutcome,
 }
 
-/// 构造带操作上下文的 `CoreError`（自由文本错误的过渡期收口）。
+/// 构造带操作上下文的 `CoreError`（自由文本错误的统一收口）。
 fn core_err(code: ErrorCode, operation: &'static str, message: impl Into<String>) -> CoreError {
     CoreError::new(code, operation, message)
 }
@@ -316,8 +316,7 @@ pub(crate) fn save_path_registry_io(
     // 步骤 3：确认将发生写入时备份。
     //
     // 真实现经 `RealPathHiveIo::backup` → `backup::backup_registry(None)`，
-    // 走默认备份目录，从而沿用 `rotate_path_backups` 的默认目录限定（N4 裁断：
-    // 自定义目录不参与轮换，可能混有用户自己的文件）。
+    // 走默认备份目录，从而沿用 `rotate_path_backups` 的默认目录限定（自定义目录不参与轮换，可能混有用户自己的文件）。
     //
     // 备份失败**不阻断**写入（与 env 侧 `WriteOutcome.backup` 同语义）：
     // 只记警告并继续，写入结果照常返回。
@@ -770,7 +769,7 @@ mod tests {
 
     /// 契约 1：确实发生写入时 `backup()` 被调用**恰好一次**。
     ///
-    /// 此前该测试为 RED（尚无备份调用）。
+    /// 该测试守护「写入前必须调用备份」这一契约。
     #[test]
     fn backup_called_once_when_write_happens() {
         let _guard = crate::persist::test_persist_lock();
@@ -864,7 +863,7 @@ mod tests {
     // ⚠️ 三条测试分工：第 1 条驱动修复（现状 RED）；第 2/3 条**守护**——现状即 GREEN，
     // 用来防止修复被误实现成「关掉校验」。
 
-    /// 契约 W3.1-1：**仅顺序不同**（同集合）→ 校验**通过**（现状 RED）。
+    /// 契约：**仅顺序不同**（同集合）→ 校验**通过**。
     #[test]
     fn reorder_only_does_not_conflict() {
         let _guard = crate::persist::test_persist_lock();
@@ -885,7 +884,7 @@ mod tests {
         );
     }
 
-    /// 契约 W3.1-2【守护】：**成员不同**（增/删）→ **仍拒绝**。
+    /// 守护契约：**成员不同**（增/删）→ **仍拒绝**。
     ///
     /// 防止修复被误实现成「恒通过」——真实的成员变化必须仍被检出。
     #[test]
@@ -908,7 +907,7 @@ mod tests {
         assert!(io.write_order().is_empty(), "冲突时不得写入");
     }
 
-    /// 契约 W3.1-3【守护】：同集合但**重复计数不同** → **拒绝**（多重集而非集合）。
+    /// 守护契约：同集合但**重复计数不同** → **拒绝**（多重集而非集合）。
     ///
     /// 防止修复被误实现成「`HashSet` 集合比较」——那会吞掉重复项。
     #[test]

@@ -208,7 +208,7 @@ export const backend = {
       await parseCoreError(invoke<unknown>('restore_env_backup', { file, force })),
     ),
 
-  // ── v6 历史 ────────────
+  // ── 历史 ────────────
 
   /** 列出历史事件（分页，服务端固定时间倒序）。 */
   historyListEvents: async (filter?: EventFilter) =>

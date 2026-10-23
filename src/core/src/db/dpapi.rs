@@ -1,6 +1,6 @@
 //! Windows DPAPI 封装（用户作用域）。
 //!
-//! 移植自探针 `probes/v6-sqlcipher/src/lib.rs` 的 `dpapi` 模块 —— 该实现已在
+//! 移植自 SQLCipher 探针的 `dpapi` 模块 —— 该实现已在
 //! GNU 与 MSVC 双平台实测通过。改动仅两处：
 //! 1. 错误类型从 `String` 换成 `CoreError`（`ErrorCode::Crypto`），与其他模块统一；
 //! 2. 补充中文文档注释。

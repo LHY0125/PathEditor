@@ -44,7 +44,7 @@ impl WinregHive {
     ///
     /// `write` 为 `true` 时请求 `KEY_READ | KEY_WRITE`，否则只请求 `KEY_READ`。
     ///
-    /// （2026-09-20 裁断）：本方法是固有方法、不在 [`EnvHiveStore`] trait
+    /// ：本方法是固有方法、不在 [`EnvHiveStore`] trait
     /// 上。winreg 错误按 `io::ErrorKind` 诚实分类：
     /// `PermissionDenied` → [`ErrorCode::PermissionDenied`]，其余 → [`ErrorCode::Io`]。
     pub fn open(hive: EnvHive, write: bool) -> Result<Self, CoreError> {
@@ -344,7 +344,7 @@ mod memory_tests {
 
     #[test]
     fn memory_hive_injects_failures() {
-        // brief 原文为 `let hive`，故障注入需要可变绑定，此处加 `mut`。
+        // 故障注入需要`let hive`，故障注入需要可变绑定，此处加 `mut`。
         let mut hive = MemoryHive::new(true);
         hive.seed("MY_VAR", "v", REG_SZ);
 

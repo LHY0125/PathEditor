@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn conflict_prefix_matches_core_constant() {
-        // 契约：`[E_CONFLICT]` 前缀仍是前端过渡期判定依据与
+        // 契约：`[E_CONFLICT]` 前缀仍是前端展示文本与
         // core 消息的稳定标识，测试改为直接断言 core 常量本身；CLI 退出码
         // 已由 `CoreError.exit_code()` 驱动，不再依赖文本前缀。
         use path_editor_core as core;

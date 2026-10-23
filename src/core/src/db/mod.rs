@@ -8,6 +8,7 @@ pub mod compare;
 pub mod crypto;
 #[cfg(windows)]
 pub mod dacl;
+pub mod derived;
 pub mod history;
 pub mod history_sink;
 pub mod maintenance;
@@ -34,7 +35,7 @@ pub struct Db {
 impl Db {
     /// 用 32 字节十六进制密钥打开（或创建）加密库。
     ///
-    /// 打开序列已由 `probes/v6-sqlcipher` 探针验证：
+    /// 打开序列已由 SQLCipher 探针验证：
     /// 先只设 key，再**做一次只读查询**让 SQLCipher 用 HMAC 校验密钥，
     /// 最后才设 PRAGMA —— 否则错误密钥会先被 `journal_mode=WAL` 的写操作触发，
     /// 报出的错误语义模糊。

@@ -40,7 +40,7 @@ export interface EnvBackupInfo {
   path: string;
   timestamp: string;
   sizeBytes: number;
-  /** **恒为 0**：列表不解析内容（S5 / J4 裁断），不可当作真实计数。 */
+  /** **恒为 0**：列表不解析内容，不可当作真实计数。 */
   variableCount: number;
 }
 

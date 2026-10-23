@@ -84,9 +84,8 @@ fn reject_reserved_and_protected(
 /// 广播观察标志：记录最近一次写成功路径是否走了广播（仅测试读取）。
 ///
 /// 这是**测试观察点**，不是新架构层：生产路径恒为 `true` 的副作用，
-/// 无分支可跑偏。存在的理由是补上 golden/README.md 第 6 类此前「不做测试」
-/// 留下的缺口 —— 5 个写入口的广播调用曾在本轮重构中被整体丢失，
-/// 而当时**没有任何测试会因此失败**。
+/// 无分支可跑偏。存在的理由是补上 golden/README.md 第 6 类「不做测试」
+/// 的缺口：5 个写入口的广播调用缺少回归保护，丢失时不会有测试失败。
 static BROADCAST_OBSERVED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -150,11 +149,11 @@ fn broadcast_after_write() {
 /// 计算都基于它。先判定类型再做字符串解码：`REG_DWORD` 等不支持类型
 /// 必须返回「类型不受支持」，而不是误导性的解码失败。
 ///
-/// （2026-09-20 裁断）：三类错误在函数内部分类完成 ——
+/// ：三类错误在函数内部分类完成 ——
 /// 读取失败 → `Io`、类型不支持 → `UnsupportedType`、解码失败 → `Parse`。
-/// 调用方直接 `?` 传播，不再整体包成 `Io`；hive 标签由调用侧补（W2-B3b）。
+/// 调用方直接 `?` 传播，不再整体包成 `Io`；hive 标签由调用侧补。
 ///
-/// （2026-10-16）：读取失败一路走 [`EnvHiveStore::get_raw`]，使「变量不存在」
+/// ：读取失败一路走 [`EnvHiveStore::get_raw`]，使「变量不存在」
 /// 以 `NotFound` 码上传，而非被稀释成通用 `Io`（此即的根因：旧代码恒包 `Io`，
 /// 与声明的行为不符）。
 ///
@@ -183,7 +182,7 @@ fn read_env_var(store: &dyn EnvHiveStore, name: &str) -> Result<(RegType, String
     Ok((raw.vtype, value))
 }
 
-/// 为 `read_env_var` 的错误补上 hive 标签与目标信息（W2-B3b）。
+/// 为 `read_env_var` 的错误补上 hive 标签与目标信息。
 ///
 /// `read_env_var` 签名无 hive 参数，message 文本标签在调用侧包一层，
 /// 与列表路径的「读取{系统}环境变量…失败」样式一致；结构化
@@ -623,7 +622,7 @@ fn create_env_var_with_store(
 /// 写入前先确认同名变量不存在（忽略大小写），不覆盖已有变量。
 /// 枚举检查与写入是两次独立调用，存在竞态窗口，当前未做原子 CAS。
 ///
-/// **有意的语义变更（评审裁断 O-2）**：查重用的 `store.enum_names()?` 会传播
+/// **有意的语义变更**：查重用的 `store.enum_names()?` 会传播
 /// 枚举错误。原 `create_env_var_in_key` 用 `enum_values().flatten()` 吞掉枚举
 /// 错误 —— 枚举失败会被当作「同名不存在」而继续写入，有冒险覆盖的隐患。
 /// 新行为是「失败响亮优于冒险覆盖」，与同源，但**超出只针对
@@ -766,7 +765,7 @@ fn delete_env_var_in_store(
     }
 
     if EnvValueKind::from_reg_type(vtype) == EnvValueKind::Unsupported {
-        // 防御性、当前不可达（评审裁断 O-3）：`read_env_var` 已对 Unsupported
+        // 防御性、当前不可达：`read_env_var` 已对 Unsupported
         // 类型提前返回 Err，上面的 `?` 会先短路。保留以显式表达删除的前置条件，
         // 行为与现状一致。
         return Err(CoreError::new(
@@ -1323,7 +1322,7 @@ mod env_var_tests {
 
     #[test]
     fn conflict_message_matches_frontend_contract() {
-        // 判定按 CoreError.code（conflict）进行；[E_CONFLICT] 前缀仅是过渡期展示文本，
+        // 判定按 CoreError.code（conflict）进行；[E_CONFLICT] 前缀仅是展示文本，
         // 断言保留前缀是为旧文本路径兼容，正文改动不应破坏它
         assert!(ERR_CONFLICT.starts_with("[E_CONFLICT] "));
         assert!(ERR_CONFLICT.contains("已被其他进程修改"));
@@ -1458,7 +1457,7 @@ mod env_var_tests {
 
     /// 广播回归：5 个写入口的成功路径都必须发出 `WM_SETTINGCHANGE`。
     ///
-    /// 存在的理由（2026-09-21 复审 Critical）：重构把 5 处
+    /// 存在的理由：重构把 5 处
     /// `broadcast_env_change()` 整体丢失，而**当时没有任何测试会因此失败**——
     /// 运行中的进程会一直持有陈旧环境变量直到重启 shell。golden/README.md
     /// 第 6 类记的正是「端口未抽出、本类不做测试」，本用例用观察标志补上这一格。
@@ -1551,7 +1550,7 @@ mod env_var_tests {
     /// 文案等价：5 个写入口的保留名 / 保护名单 message 必须逐字等于对应
     /// `*_in_store` 的 message。
     ///
-    /// 存在的理由（2026-09-21 复审 Important）：内联校验曾因辅助函数只带一个
+    /// 存在的理由：内联校验曾因辅助函数只带一个
     /// `verb` 参数而让 `create_env_var` 的保留名文案漂移成「请使用 PATH 视图编辑」，
     /// 而 `*_in_store` 是「无法通过通用通路创建」—— 用户可见的行为变化。
     /// 本用例把「逐字一致」从人工核对升级为可执行断言。

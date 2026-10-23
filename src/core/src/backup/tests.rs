@@ -1449,7 +1449,7 @@ fn restore_force_overwrites_conflict() {
 /// S6：`--force` 不豁免保护名单 —— 保护名单变量出现在差异中，
 /// 但写入阶段被 core 拒绝并记入 failures，且**不中止其余变量的恢复**。
 ///
-/// 核对轮 E5 裁断：preview 不为保护名单新增枚举变体、不预排除；
+/// 契约：preview 不为保护名单新增枚举变体、不预排除；
 /// 拒绝发生在写入阶段（core 写函数内是保护名单的唯一真相源）。
 ///
 /// 可证伪性：把 `restore_in_stores` 的逐条失败改成 `?` 提前返回 → NORMAL_ONE

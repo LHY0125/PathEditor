@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn pending_snapshot_roundtrip_lifecycle() {
         let _guard = crate::persist::test_persist_lock();
-        // 上次运行可能残留文件（此前崩溃遗留），先清掉再断言 missing 前置。
+        // 上次运行可能残留文件（崩溃遗留），先清掉再断言 missing 前置。
         let _ = clear_pending_path_snapshot();
         let bak = pending_path().with_file_name("patheditor_test_pending_snapshot.json.bak");
         let _ = fs::remove_file(&bak);

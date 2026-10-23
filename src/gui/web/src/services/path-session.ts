@@ -137,7 +137,7 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
 
   // ── 4. 映射 ApplyOutcome → SaveSnapshotOutcome ──
   //
-  // 两类问题分开处理（复审裁断 ④）：
+  // 两类问题分开处理：
   // - **hive 失败**（注册表未写入）→ 进 `errors`，把结果降级为 failure/partial；
   // - **sidecar 异常**（注册表**已写入**，仅快照未落盘）→ **非阻断提示**：
   //  不降级结果，只改 `statusMessage`。core 会在下次命令时经

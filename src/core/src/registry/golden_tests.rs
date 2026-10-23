@@ -8,8 +8,7 @@
 //! 但 `mod` 声明挂在 [`super`]（`registry/path.rs`）下而非 `registry.rs`
 //! 根 —— `split_path` / `join_path` / `validate_and_join_paths` /
 //! `select_path_value_type` / `make_path_value` 是 `path.rs` 的私有 fn，
-//! 只有其子模块可以 `use super::` 够到（brief 的推理在
-//! registry 拆分后依然成立，只是宿主文件变了）。
+//! 只有其子模块可以 `use super::` 够到（registry 拆分后依然成立，只是宿主文件变了）。
 //!
 //! 覆盖六类行为中的五类（第 6 类延后，见 `golden/README.md`）：
 //! 1. PATH 分割/空项/空白/重复（`split_path` / `join_path` / `clean_path_entries`）

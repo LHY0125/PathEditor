@@ -557,7 +557,7 @@ fn make_backup(dir: &std::path::Path) -> std::path::PathBuf {
 
 /// `env backups`（无 `--json`）的人类可读表格：含表头、文件名、真实字节数与路径。
 ///
-/// 覆盖非 JSON 分支 —— 该分支此前无任何断言（变异测试把表格里的 `sizeBytes`
+/// 覆盖非 JSON 分支 —— 该分支没有断言（变异测试把表格里的 `sizeBytes`
 /// 整个删掉时用例仍然全绿）。
 #[test]
 fn env_backups_table_lists_file_size_and_path() {
@@ -899,7 +899,7 @@ fn env_restore_dry_run_reports_each_counter_field() {
     assert!(first["name"].is_string(), "差异项必须有 name: {stdout}");
     assert!(first["kind"].is_string(), "差异项必须有 kind: {stdout}");
 
-    // E3 裁断：dry-run 的预览**不受 --force 影响**（差异计算与 force 无关）。
+    // 契约：dry-run 的预览**不受 --force 影响**（差异计算与 force 无关）。
     // 同一夹具再加 --force，输出必须逐字节相同 —— 若实现把 force 传进预览，
     // 或为 force 走了另一条分支，这里就会失败。
     let out = std::process::Command::new(cli_bin())

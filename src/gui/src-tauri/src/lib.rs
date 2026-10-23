@@ -53,8 +53,7 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
     //
     // 三张派生表都不是真相源，可随时重建：
     // - `search_fts`：只在为空时全量重建；写入路径会增量维护。
-    // - `daily_stats`：每次启动全量重建，成本是一次全表扫描。
-    // - `var_references`：每次启动全量重建，只保存当前快照的边。
+    // - `daily_stats` / `var_references`：按事件/快照水位判断，水位未变则跳过。
     //
     // 全部失败只告警：DB 可用性比派生数据新鲜度重要，派生表下次启动会再算。
     rebuild_derived_tables(db);
@@ -79,16 +78,14 @@ fn rebuild_derived_tables(db: &mut path_editor_core::db::Db) {
         Err(e) => log::warn!("FTS 索引计数失败（继续启动）: {}", e.message),
     }
 
-    // `daily_stats`：每次启动全量重建（内部有耗时日志）
-    match path_editor_core::db::stats::rebuild_daily(db) {
-        Ok(n) => log::info!("daily_stats 重建：{} 天", n),
-        Err(e) => log::warn!("daily_stats 重建失败（继续启动）: {}", e.message),
-    }
-
-    // `var_references`：每次启动全量重建
-    match path_editor_core::db::refs::rebuild_refs(db) {
-        Ok(n) => log::info!("引用图重建：{} 条边", n),
-        Err(e) => log::warn!("引用图重建失败（继续启动）: {}", e.message),
+    // `daily_stats` / `var_references`：事件/快照水位未变则跳过
+    let watermark_path = path_editor_core::db::crypto::config_dir().join("derived.watermark");
+    match path_editor_core::db::derived::rebuild_if_stale(db, &watermark_path) {
+        Ok(Some((days, edges))) => {
+            log::info!("派生表重建：daily_stats {} 天，引用图 {} 条边", days, edges)
+        }
+        Ok(None) => log::info!("派生表水位未变，跳过重建"),
+        Err(e) => log::warn!("派生表重建失败（继续启动）: {}", e.message),
     }
 }
 
@@ -159,7 +156,7 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_log::Builder::default().level(level).build())?;
 
-            // v6：打开历史库。失败时进入降级模式：
+            // 打开历史库。失败时进入降级模式：
             // 注册表编辑照常，history_*/profile_*/backup_* 命令返回 database 错误。
             //
             // 启动序列：

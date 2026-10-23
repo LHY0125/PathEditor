@@ -27,7 +27,7 @@ vi.mock('@/services/backend', async () => {
 // 关窗/删除确认走 Tauri 异步对话框（plugin-dialog），mock 掉避免 jsdom 下走真实 IPC。
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn() }));
 
-// onCloseRequested 关窗链路（G-N1）：全局 mock @tauri-apps/api/window —— AppShell
+// onCloseRequested 关窗链路：全局 mock @tauri-apps/api/window —— AppShell
 // 内的动态 import 同样命中 mock，关窗 effect 在 jsdom 下也能真实注册回调。
 // 工厂在首次动态 import（渲染期）才执行，引用下方外层 const 无 TDZ 风险。
 const closeRequestedHandlers: Array<(event: MockCloseEvent) => unknown> = [];
