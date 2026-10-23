@@ -7,6 +7,8 @@
 
 use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::db::history::{self, EventFilter, EventPage, SnapshotView};
+use path_editor_core::history::EventSource;
+use path_editor_core::service::{self, ApplyOutcome};
 use path_editor_core::CoreError;
 use serde::Deserialize;
 use tauri::State;
@@ -114,8 +116,8 @@ pub fn history_reveal_env_value(
 
 /// 把历史快照恢复回注册表。
 ///
-/// **走既有注册表编排**（`service::save_path_with_db`），不新增写注册表的代码路径。
-/// 双 hive 一次提交：快照里 system / user 都恢复。
+/// 编排在 `core::service::restore_snapshot`：读快照 → 走既有保存编排
+/// （写注册表 + 当前快照 + 事件）。不新增写注册表的代码路径。
 ///
 /// **append-only**：恢复成功后追加**新快照 + 新事件**，旧快照原样保留——
 /// 这样「恢复」本身也可被撤销。
@@ -125,29 +127,10 @@ pub fn history_reveal_env_value(
 pub fn history_restore_snapshot(
     uid: String,
     state: State<'_, DbState>,
-) -> Result<path_editor_core::service::ApplyOutcome, CoreError> {
-    // ① 读快照（掩码无关：恢复的是 PATH，不含 env 值）
-    let view = with_db(&state, "history_restore_snapshot", |db| {
-        history::get_snapshot(db, &uid, false)
-    })?;
-
-    // ② 交给 core 编排写注册表、更新当前快照并记录事件
-    let outcome = with_db_mut(&state, "history_restore_snapshot", |db| {
-        path_editor_core::service::save_path_with_db(
-            db,
-            path_editor_core::history::EventSource::Restore,
-            Some(path_editor_core::service::PathHiveWrite {
-                entries: view.system,
-                expected: None,
-            }),
-            Some(path_editor_core::service::PathHiveWrite {
-                entries: view.user,
-                expected: None,
-            }),
-        )
-    })?;
-
-    Ok(outcome)
+) -> Result<ApplyOutcome, CoreError> {
+    with_db_mut(&state, "history_restore_snapshot", |db| {
+        service::restore_snapshot(db, &uid, EventSource::Restore)
+    })
 }
 
 #[cfg(test)]
