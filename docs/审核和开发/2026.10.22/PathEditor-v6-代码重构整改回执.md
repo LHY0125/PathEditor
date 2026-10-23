@@ -1,11 +1,11 @@
 # PathEditor v6 代码重构整改回执
 
 - **回执日期**：2026-10-23
-- **分支 / 提交**：`refactor/v6-cleanup`，HEAD `ad6024c`
+- **分支 / 提交**：`refactor/v6-cleanup`，基线 `ad6024c`；本轮改动尚在工作区（未提交）
 - **基准点**：`main` @ `30bfb75`（v6.0.0 tag 之后 1 个文档提交）
 - **关联审查报告**：`docs/审核和开发/2026.10.22/PathEditor-v6-代码重构审查报告.md`
-- **授权**：用户口头「全部授权」；后续要求「完全舍弃 v5」「继续执行未完成的任务」「继续拆 backend.ts 和 L-10」「直接继续 L-13 或 S-7」
-- **范围**：`30bfb75..ad6024c`，350 个文件，+12,562 / −13,449 行
+- **授权**：用户口头「全部授权」；后续要求「完全舍弃 v5」「继续执行未完成的任务」「继续拆 backend.ts 和 L-10」「直接继续 L-13 或 S-7」「S-3 和 S-15，以及残余 String 签名，最后彻底修改完毕之后，我进行人工测试」
+- **范围**：`30bfb75..ad6024c` 为 350 个文件，+12,562 / −13,449 行；本轮再增加 21 个文件、+650 / −555 行（工作区）
 
 > 本回执只记录实际执行过的命令与结果。未执行、未验证的项在第 5 节如实列出，不用「应该没问题」代替证据。
 
@@ -15,13 +15,13 @@
 
 用户提出三项诉求，完成情况如下：
 
-| 诉求                            | 状态           | 说明                                                                                                                      |
-| ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 代码注释去开发过程残留          | **完成**       | 生产代码中 M0–M4 / Wave / Task / spec § / F-J-D-S-R-N-P-T 编号与「欠账」命中数为 **0**                                    |
-| 目录整合为 `src/{core,cli,gui}` | **完成**       | `core/` → `src/core/`、`cli/` → `src/cli/`、`gui/` → `src/gui/src-tauri/`、前端 → `src/gui/web/`；Tauri 构建与 E2E 均通过 |
-| 代码级重构 + 详细审查报告       | **大部分完成** | P0 全部修复；P1 全部收口；P2 修复 4 项、部分 1 项；结构精简 13/15 完成，2 项部分                                          |
+| 诉求                            | 状态     | 说明                                                                                                                      |
+| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 代码注释去开发过程残留          | **完成** | 生产代码中 M0–M4 / Wave / Task / spec § / F-J-D-S-R-N-P 编号与「欠账」命中数为 **0**                                      |
+| 目录整合为 `src/{core,cli,gui}` | **完成** | `core/` → `src/core/`、`cli/` → `src/cli/`、`gui/` → `src/gui/src-tauri/`、前端 → `src/gui/web/`；Tauri 构建与 E2E 均通过 |
+| 代码级重构 + 详细审查报告       | **完成** | P0 全部修复；P1 全部收口；P2 修复 4 项、部分 1 项；结构精简 15/15 完成                                                    |
 
-一句话总结：**三项主诉求已完成两项半**——注释清零、目录迁移完成、逻辑 P0 全修；剩余是 S-3/S-15 与推送/发版决策。
+一句话总结：**三项主诉求全部完成**——注释清零、目录迁移、逻辑 P0 全修，审查报告列出的结构精简项已全部收口；剩余是推送/发版决策与真实 GUI 人工走查。
 
 ---
 
@@ -76,6 +76,8 @@ c89b8cf docs: 新增 v6 代码重构审查报告
 | `8f79e1d` | `backend.ts` 拆为 `backend/{index,parse-core,parse-data}.ts`；`@/services/backend` 导出路径不变             |
 | `1b6b9e7` | 清理 W2/W3.1/裁断/评审/日期/v6 等注释残留；`daily_stats` / `var_references` 按水位跳过重建                  |
 | `ad6024c` | `update/delete` 的 normal/force 写路径合并为 policy 实现，revision 校验是唯一差异                           |
+
+本轮（S-3 / S-15 / 残余 String 签名）改动尚在工作区，未提交；提交后应补充对应 commit 行。
 
 ---
 
@@ -172,14 +174,14 @@ src/
 
 #### P1
 
-| 编号 | 状态       | 证据 / 说明                                                                                                                                                                                             |
-| ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| L-5  | 已修       | `service::apply_profile` 与 v5 `core::profiles` 模块删除；配置应用统一走 DB 版 `profile_paths` / `profile_apply`                                                                                        |
-| L-6  | 已修       | `save_path_with_db_io` 只在至少一个 hive `Applied` 时写 current 快照并推进 `app_state.version`（`src/core/src/service.rs:500`）                                                                         |
-| L-7  | 已修       | CLI 保存经 `DbHistory` 写入快照与 `changes`；`source = cli`，跨设备同步可见                                                                                                                             |
-| L-8  | 已修       | GUI 命令层降到 36 行；保存编排、CAS、FTS 索引全部在 core                                                                                                                                                |
-| L-9  | **已收口** | `CompareDialog` 已显式显示「本版本不支持环境变量对比」，不会再让用户误以为「没有变化」；三个字段保留为空数组，v6.1 再决定实现或删除                                                                     |
-| L-10 | **已修**   | `EnvHiveStore` 四个方法、`backup_registry`、`fs` 公共 API 全部改为 `CoreError`；`From<String> for CoreError` 已删除。残余：`registry/path.rs` 与 `scanner.rs` 的公开签名仍为 `String`（不再有隐式转换） |
+| 编号 | 状态       | 证据 / 说明                                                                                                                                                                                                                                                                                         |
+| ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L-5  | 已修       | `service::apply_profile` 与 v5 `core::profiles` 模块删除；配置应用统一走 DB 版 `profile_paths` / `profile_apply`                                                                                                                                                                                    |
+| L-6  | 已修       | `save_path_with_db_io` 只在至少一个 hive `Applied` 时写 current 快照并推进 `app_state.version`（`src/core/src/service.rs:500`）                                                                                                                                                                     |
+| L-7  | 已修       | CLI 保存经 `DbHistory` 写入快照与 `changes`；`source = cli`，跨设备同步可见                                                                                                                                                                                                                         |
+| L-8  | 已修       | GUI 命令层降到 36 行；保存编排、CAS、FTS 索引全部在 core                                                                                                                                                                                                                                            |
+| L-9  | **已收口** | `CompareDialog` 已显式显示「本版本不支持环境变量对比」，不会再让用户误以为「没有变化」；三个字段保留为空数组，v6.1 再决定实现或删除                                                                                                                                                                 |
+| L-10 | **已修**   | `EnvHiveStore` 四个方法、`backup_registry`、`fs` 公共 API 全部改为 `CoreError`；`From<String> for CoreError` 已删除。**残余已清零**：`registry/path.rs`、`scanner.rs`、`validate_env_name` / `validate_env_value` 全部改为 `CoreError`；GUI 的 `load_*_paths` / `scan_paths` 命令同步改为结构化错误 |
 
 #### P2
 
@@ -194,23 +196,23 @@ src/
 
 ### 3.4 结构精简（用户问题 3.1）
 
-| 编号 | 状态 | 说明                                                                                                                                      |
-| ---- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| S-1  | 已修 | 删除 `src/gui/src-tauri/src/commands/profiles.rs`                                                                                         |
-| S-2  | 已修 | 删除 `_pendingSys` / `_pendingUser` 字段与全部引用                                                                                        |
-| S-3  | 部分 | 删除 v5 IPC 与 3 个未注册前端包装；`stats_rebuild` / `refs_rebuild` / `search_rebuild` 仍暴露，未做「注册表 vs backend/index.ts」差集测试 |
-| S-4  | 已修 | `src/gui/src-tauri/src/commands/m2.rs` → `analytics.rs`                                                                                   |
-| S-5  | 已修 | `src/gui/src-tauri/src/commands/history.rs` 拆为 `history.rs` / `profiles.rs` / `db_state.rs`；`backup_list` 归入 `backup.rs`             |
-| S-6  | 已修 | `src/core/src/backup.rs` → `backup/{mod,config,env,path,restore,tests}.rs`，公开 API 路径不变                                             |
-| S-7  | 已修 | `src/core/src/registry/env_var.rs` 的 normal/force 写路径合并为 `RevisionPolicy` 实现，revision 校验是唯一差异                            |
-| S-8  | 已修 | `src/cli/src/main.rs` 拆为 `cli.rs`（clap）与 `path_ops.rs`（命令实现），main.rs 只剩分派与 help 测试                                     |
-| S-9  | 已修 | `src/cli/src/env_ops.rs` 拆为 `env_ops/{mod,value,render,cmd,tests}.rs`                                                                   |
-| S-10 | 已修 | `src/gui/web/src/services/backend.ts` → `backend/{index,parse-core,parse-data}.ts`，index 455 行 / core 438 行 / data 763 行              |
-| S-11 | 已修 | `core/src/reg_store.rs` → `src/core/src/registry/store.rs`，`pub(crate)`，从 crate 根移除公开模块                                         |
-| S-12 | 已修 | v5 孤岛直接删除（比归档到 `legacy_v5` 更彻底，符合用户「完全舍弃 v5」的要求）                                                             |
-| S-13 | 已修 | `exit_persist_error` 合并到 `exit_core_error`                                                                                             |
-| S-14 | 已修 | 抽出 `print_json`，消除 9 处序列化 `unwrap`                                                                                               |
-| S-15 | 部分 | DB 快照相关固定路径已随 `disabled.json` 移除而消失；其余 `test_persist_lock` 仍在                                                         |
+| 编号 | 状态 | 说明                                                                                                                                                                                                                                                                         |
+| ---- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S-1  | 已修 | 删除 `src/gui/src-tauri/src/commands/profiles.rs`                                                                                                                                                                                                                            |
+| S-2  | 已修 | 删除 `_pendingSys` / `_pendingUser` 字段与全部引用                                                                                                                                                                                                                           |
+| S-3  | 已修 | 新增 `src/gui/web/tests/unit/ipc-contract.test.ts`：静态提取 `invoke_handler` 与 `backend/` 的 invoke 命令名，双向差集为空（55 条命令）                                                                                                                                      |
+| S-4  | 已修 | `src/gui/src-tauri/src/commands/m2.rs` → `analytics.rs`                                                                                                                                                                                                                      |
+| S-5  | 已修 | `src/gui/src-tauri/src/commands/history.rs` 拆为 `history.rs` / `profiles.rs` / `db_state.rs`；`backup_list` 归入 `backup.rs`                                                                                                                                                |
+| S-6  | 已修 | `src/core/src/backup.rs` → `backup/{mod,config,env,path,restore,tests}.rs`，公开 API 路径不变                                                                                                                                                                                |
+| S-7  | 已修 | `src/core/src/registry/env_var.rs` 的 normal/force 写路径合并为 `RevisionPolicy` 实现，revision 校验是唯一差异                                                                                                                                                               |
+| S-8  | 已修 | `src/cli/src/main.rs` 拆为 `cli.rs`（clap）与 `path_ops.rs`（命令实现），main.rs 只剩分派与 help 测试                                                                                                                                                                        |
+| S-9  | 已修 | `src/cli/src/env_ops.rs` 拆为 `env_ops/{mod,value,render,cmd,tests}.rs`                                                                                                                                                                                                      |
+| S-10 | 已修 | `src/gui/web/src/services/backend.ts` → `backend/{index,parse-core,parse-data}.ts`，index 455 行 / core 438 行 / data 763 行                                                                                                                                                 |
+| S-11 | 已修 | `core/src/reg_store.rs` → `src/core/src/registry/store.rs`，`pub(crate)`，从 crate 根移除公开模块                                                                                                                                                                            |
+| S-12 | 已修 | v5 孤岛直接删除（比归档到 `legacy_v5` 更彻底，符合用户「完全舍弃 v5」的要求）                                                                                                                                                                                                |
+| S-13 | 已修 | `exit_persist_error` 合并到 `exit_core_error`                                                                                                                                                                                                                                |
+| S-14 | 已修 | 抽出 `print_json`，消除 9 处序列化 `unwrap`                                                                                                                                                                                                                                  |
+| S-15 | 已修 | `disabled` 增加 `*_at(path)` 变体，service 的 `save_path_with_db_io` / `retry_pending_path_state_db_at` 接收 pending 路径；`backup` 增加 `backup_env_vars_in` / `backup_registry_to`；`env_var` 的写入口增加备份目录注入。`test_persist_lock` 已删除，所有测试改用 `TempDir` |
 
 ### 3.5 新增 / 调整的测试
 
@@ -218,7 +220,11 @@ src/
 - `src/core/tests/db_current_snapshot_read.rs`（由 `db_v5_read_from_db.rs` 重命名）：`load_path_snapshot_db` 读取 `app_state.current_snapshot_id`，并保留禁用条目。
 - `src/core/src/service.rs::tests::event_result_classifies_hive_combinations`（新增）：覆盖 Applied+Applied、Applied+Failed、Failed+Failed、Skipped+Failed、Skipped+Skipped。
 - 删除 v5 专用测试与 fixture：`profile_legacy_v1`、`profile_future_version_rejected`、`merge_legacy_*`、`merge_snapshot_order_wins`、v5 导出/导入边界测试。
-- 前端删除 3 个未注册 IPC 包装及对应 e2e mock 分支；单测数仍为 398。
+- `src/gui/web/tests/unit/ipc-contract.test.ts`（新增）：`invoke_handler` 与 `backend/` 命令集合双向差集断言；动态 `invoke(label)` 必须有唯一字符串常量绑定。
+- `src/core/src/registry/path.rs`：公开签名改为 `CoreError`；注册表错误按 `NotFound` / `PermissionDenied` / `Io` 分类，校验错误为 `InvalidValue`。
+- `src/core/src/scanner.rs`：公开签名改为 `CoreError`；测试目录改用 `TempDir`。
+- `src/core/src/registry/env_var.rs`：`validate_env_name` / `validate_env_value` 返回 `CoreError`（`InvalidName` / `InvalidValue`），新增 `CoreError::with_operation` 保留调用方操作名。
+- `src/core/src/disabled.rs` / `service.rs` / `backup/*`：pending 路径与备份目录改为显式注入；测试全部使用 `TempDir`。
 
 ---
 
@@ -227,11 +233,11 @@ src/
 | 命令                                                    | 结果                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------ |
 | `npm run verify`                                        | **exit 0**（Prettier/ESLint/build/coverage/fmt/clippy/test） |
-| `cargo test --workspace`                                | **324 passed / 0 failed / 2 ignored**                        |
+| `cargo test --workspace`                                | **320 passed / 0 failed / 2 ignored**                        |
 | `cargo test -p patheditor-cli --bins`                   | **66 passed / 0 failed**                                     |
 | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0                                                       |
 | `cargo fmt --all -- --check`                            | exit 0                                                       |
-| `npm test -- --run`                                     | **33 files / 398 passed**                                    |
+| `npm test -- --run`                                     | **34 files / 399 passed**                                    |
 | `npm run test:e2e`                                      | **54 passed**（新布局，Playwright mock IPC）                 |
 | `npm run build`                                         | 通过；Vite root = `src/gui/web`，产物 `src/gui/web/dist`     |
 | `npx tauri build --debug --no-bundle`                   | 通过，产出 `target/debug/PathEditor.exe`                     |
@@ -243,12 +249,9 @@ src/
 
 ## 5. 未执行项（如实列出）
 
-1. **S-3 完整 IPC 差集**：没有自动比对 `invoke_handler` 与 `backend/index.ts` 方法集合。
-2. **S-15 测试固定路径**：`test_persist_lock` 仍存在。
-3. **残余 String 签名**：`src/core/src/registry/path.rs` 与 `src/core/src/scanner.rs` 的公开 API 仍返回 `String`（已无 `From<String>` 隐式转换）。
-4. **真实 GUI + 注册表闭环**：未启动 GUI 做人工走查，未写真实注册表。
-5. **推送、合并到 main、版本号**：未推送，未升级版本号，未打 tag。
-6. **README 截图**：用户明确表示自行替换，本轮未动图片。
+1. **真实 GUI + 注册表闭环**：未启动 GUI 做人工走查，未写真实注册表；下一步由用户人工测试。
+2. **推送、合并到 main、版本号**：未推送，未升级版本号，未打 tag；本轮改动也尚未提交。
+3. **README 截图**：用户明确表示自行替换，本轮未动图片。
 
 ---
 
@@ -291,31 +294,29 @@ src/
 ### 6.5 其他
 
 - `apply_path_snapshot` 仍固定 `EventSource::Gui`；目前只有 GUI 同步应用调用它，CLI 不走该包装。
-- 注释门禁仍是人工扫描，没有 CI 硬门禁。
-- `test_persist_lock` 仍是测试串行化手段，新增测试仍可能忘记加锁。
+- 注释门禁仍是人工扫描，没有 CI 硬门禁（S-5.1.5 仍未做）。
+- PATH 命令的错误形状从纯文本 `String` 变为结构化 `CoreError`；前端 `parseCoreError` 已兼容两种形状，`loadSystemPaths` / `loadUserPaths` / `scanPaths` 已接入该解析。
 
 ---
 
 ## 7. 回执判定
 
-**用户三项主诉求已完成，可以进入复审；剩余为可选债务。**
+**用户三项主诉求已完成，可以进入复审与人工测试；剩余为推送/发版决策。**
 
 - 注释考古层：完成，可验收。
 - v5 过渡层：完成移除，可验收；破坏性变化需用户确认。
 - 目录迁移：完成，`src/{core,cli,gui}` 布局已通过 Tauri 构建、前端构建、单测与 E2E。
 - 逻辑 P0：全部修复，可验收。
 - 逻辑 P1：6/6 收口；L-9 由 UI 明示不支持，L-10 已统一错误模型并删除 `From<String>`。
-- 结构精简：S-1/S-2/S-4/S-5/S-6/S-7/S-8/S-9/S-10/S-11/S-12/S-13/S-14 完成；S-3/S-15 部分。
+- 结构精简：S-1 至 S-15 **全部完成**。
 
 ### 待用户/审核窗口拍板
 
 1. **是否接受 v5 数据不迁移的破坏性变化**（影响从 v5 直接升级的用户）。
-2. **是否推送 `refactor/v6-cleanup` / 合并到 main / 升级版本号**；本轮未获新的推送授权。
-3. **S-3 / S-15 的处置**：是否在 v6.1 补 IPC 差集测试并清理测试固定路径。
-4. **残余 String 签名**：是否继续把 `registry/path.rs` 与 `scanner.rs` 迁到 `CoreError`。
+2. **是否提交本轮改动、推送 `refactor/v6-cleanup`、合并到 main、升级版本号**；本轮未获新的提交/推送授权。
+3. **人工测试范围**：建议覆盖保存/禁用、CLI 与 GUI 交叉读写、同步导出导入、备份恢复。
 
 ### 建议的下一步顺序
 
-1. 让本分支通过复审并合并（行为修复与布局迁移优先落地）。
-2. v6.1 处理 S-3、S-15、残余 String 签名与注释 CI 门禁。
-3. 若继续收紧 IPC，先补「`invoke_handler` vs `backend/index.ts` 方法集合」差集测试。
+1. 用户按「真实 GUI + 注册表闭环」清单做人工测试。
+2. 测试通过后提交本轮改动，再决定合并与发版。
