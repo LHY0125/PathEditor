@@ -1,11 +1,11 @@
 # PathEditor v6 代码重构整改回执
 
 - **回执日期**：2026-10-23
-- **分支 / 提交**：`refactor/v6-cleanup`，HEAD `8f79e1d`
+- **分支 / 提交**：`refactor/v6-cleanup`，HEAD `ad6024c`
 - **基准点**：`main` @ `30bfb75`（v6.0.0 tag 之后 1 个文档提交）
 - **关联审查报告**：`docs/审核和开发/2026.10.22/PathEditor-v6-代码重构审查报告.md`
-- **授权**：用户口头「全部授权」；后续要求「完全舍弃 v5」「继续执行未完成的任务」「继续拆 backend.ts 和 L-10」
-- **范围**：`30bfb75..8f79e1d`，348 个文件，+12,262 / −13,320 行
+- **授权**：用户口头「全部授权」；后续要求「完全舍弃 v5」「继续执行未完成的任务」「继续拆 backend.ts 和 L-10」「直接继续 L-13 或 S-7」
+- **范围**：`30bfb75..ad6024c`，350 个文件，+12,562 / −13,449 行
 
 > 本回执只记录实际执行过的命令与结果。未执行、未验证的项在第 5 节如实列出，不用「应该没问题」代替证据。
 
@@ -19,15 +19,17 @@
 | ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | 代码注释去开发过程残留          | **完成**       | 生产代码中 M0–M4 / Wave / Task / spec § / F-J-D-S-R-N-P-T 编号与「欠账」命中数为 **0**                                    |
 | 目录整合为 `src/{core,cli,gui}` | **完成**       | `core/` → `src/core/`、`cli/` → `src/cli/`、`gui/` → `src/gui/src-tauri/`、前端 → `src/gui/web/`；Tauri 构建与 E2E 均通过 |
-| 代码级重构 + 详细审查报告       | **大部分完成** | P0 全部修复；P1 全部收口（L-9 UI 明示、L-10 已统一）；P2 修复 4 项、部分 1 项；结构精简 12/15 完成，2 项部分、1 项未做    |
+| 代码级重构 + 详细审查报告       | **大部分完成** | P0 全部修复；P1 全部收口；P2 修复 4 项、部分 1 项；结构精简 13/15 完成，2 项部分                                          |
 
-一句话总结：**三项主诉求已完成两项半**——注释清零、目录迁移完成、逻辑 P0 全修；剩余是可选债务（L-13、S-7、S-3、S-15）与推送/发版决策。
+一句话总结：**三项主诉求已完成两项半**——注释清零、目录迁移完成、逻辑 P0 全修；剩余是 S-3/S-15 与推送/发版决策。
 
 ---
 
 ## 2. 提交清单
 
 ```text
+ad6024c refactor: 合并环境变量 normal/force 写路径
+1b6b9e7 refactor: 清理注释残留并优化派生表重建
 8f79e1d refactor: 拆分 backend.ts 为 parse-core/parse-data/index
 b3cc47e refactor: 统一环境变量/备份/文件错误模型
 0f6902c refactor: 拆分 backup 为 config/env/path/restore 子模块
@@ -72,6 +74,8 @@ c89b8cf docs: 新增 v6 代码重构审查报告
 | `0f6902c` | `backup.rs` 拆为 config / env / path / restore 子模块，测试独立到 tests.rs                                  |
 | `b3cc47e` | `EnvHiveStore` 四个方法改 `CoreError`；`backup_registry` / `fs` 公共 API 同步；删除 `From<String>` 过渡转换 |
 | `8f79e1d` | `backend.ts` 拆为 `backend/{index,parse-core,parse-data}.ts`；`@/services/backend` 导出路径不变             |
+| `1b6b9e7` | 清理 W2/W3.1/裁断/评审/日期/v6 等注释残留；`daily_stats` / `var_references` 按水位跳过重建                  |
+| `ad6024c` | `update/delete` 的 normal/force 写路径合并为 policy 实现，revision 校验是唯一差异                           |
 
 ---
 
@@ -151,7 +155,7 @@ src/
 - `npm test` 33 files / 398 passed；
 - `npm run test:e2e` 54 passed；
 - `npx tauri build --debug --no-bundle` 成功产出 `PathEditor.exe`；
-- `cargo test --workspace` 322 passed / 2 ignored。
+- `cargo test --workspace` 324 passed / 2 ignored。
 
 **结论**：用户问题 2 的「模块没整合」与「目录没整合」均已完成。
 
@@ -183,7 +187,7 @@ src/
 | ---- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | L-11 | 已修     | PATH 保存增加 `EventSource` 参数，CLI 传 `Cli`、GUI 传 `Gui`。**残余**：`apply_path_snapshot` 包装仍硬编码 `Gui`                                     |
 | L-12 | 部分     | 全局 `V5_WRITES_DISABLED` / `CURRENT_SNAPSHOT_LOADER` 已删除；`test_persist_lock` 仍被 backup/persist/env_var 测试使用，固定路径尚未全部改 `TempDir` |
-| L-13 | **未修** | 启动仍全量重建 `daily_stats` / `var_references`；`search_fts` 只在为空时重建                                                                         |
+| L-13 | **已修** | 新增 `db::derived::rebuild_if_stale`：按 `events` / `snapshots` 的计数 + 最大 id 水位跳过重建；新增 `db_derived_watermark` 集成测试                  |
 | L-14 | 已修     | 新增 `src/cli/src/output.rs::print_json`，替换 9 处 `serde_json::to_string_pretty(...).unwrap()`；序列化失败以 1 退出                                |
 | L-15 | 已修     | `src/gui/src-tauri/src/commands/history.rs:300` 已直接用 `mark_profile_applied_by_name`，不再 list + find                                            |
 | L-16 | 已修     | README 测试徽章改为 `720 passed`（322 Rust + 398 前端）；coverage 徽章指向 `main`                                                                    |
@@ -198,7 +202,7 @@ src/
 | S-4  | 已修 | `src/gui/src-tauri/src/commands/m2.rs` → `analytics.rs`                                                                                   |
 | S-5  | 已修 | `src/gui/src-tauri/src/commands/history.rs` 拆为 `history.rs` / `profiles.rs` / `db_state.rs`；`backup_list` 归入 `backup.rs`             |
 | S-6  | 已修 | `src/core/src/backup.rs` → `backup/{mod,config,env,path,restore,tests}.rs`，公开 API 路径不变                                             |
-| S-7  | 未做 | `src/core/src/registry/env_var.rs` 的 normal/force 写路径未合并                                                                           |
+| S-7  | 已修 | `src/core/src/registry/env_var.rs` 的 normal/force 写路径合并为 `RevisionPolicy` 实现，revision 校验是唯一差异                            |
 | S-8  | 已修 | `src/cli/src/main.rs` 拆为 `cli.rs`（clap）与 `path_ops.rs`（命令实现），main.rs 只剩分派与 help 测试                                     |
 | S-9  | 已修 | `src/cli/src/env_ops.rs` 拆为 `env_ops/{mod,value,render,cmd,tests}.rs`                                                                   |
 | S-10 | 已修 | `src/gui/web/src/services/backend.ts` → `backend/{index,parse-core,parse-data}.ts`，index 455 行 / core 438 行 / data 763 行              |
@@ -223,7 +227,7 @@ src/
 | 命令                                                    | 结果                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------ |
 | `npm run verify`                                        | **exit 0**（Prettier/ESLint/build/coverage/fmt/clippy/test） |
-| `cargo test --workspace`                                | **322 passed / 0 failed / 2 ignored**                        |
+| `cargo test --workspace`                                | **324 passed / 0 failed / 2 ignored**                        |
 | `cargo test -p patheditor-cli --bins`                   | **66 passed / 0 failed**                                     |
 | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0                                                       |
 | `cargo fmt --all -- --check`                            | exit 0                                                       |
@@ -239,14 +243,12 @@ src/
 
 ## 5. 未执行项（如实列出）
 
-1. **S-7 normal/force 写路径合并**：`src/core/src/registry/env_var.rs` 仍保留两套写路径。
-2. **S-3 完整 IPC 差集**：没有自动比对 `invoke_handler` 与 `backend/index.ts` 方法集合。
-3. **S-15 测试固定路径**：`test_persist_lock` 仍存在。
-4. **L-13 派生表增量重建**：启动仍全量重建 `daily_stats` / `var_references`。
-5. **残余 String 签名**：`src/core/src/registry/path.rs` 与 `src/core/src/scanner.rs` 的公开 API 仍返回 `String`（已无 `From<String>` 隐式转换）。
-6. **真实 GUI + 注册表闭环**：未启动 GUI 做人工走查，未写真实注册表。
-7. **推送、合并到 main、版本号**：未推送，未升级版本号，未打 tag。
-8. **README 截图**：用户明确表示自行替换，本轮未动图片。
+1. **S-3 完整 IPC 差集**：没有自动比对 `invoke_handler` 与 `backend/index.ts` 方法集合。
+2. **S-15 测试固定路径**：`test_persist_lock` 仍存在。
+3. **残余 String 签名**：`src/core/src/registry/path.rs` 与 `src/core/src/scanner.rs` 的公开 API 仍返回 `String`（已无 `From<String>` 隐式转换）。
+4. **真实 GUI + 注册表闭环**：未启动 GUI 做人工走查，未写真实注册表。
+5. **推送、合并到 main、版本号**：未推送，未升级版本号，未打 tag。
+6. **README 截图**：用户明确表示自行替换，本轮未动图片。
 
 ---
 
@@ -303,17 +305,17 @@ src/
 - 目录迁移：完成，`src/{core,cli,gui}` 布局已通过 Tauri 构建、前端构建、单测与 E2E。
 - 逻辑 P0：全部修复，可验收。
 - 逻辑 P1：6/6 收口；L-9 由 UI 明示不支持，L-10 已统一错误模型并删除 `From<String>`。
-- 结构精简：S-1/S-2/S-4/S-5/S-6/S-8/S-9/S-10/S-11/S-12/S-13/S-14 完成；S-3/S-15 部分；S-7 未做。
+- 结构精简：S-1/S-2/S-4/S-5/S-6/S-7/S-8/S-9/S-10/S-11/S-12/S-13/S-14 完成；S-3/S-15 部分。
 
 ### 待用户/审核窗口拍板
 
 1. **是否接受 v5 数据不迁移的破坏性变化**（影响从 v5 直接升级的用户）。
 2. **是否推送 `refactor/v6-cleanup` / 合并到 main / 升级版本号**；本轮未获新的推送授权。
-3. **L-13 的处置**：是否在 v6.1 做派生表增量重建。
-4. **S-7 的处置**：是否合并 `registry/env_var.rs` 的 normal/force 写路径。
+3. **S-3 / S-15 的处置**：是否在 v6.1 补 IPC 差集测试并清理测试固定路径。
+4. **残余 String 签名**：是否继续把 `registry/path.rs` 与 `scanner.rs` 迁到 `CoreError`。
 
 ### 建议的下一步顺序
 
 1. 让本分支通过复审并合并（行为修复与布局迁移优先落地）。
-2. v6.1 处理 L-13、S-7、S-3、S-15 与注释 CI 门禁。
+2. v6.1 处理 S-3、S-15、残余 String 签名与注释 CI 门禁。
 3. 若继续收紧 IPC，先补「`invoke_handler` vs `backend/index.ts` 方法集合」差集测试。
