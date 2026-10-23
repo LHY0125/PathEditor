@@ -6,36 +6,19 @@
 //! **口令不进前端 store**：这里的 `passphrase` 参数用完即弃，不返回、不记录。
 //! 组件侧用 `type="password"` + 局部 state（与历史快照 reveal 同口径）。
 
-use path_editor_core::db::sync::change_log::pending_export;
-use path_editor_core::db::sync::conflict::{list_conflicts, unresolved_count, Resolution};
+use path_editor_core::db::sync::conflict::{list_conflicts, Resolution};
 use path_editor_core::db::sync::export::export_bundle;
 use path_editor_core::db::sync::import::import_bundle;
-use path_editor_core::db::sync::ExportReport;
-use path_editor_core::db::sync::ImportReport;
+use path_editor_core::db::sync::{self, ExportReport, ImportReport, SyncStatus};
 use path_editor_core::CoreError;
 use tauri::State;
 
 use super::db_state::{with_db, with_db_mut, DbState};
 
-/// 同步状态（同步中心首屏）。
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncStatusView {
-    /// 待导出变更数
-    pub pending_count: u32,
-    /// 未解决冲突数
-    pub unresolved_conflicts: u32,
-}
-
 /// 待导出数与未解决冲突数。
 #[tauri::command]
-pub fn sync_status(state: State<'_, DbState>) -> Result<SyncStatusView, CoreError> {
-    with_db(&state, "sync_status", |db| {
-        Ok(SyncStatusView {
-            pending_count: pending_export(db)?.len() as u32,
-            unresolved_conflicts: unresolved_count(db)?,
-        })
-    })
+pub fn sync_status(state: State<'_, DbState>) -> Result<SyncStatus, CoreError> {
+    with_db(&state, "sync_status", sync::status)
 }
 
 /// 导出同步包。

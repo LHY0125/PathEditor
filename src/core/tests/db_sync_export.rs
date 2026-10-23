@@ -51,6 +51,11 @@ fn export_writes_bundle_then_marks_exported_and_never_loses_changes_on_write_fai
         "拒绝空口令时不得标记任何变更"
     );
 
+    // 状态口径与导出队列一致（GUI/CLI 共用 core::db::sync::status）。
+    let status = path_editor_core::db::sync::status(&db).unwrap();
+    assert_eq!(status.pending_count, 3);
+    assert_eq!(status.unresolved_conflicts, 0);
+
     // ── ① 失败路径优先：写到一个不可能成功的路径 ──
     //
     // 目录不存在 → 写文件必然失败。此时**待导出队列必须原封不动**。
@@ -74,6 +79,13 @@ fn export_writes_bundle_then_marks_exported_and_never_loses_changes_on_write_fai
     assert!(
         pending_export(&db).unwrap().is_empty(),
         "导出成功后待导出队列必须清空"
+    );
+    assert_eq!(
+        path_editor_core::db::sync::status(&db)
+            .unwrap()
+            .pending_count,
+        0,
+        "导出后待导出数必须清零"
     );
 
     // ── ③ 包能读回，且 header 与 payload 自洽 ──

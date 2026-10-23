@@ -21,3 +21,27 @@ pub mod merge;
 
 pub use export::{export_bundle, ExportReport};
 pub use import::{import_bundle, ImportReport};
+
+use crate::db::Db;
+use crate::error::CoreError;
+
+/// 同步中心首屏状态。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncStatus {
+    /// 待导出变更数
+    pub pending_count: u32,
+    /// 未解决冲突数
+    pub unresolved_conflicts: u32,
+}
+
+/// 读取同步状态：待导出数与未解决冲突数。
+///
+/// GUI 同步中心与 CLI `sync status` 共用同一口径。
+pub fn status(db: &Db) -> Result<SyncStatus, CoreError> {
+    let pending = change_log::pending_export(db)?.len();
+    Ok(SyncStatus {
+        pending_count: u32::try_from(pending).unwrap_or(u32::MAX),
+        unresolved_conflicts: conflict::unresolved_count(db)?,
+    })
+}

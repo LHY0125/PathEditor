@@ -103,12 +103,10 @@ pub(crate) fn sync_import(file: &str) {
 /// `sync status`：待导出数与未解决冲突数。
 pub(crate) fn sync_status() {
     let db = open_db();
-    let pending =
-        core::db::sync::change_log::pending_export(&db).unwrap_or_else(|e| exit_core_error(&e));
-    let conflicts =
-        core::db::sync::conflict::unresolved_count(&db).unwrap_or_else(|e| exit_core_error(&e));
-    println!("待导出变更: {}", pending.len());
-    println!("未解决冲突: {conflicts}");
+    // 与 GUI 同步中心共用 `core::db::sync::status` 的同一口径。
+    let status = core::db::sync::status(&db).unwrap_or_else(|e| exit_core_error(&e));
+    println!("待导出变更: {}", status.pending_count);
+    println!("未解决冲突: {}", status.unresolved_conflicts);
 }
 
 /// `sync conflicts [--all]`：列出冲突。
