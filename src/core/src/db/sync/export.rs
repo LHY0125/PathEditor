@@ -133,6 +133,14 @@ pub fn export_bundle(
     passphrase: &str,
     path: &Path,
 ) -> Result<ExportReport, CoreError> {
+    // 空口令等于不加密：在此拒绝，GUI/CLI 不得各写一份。
+    if passphrase.is_empty() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "export_bundle",
+            "同步口令不能为空",
+        ));
+    }
     // ① 收集
     let pending = pending_export(db)?;
     let change_count = u32::try_from(pending.len())

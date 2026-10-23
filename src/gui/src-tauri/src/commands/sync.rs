@@ -47,14 +47,6 @@ pub fn sync_export(
     path: String,
     state: State<'_, DbState>,
 ) -> Result<ExportReport, CoreError> {
-    // 空口令直接拒绝：Argon2 会接受空串，但那等于没加密
-    if passphrase.is_empty() {
-        return Err(CoreError::new(
-            path_editor_core::ErrorCode::InvalidValue,
-            "sync_export",
-            "同步口令不能为空",
-        ));
-    }
     with_db_mut(&state, "sync_export", |db| {
         export_bundle(db, &passphrase, std::path::Path::new(&path))
     })
@@ -67,13 +59,6 @@ pub fn sync_import(
     path: String,
     state: State<'_, DbState>,
 ) -> Result<ImportReport, CoreError> {
-    if passphrase.is_empty() {
-        return Err(CoreError::new(
-            path_editor_core::ErrorCode::InvalidValue,
-            "sync_import",
-            "同步口令不能为空",
-        ));
-    }
     with_db_mut(&state, "sync_import", |db| {
         import_bundle(db, &passphrase, std::path::Path::new(&path))
     })

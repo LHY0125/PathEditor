@@ -341,6 +341,40 @@ pub fn export_paths(sys: &[String], usr: &[String], format: &str) -> Result<Stri
     export_path_entries(&sys, &usr, format)
 }
 
+/// 拒绝把用户数据写入 Windows 系统目录（`C:\Windows\`、`C:\Program Files\`）。
+///
+/// 备份与导出共用同一判定；`action` 只影响错误文案（「备份」/「导出」）。
+/// 外层（CLI/GUI）不得复制这段黑名单。
+pub(crate) fn ensure_not_system_dir(
+    path: &str,
+    operation: &'static str,
+    action: &str,
+) -> Result<(), CoreError> {
+    let normalized = path.replace('/', "\\").to_lowercase();
+    if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\") {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            operation,
+            format!("不允许{action}到系统目录: {path}"),
+        ));
+    }
+    Ok(())
+}
+
+/// 把导出内容写到用户指定文件。
+///
+/// 系统目录拒绝规则与备份共用 [`ensure_not_system_dir`]；写失败为 `Io`。
+pub fn write_export_file(path: &str, content: &str) -> Result<(), CoreError> {
+    ensure_not_system_dir(path, "write_export_file", "导出")?;
+    std::fs::write(path, content).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Io,
+            "write_export_file",
+            format!("无法写入文件: {e}"),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,6 +545,24 @@ mod tests {
         std::fs::write(&path, "{\"system\":[]}").unwrap();
         let result = read_text_file_scoped(path.to_string_lossy().as_ref());
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn write_export_file_rejects_system_dirs_and_writes_normal_paths() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("out.txt");
+
+        let normal = write_export_file(path.to_str().unwrap(), "content");
+        assert!(normal.is_ok(), "普通目录必须可写: {normal:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "content");
+
+        for blocked in ["C:\\Windows\\out.txt", "C:/Program Files/out.txt"] {
+            let result = write_export_file(blocked, "x");
+            assert!(
+                matches!(&result, Err(e) if e.code == ErrorCode::InvalidValue),
+                "系统目录必须被拒绝（{blocked}）: {result:?}"
+            );
+        }
     }
 
     #[test]

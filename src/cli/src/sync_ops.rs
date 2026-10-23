@@ -20,6 +20,9 @@ fn open_db() -> core::db::Db {
 }
 
 /// 交互式读口令（两次确认）。空口令直接拒绝。
+///
+/// 这里的空口令检查是**交互预检**（避免无意义地走完 Argon2 才报错）；
+/// 权威判定在 core 的 `export_bundle` / `import_bundle`。
 fn prompt_passphrase(confirm: bool) -> String {
     let first = match rpassword::prompt_password("同步口令: ") {
         Ok(p) => p,

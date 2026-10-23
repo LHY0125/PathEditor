@@ -76,16 +76,7 @@ struct PathBackupTarget {
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, CoreError> {
     let target = match custom_dir {
         Some(ref dir) if !dir.is_empty() => {
-            let normalized = dir.replace('/', "\\").to_lowercase();
-            if normalized.starts_with("c:\\windows\\")
-                || normalized.starts_with("c:\\program files\\")
-            {
-                return Err(CoreError::new(
-                    ErrorCode::InvalidValue,
-                    "backup_registry",
-                    "不允许备份到系统目录",
-                ));
-            }
+            crate::fs::ensure_not_system_dir(dir, "backup_registry", "备份")?;
             PathBackupTarget {
                 dir: PathBuf::from(dir),
                 keep: None,

@@ -47,6 +47,13 @@ fn import_is_idempotent_transfers_entities_and_rejects_tampering() {
     let mut a = open_db(&src, "a.db");
     let mut b = open_db(&dst, "b.db");
 
+    // ── ⓪ 空口令在读取文件前被拒绝（core 是唯一判定处）──
+    let empty = import_bundle(&mut b, "", &dst.path().join("missing.pesync"));
+    assert!(
+        matches!(&empty, Err(e) if e.code == path_editor_core::ErrorCode::InvalidValue),
+        "空口令必须返回 InvalidValue: {empty:?}"
+    );
+
     // ── A 端：建两个快照并导出 ──
     make_snapshot(&mut a, &["C:\\Tools", "C:\\Bin"]);
     make_snapshot(&mut a, &["C:\\Only"]);

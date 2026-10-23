@@ -126,6 +126,14 @@ pub fn import_bundle(
     passphrase: &str,
     path: &Path,
 ) -> Result<ImportReport, CoreError> {
+    // 空口令等于不加密：在此拒绝，GUI/CLI 不得各写一份。
+    if passphrase.is_empty() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "import_bundle",
+            "同步口令不能为空",
+        ));
+    }
     // ① 读文件 + 解密验证（失败时不产生任何写入）
     let bytes = std::fs::read(path).map_err(|e| {
         CoreError::new(

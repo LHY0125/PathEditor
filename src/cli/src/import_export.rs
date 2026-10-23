@@ -1,4 +1,4 @@
-use crate::runtime::{exit_core_error, exit_err, load_path_snapshot_any, save_path_write};
+use crate::runtime::{exit_core_error, load_path_snapshot_any, save_path_write};
 use path_editor_core as core;
 
 pub(crate) fn cmd_import(file: String, target: String) {
@@ -31,12 +31,8 @@ pub(crate) fn cmd_export(format: String, output: Option<String>) {
     let content = core::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
         .unwrap_or_else(|e| exit_core_error(&e));
     if let Some(path) = output {
-        let normalized = path.replace('/', "\\").to_lowercase();
-        if normalized.starts_with("c:\\windows\\") || normalized.starts_with("c:\\program files\\")
-        {
-            exit_err(&format!("不允许导出到系统目录: {path}"));
-        }
-        std::fs::write(&path, &content).unwrap_or_else(|e| exit_err(&format!("无法写入文件: {e}")));
+        // 系统目录拒绝规则在 core（与备份共用），CLI 不复制判定。
+        core::fs::write_export_file(&path, &content).unwrap_or_else(|e| exit_core_error(&e));
         println!("已导出到: {path}");
     } else {
         println!("{content}");
