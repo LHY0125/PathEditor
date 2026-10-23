@@ -1,13 +1,11 @@
 // 一文件一测试（SQLCipher）。
 //
-// 的验收判据：清空三张派生表 → 跑一遍重建 → 数据恢复。
+// 派生表重建的验收判据：清空三张派生表 → 跑一遍重建 → 数据恢复。
 //
-// 与 `gui/src/lib.rs::rebuild_derived_tables` 的关系：那个函数是启动序列里的
-// 薄编排（依次调下面三个 core 函数 + 打日志 + 失败只告警），它的正确性完全
-// 取决于这三个函数能否独立完成重建。本测试守的是那个更根本的性质。
-//
-// `gui` 侧的编排顺序（search 仅空时重建、daily/refs 每次重建）无法从 core
-// 测试覆盖——那是 `setup_database` 的职责，本测试不新增 gui 内部测试。
+// 启动序列的编排在 `core::bootstrap`（`search_fts` 仅在为空时构建、
+// `daily_stats` / `var_references` 按水位判断）；编排的幂等性由
+// `bootstrap_initialize` 覆盖。本测试守的是更根本的性质：三个 rebuild
+// 函数能各自独立完成重建。
 use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, NewSnapshot, SnapshotKind,

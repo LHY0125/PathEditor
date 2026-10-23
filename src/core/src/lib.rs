@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod bootstrap;
 pub mod capabilities;
 pub mod db;
 pub mod disabled;

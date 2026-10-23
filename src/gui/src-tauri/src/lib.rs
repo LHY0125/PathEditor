@@ -4,143 +4,40 @@ use tauri::Manager;
 
 /// 启动时的数据库初始化序列。
 ///
-/// 拆成独立函数而不是塞进 `setup` 闭包：`setup` 的返回值是 `Result<(), Box<dyn Error>>`，
-/// 把错误类型收窄成 `CoreError` 才能在这里做分步日志，也便于将来加启动自检。
+/// 迁移、pending 补写、当前状态基线、备份索引、保留策略、派生表重建
+/// 全部在 `core::bootstrap`；这里只负责把结果写进 GUI 的日志。
+/// 引导失败（只有迁移失败会返回 `Err`）由调用方决定是否进入降级模式。
 fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_core::CoreError> {
-    // ① schema 建库/迁移
-    db.migrate_to_current()?;
-
-    // ② best-effort 补写上次未落盘的快照。失败只告警：它代表的是上一次操作
-    //   遗留的「注册表已写、DB 当前快照未落盘」，补不上也不该阻止本次启动。
-    if let Err(e) = path_editor_core::service::retry_pending_path_state_db(
+    let report = path_editor_core::bootstrap::initialize(
         db,
         path_editor_core::history::EventSource::Gui,
-    ) {
-        log::warn!("启动时补写 pending 失败（继续启动）: {}", e.message);
+        &path_editor_core::bootstrap::BootstrapOptions::default(),
+    )?;
+
+    for warning in &report.warnings {
+        log::warn!("{}", warning);
     }
-
-    // ③ 确保 DB 里有「当前状态」基线。
-    //
-    // 新装用户没有 current 快照；读路径没有持久化快照时只能看到注册表当前状态，
-    // 被禁用的条目会显示成启用。这里用注册表当前状态建一条基线。
-    ensure_current_snapshot_baseline(db);
-
-    // ④ 备份索引：扫描 backups/ 写入 `backups` 表。
-    // 没有这一步，`backup_list` 会永远返回空——命令在、数据恒空是最容易误导的形态。
-    // 索引是派生数据，重建成本低，每次启动重扫一遍即可。
-    let backup_dir = path_editor_core::backup::env_backup_dir();
-    match path_editor_core::db::backups::index_backups(db, &backup_dir) {
-        Ok(n) if n > 0 => log::info!("备份索引：{} 条", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("备份索引失败（继续启动）: {}", e.message),
+    if report.baseline_created {
+        log::info!("已用注册表当前状态建立 current 快照基线");
     }
-
-    // ④b 保留策略清理：失败只告警，不阻断启动。
-    //
-    // 只删「已导出且超过 90 天」的 changes 与「已解决超过 30 天」的冲突；
-    // 待导出队列永远不碰（`exported_at IS NULL`）。
-    match path_editor_core::db::maintenance::prune_now(db) {
-        Ok(r) if r.changes_deleted > 0 || r.conflicts_deleted > 0 => log::info!(
+    if report.backups_indexed > 0 {
+        log::info!("备份索引：{} 条", report.backups_indexed);
+    }
+    if report.changes_pruned > 0 || report.conflicts_pruned > 0 {
+        log::info!(
             "保留策略清理：changes {} 条，冲突 {} 条",
-            r.changes_deleted,
-            r.conflicts_deleted
-        ),
-        Ok(_) => {}
-        Err(e) => log::warn!("保留策略清理失败（继续启动）: {}", e.message),
+            report.changes_pruned,
+            report.conflicts_pruned
+        );
     }
-
-    // ⑤ 派生表重建。
-    //
-    // 三张派生表都不是真相源，可随时重建：
-    // - `search_fts`：只在为空时全量重建；写入路径会增量维护。
-    // - `daily_stats` / `var_references`：按事件/快照水位判断，水位未变则跳过。
-    //
-    // 全部失败只告警：DB 可用性比派生数据新鲜度重要，派生表下次启动会再算。
-    rebuild_derived_tables(db);
+    if report.fts_indexed > 0 {
+        log::info!("FTS 索引：首次构建 {} 条", report.fts_indexed);
+    }
+    if let Some((days, edges)) = report.derived_rebuilt {
+        log::info!("派生表重建：daily_stats {} 天，引用图 {} 条边", days, edges);
+    }
 
     Ok(())
-}
-
-/// 重建三张派生表。
-///
-/// 抽成独立函数便于测试（`db_derived_rebuild.rs` 直接调它模拟启动序列）——
-/// 若写在 `setup_database` 里，测试就得复现整个启动流程（含注册表读取）。
-fn rebuild_derived_tables(db: &mut path_editor_core::db::Db) {
-    // `search_fts`：仅当为空时才重建
-    match db.query_row_with("SELECT count(*) FROM search_fts", [], |r| {
-        r.get::<_, i64>(0)
-    }) {
-        Ok(0) => match path_editor_core::db::search::rebuild_index(db) {
-            Ok(n) => log::info!("FTS 索引：首次构建 {} 条", n),
-            Err(e) => log::warn!("FTS 索引重建失败（继续启动）: {}", e.message),
-        },
-        Ok(_) => {}
-        Err(e) => log::warn!("FTS 索引计数失败（继续启动）: {}", e.message),
-    }
-
-    // `daily_stats` / `var_references`：事件/快照水位未变则跳过
-    let watermark_path = path_editor_core::db::crypto::config_dir().join("derived.watermark");
-    match path_editor_core::db::derived::rebuild_if_stale(db, &watermark_path) {
-        Ok(Some((days, edges))) => {
-            log::info!("派生表重建：daily_stats {} 天，引用图 {} 条边", days, edges)
-        }
-        Ok(None) => log::info!("派生表水位未变，跳过重建"),
-        Err(e) => log::warn!("派生表重建失败（继续启动）: {}", e.message),
-    }
-}
-
-/// 确保 DB 里有一条 `kind=current` 快照；没有就用注册表当前状态建一条。
-///
-/// 幂等：已有 `current_snapshot_id` 时什么都不做。
-/// 失败只告警——它是降级可容忍的（读路径会回落到文件），不该阻断启动。
-fn ensure_current_snapshot_baseline(db: &mut path_editor_core::db::Db) {
-    // 已有基线：检查 `app_state.current_snapshot_id` 是否指向一条 kind=current
-    let has_current: Result<i64, _> = db.query_row_with(
-        "SELECT count(*) FROM app_state a
-           JOIN snapshots s ON s.id = a.current_snapshot_id
-          WHERE a.id = 1 AND s.kind = 'current'",
-        [],
-        |r| r.get::<_, i64>(0),
-    );
-    if matches!(has_current, Ok(n) if n > 0) {
-        return;
-    }
-
-    // 没有基线：用注册表当前状态建一条
-    let (system, user) = match path_editor_core::service::load_path_snapshot_db(db) {
-        Ok(s) => (s.system, s.user),
-        Err(e) => {
-            log::warn!("建立当前状态基线失败（读注册表出错）: {}", e.message);
-            return;
-        }
-    };
-    let snap = path_editor_core::db::history::NewSnapshot {
-        kind: path_editor_core::db::history::SnapshotKind::Current,
-        source: path_editor_core::history::EventSource::Migration,
-        system,
-        user,
-        env: Vec::new(),
-        parent_uid: None,
-    };
-    let uid = match path_editor_core::db::history::insert_snapshot(db, snap) {
-        Ok(uid) => uid,
-        Err(e) => {
-            log::warn!("建立当前状态基线失败（写入失败）: {}", e.message);
-            return;
-        }
-    };
-    let version = match path_editor_core::db::history::app_state_version(db) {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("建立当前状态基线失败（读 version）: {}", e.message);
-            return;
-        }
-    };
-    match path_editor_core::db::history::set_current_snapshot(db, &uid, version) {
-        Ok(true) => log::info!("已用注册表当前状态建立 current 快照基线"),
-        Ok(false) => log::warn!("建立基线的 CAS 冲突（有并发写），读路径将回落到文件"),
-        Err(e) => log::warn!("建立当前状态基线失败: {}", e.message),
-    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -516,6 +516,21 @@ pub fn get_snapshot(db: &Db, uid: &str, reveal: bool) -> Result<SnapshotView, Co
     )
 }
 
+/// `app_state.current_snapshot_id` 是否指向一条未删除的快照。
+///
+/// 与 [`current_snapshot`] 同口径（只看指针是否有效，不限制 `kind`）：
+/// 启动引导据此决定是否需要建立基线。
+pub fn has_current_snapshot(db: &Db) -> Result<bool, CoreError> {
+    let count: i64 = db.query_row_with(
+        "SELECT count(*) FROM app_state a
+           JOIN snapshots s ON s.id = a.current_snapshot_id
+          WHERE a.id = 1 AND s.deleted_at IS NULL",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 /// 读取 `app_state.current_snapshot_id` 指向的快照；无当前快照时返回 `None`。
 ///
 /// 敏感值恒掩码（当前快照的明文请走 `reveal_env_var` / `list_all_env_vars`）。

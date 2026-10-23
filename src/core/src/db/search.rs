@@ -37,6 +37,11 @@ pub struct SearchHit {
     pub rank: f64,
 }
 
+/// `search_fts` 当前行数；启动引导据此判断是否需要首次全量构建。
+pub fn index_count(db: &Db) -> Result<i64, CoreError> {
+    db.query_row_with("SELECT count(*) FROM search_fts", [], |r| r.get(0))
+}
+
 /// 全量重建索引，返回写入的行数。
 ///
 /// 派生表纪律：本函数必须能从 `path_entries` /
