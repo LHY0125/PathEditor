@@ -12,7 +12,6 @@
 use path_editor_core::db::{
     compare::{self, CompareResult},
     refs::{self, RefEdge},
-    scan_history::{self, ScanRunDiff, ScanRunView},
     search::{self, SearchHit},
     stats::{self, Dashboard},
 };
@@ -104,43 +103,4 @@ pub fn refs_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
 #[tauri::command]
 pub fn search_rebuild(state: State<'_, DbState>) -> Result<usize, CoreError> {
     with_db_mut(&state, "search_rebuild", search::rebuild_index)
-}
-
-/// 列出最近的扫描记录。
-#[tauri::command]
-pub fn scan_history_list(
-    limit: Option<u32>,
-    state: State<'_, DbState>,
-) -> Result<Vec<ScanRunView>, CoreError> {
-    with_db(&state, "scan_history_list", |db| {
-        scan_history::list_runs(db, limit.unwrap_or(50))
-    })
-}
-
-/// 比较两次扫描。
-#[tauri::command]
-pub fn scan_history_diff(
-    a_uid: String,
-    b_uid: String,
-    state: State<'_, DbState>,
-) -> Result<ScanRunDiff, CoreError> {
-    with_db(&state, "scan_history_diff", |db| {
-        scan_history::diff_runs(db, &a_uid, &b_uid)
-    })
-}
-
-/// 记录一次扫描，返回其 uid。
-///
-/// **`conflicts_json` / `tools_json` 由前端序列化后传入**：core 侧不解析
-/// `ScanResult`（那是 `gui::commands::scanner` 的职责，且 CLI 也会走同一入口）。
-/// 传字符串而不是结构体，是为了让这条命令对未来 `scan_paths` 的形状变化免疫。
-#[tauri::command]
-pub fn scan_history_record(
-    conflicts_json: String,
-    tools_json: Option<String>,
-    state: State<'_, DbState>,
-) -> Result<String, CoreError> {
-    with_db_mut(&state, "scan_history_record", |db| {
-        scan_history::record_run(db, &conflicts_json, tools_json.as_deref().unwrap_or("[]"))
-    })
 }

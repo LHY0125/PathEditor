@@ -4,13 +4,11 @@ import {
   parseCycleList,
   parseDashboard,
   parseRefEdges,
-  parseScanRunDiff,
-  parseScanRuns,
   parseSearchHits,
 } from '@/services/backend';
 
 /**
- * 检索 / 统计 / 对比 / 引用图 / 冲突历史的 IPC 形状校验。
+ * 检索 / 统计 / 对比 / 引用图的 IPC 形状校验。
  *
  * 每个 `parseXxx` 覆盖四类输入：正常 / 缺字段 / 类型错 / 非法值。
  * 这类校验的价值不在于「测试通过」，而在于**后端形状漂移时前端会立刻报错**，
@@ -156,46 +154,5 @@ describe('parseCycleList', () => {
 
   it('拒绝元素不是字符串数组', () => {
     expect(() => parseCycleList([['A', 1]])).toThrow(/每个环必须是字符串数组/);
-  });
-});
-
-describe('parseScanRuns', () => {
-  it('接受合法记录', () => {
-    const runs = parseScanRuns([{ uid: 'r1', createdAt: 1, conflicts: ['C:\\dup'], toolCount: 2 }]);
-    expect(runs[0].conflicts).toEqual(['C:\\dup']);
-  });
-
-  it('拒绝 conflicts 非字符串数组', () => {
-    expect(() =>
-      parseScanRuns([{ uid: 'r1', createdAt: 1, conflicts: [1], toolCount: 2 }]),
-    ).toThrow(/形状无效/);
-  });
-});
-
-describe('parseScanRunDiff', () => {
-  const valid = {
-    appeared: ['A'],
-    disappeared: [],
-    persistent: ['B'],
-    lastSeen: [{ conflict: 'B', runUid: 'r3', seenAt: 100 }],
-    firstSeen: [{ conflict: 'B', runUid: 'r1', seenAt: 10 }],
-  };
-
-  it('接受合法 diff，并保留首末指向不同的 run', () => {
-    const d = parseScanRunDiff(valid);
-    expect(d.firstSeen[0].runUid).toBe('r1');
-    expect(d.lastSeen[0].runUid).toBe('r3');
-  });
-
-  it('拒绝缺 firstSeen（首末是两个字段，不能只给一个）', () => {
-    expect(() => parseScanRunDiff({ ...valid, firstSeen: undefined })).toThrow(
-      /firstSeen 必须是数组/,
-    );
-  });
-
-  it('拒绝 firstSeen 条目缺 seenAt', () => {
-    expect(() =>
-      parseScanRunDiff({ ...valid, firstSeen: [{ conflict: 'B', runUid: 'r1' }] }),
-    ).toThrow(/firstSeen 条目形状无效/);
   });
 });

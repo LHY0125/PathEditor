@@ -71,9 +71,21 @@ pub struct ScanRunDiff {
 /// 在闭包内部再调 `with_transaction` 会 panic（rusqlite 的行为）。
 pub fn record_run(
     db: &mut Db,
-    conflicts_json: &str,
-    tools_json: &str,
+    conflicts: &[String],
+    tool_dirs: &[String],
 ) -> Result<String, CoreError> {
+    let serialize = |value: &[String], label: &str| {
+        serde_json::to_string(value).map_err(|e| {
+            CoreError::new(
+                crate::error::ErrorCode::Internal,
+                "record_run",
+                format!("序列化{label}失败: {e}"),
+            )
+        })
+    };
+    let conflicts_json = serialize(conflicts, "冲突列表")?;
+    let tools_json = serialize(tool_dirs, "工具目录列表")?;
+
     let uid = Uuid::now_v7().to_string();
     let now = chrono::Utc::now().timestamp_millis();
 

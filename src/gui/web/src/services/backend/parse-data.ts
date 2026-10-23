@@ -366,37 +366,6 @@ export interface RefEdge {
   depth: number;
 }
 
-/** 一次扫描记录。 */
-export interface ScanRunView {
-  uid: string;
-  createdAt: number;
-  conflicts: string[];
-  toolCount: number;
-}
-
-/** 「首次出现」。 */
-export interface FirstSeen {
-  conflict: string;
-  runUid: string;
-  seenAt: number;
-}
-
-/** 「最近出现」。 */
-export interface LastSeen {
-  conflict: string;
-  runUid: string;
-  seenAt: number;
-}
-
-/** 两次扫描的差异。 */
-export interface ScanRunDiff {
-  appeared: string[];
-  disappeared: string[];
-  persistent: string[];
-  lastSeen: LastSeen[];
-  firstSeen: FirstSeen[];
-}
-
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
 
@@ -575,59 +544,6 @@ export function parseCycleList(value: unknown, label = 'refs_cycles'): string[][
     if (!isStringArray(raw)) throw new Error(`${label} 的每个环必须是字符串数组`);
     return raw;
   });
-}
-
-/** 校验 `ScanRunView[]`。 */
-export function parseScanRuns(value: unknown, label = 'scan_history_list'): ScanRunView[] {
-  if (!Array.isArray(value)) throw new Error(`${label} 必须返回数组`);
-  return value.map((raw) => {
-    if (
-      !isRecord(raw) ||
-      typeof raw.uid !== 'string' ||
-      typeof raw.createdAt !== 'number' ||
-      typeof raw.toolCount !== 'number' ||
-      !isStringArray(raw.conflicts)
-    ) {
-      throw new Error(`${label} 的扫描记录形状无效`);
-    }
-    return {
-      uid: raw.uid,
-      createdAt: raw.createdAt,
-      conflicts: raw.conflicts,
-      toolCount: raw.toolCount,
-    };
-  });
-}
-
-/** 校验 `ScanRunDiff`。 */
-export function parseScanRunDiff(value: unknown, label = 'scan_history_diff'): ScanRunDiff {
-  if (!isRecord(value)) throw new Error(`${label} 返回了无效的 diff 契约`);
-  const appeared = value.appeared;
-  const disappeared = value.disappeared;
-  const persistent = value.persistent;
-  if (!isStringArray(appeared)) throw new Error(`${label}.appeared 必须是字符串数组`);
-  if (!isStringArray(disappeared)) throw new Error(`${label}.disappeared 必须是字符串数组`);
-  if (!isStringArray(persistent)) throw new Error(`${label}.persistent 必须是字符串数组`);
-  if (!Array.isArray(value.lastSeen)) throw new Error(`${label}.lastSeen 必须是数组`);
-  if (!Array.isArray(value.firstSeen)) throw new Error(`${label}.firstSeen 必须是数组`);
-  const parseSeen = (raw: unknown, kind: string) => {
-    if (
-      !isRecord(raw) ||
-      typeof raw.conflict !== 'string' ||
-      typeof raw.runUid !== 'string' ||
-      typeof raw.seenAt !== 'number'
-    ) {
-      throw new Error(`${label}.${kind} 条目形状无效`);
-    }
-    return { conflict: raw.conflict, runUid: raw.runUid, seenAt: raw.seenAt };
-  };
-  return {
-    appeared,
-    disappeared,
-    persistent,
-    lastSeen: value.lastSeen.map((r: unknown) => parseSeen(r, 'lastSeen')),
-    firstSeen: value.firstSeen.map((r: unknown) => parseSeen(r, 'firstSeen')),
-  };
 }
 
 /* ────────────────────────── 同步中心 ────────────────────────── */

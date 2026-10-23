@@ -19,9 +19,24 @@ fn scan_runs_persist_and_diff_between_two_scans() {
     //
     // 对 old：first_seen = run1，last_seen = run3
     // 对 dup：first_seen = run1，last_seen = run3
-    let r1 = record_run(&mut db, r#"["C:\\dup","C:\\old"]"#, "[]").unwrap();
-    let r2 = record_run(&mut db, r#"["C:\\dup","C:\\new"]"#, "[]").unwrap();
-    let r3 = record_run(&mut db, r#"["C:\\dup","C:\\old"]"#, "[]").unwrap();
+    let r1 = record_run(
+        &mut db,
+        &["C:\\dup".to_string(), "C:\\old".to_string()],
+        &[],
+    )
+    .unwrap();
+    let r2 = record_run(
+        &mut db,
+        &["C:\\dup".to_string(), "C:\\new".to_string()],
+        &[],
+    )
+    .unwrap();
+    let r3 = record_run(
+        &mut db,
+        &["C:\\dup".to_string(), "C:\\old".to_string()],
+        &[],
+    )
+    .unwrap();
 
     // ── list_runs：按时间倒序 ──
     let list = list_runs(&db, 10).unwrap();

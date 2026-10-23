@@ -50,8 +50,6 @@ import {
   parseEventPage,
   parseProfileList,
   parseRefEdges,
-  parseScanRunDiff,
-  parseScanRuns,
   parseSearchHits,
   parseSnapshotView,
   parseSyncConflicts,
@@ -319,34 +317,6 @@ export const backend = {
     const n = await parseCoreError(invoke<unknown>('search_rebuild'));
     if (typeof n !== 'number') throw new Error('search_rebuild 必须返回数字');
     return n;
-  },
-
-  /** 列出最近的扫描记录。 */
-  scanHistoryList: async (limit = 50) =>
-    parseScanRuns(
-      await parseCoreError(invoke<unknown>('scan_history_list', { limit })),
-      'scan_history_list',
-    ),
-
-  /** 比较两次扫描。 */
-  scanHistoryDiff: async (aUid: string, bUid: string) =>
-    parseScanRunDiff(
-      await parseCoreError(invoke<unknown>('scan_history_diff', { aUid, bUid })),
-      'scan_history_diff',
-    ),
-
-  /**
-   * 记录一次扫描，返回 uid。
-   *
-   * `conflictsJson` / `toolsJson` 由调用方序列化后传入——core 侧不解析
-   * `ScanResult`，这样命令对 `scan_paths` 的形状变化免疫。
-   */
-  scanHistoryRecord: async (conflictsJson: string, toolsJson = '[]') => {
-    const uid = await parseCoreError(
-      invoke<unknown>('scan_history_record', { conflictsJson, toolsJson }),
-    );
-    if (typeof uid !== 'string') throw new Error('scan_history_record 必须返回字符串');
-    return uid;
   },
 
   /* ────────────────────── 同步中心 ────────────────────── */
