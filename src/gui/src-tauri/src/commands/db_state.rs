@@ -41,3 +41,19 @@ pub(crate) fn with_db_mut<T>(
         .ok_or_else(|| CoreError::new(ErrorCode::Database, op, "历史库不可用，当前处于降级模式"))?;
     f(db)
 }
+
+/// 取 DB 的**可选**引用：降级模式传 `None`，由 core 决定回退行为。
+///
+/// 只用于「DB 不可用仍可继续」的读路径（如加载 PATH 快照）；
+/// 需要 DB 的命令用 [`with_db`] / [`with_db_mut`]，降级时直接报错。
+pub(crate) fn with_optional_db<T>(
+    state: &State<'_, DbState>,
+    op: &'static str,
+    f: impl FnOnce(Option<&Db>) -> Result<T, CoreError>,
+) -> Result<T, CoreError> {
+    let guard = state
+        .0
+        .lock()
+        .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
+    f(guard.as_ref())
+}

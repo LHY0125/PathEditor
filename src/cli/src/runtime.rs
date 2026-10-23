@@ -62,10 +62,8 @@ fn open_db_optional() -> Option<core::db::Db> {
 
 /// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则只读注册表。
 pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreError> {
-    match open_db_optional() {
-        Some(db) => core::service::load_path_snapshot_db(&db),
-        None => core::disabled::load_path_snapshot(),
-    }
+    let db = open_db_optional();
+    core::service::load_path_snapshot_any(db.as_ref())
 }
 
 /// 把「完整有序条目」交给 core 的唯一保存编排，并按结果决定退出行为。

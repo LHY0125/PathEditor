@@ -5,6 +5,14 @@ import { canWriteTarget, type PathCapabilities } from '@/core/path-capabilities'
 import { TargetType } from '@/core/undo-redo';
 import { backend, type ApplyOutcome } from '@/services/backend';
 
+/** 从 `parseCoreError` 的 `{code, message}` 或普通异常中取可读文案。 */
+function errorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
+
 export type SaveResult =
   | { kind: 'success' }
   | { kind: 'warning'; reason: 'lengthExceeded' }
@@ -128,10 +136,10 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
     });
   } catch (error) {
     return {
-      result: { kind: 'failure', message: String(error) },
+      result: { kind: 'failure', message: errorMessage(error) },
       savedSys,
       savedUser,
-      statusMessage: i18n.t('status.saveFailure', { details: String(error) }),
+      statusMessage: i18n.t('status.saveFailure', { details: errorMessage(error) }),
     };
   }
 

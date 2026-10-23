@@ -69,7 +69,8 @@ export const backend = {
     ),
   loadUserPaths: async () =>
     parseStringArray(await parseCoreError(invoke<unknown>('load_user_paths')), 'load_user_paths'),
-  loadPathSnapshot: async () => parsePathSnapshot(await invoke<unknown>('load_path_snapshot')),
+  loadPathSnapshot: async () =>
+    parsePathSnapshot(await parseCoreError(invoke<unknown>('load_path_snapshot'))),
   /**
    * 唯一的「保存 PATH + sidecar」编排入口。
    *
@@ -81,7 +82,7 @@ export const backend = {
   savePathWithSidecar: async (request: {
     system: PathEntryWrite | null;
     user: PathEntryWrite | null;
-  }) => parseApplyOutcome(await invoke<unknown>('save_path_with_sidecar', request)),
+  }) => parseApplyOutcome(await parseCoreError(invoke<unknown>('save_path_with_sidecar', request))),
   checkAdmin: () => invoke<boolean>('check_admin'),
   getPathCapabilities: async () =>
     parsePathCapabilities(await invoke<unknown>('get_path_capabilities')),

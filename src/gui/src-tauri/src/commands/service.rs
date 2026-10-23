@@ -7,6 +7,7 @@
 use path_editor_core::history::EventSource;
 use path_editor_core::history::NoopHistory;
 use path_editor_core::service::{self, ApplyOutcome, PathHiveWrite};
+use path_editor_core::CoreError;
 use tauri::State;
 
 use super::db_state::DbState;
@@ -19,18 +20,14 @@ pub fn save_path_with_sidecar(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
     state: State<'_, DbState>,
-) -> Result<ApplyOutcome, String> {
+) -> Result<ApplyOutcome, CoreError> {
     let Ok(mut guard) = state.0.lock() else {
         log::warn!("历史库状态锁中毒，本次保存不记录历史");
-        return service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory)
-            .map_err(|e| e.message);
+        return service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory);
     };
 
     match guard.as_mut() {
-        Some(db) => {
-            service::save_path_with_db(db, EventSource::Gui, system, user).map_err(|e| e.message)
-        }
-        None => service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory)
-            .map_err(|e| e.message),
+        Some(db) => service::save_path_with_db(db, EventSource::Gui, system, user),
+        None => service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory),
     }
 }

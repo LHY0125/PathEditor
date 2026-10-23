@@ -359,6 +359,16 @@ pub(crate) fn save_path_registry_io(
     })
 }
 
+/// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则只读注册表。
+///
+/// GUI 与 CLI 共用的降级语义：DB 不可用不等于读不到 PATH。
+pub fn load_path_snapshot_any(db: Option<&Db>) -> Result<PathSnapshot, CoreError> {
+    match db {
+        Some(db) => load_path_snapshot_db(db),
+        None => disabled::load_path_snapshot(),
+    }
+}
+
 /// 从 DB 的 `current_snapshot` 加载完整 PATH 快照，并与注册表合并。
 ///
 /// DB 没有当前快照时只读注册表；这与降级模式的行为一致。
