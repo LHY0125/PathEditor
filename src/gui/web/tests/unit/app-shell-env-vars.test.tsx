@@ -472,7 +472,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     expect(valueInput.value).toBe('C:\\Java');
   }
 
-  it('打开弹窗时加载完整原值而非截断 preview（F-01）', async () => {
+  it('打开弹窗时加载完整原值而非截断 preview', async () => {
     // 快照 preview 是 256 字符截断摘要；reveal 返回完整值
     const longFull = 'x'.repeat(300);
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [meta()], capturedAt: 0 });
@@ -510,7 +510,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     );
   });
 
-  it('revision 冲突后刷新，重取+再次提交携带新 revision 并成功（F-02）', async () => {
+  it('revision 冲突后刷新，重取+再次提交携带新 revision 并成功', async () => {
     const oldMeta = meta({ revision: 'rev-1' });
     const newMeta = meta({ revision: 'rev-2' });
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta], capturedAt: 0 });
@@ -571,7 +571,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     );
   });
 
-  it('快照刷新后提交旧值：重取最新值且不调用 updateEnvVar（F-01）', async () => {
+  it('快照刷新后提交旧值：重取最新值且不调用 updateEnvVar', async () => {
     const oldMeta = meta({ revision: 'rev-1' });
     const newMeta = meta({ revision: 'rev-2' });
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [oldMeta], capturedAt: 0 });
@@ -629,7 +629,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     expect(useEnvStore.getState().draft.size).toBe(0);
   });
 
-  it('编辑中的真实输入镜像进草稿，参与关窗确认（F-04）', async () => {
+  it('编辑中的真实输入镜像进草稿，参与关窗确认', async () => {
     await openEditDialog();
     // 打开后草稿为空（只有 fetch 后尚未输入）
     expect(useEnvStore.getState().hasDrafts()).toBe(false);

@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
-describe('listAllEnvVars 运行时契约校验（F-05）', () => {
+describe('listAllEnvVars 运行时契约校验', () => {
   it('合法返回值通过并按白名单复制 8 个字段', async () => {
     mockInvoke.mockResolvedValue({ system: [validMeta()], user: [] });
 
@@ -82,7 +82,7 @@ describe('listAllEnvVars 运行时契约校验（F-05）', () => {
   });
 });
 
-describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
+describe('parseCoreError rejection 解析（双形状兼容）', () => {
   it('结构化 CoreError 对象（合法 code）原样结构化透传', async () => {
     const rejection = {
       code: 'conflict',
@@ -156,7 +156,7 @@ describe('parseCoreError rejection 解析（F-06 双形状兼容）', () => {
   });
 });
 
-describe('revealEnvVar 的 RevealedValue 契约校验（F-01）', () => {
+describe('revealEnvVar 的 RevealedValue 契约校验', () => {
   it('合法返回值（value + revision 均为非空 string）通过并白名单构造', async () => {
     mockInvoke.mockResolvedValue({ value: 'C:\\Java\\bin', revision: 'rev-9' });
 
@@ -200,7 +200,7 @@ describe('revealEnvVar 的 RevealedValue 契约校验（F-01）', () => {
   });
 });
 
-describe('parseEnvVarSnapshot 的 capturedAt 兼容回退（F-05 向后兼容）', () => {
+describe('parseEnvVarSnapshot 的 capturedAt 兼容回退（向后兼容）', () => {
   it('capturedAt 缺失时回退为 0', async () => {
     mockInvoke.mockResolvedValue({ system: [validMeta()], user: [] });
 

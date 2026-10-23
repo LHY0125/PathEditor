@@ -153,7 +153,7 @@ test('revision 冲突时显示错误并刷新，不静默覆盖', async ({ page 
   await expect(page.getByRole('heading', { name: '编辑环境变量' })).toBeVisible();
 });
 
-test('弹窗读值陈旧时提交被拦截：不调用 update_env_var 并重取最新值（F-01）', async ({ page }) => {
+test('弹窗读值陈旧时提交被拦截：不调用 update_env_var 并重取最新值', async ({ page }) => {
   // 注入快照换代：JAVA_HOME 的 revision 升级为 usr-java-v2，
   // 而 reveal_env_var 默认 mock 仍返回绑定 usr-java 的原值 → 弹窗读值即陈旧
   const staleSnapshot = {

@@ -97,7 +97,7 @@ describe('reveal / hide', () => {
     expect(useEnvStore.getState().revealed.has('user:MY_TOKEN')).toBe(false);
   });
 
-  it('reveal 期间快照换代：旧明文不得写入新快照（F-03 竞态防护）', async () => {
+  it('reveal 期间快照换代：旧明文不得写入新快照（竞态防护）', async () => {
     let resolveReveal!: (v: RevealedValue) => void;
     mockBackend.revealEnvVar.mockReturnValue(
       new Promise<RevealedValue>((resolve) => {
@@ -141,7 +141,7 @@ describe('reveal / hide', () => {
   });
 });
 
-describe('load 竞态防护（F-03）', () => {
+describe('load 竞态防护', () => {
   it('晚到的旧 load 响应不得覆盖新响应', async () => {
     let resolveFirst!: (v: typeof snapshot) => void;
     mockBackend.listAllEnvVars.mockReturnValueOnce(
@@ -181,7 +181,7 @@ describe('save', () => {
     expect(useEnvStore.getState().draft.has('user:JAVA_HOME')).toBe(false);
   });
 
-  it('readRevision 与 meta.revision 不一致时拒绝保存、不调 IPC 且触发刷新（F-01）', async () => {
+  it('readRevision 与 meta.revision 不一致时拒绝保存、不调 IPC 且触发刷新', async () => {
     mockBackend.updateEnvVar.mockResolvedValue(noBackup);
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
