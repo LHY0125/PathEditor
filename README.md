@@ -17,21 +17,91 @@
 
 ---
 
+## 操作演示
+
+![操作演示](docs/screenshots/demo.gif)
+
+> 切换系统 / 用户 PATH、搜索过滤、新建与编辑条目、调整优先级、一键清理无效路径、保存与撤销、深色模式。
+
 ## 截图
 
 ### 主界面
 
+系统 / 用户 PATH 分标签管理，支持搜索过滤、增删改、上移下移、撤销重做与一键保存。
+
 ![主界面](docs/screenshots/main-window.png)
+
+### 用户 PATH
+
+系统与用户两个 hive 独立判断读写权限，普通用户也能编辑自己的 PATH。
+
+![用户 PATH](docs/screenshots/user-path.png)
+
+### 合并预览
+
+按「系统在前、用户在后」去重后的最终生效顺序，右侧标明每条路径的来源。
+
+![合并预览](docs/screenshots/merge-preview.png)
 
 ### 路径编辑
 
 ![路径编辑](docs/screenshots/path-edit.png)
 
-### 冲突检测
+### 冲突分析
 
-![冲突检测](docs/screenshots/conflict-analysis.png)
+扫描各 PATH 目录下的同名可执行文件，标出实际优先执行的那一个，其余标记为「被遮蔽」。
+
+![冲突分析](docs/screenshots/conflict-analysis.png)
+
+### 全部环境变量
+
+PATH 之外的所有环境变量统一管理；敏感值默认打码，需先「显示」才可编辑。
+
+![全部环境变量](docs/screenshots/all-env-vars.png)
+
+### 环境变量备份与恢复
+
+恢复前先看差异：新增 / 修改 / 删除 / 冲突四个计数如实展示，会删除的变量单独列出。
+
+![环境变量备份与恢复](docs/screenshots/env-backup.png)
+
+### 历史记录
+
+每次保存、应用配置、修改变量都留痕，可回看快照、跨会话撤销与恢复。
+
+![历史记录](docs/screenshots/history.png)
+
+### 全文检索
+
+跨 PATH、变量名与配置方案的全文检索，命中处高亮，可直接定位到当前条目。
+
+![全文检索](docs/screenshots/search.png)
+
+### 统计
+
+当前状态与最近 30 天历史序列分开呈现，另附最常改变的变量与配置应用次数。
+
+![统计](docs/screenshots/stats.png)
+
+### 同步中心
+
+文件式跨设备同步：导出 / 导入加密变更包，冲突逐条列出，可分别选择保留本地或采纳远端。
+
+![同步中心](docs/screenshots/sync.png)
+
+### 配置方案
+
+把整套 PATH 存成命名方案，随时加载或应用。
+
+![配置方案](docs/screenshots/profiles.png)
+
+### 深色模式
+
+![深色模式](docs/screenshots/dark-mode.png)
 
 ### CLI 命令行
+
+与 GUI 共享同一套核心逻辑，适合脚本化与远程维护。
 
 ![CLI](docs/screenshots/cli-demo.png)
 
