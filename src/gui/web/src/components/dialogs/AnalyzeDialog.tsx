@@ -19,18 +19,22 @@ export function AnalyzeDialog({ open, onClose }: Props) {
     useAnalyzeData(open);
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} ariaLabel={t('analyze.title')}>
       <div className="flex flex-col" style={{ width: 680, maxWidth: '100%', maxHeight: '75vh' }}>
         <div
           className="flex items-center justify-between px-1 py-2"
           style={{ borderBottom: '1px solid var(--app-border)' }}
         >
           <h2 className="text-base font-semibold">{t('analyze.title')}</h2>
-          <div className="flex gap-1">
+          <div className="flex gap-1" role="tablist" aria-label={t('analyze.title')}>
             {(['conflicts', 'tools'] as TabType[]).map((tabId) => (
               <button
                 key={tabId}
                 type="button"
+                role="tab"
+                id={`analyze-tab-${tabId}`}
+                aria-selected={tab === tabId}
+                aria-controls={tab === tabId ? 'analyze-panel' : undefined}
                 data-active={tab === tabId}
                 className="tab-pill text-xs"
                 onClick={() => setTab(tabId)}
@@ -41,7 +45,12 @@ export function AnalyzeDialog({ open, onClose }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-3">
+        <div
+          id="analyze-panel"
+          role="tabpanel"
+          aria-labelledby={`analyze-tab-${tab}`}
+          className="flex-1 overflow-auto p-3"
+        >
           {loading ? (
             <div
               className="flex items-center justify-center py-12 text-xs"

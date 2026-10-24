@@ -47,7 +47,7 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
         >
           <div
             className={sectionTitleClass + ' px-3 py-2'}
-            style={{ color: 'var(--app-fg-subtle)' }}
+            style={{ color: 'var(--app-fg-muted)' }}
           >
             {t('envBackup.title')}
           </div>
@@ -98,7 +98,7 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
             </p>
           ) : (
             <>
-              <div className={sectionTitleClass} style={{ color: 'var(--app-fg-subtle)' }}>
+              <div className={sectionTitleClass} style={{ color: 'var(--app-fg-muted)' }}>
                 {t('envBackup.preview')}
               </div>
               <p data-testid="backup-summary" className="text-xs">

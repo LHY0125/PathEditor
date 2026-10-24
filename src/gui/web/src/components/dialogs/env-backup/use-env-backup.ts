@@ -7,6 +7,7 @@ import {
   type EnvBackupInfo,
   type RestoreOutcome,
   type RestorePreview,
+  type SummaryLabels,
 } from '@/core/env-backup';
 
 /**
@@ -22,14 +23,7 @@ function errorCode(err: unknown): string | null {
   return typeof code === 'string' ? code : null;
 }
 
-/** 把 rejection 转成可展示文本；解析层已保证 `{code, message}`，兜底到 String()。 */
-function errorText(err: unknown): string {
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    const message = (err as { message: unknown }).message;
-    if (typeof message === 'string' && message.trim().length > 0) return message;
-  }
-  return String(err);
-}
+import { errorMessage } from '@/core/error';
 
 /** 恢复确认弹窗的完整文案（导出以便直接测试，避免断言散落在 DOM 查找里）。 */
 export function buildRestoreConfirm(
@@ -103,7 +97,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
       const list = await backend.listEnvBackups();
       setBackups(list);
     } catch (err: unknown) {
-      setError(errorText(err));
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -117,7 +111,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
         if (!cancelled) setBackups(list);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(errorText(err));
+        if (!cancelled) setError(errorMessage(err));
       });
     return () => {
       cancelled = true;
@@ -132,7 +126,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
       setCreatedPath(path);
       await refresh();
     } catch (err: unknown) {
-      setError(errorText(err));
+      setError(errorMessage(err));
     } finally {
       setCreating(false);
     }
@@ -152,7 +146,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
         setPreview(await backend.previewEnvBackup(info.path));
       } catch (err: unknown) {
         setError(
-          errorCode(err) === 'permissionDenied' ? t('envBackup.adminRequired') : errorText(err),
+          errorCode(err) === 'permissionDenied' ? t('envBackup.adminRequired') : errorMessage(err),
         );
         // 预览失败时清掉选中，避免「恢复」按钮对着没有差异的备份可用。
         setSelected(null);
@@ -200,7 +194,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
         onRestored();
       } catch (err: unknown) {
         setError(
-          errorCode(err) === 'permissionDenied' ? t('envBackup.adminRequired') : errorText(err),
+          errorCode(err) === 'permissionDenied' ? t('envBackup.adminRequired') : errorMessage(err),
         );
       } finally {
         setBusy(false);
@@ -213,7 +207,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
     if (!selected) return;
     // 恢复不可逆且**不产生新备份**：确认文案里必须同时给出差异摘要、
     // 将被删除的变量名，以及手工兜底出口。
-    const text = buildRestoreConfirm(t('envBackup.confirmRestore'), summaryOf(preview), {
+    const text = buildRestoreConfirm(t('envBackup.confirmRestore'), summaryOf(preview, t), {
       deleteWarning: t('envBackup.deleteWarning'),
       deleteHint: t('envBackup.deleteWarningHint'),
       manualFallback: t('envBackup.manualFallback'),
@@ -230,7 +224,7 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
     creating,
     selected,
     preview,
-    summary: summaryOf(preview),
+    summary: summaryOf(preview, t),
     outcome,
     createdPath,
     error,
@@ -240,7 +234,25 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
   };
 }
 
+/** 从 `t()` 构造摘要标签；core 不持有语言。 */
+function summaryLabels(
+  t: (key: string, params?: Record<string, unknown>) => string,
+): SummaryLabels {
+  return {
+    added: (count) => t('envBackup.summaryAdded', { count }),
+    modified: (count) => t('envBackup.summaryModified', { count }),
+    removed: (count) => t('envBackup.summaryRemoved', { count }),
+    conflicts: (count) => t('envBackup.summaryConflicts', { count }),
+    join: t('envBackup.summarySeparator'),
+    noChange: t('envBackup.summaryNoChange'),
+    conflictSuffix: t('envBackup.summaryConflictSuffix'),
+  };
+}
+
 /** `preview` 为 null 时摘要也为 null（区别于「无变化」的空摘要）。 */
-function summaryOf(preview: RestorePreview | null): BackupSummary | null {
-  return preview === null ? null : summarizePreview(preview);
+function summaryOf(
+  preview: RestorePreview | null,
+  t: (key: string, params?: Record<string, unknown>) => string,
+): BackupSummary | null {
+  return preview === null ? null : summarizePreview(preview, summaryLabels(t));
 }

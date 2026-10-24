@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 
 /** 切到「同步」标签页。 */
 async function openSyncTab(page: import('@playwright/test').Page) {
-  await page.getByRole('button', { name: '同步', exact: true }).click();
+  await page.getByRole('tab', { name: '同步', exact: true }).click();
   await page.waitForTimeout(300);
 }
 

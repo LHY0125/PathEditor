@@ -71,6 +71,12 @@ interface EnvState {
   isLoading: boolean;
   isSaving: boolean;
   statusMessage: string;
+  /** 状态栏当前文案是否为错误（只认布尔，不靠本地化文案匹配）。 */
+  statusIsError: boolean;
+  /** 当前选中的变量稳定键（`hive:name`）；搜索定位也写这里。 */
+  selectedKey: string | null;
+  /** 请求表格滚动到某个变量键；消费后置回 null。 */
+  scrollToKey: string | null;
 
   load: () => Promise<void>;
   setHiveFilter: (filter: HiveFilter) => void;
@@ -88,6 +94,9 @@ interface EnvState {
   hide: (meta: EnvVarMeta) => void;
   hasDrafts: () => boolean;
   setStatusMessage: (message: string) => void;
+  setStatusError: (message: string) => void;
+  setSelectedKey: (key: string | null) => void;
+  setScrollToKey: (key: string | null) => void;
 }
 
 export const useEnvStore = create<EnvState>((set, get) => {
@@ -96,7 +105,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
 
   /** 冲突或失败后统一刷新，并保留草稿避免用户输入丢失。 */
   const refreshAfterError = async (message: string) => {
-    set({ statusMessage: message, isSaving: false });
+    set({ statusMessage: message, statusIsError: true, isSaving: false });
     await get().load();
   };
 
@@ -108,6 +117,9 @@ export const useEnvStore = create<EnvState>((set, get) => {
     isLoading: false,
     isSaving: false,
     statusMessage: '',
+    statusIsError: false,
+    selectedKey: null,
+    scrollToKey: null,
 
     load: async () => {
       const seq = ++loadSeq;
@@ -121,6 +133,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         if (seq !== loadSeq) return;
         set({
           isLoading: false,
+          statusIsError: true,
           statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
         });
       }
@@ -173,7 +186,12 @@ export const useEnvStore = create<EnvState>((set, get) => {
         const { backup } = await backend.updateEnvVar(meta.hive, meta.name, value, meta.revision);
         const draft = new Map(get().draft);
         draft.delete(envVarKey(meta));
-        set({ draft, isSaving: false, statusMessage: savedStatusMessage(backup) });
+        set({
+          draft,
+          isSaving: false,
+          statusIsError: false,
+          statusMessage: savedStatusMessage(backup),
+        });
         await get().load();
         return true;
       } catch (error) {
@@ -183,7 +201,11 @@ export const useEnvStore = create<EnvState>((set, get) => {
           await refreshAfterError(message);
         } else {
           const message = errorMessage(error);
-          set({ isSaving: false, statusMessage: `${i18n.t('status.error')}: ${message}` });
+          set({
+            isSaving: false,
+            statusIsError: true,
+            statusMessage: `${i18n.t('status.error')}: ${message}`,
+          });
         }
         return false;
       }
@@ -192,18 +214,19 @@ export const useEnvStore = create<EnvState>((set, get) => {
     create: async (hive, name, value, kind) => {
       const invalid = validateVarName(name);
       if (invalid !== null) {
-        set({ statusMessage: invalid });
+        set({ statusMessage: i18n.t(`envVar.nameError.${invalid}`), statusIsError: true });
         return false;
       }
       set({ isSaving: true });
       try {
         const { backup } = await backend.createEnvVar(hive, name, value, kind);
-        set({ isSaving: false, statusMessage: savedStatusMessage(backup) });
+        set({ isSaving: false, statusIsError: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
       } catch (error) {
         set({
           isSaving: false,
+          statusIsError: true,
           statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
         });
         return false;
@@ -214,7 +237,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
       set({ isSaving: true });
       try {
         const { backup } = await backend.deleteEnvVar(meta.hive, meta.name, meta.revision);
-        set({ isSaving: false, statusMessage: savedStatusMessage(backup) });
+        set({ isSaving: false, statusIsError: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
       } catch (error) {
@@ -223,6 +246,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         } else {
           set({
             isSaving: false,
+            statusIsError: true,
             statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
           });
         }
@@ -247,7 +271,11 @@ export const useEnvStore = create<EnvState>((set, get) => {
       } catch (error) {
         const revealed = new Map(get().revealed);
         revealed.delete(envVarKey(meta));
-        set({ revealed, statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}` });
+        set({
+          revealed,
+          statusIsError: true,
+          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+        });
         // 值可能已不存在或类型不受支持，刷新以同步真实状态
         await get().load();
       }
@@ -261,6 +289,9 @@ export const useEnvStore = create<EnvState>((set, get) => {
 
     hasDrafts: () => get().draft.size > 0,
 
-    setStatusMessage: (message) => set({ statusMessage: message }),
+    setStatusMessage: (message) => set({ statusMessage: message, statusIsError: false }),
+    setStatusError: (message) => set({ statusMessage: message, statusIsError: true }),
+    setSelectedKey: (key) => set({ selectedKey: key }),
+    setScrollToKey: (key) => set({ scrollToKey: key }),
   };
 });

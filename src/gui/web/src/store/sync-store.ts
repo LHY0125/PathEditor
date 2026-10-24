@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import i18n from '@/i18n';
 import {
   backend,
   type SyncConflict,
@@ -36,10 +37,10 @@ function isCoreError(err: unknown): err is { code: string; message: string } {
 
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
-    if (err.code === 'database') return '同步不可用（降级模式）';
+    if (err.code === 'database') return i18n.t('sync.errorDegraded');
     // `sync` = 合并冲突需人工介入；`syncFormat` = 包损坏/口令错误，重试无用
-    if (err.code === 'syncFormat') return err.message || '同步包无效';
-    return err.message.trim().length > 0 ? err.message : '同步操作失败';
+    if (err.code === 'syncFormat') return err.message || i18n.t('sync.errorInvalidBundle');
+    return err.message.trim().length > 0 ? err.message : i18n.t('sync.errorFailed');
   }
   return err instanceof Error ? err.message : String(err);
 }
@@ -52,7 +53,7 @@ function errorMessage(err: unknown): string {
  * 完整值由用户点开单条冲突时再看。真正的掩码在 Rust 侧生成视图时完成。
  */
 export function maskConflictValue(value: string | null, maxLength = 60): string {
-  if (value === null || value.length === 0) return '(空)';
+  if (value === null || value.length === 0) return i18n.t('sync.emptyValue');
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength)}…`;
 }

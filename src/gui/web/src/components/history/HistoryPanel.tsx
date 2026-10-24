@@ -27,6 +27,7 @@ export function HistoryPanel() {
   const detailLoading = useHistoryStore((s) => s.detailLoading);
   const restoring = useHistoryStore((s) => s.restoring);
   const load = useHistoryStore((s) => s.load);
+  const loadMore = useHistoryStore((s) => s.loadMore);
   const selectEvent = useHistoryStore((s) => s.selectEvent);
   const restore = useHistoryStore((s) => s.restore);
   const filter = useHistoryStore((s) => s.filter);
@@ -37,6 +38,8 @@ export function HistoryPanel() {
   // 对比的对象是快照，而事件只是「哪两个快照可比」的入口）
   const [compareSel, setCompareSel] = useState<string[]>([]);
   const [comparePair, setComparePair] = useState<[string, string] | null>(null);
+  /** 选到第三条时提示「最早的一条已被挤掉」，避免静默改变选择。 */
+  const [compareNotice, setCompareNotice] = useState(false);
 
   useEffect(() => {
     void load();
@@ -78,8 +81,8 @@ export function HistoryPanel() {
           <h2 className="text-sm font-semibold" style={{ color: 'var(--app-fg)' }}>
             {t('history.title')}
           </h2>
-          <span className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
-            {t('history.count', { total })}
+          <span className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+            {t('history.showing', { shown: events.length, total })}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -152,7 +155,7 @@ export function HistoryPanel() {
           className="rounded-lg px-3 py-2 text-xs"
           style={{
             background: 'var(--app-warning)',
-            color: 'var(--app-accent-fg)',
+            color: 'var(--app-warning-fg)',
           }}
           role="alert"
         >
@@ -176,9 +179,21 @@ export function HistoryPanel() {
           >
             {t('compare.open', { count: compareSel.length })}
           </button>
-          <button type="button" className="tab-pill" onClick={() => setCompareSel([])}>
+          <button
+            type="button"
+            className="tab-pill"
+            onClick={() => {
+              setCompareNotice(false);
+              setCompareSel([]);
+            }}
+          >
             {t('compare.clearSelection')}
           </button>
+          {compareNotice && (
+            <span className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+              {t('compare.maxTwo')}
+            </span>
+          )}
         </div>
       )}
 
@@ -213,12 +228,18 @@ export function HistoryPanel() {
                     checked={compareSel.includes(e.snapshotUid as string)}
                     onChange={() => {
                       const uid = e.snapshotUid as string;
-                      setCompareSel((prev) =>
-                        prev.includes(uid)
-                          ? prev.filter((x) => x !== uid)
-                          : // 最多选两个：再选第三个时挤掉最早的那个
-                            [...prev, uid].slice(-2),
-                      );
+                      setCompareSel((prev) => {
+                        if (prev.includes(uid)) {
+                          setCompareNotice(false);
+                          return prev.filter((x) => x !== uid);
+                        }
+                        // 最多选两个：再选第三个时挤掉最早的那个，并明确告知
+                        if (prev.length >= 2) {
+                          setCompareNotice(true);
+                          return [...prev.slice(1), uid];
+                        }
+                        return [...prev, uid];
+                      });
                     }}
                   />
                 )}
@@ -239,12 +260,12 @@ export function HistoryPanel() {
                     <span className="font-medium">
                       {t(`history.action.${e.action}`, { defaultValue: e.action })}
                       {e.result !== 'success' && (
-                        <span className="ml-1" style={{ color: 'var(--app-warning)' }}>
+                        <span className="ml-1" style={{ color: 'var(--app-warning-text)' }}>
                           ({e.result === 'partial' ? t('history.partial') : t('history.failure')})
                         </span>
                       )}
                     </span>
-                    <span style={{ color: 'var(--app-fg-faint)' }}>{formatTime(e.createdAt)}</span>
+                    <span style={{ color: 'var(--app-fg-muted)' }}>{formatTime(e.createdAt)}</span>
                   </span>
                   <span style={{ color: 'var(--app-fg-muted)' }}>
                     {t(`history.source.${e.source}`, { defaultValue: e.source })}
@@ -257,6 +278,18 @@ export function HistoryPanel() {
               </li>
             );
           })}
+          {events.length < total && (
+            <li className="p-2">
+              <button
+                type="button"
+                className="toolbar-btn w-full"
+                disabled={loading}
+                onClick={() => void loadMore()}
+              >
+                {loading ? t('history.loading') : t('history.loadMore')}
+              </button>
+            </li>
+          )}
         </ul>
 
         {/* 详情 */}
@@ -281,7 +314,7 @@ export function HistoryPanel() {
                 >
                   {restoring ? t('history.restoring') : t('history.restore')}
                 </button>
-                <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+                <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('history.restoreHint')}
                 </p>
               </div>

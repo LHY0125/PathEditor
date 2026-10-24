@@ -44,7 +44,14 @@
     "modifiedLabel": "Modified",
     "removedLabel": "Removed",
     "modifiedAlwaysZero": "\"Modified\" is always 0: a changed value means the backup is stale and is counted as a conflict (design doc K3).",
-    "forceUnderreport": "Note: under force overwrite, variables replaced because of a conflict are still counted as conflicts, so the change count shown here is an underestimate."
+    "forceUnderreport": "Note: under force overwrite, variables replaced because of a conflict are still counted as conflicts, so the change count shown here is an underestimate.",
+    "summaryAdded": "Added {{count}}",
+    "summaryModified": "Modified {{count}}",
+    "summaryRemoved": "Removed {{count}}",
+    "summaryConflicts": "Conflicts {{count}}",
+    "summarySeparator": ", ",
+    "summaryNoChange": "No changes to environment variables",
+    "summaryConflictSuffix": "; conflicting items abort the restore in default mode"
   },
   "envVar": {
     "name": "Name",
@@ -75,10 +82,19 @@
     "newVarName": "Variable name",
     "newVarValue": "Variable value",
     "newVarKind": "Value type",
-    "revealFirstHint": "Click \"Show\" to view the current value before editing"
+    "revealFirstHint": "Click \"Show\" to view the current value before editing",
+    "nameError": {
+      "empty": "Variable name cannot be empty",
+      "nullByte": "Variable name cannot contain a null byte",
+      "equals": "Variable name cannot contain '='"
+    },
+    "noResults": "No matching variables",
+    "empty": "No environment variables"
   },
   "table": {
-    "path": "Path"
+    "path": "Path",
+    "noResults": "No matching paths",
+    "empty": "No paths"
   },
   "button": {
     "new": "New",
@@ -277,7 +293,11 @@
     "undoNothing": "No undoable operation found",
     "reveal": "Show",
     "revealing": "Loading…",
-    "revealFailed": "Could not read this value"
+    "revealFailed": "Could not read this value",
+    "errorCrypto": "History database key unavailable (the Windows account or machine may have changed); history is temporarily unavailable",
+    "errorUnavailable": "History unavailable",
+    "loadMore": "Load more",
+    "showing": "Showing {{shown}} of {{total}}"
   },
   "search": {
     "placeholder": "Search paths, variable names, profiles…",
@@ -286,7 +306,15 @@
     "noResults": "No matches",
     "kindPath": "Path",
     "kindEnvName": "Variable",
-    "kindProfile": "Profile"
+    "kindProfile": "Profile",
+    "errorDegraded": "Search unavailable (degraded mode)",
+    "errorFailed": "Search failed",
+    "copy": "Copy",
+    "copied": "Copied",
+    "openPath": "Locate in PATH",
+    "openVar": "Locate variable",
+    "openProfile": "View profile",
+    "openFailed": "Cannot locate this item in the current view (it may come from a historical snapshot)"
   },
   "stats": {
     "loading": "Loading…",
@@ -298,7 +326,10 @@
     "noData": "No data",
     "eventsCount": "{{count}} operations",
     "topTargets": "Most changed variables",
-    "profileApplies": "Profile applies"
+    "profileApplies": "Profile applies",
+    "errorDegraded": "Stats unavailable (degraded mode)",
+    "errorLoadFailed": "Failed to load statistics",
+    "retry": "Retry"
   },
   "compare": {
     "title": "Compare snapshots",
@@ -312,7 +343,8 @@
     "envNotAvailable": "Environment variable comparison is not supported in this version",
     "selectForCompare": "Select this snapshot for comparison",
     "open": "Compare selected ({{count}}/2)",
-    "clearSelection": "Clear selection"
+    "clearSelection": "Clear selection",
+    "maxTwo": "Only two snapshots can be compared; the earliest selection was cleared"
   },
   "refs": {
     "title": "References for \"{{name}}\"",
@@ -325,7 +357,8 @@
     "noDependents": "No other variable references it",
     "noDependencies": "It references no other variable",
     "noCycles": "No circular references found",
-    "depth": "level {{depth}}"
+    "depth": "level {{depth}}",
+    "errorDegraded": "References unavailable (degraded mode)"
   },
   "sync": {
     "title": "Sync Center",
@@ -356,6 +389,17 @@
     "noticeExported": "Exported {{count}} changes to {{path}}",
     "noticeImported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}",
     "noticeImportedUnsupported": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{unsupported}} profile change(s) are not supported yet and were not applied",
-    "noticeImportedRenamed": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{renamed}} profile(s) were renamed to avoid a name clash"
+    "noticeImportedRenamed": "Import done: applied {{applied}}, skipped {{skipped}}, conflicts {{conflicts}}; {{renamed}} profile(s) were renamed to avoid a name clash",
+    "errorDegraded": "Sync unavailable (degraded mode)",
+    "errorInvalidBundle": "Invalid sync bundle",
+    "errorFailed": "Sync operation failed",
+    "emptyValue": "(empty)",
+    "browse": "Browse…",
+    "browseHint": "Choose a sync bundle file",
+    "chooseExport": "Choose export location",
+    "chooseImport": "Choose import file",
+    "fileFilter": "PathEditor sync bundle",
+    "exporting": "Exporting…",
+    "importing": "Importing…"
   }
 }

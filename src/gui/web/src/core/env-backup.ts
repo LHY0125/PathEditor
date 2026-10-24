@@ -62,30 +62,47 @@ export interface BackupSummary {
 }
 
 /**
+ * `summarizePreview` 需要的本地化文案。
+ *
+ * core 不持有语言：调用方从 `t()` 构造标签，切换语言时摘要随之变化。
+ */
+export interface SummaryLabels {
+  added: (count: number) => string;
+  modified: (count: number) => string;
+  removed: (count: number) => string;
+  conflicts: (count: number) => string;
+  /** 多个计数之间的分隔符（中文「、」/ 英文「, 」）。 */
+  join: string;
+  noChange: string;
+  /** 有冲突时追加的提示，包含前导分隔符。 */
+  conflictSuffix: string;
+}
+
+/**
  * 把差异预览转成摘要。
  *
  * `hasChanges` 只看新增/修改/删除：仅有冲突时注册表一个字节都不会变
  * （默认模式下整批中止），不算「有变更」。
  */
-export function summarizePreview(preview: RestorePreview): BackupSummary {
+export function summarizePreview(preview: RestorePreview, labels: SummaryLabels): BackupSummary {
   const parts: string[] = [];
-  if (preview.added > 0) parts.push(`新增 ${preview.added}`);
-  if (preview.modified > 0) parts.push(`修改 ${preview.modified}`);
-  if (preview.removed > 0) parts.push(`删除 ${preview.removed}`);
-  if (preview.conflicts > 0) parts.push(`冲突 ${preview.conflicts}`);
+  if (preview.added > 0) parts.push(labels.added(preview.added));
+  if (preview.modified > 0) parts.push(labels.modified(preview.modified));
+  if (preview.removed > 0) parts.push(labels.removed(preview.removed));
+  if (preview.conflicts > 0) parts.push(labels.conflicts(preview.conflicts));
 
   const hasChanges = preview.added + preview.modified + preview.removed > 0;
   const hasConflicts = preview.conflicts > 0;
 
   let text: string;
   if (parts.length === 0) {
-    text = '与当前环境变量无变化';
+    text = labels.noChange;
   } else if (hasConflicts) {
     // 冲突项在 force=false 时会让恢复整体中止，必须显式说出来，
     // 否则用户会以为点「确定」一定成功。
-    text = `${parts.join('、')}；其中冲突项在默认模式下会中止恢复`;
+    text = `${parts.join(labels.join)}${labels.conflictSuffix}`;
   } else {
-    text = parts.join('、');
+    text = parts.join(labels.join);
   }
 
   return {

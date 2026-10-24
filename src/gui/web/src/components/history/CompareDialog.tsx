@@ -43,7 +43,7 @@ function DiffSection({ title, diff }: { title: string; diff: PathDiff }) {
         {title}
       </h4>
       {empty ? (
-        <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+        <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {t('compare.noChange')}
         </p>
       ) : (
@@ -59,7 +59,7 @@ function DiffSection({ title, diff }: { title: string; diff: PathDiff }) {
             </li>
           ))}
           {diff.reordered.map((r) => (
-            <li key={`ord-${r.path}`} style={{ color: 'var(--app-warning)' }}>
+            <li key={`ord-${r.path}`} style={{ color: 'var(--app-warning-text)' }}>
               {t('compare.moved', { path: r.path, from: r.leftIndex + 1, to: r.rightIndex + 1 })}
             </li>
           ))}
@@ -107,14 +107,14 @@ export function CompareDialog({ leftUid, rightUid, onClose }: Props) {
   }, [leftUid, rightUid]);
 
   return (
-    <Modal open onClose={onClose}>
+    <Modal open onClose={onClose} ariaLabel={t('compare.title')}>
       <div className="p-4" style={{ minWidth: '28rem', maxWidth: '40rem' }}>
         <h3 className="mb-3 text-sm font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('compare.title')}
         </h3>
 
         {loading && (
-          <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
             {t('compare.loading')}
           </p>
         )}
@@ -131,7 +131,7 @@ export function CompareDialog({ leftUid, rightUid, onClose }: Props) {
             <DiffSection title={t('history.userPath')} diff={result.user} />
 
             {/* 环境变量对比未实现，必须显式说明而不是留白 */}
-            <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+            <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
               {t('compare.envNotAvailable')}
             </p>
           </>

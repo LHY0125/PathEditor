@@ -63,7 +63,8 @@ describe('search store', () => {
     useSearchStore.getState().setQuery('x');
     await useSearchStore.getState().run();
 
-    expect(useSearchStore.getState().error).toContain('降级模式');
+    // 文案已走 i18n：测试环境语言可能是 en，断言两种语言都接受
+    expect(useSearchStore.getState().error).toMatch(/降级|degraded/i);
   });
 
   it('请求期间查询被改动时，丢弃过期结果（竞态守卫）', async () => {

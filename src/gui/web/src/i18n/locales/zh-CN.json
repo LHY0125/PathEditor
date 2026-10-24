@@ -44,7 +44,14 @@
     "modifiedLabel": "修改",
     "removedLabel": "删除",
     "modifiedAlwaysZero": "「修改」恒为 0：值发生变化即视为备份过期，计入「冲突」（见设计文档 K3）。",
-    "forceUnderreport": "注意：强制覆盖模式下被冲突覆盖的变量仍计入「冲突」，因此此处的改动量是低估值。"
+    "forceUnderreport": "注意：强制覆盖模式下被冲突覆盖的变量仍计入「冲突」，因此此处的改动量是低估值。",
+    "summaryAdded": "新增 {{count}}",
+    "summaryModified": "修改 {{count}}",
+    "summaryRemoved": "删除 {{count}}",
+    "summaryConflicts": "冲突 {{count}}",
+    "summarySeparator": "、",
+    "summaryNoChange": "与当前环境变量无变化",
+    "summaryConflictSuffix": "；其中冲突项在默认模式下会中止恢复"
   },
   "envVar": {
     "name": "变量名",
@@ -75,10 +82,19 @@
     "newVarName": "变量名",
     "newVarValue": "变量值",
     "newVarKind": "值类型",
-    "revealFirstHint": "请先点「显示」查看当前值后再编辑"
+    "revealFirstHint": "请先点「显示」查看当前值后再编辑",
+    "nameError": {
+      "empty": "变量名不能为空",
+      "nullByte": "变量名不能包含 null 字节",
+      "equals": "变量名不能包含等号"
+    },
+    "noResults": "没有匹配的变量",
+    "empty": "暂无环境变量"
   },
   "table": {
-    "path": "路径"
+    "path": "路径",
+    "noResults": "没有匹配的路径",
+    "empty": "暂无路径"
   },
   "button": {
     "new": "新建",
@@ -277,7 +293,11 @@
     "undoNothing": "没有可撤销的操作记录",
     "reveal": "显示",
     "revealing": "读取中…",
-    "revealFailed": "无法读取该变量的值"
+    "revealFailed": "无法读取该变量的值",
+    "errorCrypto": "历史库密钥不可用（可能更换了 Windows 账户或机器），历史暂时无法读取",
+    "errorUnavailable": "历史不可用",
+    "loadMore": "加载更多",
+    "showing": "已显示 {{shown}} / {{total}} 条"
   },
   "search": {
     "placeholder": "搜索路径、变量名、配置…",
@@ -286,7 +306,15 @@
     "noResults": "没有匹配结果",
     "kindPath": "路径",
     "kindEnvName": "变量名",
-    "kindProfile": "配置"
+    "kindProfile": "配置",
+    "errorDegraded": "搜索不可用（降级模式）",
+    "errorFailed": "搜索失败",
+    "copy": "复制",
+    "copied": "已复制",
+    "openPath": "定位到 PATH",
+    "openVar": "定位到变量",
+    "openProfile": "查看配置",
+    "openFailed": "无法定位到当前位置（可能来自历史快照）"
   },
   "stats": {
     "loading": "加载中…",
@@ -298,7 +326,10 @@
     "noData": "暂无数据",
     "eventsCount": "{{count}} 次操作",
     "topTargets": "最常改变的变量",
-    "profileApplies": "配置应用次数"
+    "profileApplies": "配置应用次数",
+    "errorDegraded": "统计不可用（降级模式）",
+    "errorLoadFailed": "统计加载失败",
+    "retry": "重试"
   },
   "compare": {
     "title": "快照对比",
@@ -312,7 +343,8 @@
     "envNotAvailable": "本版本不支持环境变量对比",
     "selectForCompare": "选择此快照用于对比",
     "open": "对比选中项（{{count}}/2）",
-    "clearSelection": "清除选择"
+    "clearSelection": "清除选择",
+    "maxTwo": "最多同时对比 2 条，已自动取消最早的选择"
   },
   "refs": {
     "title": "「{{name}}」的引用关系",
@@ -325,7 +357,8 @@
     "noDependents": "没有其它变量引用它",
     "noDependencies": "它没有引用其它变量",
     "noCycles": "未发现循环引用",
-    "depth": "第 {{depth}} 层"
+    "depth": "第 {{depth}} 层",
+    "errorDegraded": "引用图不可用（降级模式）"
   },
   "sync": {
     "title": "同步中心",
@@ -356,6 +389,17 @@
     "noticeExported": "已导出 {{count}} 条变更到 {{path}}",
     "noticeImported": "导入完成：应用 {{applied}}，跳过 {{skipped}}，冲突 {{conflicts}}",
     "noticeImportedUnsupported": "导入完成：应用 {{applied}}，跳过 {{skipped}}，冲突 {{conflicts}}；另有 {{unsupported}} 条（配置方案）本版本还不支持同步，未应用",
-    "noticeImportedRenamed": "导入完成：应用 {{applied}}，跳过 {{skipped}}，冲突 {{conflicts}}；{{renamed}} 条配置因与本地重名已自动改名"
+    "noticeImportedRenamed": "导入完成：应用 {{applied}}，跳过 {{skipped}}，冲突 {{conflicts}}；{{renamed}} 条配置因与本地重名已自动改名",
+    "errorDegraded": "同步不可用（降级模式）",
+    "errorInvalidBundle": "同步包无效",
+    "errorFailed": "同步操作失败",
+    "emptyValue": "（空）",
+    "browse": "浏览…",
+    "browseHint": "选择同步包文件",
+    "chooseExport": "选择导出位置",
+    "chooseImport": "选择导入文件",
+    "fileFilter": "PathEditor 同步包",
+    "exporting": "导出中…",
+    "importing": "导入中…"
   }
 }

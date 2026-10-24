@@ -37,7 +37,7 @@ export function NewEnvVarDialog({
   const submit = async () => {
     const invalid = validateVarName(name);
     if (invalid !== null) {
-      setError(invalid);
+      setError(t(`envVar.nameError.${invalid}`));
       return;
     }
     setError(null);
@@ -49,7 +49,7 @@ export function NewEnvVarDialog({
   };
 
   return (
-    <Modal open onClose={onCancel}>
+    <Modal open onClose={onCancel} ariaLabel={t('envVar.newVarTitle')}>
       <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold mb-1">{t('envVar.newVarTitle')}</h2>
 

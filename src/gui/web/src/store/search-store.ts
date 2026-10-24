@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import i18n from '@/i18n';
 import { backend, type SearchHit } from '@/services/backend';
 
 /**
@@ -25,9 +26,9 @@ function isCoreError(err: unknown): err is { code: string; message: string } {
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
     if (err.code === 'database') {
-      return '搜索不可用（降级模式）';
+      return i18n.t('search.errorDegraded');
     }
-    return err.message.trim().length > 0 ? err.message : '搜索失败';
+    return err.message.trim().length > 0 ? err.message : i18n.t('search.errorFailed');
   }
   return err instanceof Error ? err.message : String(err);
 }

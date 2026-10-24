@@ -8,11 +8,13 @@ export function StatusBar() {
   const { t } = useTranslation();
   const activeTab = useAppStore((s) => s.activeTab);
   const pathStatusMessage = useAppStore((s) => s.statusMessage);
+  const pathStatusIsError = useAppStore((s) => s.statusIsError);
   const pathIsLoading = useAppStore((s) => s.isLoading);
   const isAdmin = useAppStore((s) => s.isAdmin);
   const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const isModified = useAppStore((s) => s.isModified);
   const envStatusMessage = useEnvStore((s) => s.statusMessage);
+  const envStatusIsError = useEnvStore((s) => s.statusIsError);
   const envIsLoading = useEnvStore((s) => s.isLoading);
   const isDark = useThemeStore((s) => s.isDark);
 
@@ -21,16 +23,23 @@ export function StatusBar() {
   const isAllVars = activeTab === 'allVars';
   const statusMessage = isAllVars ? envStatusMessage : pathStatusMessage;
   const isLoading = isAllVars ? envIsLoading : pathIsLoading;
-  const hasError = statusMessage.includes(t('status.error'));
+  // 只认结构化布尔：此前用 `statusMessage.includes(t('status.error'))` 判定，
+  // 切到英文后旧的中文错误文案就再也匹配不上，重试按钮会消失。
+  const hasError = isAllVars ? envStatusIsError : pathStatusIsError;
 
   const retry = () => {
-    if (isAllVars) void useEnvStore.getState().load();
-    else void useAppStore.getState().loadPaths();
+    if (isAllVars) {
+      // 先清掉错误态与旧文案：成功刷新后不应继续显示上一次的错误。
+      useEnvStore.getState().setStatusMessage('');
+      void useEnvStore.getState().load();
+    } else {
+      void useAppStore.getState().loadPaths();
+    }
   };
 
   return (
     <footer className="statusbar">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" role="status" aria-live="polite">
         <span>{isLoading ? t('status.loading') : statusMessage}</span>
         {hasError && !isLoading && (
           <Button size="sm" onClick={retry}>

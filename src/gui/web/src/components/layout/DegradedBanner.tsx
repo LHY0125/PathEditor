@@ -62,7 +62,7 @@ export function DegradedBanner() {
       className="flex items-center gap-2 px-4 py-1.5 text-xs"
       style={{
         background: 'var(--app-warning)',
-        color: 'var(--app-accent-fg)',
+        color: 'var(--app-warning-fg)',
       }}
       role="alert"
     >

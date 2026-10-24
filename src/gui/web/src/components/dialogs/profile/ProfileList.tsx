@@ -13,19 +13,21 @@ export function ProfileList({ profiles, selected, onSelect }: ProfileListProps) 
   return (
     <div className="w-48 border-r overflow-auto p-2" style={{ borderColor: 'var(--app-border)' }}>
       {profiles.length === 0 ? (
-        <div className="text-xs text-center py-6" style={{ color: 'var(--app-fg-subtle)' }}>
+        <div className="text-xs text-center py-6" style={{ color: 'var(--app-fg-muted)' }}>
           {t('profile.noProfiles')}
         </div>
       ) : (
         profiles.map((profile) => (
-          <div
+          <button
             key={profile.name}
+            type="button"
+            aria-pressed={selected === profile.name}
             onClick={() => onSelect(profile.name)}
             data-selected={selected === profile.name}
             className="dialog-list-item px-2 py-1.5 text-xs mb-0.5"
           >
             {profile.name}
-          </div>
+          </button>
         ))
       )}
     </div>

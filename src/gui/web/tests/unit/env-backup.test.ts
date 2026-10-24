@@ -10,13 +10,31 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { invoke } from '@tauri-apps/api/core';
 import { backend } from '@/services/backend';
 import { backupFailed, type BackupOutcome } from '@/core/env-var';
-import { formatSize, summarizePreview, type RestorePreview } from '@/core/env-backup';
+import {
+  formatSize,
+  summarizePreview as summarizeWithLabels,
+  type RestorePreview,
+  type SummaryLabels,
+} from '@/core/env-backup';
 
 const mockInvoke = vi.mocked(invoke);
 
 function preview(over: Partial<RestorePreview> = {}): RestorePreview {
   return { changes: [], added: 0, modified: 0, removed: 0, conflicts: 0, ...over };
 }
+
+/** 与 zh-CN locale 对齐的测试标签；断言继续用中文，避免测试变成翻译测试。 */
+const labels: SummaryLabels = {
+  added: (count) => `新增 ${count}`,
+  modified: (count) => `修改 ${count}`,
+  removed: (count) => `删除 ${count}`,
+  conflicts: (count) => `冲突 ${count}`,
+  join: '、',
+  noChange: '与当前环境变量无变化',
+  conflictSuffix: '；其中冲突项在默认模式下会中止恢复',
+};
+
+const summarizePreview = (p: RestorePreview) => summarizeWithLabels(p, labels);
 
 beforeEach(() => {
   vi.resetAllMocks();

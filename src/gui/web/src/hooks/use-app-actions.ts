@@ -6,6 +6,7 @@ import type { PathEntry } from '@/core/path-entry';
 import { backend } from '@/services/backend';
 import { useKeyboard } from './use-keyboard';
 import i18n from '@/i18n';
+import { errorMessage } from '@/core/error';
 
 export interface DialogState {
   editDialog: { open: boolean; index: number; value: string; target: TargetType };
@@ -95,7 +96,7 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
           .setStatusMessage(i18n.t('status.deleted', { count: removed.length }));
       }
     } catch (error) {
-      useAppStore.getState().setStatusMessage(`${i18n.t('status.error')}: ${String(error)}`);
+      useAppStore.getState().setStatusError(`${i18n.t('status.error')}: ${errorMessage(error)}`);
     }
   }, [canWriteCurrent, getCurrentTarget]);
 
@@ -115,19 +116,19 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
         setImportDialog({ open: true, system, user });
       } else if (system.length > 0) {
         if (!canWrite(TargetType.SYSTEM)) {
-          useAppStore.getState().setStatusMessage(i18n.t('status.noSystemPermission'));
+          useAppStore.getState().setStatusError(i18n.t('status.noSystemPermission'));
           return;
         }
         useAppStore.getState().replacePaths(TargetType.SYSTEM, system);
       } else if (user.length > 0) {
         if (!canWrite(TargetType.USER)) {
-          useAppStore.getState().setStatusMessage(i18n.t('status.noUserPermission'));
+          useAppStore.getState().setStatusError(i18n.t('status.noUserPermission'));
           return;
         }
         useAppStore.getState().replacePaths(TargetType.USER, user);
       }
     } catch (error) {
-      useAppStore.getState().setStatusMessage(`${i18n.t('status.error')}: ${String(error)}`);
+      useAppStore.getState().setStatusError(`${i18n.t('status.error')}: ${errorMessage(error)}`);
     }
   }, [canWrite, canWriteCurrent, setImportDialog]);
 
@@ -144,7 +145,7 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      state.setStatusMessage(`${i18n.t('status.error')}: ${String(error)}`);
+      state.setStatusError(`${i18n.t('status.error')}: ${errorMessage(error)}`);
     }
   }, []);
 
@@ -217,7 +218,7 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
         if (!canWrite(TargetType.SYSTEM)) missing.push(i18n.t('status.noSystemPermission'));
         if (!canWrite(TargetType.USER)) missing.push(i18n.t('status.noUserPermission'));
         if (missing.length > 0) {
-          useAppStore.getState().setStatusMessage(missing.join('; '));
+          useAppStore.getState().setStatusError(missing.join('; '));
           return;
         }
         useAppStore.getState().replaceBothPaths(system, user);
@@ -226,7 +227,7 @@ export function useAppActions(activeTab: TabId, dialogs: DialogState) {
         const entries = target === 'system' ? system : user;
         if (!canWrite(targetType)) {
           const key = target === 'system' ? 'status.noSystemPermission' : 'status.noUserPermission';
-          useAppStore.getState().setStatusMessage(i18n.t(key));
+          useAppStore.getState().setStatusError(i18n.t(key));
           return;
         }
         if (entries.length > 0) {

@@ -30,9 +30,9 @@ function isCoreError(err: unknown): err is { code: string; message: string } {
   );
 }
 
-function describeError(e: unknown, fallback: string): string {
+function describeError(e: unknown, fallback: string, t: (key: string) => string): string {
   if (isCoreError(e)) {
-    if (e.code === 'database') return '引用图不可用（降级模式）';
+    if (e.code === 'database') return t('refs.errorDegraded');
     return e.message.trim().length > 0 ? e.message : fallback;
   }
   return e instanceof Error ? e.message : String(e);
@@ -62,7 +62,7 @@ export function RefGraphDialog({ name, onClose }: Props) {
         setError(null);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(describeError(e, t('refs.loadFailed')));
+        if (!cancelled) setError(describeError(e, t('refs.loadFailed'), t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -76,14 +76,14 @@ export function RefGraphDialog({ name, onClose }: Props) {
   const relatedCycles = cycles.filter((c) => c.some((n) => n.toUpperCase() === name.toUpperCase()));
 
   return (
-    <Modal open onClose={onClose}>
+    <Modal open onClose={onClose} ariaLabel={t('refs.title', { name })}>
       <div className="p-4" style={{ minWidth: '26rem', maxWidth: '38rem' }}>
         <h3 className="mb-3 text-sm font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('refs.title', { name })}
         </h3>
 
         {loading && (
-          <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
             {t('refs.loading')}
           </p>
         )}
@@ -102,7 +102,7 @@ export function RefGraphDialog({ name, onClose }: Props) {
                 {t('refs.dependentsTitle')}
               </h4>
               {dependents.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+                <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('refs.noDependents')}
                 </p>
               ) : (
@@ -122,7 +122,7 @@ export function RefGraphDialog({ name, onClose }: Props) {
                 {t('refs.dependenciesTitle')}
               </h4>
               {dependencies.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+                <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('refs.noDependencies')}
                 </p>
               ) : (
@@ -134,7 +134,7 @@ export function RefGraphDialog({ name, onClose }: Props) {
                     >
                       {e.toName}
                       {e.depth > 1 && (
-                        <span className="ml-1" style={{ color: 'var(--app-fg-faint)' }}>
+                        <span className="ml-1" style={{ color: 'var(--app-fg-muted)' }}>
                           ({t('refs.depth', { depth: e.depth })})
                         </span>
                       )}
@@ -150,7 +150,7 @@ export function RefGraphDialog({ name, onClose }: Props) {
                 {t('refs.cyclesTitle')}
               </h4>
               {relatedCycles.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+                <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('refs.noCycles')}
                 </p>
               ) : (
@@ -159,7 +159,7 @@ export function RefGraphDialog({ name, onClose }: Props) {
                     <li
                       key={c.join('>')}
                       className="rounded px-1"
-                      style={{ background: 'var(--app-warning)', color: 'var(--app-accent-fg)' }}
+                      style={{ background: 'var(--app-warning)', color: 'var(--app-warning-fg)' }}
                     >
                       {c.join(' → ')} → {c[0]}
                     </li>

@@ -1,17 +1,10 @@
 import i18n from '@/i18n';
 import appConfig from '@/config/default.json';
+import { errorMessage } from '@/core/error';
 import type { PathEntry } from '@/core/path-entry';
 import { canWriteTarget, type PathCapabilities } from '@/core/path-capabilities';
 import { TargetType } from '@/core/undo-redo';
 import { backend, type ApplyOutcome } from '@/services/backend';
-
-/** 从 `parseCoreError` 的 `{code, message}` 或普通异常中取可读文案。 */
-function errorMessage(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
-}
 
 export type SaveResult =
   | { kind: 'success' }

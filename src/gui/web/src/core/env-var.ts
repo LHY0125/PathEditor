@@ -100,7 +100,6 @@ export type RevealedValue = {
 };
 
 const MASK_PLACEHOLDER = '••••••••';
-const UNSUPPORTED_PLACEHOLDER = '(不支持的注册表类型)';
 
 /** 唯一键：同名变量可能在两个 hive 同时存在。 */
 export function envVarKey(meta: EnvVarMeta): string {
@@ -117,22 +116,25 @@ export function findMetaByKey(snapshot: EnvVarSnapshot, key: string): EnvVarMeta
   return [...snapshot.system, ...snapshot.user].find((m) => envVarKey(m) === key) ?? null;
 }
 
+/** 变量名校验失败原因；面向用户的文案由调用方经 i18n 渲染。 */
+export type VarNameError = 'empty' | 'nullByte' | 'equals';
+
 /**
  * 前端预校验变量名，与 Rust `validate_env_name` 规则保持一致。
- * 返回错误文案，或 null 表示通过。
+ * 返回错误码，或 null 表示通过。
  */
-export function validateVarName(name: string): string | null {
-  if (name.trim().length === 0) return '变量名不能为空';
-  if (name.includes('\0')) return '变量名不能包含 null 字节';
-  if (name.includes('=')) return '变量名不能包含等号';
+export function validateVarName(name: string): VarNameError | null {
+  if (name.trim().length === 0) return 'empty';
+  if (name.includes('\0')) return 'nullByte';
+  if (name.includes('=')) return 'equals';
   return null;
 }
 
-/** 计算某变量在表格中的展示值。 */
+/** 计算某变量在表格中的展示值。`unsupportedPlaceholder` 由调用方本地化。 */
 export function displayValue(
   meta: EnvVarMeta,
   revealedValue: string | null,
-  unsupportedPlaceholder: string = UNSUPPORTED_PLACEHOLDER,
+  unsupportedPlaceholder: string,
 ): string {
   if (meta.kind === 'unsupported') return unsupportedPlaceholder;
   if (meta.sensitive) {

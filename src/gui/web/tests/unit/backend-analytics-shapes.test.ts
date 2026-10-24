@@ -18,10 +18,17 @@ import {
 describe('parseSearchHits', () => {
   it('接受合法响应', () => {
     const hits = parseSearchHits([
-      { kind: 'path', refUid: 'snap#system', snippet: '[jdk21]', rank: -1.5 },
+      {
+        kind: 'path',
+        refUid: 'snap#system',
+        content: 'C:\\Java\\jdk21\\bin',
+        snippet: '[jdk21]',
+        rank: -1.5,
+      },
     ]);
     expect(hits).toHaveLength(1);
     expect(hits[0].refUid).toBe('snap#system');
+    expect(hits[0].content).toBe('C:\\Java\\jdk21\\bin');
   });
 
   it('拒绝非数组', () => {

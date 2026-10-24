@@ -13,14 +13,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('切到「全部变量」显示两个 hive 的变量', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
 
   await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();
   await expect(page.locator('[data-env-var-key="system:windir"]')).toBeVisible();
 });
 
 test('Path 不出现在「全部变量」列表中', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
 
   await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();
   // mock 的 list_all_env_vars 不含 Path（Rust 侧过滤）；顶部引导文案里的 "Path"
@@ -29,7 +29,7 @@ test('Path 不出现在「全部变量」列表中', async ({ page }) => {
 });
 
 test('敏感变量默认打码，点「显示」后出现明文', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   const row = page.locator('[data-env-var-key="user:MY_TOKEN"]');
   await expect(row).toBeVisible();
 
@@ -41,7 +41,7 @@ test('敏感变量默认打码，点「显示」后出现明文', async ({ page 
 });
 
 test('保护行与不支持类型的编辑按钮禁用', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await expect(page.locator('[data-env-var-key="system:windir"]')).toBeVisible();
 
   // windir 是系统内置保护变量（canEdit=false）
@@ -57,13 +57,13 @@ test('保护行与不支持类型的编辑按钮禁用', async ({ page }) => {
 });
 
 test('Unsupported 类型显示占位而非值', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
 
   await expect(page.getByText('(不支持的注册表类型)')).toBeVisible();
 });
 
 test('「全部变量」下 PATH 专用按钮不可见', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();
 
   await expect(page.getByRole('button', { name: '上移' })).toHaveCount(0);
@@ -72,7 +72,7 @@ test('「全部变量」下 PATH 专用按钮不可见', async ({ page }) => {
 });
 
 test('「全部变量」下拖放文件夹无效（设计文档 a2）', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();
 
   // webkitGetAsEntry 是函数，无法经 dispatchEvent 跨进程序列化，
@@ -94,12 +94,12 @@ test('「全部变量」下拖放文件夹无效（设计文档 a2）', async ({
 
   // drop handler 在 allVars 下早退：PATH 快照通路未被触碰，
   // 切回系统 PATH 后仍是 mock 的 2 条，无新增
-  await page.getByRole('button', { name: '系统 PATH' }).click();
+  await page.getByRole('tab', { name: '系统 PATH' }).click();
   await expect(page.getByTestId('path-row')).toHaveCount(2);
 });
 
 test('切换来源筛选只显示对应 hive', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await expect(page.locator('[data-env-var-key="user:JAVA_HOME"]')).toBeVisible();
 
   // 「系统」筛选按钮与「系统 PATH」tab 名部分重叠，需 exact 匹配
@@ -109,7 +109,7 @@ test('切换来源筛选只显示对应 hive', async ({ page }) => {
 });
 
 test('编辑普通变量触发 update_env_var 并携带 revision', async ({ page }) => {
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   const row = page.locator('[data-env-var-key="user:JAVA_HOME"]');
   await expect(row).toBeVisible();
 
@@ -138,7 +138,7 @@ test('revision 冲突时显示错误并刷新，不静默覆盖', async ({ page 
   // beforeEach 已 goto；addInitScript 只对后续导航生效，需重新加载注入冲突开关
   await page.addInitScript('window.__conflictOverride = true;');
   await page.goto('/');
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   const row = page.locator('[data-env-var-key="user:JAVA_HOME"]');
   await expect(row).toBeVisible();
 
@@ -194,7 +194,7 @@ test('弹窗读值陈旧时提交被拦截：不调用 update_env_var 并重取�
   };
   await page.addInitScript(createIpcMock({ list_all_env_vars: staleSnapshot }));
   await page.goto('/');
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   const row = page.locator('[data-env-var-key="user:JAVA_HOME"]');
   await expect(row).toBeVisible();
 

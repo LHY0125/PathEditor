@@ -19,19 +19,14 @@ test.beforeEach(async ({ page }) => {
 
 /** 切到「搜索」标签页。
  *
- * **必须用 exact + 限定在标签栏内**：`搜索` 同时是标签页名和提交按钮名，
- * 裸 `getByRole('button', { name: '搜索' })` 会命中两个元素（strict mode 报错）。
+ * 标签页是 `role="tab"`，提交按钮是 `role="button"`；角色不同，选择器不会歧义。
  */
 async function openSearchTab(page: import('@playwright/test').Page) {
-  await page.getByRole('button', { name: '搜索', exact: true }).first().click();
+  await page.getByRole('tab', { name: '搜索', exact: true }).first().click();
   await page.waitForTimeout(200);
 }
 
-/** 提交搜索：在输入框按 Enter。
- *
- * 用 Enter 而不是点按钮，是为了回避「搜索」这个词同时出现在标签页与按钮上
- * 造成的选择器歧义——表单的 onSubmit 与按钮点击走同一条路径。
- */
+/** 提交搜索：在输入框按 Enter（与点击按钮走同一条 onSubmit 路径）。 */
 async function submitSearch(page: import('@playwright/test').Page) {
   await page.getByRole('searchbox').press('Enter');
   await page.waitForTimeout(300);
@@ -43,6 +38,7 @@ test('输入关键字后显示结果，命中处高亮', async ({ page }) => {
       {
         kind: 'path',
         refUid: 'snap-1#system',
+        content: 'C:\\Program Files\\Java\\jdk21\\bin',
         // Rust 侧 FTS5 snippet() 的输出格式：命中处用 [] 包裹
         snippet: 'C:\\Program Files\\Java\\[jdk21]\\bin',
         rank: -1.5,

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { backend } from '@/services/backend';
 import { maskConflictValue, useSyncStore, type SyncNotice } from '@/store/sync-store';
 import type { SyncConflict } from '@/services/backend';
+import { Button } from '@/components/ui/Button';
 
 /**
  * 把 store 的**结构化** notice 渲染成文案。
@@ -69,6 +71,11 @@ function renderNotice(
  *
  * 一条冲突对应「同一实体同一字段被两台设备同时改」。分组让用户能按
  * 「配置 / 快照」逐个处理，而不是面对一长串无结构的列表。
+ *
+ * ## 视觉规范
+ *
+ * 布局与配色全部走 `globals.css` 的 `.sync-*` 类与语义 token；
+ * 动作按钮用 `Button` 原语，不再拿 `.tab-pill` 当按钮用。
  */
 export function SyncCenter() {
   const { t } = useTranslation();
@@ -88,6 +95,8 @@ export function SyncCenter() {
   const [passphrase, setPassphrase] = useState('');
   const [filePath, setFilePath] = useState('');
   const [includeResolved, setIncludeResolved] = useState(false);
+  /** 正在执行的导出/导入：用于按钮文案，避免长耗时加密看起来没反应。 */
+  const [busyAction, setBusyAction] = useState<'export' | 'import' | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -109,23 +118,43 @@ export function SyncCenter() {
   const canSubmit = passphrase.length > 0 && filePath.length > 0 && !loading;
 
   const onExport = async () => {
-    const ok = await exportBundle(passphrase, filePath);
-    // 不论成败都清空口令：失败后重试应由用户重新输入
-    setPassphrase('');
-    if (ok) setFilePath('');
+    setBusyAction('export');
+    try {
+      const ok = await exportBundle(passphrase, filePath);
+      // 不论成败都清空口令：失败后重试应由用户重新输入
+      setPassphrase('');
+      if (ok) setFilePath('');
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const onImport = async () => {
-    const ok = await importBundle(passphrase, filePath);
-    setPassphrase('');
-    if (ok) setFilePath('');
+    setBusyAction('import');
+    try {
+      const ok = await importBundle(passphrase, filePath);
+      setPassphrase('');
+      if (ok) setFilePath('');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  /** 原生文件对话框：取消或非 Tauri 环境下静默保持原路径。 */
+  const choosePath = async (mode: 'export' | 'import') => {
+    const picked = await (
+      mode === 'export'
+        ? backend.pickSyncExportPath(t('sync.fileFilter'))
+        : backend.pickSyncImportPath(t('sync.fileFilter'))
+    ).catch(() => null);
+    if (picked) setFilePath(picked);
   };
 
   return (
-    <div className="sync-center" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <header style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>{t('sync.title')}</h2>
-        <span style={{ color: 'var(--app-text-muted)' }}>
+    <div className="sync-center">
+      <header className="sync-header">
+        <h2 className="text-sm font-semibold">{t('sync.title')}</h2>
+        <span className="sync-muted text-xs">
           {status
             ? t('sync.status', {
                 pending: status.pendingCount,
@@ -133,33 +162,28 @@ export function SyncCenter() {
               })
             : t('sync.statusUnknown')}
         </span>
-        <button
-          type="button"
-          className="tab-pill"
-          onClick={() => void refresh()}
-          disabled={loading}
-        >
+        <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={loading}>
           {t('sync.refresh')}
-        </button>
+        </Button>
       </header>
 
       {/* 口径说明：同步不写注册表，必须让用户看到 */}
-      <p style={{ margin: 0, color: 'var(--app-text-muted)' }}>{t('sync.registryNotice')}</p>
+      <p className="sync-note">{t('sync.registryNotice')}</p>
 
       {error !== null && (
-        <div role="alert" style={{ color: 'var(--app-danger)' }}>
+        <div role="alert" className="sync-error">
           {error}
         </div>
       )}
       {notice !== null && (
-        <div role="status" style={{ color: 'var(--app-text-muted)' }}>
+        <div role="status" className="sync-notice">
           {renderNotice(notice, t)}
         </div>
       )}
 
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span>{t('sync.passphrase')}</span>
+      <section className="sync-section">
+        <label className="sync-field">
+          <span className="sync-label">{t('sync.passphrase')}</span>
           <input
             className="field-input"
             type="password"
@@ -169,40 +193,47 @@ export function SyncCenter() {
             placeholder={t('sync.passphrasePlaceholder')}
           />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span>{t('sync.filePath')}</span>
-          <input
-            className="field-input"
-            type="text"
-            value={filePath}
-            onChange={(e) => setFilePath(e.target.value)}
-            placeholder={t('sync.filePathPlaceholder')}
-          />
+        <label className="sync-field">
+          <span className="sync-label">{t('sync.filePath')}</span>
+          <span className="sync-file-row">
+            <input
+              className="field-input sync-file-input"
+              type="text"
+              value={filePath}
+              onChange={(e) => setFilePath(e.target.value)}
+              placeholder={t('sync.filePathPlaceholder')}
+            />
+            <Button size="sm" variant="ghost" onClick={() => void choosePath('export')}>
+              {t('sync.chooseExport')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void choosePath('import')}>
+              {t('sync.chooseImport')}
+            </Button>
+          </span>
         </label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className="tab-pill"
-            disabled={!canSubmit}
+        <div className="sync-actions">
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!canSubmit || busyAction !== null}
             onClick={() => void onExport()}
           >
-            {t('sync.export')}
-          </button>
-          <button
-            type="button"
-            className="tab-pill"
-            disabled={!canSubmit}
+            {busyAction === 'export' ? t('sync.exporting') : t('sync.export')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={!canSubmit || busyAction !== null}
             onClick={() => void onImport()}
           >
-            {t('sync.import')}
-          </button>
+            {busyAction === 'import' ? t('sync.importing') : t('sync.import')}
+          </Button>
         </div>
       </section>
 
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h3 style={{ margin: 0 }}>{t('sync.conflicts')}</h3>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <section className="sync-section">
+        <header className="sync-conflicts-header">
+          <h3 className="text-xs font-semibold">{t('sync.conflicts')}</h3>
+          <label className="sync-check">
             <input
               type="checkbox"
               checked={includeResolved}
@@ -216,51 +247,50 @@ export function SyncCenter() {
         </header>
 
         {conflicts.length === 0 ? (
-          <p style={{ margin: 0, color: 'var(--app-text-muted)' }}>{t('sync.noConflicts')}</p>
+          <p className="sync-muted text-xs">{t('sync.noConflicts')}</p>
         ) : (
           grouped.map(([entityType, list]) => (
-            <div key={entityType} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h4 style={{ margin: '8px 0 0' }}>
+            <div key={entityType} className="sync-group">
+              <h4 className="sync-muted text-xs font-semibold">
                 {t(`sync.entityType.${entityType}`, entityType)}
               </h4>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
+              <ul className="sync-conflict-list">
                 {list.map((c) => (
-                  <li key={c.id} style={{ marginBottom: 6 }}>
-                    <div>
+                  <li key={c.id} className="sync-conflict">
+                    <div className="sync-conflict-head">
                       <code>{c.entityUid}</code>
-                      {c.field !== null && <span> · {c.field}</span>}
-                      <span style={{ color: 'var(--app-text-muted)' }}>
-                        {' '}
+                      {c.field !== null && <span>· {c.field}</span>}
+                      <span className="sync-muted">
                         · {t('sync.fromDevice', { device: c.remoteDevice })}
                       </span>
                     </div>
-                    <div style={{ color: 'var(--app-text-muted)' }}>
+                    <div className="sync-conflict-values">
                       {t('sync.localValue')}: {maskConflictValue(c.localValue)}
                     </div>
-                    <div style={{ color: 'var(--app-text-muted)' }}>
+                    <div className="sync-conflict-values">
                       {t('sync.remoteValue')}: {maskConflictValue(c.remoteValue)}
                     </div>
                     {c.resolvedAt === null ? (
-                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                        <button
-                          type="button"
-                          className="tab-pill"
+                      <div className="sync-conflict-actions">
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           disabled={loading}
                           onClick={() => void resolve(c.id, 'local')}
                         >
                           {t('sync.takeLocal')}
-                        </button>
-                        <button
-                          type="button"
-                          className="tab-pill"
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           disabled={loading}
                           onClick={() => void resolve(c.id, 'remote')}
                         >
                           {t('sync.takeRemote')}
-                        </button>
+                        </Button>
                       </div>
                     ) : (
-                      <div style={{ color: 'var(--app-text-muted)' }}>
+                      <div className="sync-muted">
                         {t('sync.resolvedAs', { resolution: c.resolution ?? '' })}
                       </div>
                     )}

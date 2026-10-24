@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import i18n from '@/i18n';
+import { errorMessage } from '@/core/error';
 import { UndoRedoManager, OperationType, TargetType } from '@/core/undo-redo';
 import type { PathEntry } from '@/core/path-entry';
 import appConfig from '@/config/default.json';
@@ -26,9 +27,13 @@ interface AppState {
   activeTab: TabId;
   searchQuery: string;
   selectedIndices: number[];
+  /** 请求表格滚动到某条逻辑索引（搜索定位用）；消费后置回 null。 */
+  scrollToIndex: number | null;
   isAdmin: boolean;
   pathCapabilities: PathCapabilities;
   statusMessage: string;
+  /** 状态栏当前文案是否为错误（只认布尔，不靠本地化文案匹配）。 */
+  statusIsError: boolean;
   isModified: boolean;
   isLoading: boolean;
   isSaving: boolean;
@@ -36,7 +41,9 @@ interface AppState {
   setActiveTab: (tab: TabId) => void;
   setSearchQuery: (query: string) => void;
   setSelectedIndices: (indices: number[]) => void;
+  setScrollToIndex: (index: number | null) => void;
   setStatusMessage: (msg: string) => void;
+  setStatusError: (msg: string) => void;
 
   addPath: (path: string, target: TargetType) => void;
   editPath: (index: number, newPath: string, target: TargetType) => void;
@@ -76,9 +83,11 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTab: 'system',
     searchQuery: '',
     selectedIndices: [],
+    scrollToIndex: null,
     isAdmin: false,
     pathCapabilities: { ...EMPTY_CAPABILITIES },
     statusMessage: '',
+    statusIsError: false,
     isModified: false,
     isLoading: true,
     isSaving: false,
@@ -86,7 +95,9 @@ export const useAppStore = create<AppState>((set, get) => {
     setActiveTab: (tab) => set({ activeTab: tab }),
     setSearchQuery: (query) => set({ searchQuery: query }),
     setSelectedIndices: (indices) => set({ selectedIndices: indices }),
-    setStatusMessage: (msg) => set({ statusMessage: msg }),
+    setScrollToIndex: (index) => set({ scrollToIndex: index }),
+    setStatusMessage: (msg) => set({ statusMessage: msg, statusIsError: false }),
+    setStatusError: (msg) => set({ statusMessage: msg, statusIsError: true }),
 
     addPath: (path, target) => {
       const state = get();
@@ -331,20 +342,25 @@ export const useAppStore = create<AppState>((set, get) => {
           undoRedo: new UndoRedoManager(appConfig.undo.maxHistory),
           isLoading: false,
           isModified: false,
+          statusIsError: false,
           statusMessage: i18n.t('status.loaded', {
             sysCount: sysEntries.length,
             userCount: usrEntries.length,
           }),
         });
       } catch (error) {
-        set({ isLoading: false, statusMessage: `${i18n.t('status.error')}: ${String(error)}` });
+        set({
+          isLoading: false,
+          statusIsError: true,
+          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+        });
       }
     },
 
     savePaths: async (force?: boolean) => {
       const state = get();
       if (state.isSaving) return { kind: 'blocked' };
-      set({ isSaving: true, statusMessage: i18n.t('status.saving') });
+      set({ isSaving: true, statusIsError: false, statusMessage: i18n.t('status.saving') });
       const outcome = await savePathSnapshot({
         sysPaths: state.sysPaths,
         userPaths: state.userPaths,
@@ -360,6 +376,7 @@ export const useAppStore = create<AppState>((set, get) => {
           arraysEqual(state.userPaths, outcome.savedUser)
         ),
         isSaving: false,
+        statusIsError: outcome.result.kind === 'failure' || outcome.result.kind === 'partial',
         statusMessage: outcome.statusMessage,
         _savedSys: outcome.savedSys,
         _savedUser: outcome.savedUser,
@@ -391,6 +408,7 @@ export const useAppStore = create<AppState>((set, get) => {
         set({
           isAdmin: false,
           pathCapabilities: { ...EMPTY_CAPABILITIES },
+          statusIsError: false,
           statusMessage: i18n.t('status.readonly'),
         });
       }

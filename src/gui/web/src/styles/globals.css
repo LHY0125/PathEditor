@@ -16,6 +16,8 @@
 
   /* 文字 */
   --app-fg: #18181b;
+  /* 文字色阶：faint 2.46:1 / subtle 4.02:1 均不达 AA，只作非文字用途；
+     正文与提示一律用 --app-fg-muted（4.63:1 / 深色 5.75:1）。 */
   --app-fg-muted: #71717a;
   --app-fg-subtle: #7e7e87;
   --app-fg-faint: #a1a1aa;
@@ -37,6 +39,11 @@
   /* 语义色 */
   --app-danger: #dc2626;
   --app-warning: #d97706;
+  /* 警告底上的文字：白字在 #d97706 上只有 3.19:1，深色模式在 #ffb454 上仅 1.76:1。
+     统一改用深色字：浅色 5.56:1 / 深色 10.05:1，两套主题都过 AA。 */
+  --app-warning-fg: #18181b;
+  /* 警告色作为文字：原色 #d97706 在 #fafafa 上仅 3.05:1，降到 #b45309 后为 4.81:1。 */
+  --app-warning-text: #b45309;
   --app-disabled-fg: #a1a1aa;
   /* Wave 4.1：对话框补一档「成功」（此前只有 danger/warning，对话框用 #22c55e 硬编码）。
      浅色取 #15803d：白底 5.02:1 / #fafafa 4.81:1，满足 AA 4.5:1（旧值 #16a34a 仅 3.30:1） */
@@ -82,6 +89,10 @@
 
   --app-danger: #ff6b6b;
   --app-warning: #ffb454;
+  /* 深色模式下 #ffb454 作为文字在 #0d0d12 上为 10.99:1，可直接沿用；
+     作为背景时仍用深色字（10.05:1），与浅色主题保持同一语义。 */
+  --app-warning-text: #ffb454;
+  --app-warning-fg: #18181b;
   --app-disabled-fg: #63636e;
   /* Wave 4.1：深色遮罩更重（40% 黑在深色背景上几乎看不出层次） */
   --app-success: #4ade80;
@@ -176,6 +187,16 @@ body {
 /* 深色浮层毛玻璃 */
 .glass {
   backdrop-filter: blur(14px);
+}
+
+/* 可复制内容：等宽片段（搜索结果、快照值、备份文件名）与表单控件。
+   body 的 user-select:none 只用于界面骨架，数据本身必须可选中复制。 */
+.font-mono,
+code,
+pre,
+input,
+textarea {
+  user-select: text;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -296,11 +317,10 @@ body {
   color: var(--app-danger);
 }
 
-/* 快捷键提示比菜单项标签低一档：在前景色阶上位于 --app-fg-muted 与 --app-fg-faint 之间，
-   与菜单背景对比度实测 4.02:1（浅色 #7e7e87 on #ffffff）
-   / 5.99:1（深色 #9a9aa2 on 合成背景 #1d1d26），高于 3:1 的 UI 元素门槛。 */
+/* 快捷键提示是文字，必须达 AA 4.5:1：用 --app-fg-muted（4.63:1），
+   不用 --app-fg-subtle（4.02:1）/ --app-fg-faint（2.46:1）。 */
 .menu-shortcut {
-  color: var(--app-fg-subtle);
+  color: var(--app-fg-muted);
   font-family: ui-monospace, Consolas, monospace;
   font-size: 11px;
 }
@@ -423,7 +443,7 @@ body {
 }
 
 .statusbar-warn {
-  color: var(--app-warning);
+  color: var(--app-warning-text);
 }
 
 .statusbar-muted {
@@ -469,6 +489,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* PATH 是用户要复制的数据：body 的 user-select:none 只管界面骨架，
+     内容区必须允许选中。 */
+  user-select: text;
 }
 
 .path-row[data-state='invalid'] .path-text {
@@ -476,7 +499,7 @@ body {
 }
 
 .path-row[data-state='dup'] .path-text {
-  color: var(--app-warning);
+  color: var(--app-warning-text);
 }
 
 .path-row[data-state='off'] .path-text {
@@ -527,6 +550,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: text;
 }
 
 .env-var-cell-dim {
@@ -608,7 +632,7 @@ body {
 }
 
 .field-input::placeholder {
-  color: var(--app-fg-subtle);
+  color: var(--app-fg-muted);
 }
 
 /* 对话框内列表项（备份文件、配置方案共用） */
@@ -634,4 +658,172 @@ body {
 .btn-block {
   width: 100%;
   justify-content: flex-start;
+}
+
+/* ── 同步中心 ───────────────────────────────────────────────
+   面板骨架与分段卡片全部在此定义；组件只挂类名与语义 token。 */
+.sync-center {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  max-width: 960px;
+}
+
+.sync-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.sync-muted {
+  color: var(--app-fg-muted);
+}
+
+.sync-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+.sync-error {
+  padding: 8px 10px;
+  border: 1px solid var(--app-danger);
+  border-radius: var(--radius);
+  color: var(--app-danger);
+  font-size: 12px;
+}
+
+.sync-notice {
+  padding: 8px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius);
+  background: var(--app-surface);
+  color: var(--app-fg-muted);
+  font-size: 12px;
+}
+
+.sync-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  background: var(--app-surface);
+}
+
+.sync-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.sync-label {
+  color: var(--app-fg-muted);
+}
+
+.sync-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-file-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sync-conflicts-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sync-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+.sync-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sync-conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sync-conflict {
+  padding: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.sync-conflict-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sync-conflict-values {
+  color: var(--app-fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.sync-conflict-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ── 检索结果 ─────────────────────────────────────────────── */
+.search-hit {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius);
+}
+
+.search-hit-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.search-kind {
+  flex-shrink: 0;
+  background: var(--app-surface-raised);
+  color: var(--app-fg-muted);
+}
+
+.search-snippet {
+  color: var(--app-fg);
+  overflow-wrap: anywhere;
+}
+
+.search-hit-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
 }

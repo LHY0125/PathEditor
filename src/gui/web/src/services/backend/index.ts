@@ -1,5 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
-import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog';
+import {
+  confirm as tauriConfirm,
+  open as tauriOpen,
+  save as tauriSave,
+} from '@tauri-apps/plugin-dialog';
 import type { PathEntry } from '@/core/path-entry';
 import type { EnvHive, EnvValueKind } from '@/core/env-var';
 
@@ -79,6 +83,20 @@ export const backend = {
   expandEnvVars: (path: string) => invoke<string>('expand_env_vars', { path }),
   /** 异步确认对话框（替代阻塞式 window.confirm）：关窗确认等路径专用，绝不阻塞 JS 线程。 */
   confirmDialog: (message: string) => tauriConfirm(message),
+  /** 选择同步包导出位置（原生保存对话框）；用户取消返回 null。 */
+  pickSyncExportPath: (filterName: string) =>
+    tauriSave({
+      defaultPath: 'patheditor-sync.pesync',
+      filters: [{ name: filterName, extensions: ['pesync'] }],
+    }),
+  /** 选择要导入的同步包（原生打开对话框）；用户取消返回 null。 */
+  pickSyncImportPath: async (filterName: string) => {
+    const selected = await tauriOpen({
+      multiple: false,
+      filters: [{ name: filterName, extensions: ['pesync'] }],
+    });
+    return typeof selected === 'string' ? selected : null;
+  },
   importFile: (path: string) => invoke<[PathEntry[], PathEntry[]]>('import_file', { path }),
   exportPathEntries: (sys: PathEntry[], usr: PathEntry[], format: string) =>
     invoke<string>('export_path_entries', { sys, usr, format }),

@@ -48,6 +48,31 @@ describe('history store', () => {
     expect(s.error).toBeNull();
   });
 
+  it('loadMore 用已加载条数作为 offset 并追加', async () => {
+    (backend.historyListEvents as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ items: [event({ uid: 'e1' })], total: 2 })
+      .mockResolvedValueOnce({ items: [event({ uid: 'e2' })], total: 2 });
+
+    await useHistoryStore.getState().load();
+    await useHistoryStore.getState().loadMore();
+
+    expect(backend.historyListEvents).toHaveBeenLastCalledWith({ limit: 50, offset: 1 });
+    expect(useHistoryStore.getState().events.map((e) => e.uid)).toEqual(['e1', 'e2']);
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
+  it('已加载全部时 loadMore 不发起请求', async () => {
+    (backend.historyListEvents as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      items: [event()],
+      total: 1,
+    });
+    await useHistoryStore.getState().load();
+
+    await useHistoryStore.getState().loadMore();
+
+    expect(backend.historyListEvents).toHaveBeenCalledTimes(1);
+  });
+
   it('降级模式下 load 记录错误而不抛出', async () => {
     // parseCoreError 抛出的是普通对象，不是 Error 实例
     (backend.historyListEvents as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
@@ -73,8 +98,9 @@ describe('history store', () => {
 
     await useHistoryStore.getState().load();
 
-    // 换机后应提示「密钥不匹配」，而不是笼统的「不可用」
-    expect(useHistoryStore.getState().error).toContain('密钥');
+    // 换机后应提示「密钥不匹配」，而不是笼统的「不可用」。
+    // 文案已走 i18n：测试环境语言可能是 en，断言两种语言都接受。
+    expect(useHistoryStore.getState().error).toMatch(/密钥|key/i);
   });
 
   it('selectEvent 用 snapshotUid 查询，且 reveal=false', async () => {

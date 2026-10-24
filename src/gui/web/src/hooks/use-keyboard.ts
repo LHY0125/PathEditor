@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
+import { isAnyModalOpen } from '@/core/modal-state';
 
 interface KeyboardActions {
   onNew: () => void;
@@ -27,6 +28,10 @@ export function useKeyboard(actions: KeyboardActions) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 模态框打开时全局快捷键全部暂停：否则在「帮助 / 配置 / 备份」里
+      // 按 Delete 删掉的是主界面选中的路径，Ctrl+S 会保存主界面改动。
+      if (isAnyModalOpen()) return;
+
       const tag = (e.target as HTMLElement)?.tagName;
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 

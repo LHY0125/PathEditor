@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import i18n from '@/i18n';
 import { backend, type EventFilter, type EventView, type SnapshotView } from '@/services/backend';
 import type { CoreError } from '@/core/env-var';
 
@@ -23,9 +24,9 @@ function isCoreError(err: unknown): err is Pick<CoreError, 'code' | 'message'> {
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
     if (err.code === 'crypto') {
-      return '历史库密钥不可用（可能更换了 Windows 账户或机器），历史暂时无法读取';
+      return i18n.t('history.errorCrypto');
     }
-    return err.message.trim().length > 0 ? err.message : '历史不可用';
+    return err.message.trim().length > 0 ? err.message : i18n.t('history.errorUnavailable');
   }
   return err instanceof Error ? err.message : String(err);
 }
@@ -43,6 +44,8 @@ interface HistoryState {
   /** 当前筛选条件 */
   filter: EventFilter;
   load: () => Promise<void>;
+  /** 追加下一页；`events.length >= total` 时为空操作。 */
+  loadMore: () => Promise<void>;
   selectEvent: (event: EventView) => Promise<void>;
   clearDetail: () => void;
   restore: (uid: string) => Promise<void>;
@@ -75,6 +78,32 @@ export const useHistoryStore = create<HistoryState>((set) => ({
       set({ events: page.items, total: page.total, loading: false });
     } catch (e) {
       // 降级模式（code = database）也会走到这里：错误条幅依赖这条信息
+      set({ loading: false, error: errorMessage(e) });
+    }
+  },
+
+  /**
+   * 追加下一页。
+   *
+   * `historyListEvents` 用 offset 分页；筛选变化时由 `setFilter` 重新从 0 加载，
+   * 因此这里只需用当前已加载条数作为 offset。
+   */
+  loadMore: async () => {
+    const { events, total, loading } = useHistoryStore.getState();
+    if (loading || events.length >= total) return;
+    set({ loading: true, error: null });
+    try {
+      const page = await backend.historyListEvents({
+        limit: PAGE_SIZE,
+        offset: events.length,
+        ...useHistoryStore.getState().filter,
+      });
+      set((state) => ({
+        events: [...state.events, ...page.items],
+        total: page.total,
+        loading: false,
+      }));
+    } catch (e) {
       set({ loading: false, error: errorMessage(e) });
     }
   },

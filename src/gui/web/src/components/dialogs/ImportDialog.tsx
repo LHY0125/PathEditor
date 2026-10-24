@@ -24,7 +24,7 @@ export function ImportDialog({
   const { t } = useTranslation();
 
   return (
-    <Modal open={open} onClose={onCancel}>
+    <Modal open={open} onClose={onCancel} ariaLabel={t('dialog.importTarget')}>
       <h2 className="text-base font-semibold mb-4">{t('dialog.importTarget')}</h2>
       <p className="text-xs mb-4" style={{ color: 'var(--app-fg-muted)' }}>
         {systemCount > 0 && t('dialog.importSystemCount', { count: systemCount })}

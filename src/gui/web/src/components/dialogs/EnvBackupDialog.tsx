@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { EnvBackupPanel } from './env-backup/EnvBackupPanel';
 import { useEnvBackup } from './env-backup/use-env-backup';
@@ -16,10 +17,16 @@ interface EnvBackupDialogProps {
  * 与 `ProfileDialog` 的结构一致。
  */
 export function EnvBackupDialog({ open, onClose, onRestored }: EnvBackupDialogProps) {
+  const { t } = useTranslation();
   const controller = useEnvBackup(open, onRestored);
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      ariaLabel={t('envBackup.title')}
+      dismissible={!controller.busy && !controller.creating}
+    >
       <EnvBackupPanel controller={controller} />
     </Modal>
   );

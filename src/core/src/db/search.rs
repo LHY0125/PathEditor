@@ -31,6 +31,9 @@ pub struct SearchHit {
     pub kind: String,
     /// 指向的对象 uid（快照 uid / 变量名 / 配置 uid）
     pub ref_uid: String,
+    /// 完整索引内容（路径串 / 变量名 / 配置名+描述+标签），供前端定位与复制。
+    /// 不含环境变量的值。
+    pub content: String,
     /// 高亮片段（FTS5 `snippet()`）
     pub snippet: String,
     /// 排名（越小越相关）
@@ -230,7 +233,7 @@ pub fn search(db: &Db, query: &str, limit: u32) -> Result<Vec<SearchHit>, CoreEr
     let limit = limit.clamp(1, 200) as i64;
 
     let mut stmt = db.prepare(
-        "SELECT kind, ref_uid,
+        "SELECT kind, ref_uid, content,
                     snippet(search_fts, 0, '[', ']', '…', 12),
                     rank
                FROM search_fts
@@ -243,8 +246,9 @@ pub fn search(db: &Db, query: &str, limit: u32) -> Result<Vec<SearchHit>, CoreEr
             Ok(SearchHit {
                 kind: r.get(0)?,
                 ref_uid: r.get(1)?,
-                snippet: r.get(2)?,
-                rank: r.get(3)?,
+                content: r.get(2)?,
+                snippet: r.get(3)?,
+                rank: r.get(4)?,
             })
         })
         .map_err(|e| super::db_err("fts_query", e))?;

@@ -4,14 +4,7 @@ import { useTranslation } from 'react-i18next';
 import appConfig from '@/config/default.json';
 import { useAppStore } from '@/store/app-store';
 import { backend, type ProfileView, type ProfilePathsView } from '@/services/backend';
-
-/** 从 `parseCoreError` 抛出的结构化错误或普通异常中取可读文案。 */
-function errorMessage(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
-}
+import { errorMessage } from '@/core/error';
 
 export function useProfiles(open: boolean, onClose: () => void) {
   const { t } = useTranslation();
@@ -89,7 +82,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
       await backend.profileApply(selected);
       onClose();
     } catch (error) {
-      useAppStore.getState().setStatusMessage(`${t('status.error')}: ${errorMessage(error)}`);
+      useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
     }
   }, [onClose, selected, selectedData, t]);
 

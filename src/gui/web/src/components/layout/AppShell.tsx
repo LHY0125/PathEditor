@@ -63,7 +63,9 @@ export function AppShell() {
   const [envBackupOpen, setEnvBackupOpen] = useState(false);
   // 选中与编辑都只存稳定键；meta 一律从快照派生 —— 冲突刷新后重试自动
   // 携带新 revision，快照换代后悬空引用自动失效。
-  const [selectedVarKey, setSelectedVarKey] = useState<string | null>(null);
+  // 选中键放 store（而不是局部 state）：搜索结果需要跨面板定位到变量。
+  const selectedVarKey = useEnvStore((s) => s.selectedKey);
+  const setSelectedVarKey = useEnvStore((s) => s.setSelectedKey);
   const [editVarKey, setEditVarKey] = useState<string | null>(null);
   const [envSearch, setEnvSearch] = useState('');
   const envSnapshot = useEnvStore((s) => s.snapshot);
@@ -160,15 +162,35 @@ export function AppShell() {
       {/* 降级条幅必须常驻，与当前标签页无关 */}
       <DegradedBanner />
 
-      <nav className="tabs" aria-label={t('app.name')}>
+      <nav className="tabs" role="tablist" aria-label={t('app.name')}>
         {tabConfig.map((tab) => (
           <button
             key={tab.id}
             type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={activeTab === tab.id ? 'tabpanel' : undefined}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             data-active={activeTab === tab.id}
             onClick={() => {
               setActiveTab(tab.id);
               setSelectedIndices([]);
+            }}
+            onKeyDown={(e) => {
+              const index = tabConfig.findIndex((item) => item.id === tab.id);
+              let nextIndex: number | null = null;
+              if (e.key === 'ArrowRight') nextIndex = (index + 1) % tabConfig.length;
+              else if (e.key === 'ArrowLeft') {
+                nextIndex = (index - 1 + tabConfig.length) % tabConfig.length;
+              } else if (e.key === 'Home') nextIndex = 0;
+              else if (e.key === 'End') nextIndex = tabConfig.length - 1;
+              if (nextIndex === null) return;
+              e.preventDefault();
+              const next = tabConfig[nextIndex];
+              setActiveTab(next.id);
+              setSelectedIndices([]);
+              document.getElementById(`tab-${next.id}`)?.focus();
             }}
             className="tab-pill text-xs"
           >
@@ -236,6 +258,9 @@ export function AppShell() {
       </div>
 
       <div
+        id="tabpanel"
+        role="tabpanel"
+        aria-labelledby={`tab-${activeTab}`}
         className="flex-1 overflow-auto"
         data-testid="path-drop-zone"
         onDragOver={(e) => {

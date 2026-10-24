@@ -28,7 +28,7 @@ export function PathEditDialog({
   }, [open, initialValue]);
 
   return (
-    <Modal open={open} onClose={onCancel}>
+    <Modal open={open} onClose={onCancel} ariaLabel={title}>
       <h2 className="text-base font-semibold mb-4">{title}</h2>
       <label className="mb-2 block" style={{ color: 'var(--app-fg-muted)' }}>
         {t('dialog.pathLabel')}

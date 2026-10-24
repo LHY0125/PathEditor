@@ -30,6 +30,6 @@ test('普通用户可编辑用户 PATH，系统 tab 保持只读', async ({ page
   await page.goto('/');
 
   await expect(page.getByRole('button', { name: '新建' })).toBeDisabled();
-  await page.getByRole('button', { name: '用户 PATH' }).click();
+  await page.getByRole('tab', { name: '用户 PATH' }).click();
   await expect(page.getByRole('button', { name: '新建' })).toBeEnabled();
 });

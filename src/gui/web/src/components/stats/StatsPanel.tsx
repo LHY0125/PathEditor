@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { backend, type Dashboard } from '@/services/backend';
+import { Button } from '@/components/ui/Button';
 
 /**
  * 统计面板。
@@ -22,10 +23,10 @@ function isCoreError(err: unknown): err is { code: string; message: string } {
   );
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: unknown, t: (key: string) => string): string {
   if (isCoreError(err)) {
-    if (err.code === 'database') return '统计不可用（降级模式）';
-    return err.message.trim().length > 0 ? err.message : '统计加载失败';
+    if (err.code === 'database') return t('stats.errorDegraded');
+    return err.message.trim().length > 0 ? err.message : t('stats.errorLoadFailed');
   }
   return err instanceof Error ? err.message : String(err);
 }
@@ -35,6 +36,7 @@ export function StatsPanel() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +49,7 @@ export function StatsPanel() {
         }
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(errorMessage(e));
+        if (!cancelled) setError(errorMessage(e, t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -55,11 +57,11 @@ export function StatsPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey, t]);
 
   if (loading) {
     return (
-      <p className="p-3 text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+      <p className="p-3 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
         {t('stats.loading')}
       </p>
     );
@@ -67,9 +69,19 @@ export function StatsPanel() {
 
   if (error !== null) {
     return (
-      <p role="alert" className="p-3 text-xs" style={{ color: 'var(--app-danger)' }}>
-        {error}
-      </p>
+      <div role="alert" className="p-3 text-xs">
+        <p style={{ color: 'var(--app-danger)' }}>{error}</p>
+        <Button
+          size="sm"
+          className="mt-2"
+          onClick={() => {
+            setLoading(true);
+            setReloadKey((k) => k + 1);
+          }}
+        >
+          {t('stats.retry')}
+        </Button>
+      </div>
     );
   }
 
@@ -87,19 +99,19 @@ export function StatsPanel() {
         </h4>
         <div className="flex gap-4 text-xs">
           <div>
-            <span style={{ color: 'var(--app-fg-faint)' }}>{t('stats.currentPathItems')}</span>
+            <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.currentPathItems')}</span>
             <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
               {data.currentPathItems}
             </span>
           </div>
           <div>
-            <span style={{ color: 'var(--app-fg-faint)' }}>{t('stats.currentAvgLen')}</span>
+            <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.currentAvgLen')}</span>
             <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
               {data.currentAvgLen.toFixed(1)}
             </span>
           </div>
         </div>
-        <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+        <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {t('stats.currentHint')}
         </p>
       </section>
@@ -110,14 +122,14 @@ export function StatsPanel() {
           {t('stats.historyTitle')}
         </h4>
         {data.days.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
             {t('stats.noData')}
           </p>
         ) : (
           <ul className="space-y-1" aria-label={t('stats.historyTitle')}>
             {data.days.map((d) => (
               <li key={d.day} className="flex items-center gap-2 text-xs">
-                <span className="w-24 shrink-0" style={{ color: 'var(--app-fg-faint)' }}>
+                <span className="w-24 shrink-0" style={{ color: 'var(--app-fg-muted)' }}>
                   {d.day}
                 </span>
                 <span
@@ -143,7 +155,7 @@ export function StatsPanel() {
           {t('stats.topTargets')}
         </h4>
         {data.topTargets.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
             {t('stats.noData')}
           </p>
         ) : (
@@ -164,7 +176,7 @@ export function StatsPanel() {
           {t('stats.profileApplies')}
         </h4>
         {data.profileApplies.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
             {t('stats.noData')}
           </p>
         ) : (

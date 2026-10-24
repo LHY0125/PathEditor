@@ -10,7 +10,7 @@ interface CapturedCall {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(createIpcMock());
   await page.goto('/');
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
 });
 
 /** 打开「备份与恢复」对话框（入口挂在环境变量工具栏）。 */
@@ -49,7 +49,7 @@ test('选中备份后按四个计数渲染差异，并单独列出将删除的�
 test('确认弹窗含删除项与手工兜底命令，确认后以 force=false 调用恢复', async ({ page }) => {
   await page.addInitScript('window.__confirmResponse = true;');
   await page.goto('/');
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await openBackupDialog(page);
   await page.locator('[data-backup-file]').first().click();
   await page.getByRole('button', { name: '恢复', exact: true }).click();
@@ -90,7 +90,7 @@ test('code=conflict 时二次确认，同意后以 force=true 重试', async ({ 
   // 恢复确认与强制覆盖二次确认都返回 true
   await page.addInitScript('window.__confirmResponse = true; window.__conflictOverride = true;');
   await page.goto('/');
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await openBackupDialog(page);
   await page.locator('[data-backup-file]').first().click();
   await page.getByRole('button', { name: '恢复', exact: true }).click();
@@ -113,7 +113,7 @@ test('code=conflict 时二次确认，同意后以 force=true 重试', async ({ 
 test('恢复失败（权限不足）时提示需要管理员权限且不重试', async ({ page }) => {
   await page.addInitScript('window.__confirmResponse = true; window.__restoreForbidden = true;');
   await page.goto('/');
-  await page.getByRole('button', { name: '全部变量' }).click();
+  await page.getByRole('tab', { name: '全部变量' }).click();
   await openBackupDialog(page);
   await page.locator('[data-backup-file]').first().click();
   await page.getByRole('button', { name: '恢复', exact: true }).click();

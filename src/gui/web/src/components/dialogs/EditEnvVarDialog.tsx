@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { useEnvStore } from '@/store/env-store';
 import { findMetaByKey } from '@/core/env-var';
+import { errorMessage } from '@/core/error';
 
 interface EditEnvVarDialogProps {
   /**
@@ -66,7 +67,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(String(err));
+          setError(errorMessage(err));
           setValue('');
         }
       });
@@ -92,7 +93,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
         setDraftByKey(varKey, fresh.value);
         setError(t('envVar.staleReloaded'));
       } catch (err: unknown) {
-        setError(String(err));
+        setError(errorMessage(err));
       }
       setSubmitting(false);
       return;
@@ -104,7 +105,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
   };
 
   return (
-    <Modal open onClose={onCancel}>
+    <Modal open onClose={onCancel} ariaLabel={t('envVar.editVarTitle')}>
       <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold mb-1">{t('envVar.editVarTitle')}</h2>
 
@@ -136,7 +137,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
         </label>
 
         {gone && (
-          <p className="text-xs" style={{ color: 'var(--app-warning)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-warning-text)' }}>
             {t('envVar.varGone')}
           </p>
         )}

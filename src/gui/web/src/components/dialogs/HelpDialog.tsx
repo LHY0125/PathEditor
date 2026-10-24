@@ -12,7 +12,7 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
   const { t } = useTranslation();
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} ariaLabel={t('dialog.helpTitle')}>
       <h2 className="text-base font-semibold mb-4">{t('dialog.helpTitle')}</h2>
       <pre
         className="whitespace-pre-wrap font-sans leading-relaxed max-w-lg"

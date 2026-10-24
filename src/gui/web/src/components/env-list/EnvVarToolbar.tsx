@@ -78,18 +78,21 @@ export function EnvVarToolbar({
         className="toolbar-search"
       />
       <span className="toolbar-sep" aria-hidden="true" />
-      {FILTERS.map((filter) => (
-        <button
-          key={filter}
-          type="button"
-          data-hive-filter={filter}
-          data-active={hiveFilter === filter}
-          className="tab-pill text-xs"
-          onClick={() => setHiveFilter(filter)}
-        >
-          {t(FILTER_LABEL_KEY[filter])}
-        </button>
-      ))}
+      <div className="flex items-center gap-1" role="group" aria-label={t('envVar.source')}>
+        {FILTERS.map((filter) => (
+          <button
+            key={filter}
+            type="button"
+            data-hive-filter={filter}
+            data-active={hiveFilter === filter}
+            aria-pressed={hiveFilter === filter}
+            className="tab-pill text-xs"
+            onClick={() => setHiveFilter(filter)}
+          >
+            {t(FILTER_LABEL_KEY[filter])}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

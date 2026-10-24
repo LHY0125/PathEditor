@@ -132,6 +132,6 @@ describe('RefGraphDialog', () => {
     const { RefGraphDialog } = await import('@/components/env/RefGraphDialog');
     render(<RefGraphDialog name="X" onClose={() => {}} />);
 
-    await waitFor(() => expect(screen.getByText(/降级模式/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/降级|degraded/i)).toBeTruthy());
   });
 });

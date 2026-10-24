@@ -235,6 +235,8 @@ export interface SearchHit {
   kind: string;
   /** 指向对象（快照 uid 带 `#hive` 后缀，或配置 uid） */
   refUid: string;
+  /** 完整索引内容（路径串 / 变量名 / 配置名+描述+标签）；不含环境变量值 */
+  content: string;
   /** 高亮片段（FTS5 `snippet()`，命中处用 `[]` 包裹） */
   snippet: string;
   /** 排名，越小越相关 */
@@ -334,6 +336,7 @@ export function parseSearchHits(value: unknown, label = 'search'): SearchHit[] {
       !isRecord(raw) ||
       typeof raw.kind !== 'string' ||
       typeof raw.refUid !== 'string' ||
+      typeof raw.content !== 'string' ||
       typeof raw.snippet !== 'string' ||
       typeof raw.rank !== 'number'
     ) {
@@ -342,6 +345,7 @@ export function parseSearchHits(value: unknown, label = 'search'): SearchHit[] {
     return {
       kind: raw.kind,
       refUid: raw.refUid,
+      content: raw.content,
       snippet: raw.snippet,
       rank: raw.rank,
     };

@@ -68,27 +68,31 @@ describe('validateVarName', () => {
 });
 
 describe('displayValue', () => {
+  const unsupported = '(不支持的注册表类型)';
+
   it('敏感且未 reveal 时返回占位符', () => {
-    expect(displayValue(meta({ sensitive: true, preview: null }), null)).toBe('••••••••');
+    expect(displayValue(meta({ sensitive: true, preview: null }), null, unsupported)).toBe(
+      '••••••••',
+    );
   });
 
   it('敏感但已 reveal 时返回明文', () => {
-    expect(displayValue(meta({ sensitive: true, preview: null }), 'real-secret')).toBe(
+    expect(displayValue(meta({ sensitive: true, preview: null }), 'real-secret', unsupported)).toBe(
       'real-secret',
     );
   });
 
   it('不敏感时返回 preview', () => {
-    expect(displayValue(meta(), null)).toBe('C:\\Java');
+    expect(displayValue(meta(), null, unsupported)).toBe('C:\\Java');
   });
 
   it('不敏感但 preview 为 null 时返回空串', () => {
-    expect(displayValue(meta({ preview: null }), null)).toBe('');
+    expect(displayValue(meta({ preview: null }), null, unsupported)).toBe('');
   });
 
   it('Unsupported 类型显示类型占位，不显示值', () => {
-    expect(displayValue(meta({ kind: 'unsupported', preview: null }), null)).toBe(
-      '(不支持的注册表类型)',
+    expect(displayValue(meta({ kind: 'unsupported', preview: null }), null, unsupported)).toBe(
+      unsupported,
     );
   });
 

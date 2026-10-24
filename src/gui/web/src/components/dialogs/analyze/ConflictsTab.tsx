@@ -35,7 +35,7 @@ export function ConflictsTab({ conflicts }: { conflicts: ConflictEntry[] }) {
                   >
                     {index === 0 ? '✓' : '✗'} {location.dir}
                     {index > 0 && (
-                      <span className="ml-1" style={{ color: 'var(--app-fg-subtle)' }}>
+                      <span className="ml-1" style={{ color: 'var(--app-fg-muted)' }}>
                         ({t('analyze.shadowed')})
                       </span>
                     )}

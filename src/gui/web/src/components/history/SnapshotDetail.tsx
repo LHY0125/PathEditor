@@ -52,7 +52,7 @@ export function SnapshotDetail({ snapshot }: Props) {
         {label}（{entries.length}）
       </h4>
       {entries.length === 0 ? (
-        <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+        <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {t('history.noEntries')}
         </p>
       ) : (
@@ -102,7 +102,7 @@ export function SnapshotDetail({ snapshot }: Props) {
   return (
     <div className="p-3">
       <div className="mb-3">
-        <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+        <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {new Date(snapshot.createdAt).toLocaleString()} · {snapshot.kind}
         </p>
       </div>
@@ -115,7 +115,7 @@ export function SnapshotDetail({ snapshot }: Props) {
           {t('history.envVars')}（{snapshot.env.length}）
         </h4>
         {snapshot.env.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--app-fg-faint)' }}>
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
             {t('history.noEntries')}
           </p>
         ) : (
@@ -132,11 +132,11 @@ export function SnapshotDetail({ snapshot }: Props) {
                     <span className="font-medium" style={{ color: 'var(--app-fg)' }}>
                       {v.name}
                     </span>
-                    <span style={{ color: 'var(--app-fg-faint)' }}>{v.hive}</span>
+                    <span style={{ color: 'var(--app-fg-muted)' }}>{v.hive}</span>
                     {v.sensitive && (
                       <span
                         className="rounded px-1"
-                        style={{ background: 'var(--app-warning)', color: 'var(--app-accent-fg)' }}
+                        style={{ background: 'var(--app-warning)', color: 'var(--app-warning-fg)' }}
                         title={t('history.maskedTitle')}
                       >
                         {t('history.masked')}

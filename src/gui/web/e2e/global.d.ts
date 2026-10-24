@@ -64,6 +64,7 @@ interface Window {
   __searchFixture?: Array<{
     kind: string;
     refUid: string;
+    content: string;
     snippet: string;
     rank: number;
   }>;

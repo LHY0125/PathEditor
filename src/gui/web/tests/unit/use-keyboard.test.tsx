@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, renderHook } from '@testing-library/react';
 import { useAppStore, EMPTY_CAPABILITIES } from '@/store/app-store';
+import { markModalOpen, resetModalStateForTests } from '@/core/modal-state';
 import { useKeyboard } from '@/hooks/use-keyboard';
 
 function actions() {
@@ -28,7 +29,10 @@ describe('useKeyboard', () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    resetModalStateForTests();
+  });
 
   it('可写系统 PATH 时触发快捷键', async () => {
     const handlers = actions();
@@ -119,5 +123,22 @@ describe('useKeyboard', () => {
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(blur).toHaveBeenCalledTimes(1);
     input.remove();
+  });
+
+  it('模态框打开时全局快捷键全部暂停', async () => {
+    const handlers = actions();
+    renderHook(() => useKeyboard(handlers));
+    await act(async () => {});
+
+    const release = markModalOpen();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'F1' });
+
+    expect(handlers.onDelete).not.toHaveBeenCalled();
+    expect(handlers.onSave).not.toHaveBeenCalled();
+    expect(handlers.onHelp).not.toHaveBeenCalled();
+
+    release();
   });
 });

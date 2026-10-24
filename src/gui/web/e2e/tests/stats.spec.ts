@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function openStatsTab(page: import('@playwright/test').Page) {
-  await page.getByRole('button', { name: '统计' }).click();
+  await page.getByRole('tab', { name: '统计' }).click();
   await page.waitForTimeout(300);
 }
 

@@ -15,7 +15,7 @@ export function ProfileDialog({ open, onClose }: Props) {
   const profiles = useProfiles(open, onClose);
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} ariaLabel={t('profile.title')}>
       <div className="flex flex-col" style={{ width: 680, maxWidth: '100%', maxHeight: '75vh' }}>
         <div
           className="flex items-center justify-between px-1 py-2"
@@ -28,6 +28,7 @@ export function ProfileDialog({ open, onClose }: Props) {
               value={profiles.newName}
               onChange={(event) => profiles.setNewName(event.target.value)}
               placeholder={t('profile.namePlaceholder')}
+              aria-label={t('profile.namePlaceholder')}
               className="field-input w-44"
             />
             <Button

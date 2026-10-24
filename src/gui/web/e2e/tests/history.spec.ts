@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
 
 /** 切到「历史记录」标签页。 */
 async function openHistoryTab(page: import('@playwright/test').Page) {
-  await page.getByRole('button', { name: '历史记录' }).click();
+  await page.getByRole('tab', { name: '历史记录' }).click();
   await page.waitForTimeout(300);
 }
 

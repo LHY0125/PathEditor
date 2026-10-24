@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEnvStore } from '@/store/env-store';
@@ -38,6 +38,7 @@ export function EnvVarTable({
   const revealed = useEnvStore((s) => s.revealed);
   const reveal = useEnvStore((s) => s.reveal);
   const hide = useEnvStore((s) => s.hide);
+  const scrollToKey = useEnvStore((s) => s.scrollToKey);
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Path 由 Rust 侧过滤；此处防御性再滤一次，避免契约被破坏时泄漏到 UI。
@@ -55,6 +56,14 @@ export function EnvVarTable({
     estimateSize: () => ROW_HEIGHT,
     initialRect: { width: 800, height: 600 },
   });
+
+  // 搜索定位：滚动到目标变量后清空请求。
+  useEffect(() => {
+    if (scrollToKey === null) return;
+    const index = rows.findIndex((meta) => envVarKey(meta) === scrollToKey);
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: 'center' });
+    useEnvStore.getState().setScrollToKey(null);
+  }, [scrollToKey, rows, virtualizer]);
 
   /** 行内小操作按钮：复用按钮原语的 ghost 变体，尺寸收窄以适配 28px 行高。 */
 
@@ -78,6 +87,15 @@ export function EnvVarTable({
         <div className="w-44 px-2 py-1">{t('envVar.actions')}</div>
       </div>
       <div ref={parentRef} className="flex-1 overflow-auto">
+        {rows.length === 0 && (
+          <p className="px-3 py-4 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+            {snapshot === null
+              ? t('status.loading')
+              : searchQuery
+                ? t('envVar.noResults')
+                : t('envVar.empty')}
+          </p>
+        )}
         <div
           style={{
             height: `${virtualizer.getTotalSize()}px`,

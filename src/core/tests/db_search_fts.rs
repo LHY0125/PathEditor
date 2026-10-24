@@ -32,6 +32,10 @@ fn fts_indexes_paths_and_never_indexes_sensitive_values() {
     let hits = search(&db, "jdk21", 10).unwrap();
     assert!(!hits.is_empty(), "应能搜到 jdk21");
     assert_eq!(hits[0].kind, "path");
+    assert_eq!(
+        hits[0].content, "C:\\Program Files\\Java\\jdk21",
+        "content 必须是完整索引内容，供前端定位与复制"
+    );
 
     // 空查询不得返回全量（避免「搜索框为空时列出全部」）
     assert!(search(&db, "   ", 10).unwrap().is_empty());

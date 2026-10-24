@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef } from 'react';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { canWriteTarget, useAppStore } from '@/store/app-store';
 import { TargetType } from '@/core/undo-redo';
@@ -26,6 +26,7 @@ export function PathTable({ tabId }: PathTableProps) {
   const activeTab = useAppStore((s) => s.activeTab);
   const isAdmin = useAppStore((s) => s.isAdmin);
   const pathCapabilities = useAppStore((s) => s.pathCapabilities);
+  const scrollToIndex = useAppStore((s) => s.scrollToIndex);
 
   const paths = tabId === 'system' ? sysPaths : userPaths;
   const isActive = activeTab === tabId;
@@ -95,6 +96,14 @@ export function PathTable({ tabId }: PathTableProps) {
     initialRect: { width: 800, height: 600 },
   });
 
+  // 搜索定位：滚动到目标逻辑索引后立刻清空请求，避免后续滚动被反复拉回。
+  useEffect(() => {
+    if (scrollToIndex === null) return;
+    const row = filtered.findIndex((r) => r.index === scrollToIndex);
+    if (row >= 0) rowVirtualizer.scrollToIndex(row, { align: 'center' });
+    useAppStore.getState().setScrollToIndex(null);
+  }, [scrollToIndex, filtered, rowVirtualizer]);
+
   return (
     <div ref={parentRef} className="flex-1 overflow-auto relative" data-testid="path-table">
       <div className="path-table-head">
@@ -102,6 +111,11 @@ export function PathTable({ tabId }: PathTableProps) {
         <div className="w-6 px-1 py-1"></div>
         <div className="px-2 py-1 flex-1">{t('table.path')}</div>
       </div>
+      {filtered.length === 0 && (
+        <p className="px-3 py-4 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+          {searchQuery ? t('table.noResults') : t('table.empty')}
+        </p>
+      )}
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,

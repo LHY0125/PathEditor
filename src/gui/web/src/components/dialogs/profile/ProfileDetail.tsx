@@ -31,7 +31,7 @@ export function ProfileDetail({
   if (!data) {
     return (
       <div className="flex-1 p-3 overflow-auto">
-        <div className="text-center py-10 text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
+        <div className="text-center py-10 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {hasProfiles ? t('profile.selectProfile') : t('profile.noProfiles')}
         </div>
       </div>
@@ -42,7 +42,7 @@ export function ProfileDetail({
     <div className="flex-1 p-3 overflow-auto">
       <div className="flex items-center gap-2 mb-3">
         <span className="font-semibold text-xs">{data.name}</span>
-        <span className="text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
+        <span className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {new Date(data.updatedAt).toLocaleString()}
         </span>
       </div>
@@ -65,6 +65,7 @@ export function ProfileDetail({
             type="text"
             value={renameValue}
             onChange={(event) => onRenameValueChange(event.target.value)}
+            aria-label={t('profile.rename')}
             className="field-input"
           />
           <Button size="sm" variant="primary" onClick={onRename}>
@@ -90,7 +91,7 @@ function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
         {title}
       </div>
       {paths.length === 0 ? (
-        <div className="text-xs" style={{ color: 'var(--app-fg-subtle)' }}>
+        <div className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {t('profile.empty')}
         </div>
       ) : (
@@ -101,13 +102,13 @@ function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
               className="text-xs font-mono px-2 py-0.5 rounded flex items-center gap-1.5"
               style={{
                 backgroundColor: 'var(--app-surface)',
-                color: entry.enabled ? 'var(--app-fg)' : 'var(--app-danger)',
+                color: entry.enabled ? 'var(--app-fg)' : 'var(--app-disabled-fg)',
                 textDecoration: entry.enabled ? 'none' : 'line-through',
               }}
             >
               <span
                 style={{
-                  color: entry.enabled ? 'var(--app-success)' : 'var(--app-danger)',
+                  color: entry.enabled ? 'var(--app-success)' : 'var(--app-disabled-fg)',
                   fontSize: 10,
                 }}
               >
