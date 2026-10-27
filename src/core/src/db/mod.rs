@@ -7,8 +7,9 @@
 //! `crypto.rs`（密钥派生与加解密）、`dpapi.rs`（DPAPI 保护数据库密钥）、
 //! `dacl.rs`（密钥文件访问控制，仅 Windows）。
 //!
-//! 这三个文件刻意留在 `db/` 顶层而不收进 `db/security/`——`db::crypto` 有 43 处
-//! 引用，加一层只会让路径变长。本清单是那次取舍的补偿措施（spec D4）。
+//! 这三个文件刻意留在 `db/` 顶层而不收进 `db/security/`——`db::crypto` 前缀共 59 处
+//! 引用（2026-10-28 实测：`grep -rho 'db::crypto' src --include='*.rs' | wc -l`），
+//! 加一层只会让路径变长。本清单是那次取舍的补偿措施（spec D4）。
 
 pub mod backup_index;
 pub mod compare;
