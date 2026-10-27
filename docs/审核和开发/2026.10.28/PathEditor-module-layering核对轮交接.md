@@ -482,3 +482,83 @@ All matched files use Prettier code style!
 - 交接文档的 6 条全部采纳，无一条驳回。
 - **开发窗口可以从 Task 1 重新开工**，按 v2 执行。
 - 开工前确认：`git status --porcelain` 为空（审核窗口提交完 v2 后即恢复干净）。
+
+---
+
+## 12. 开发轮裁断（Task 1–3 完成后，2026-10-28）
+
+开发窗口在 Task 3 Step 6 撞到依赖方向契约不可达成，停下待裁断。**裁断结论：spec 有错，代码没错。**
+
+### 12.1 根因：审核窗口的矩阵统计方法有缺陷
+
+spec §2 的依赖矩阵在 v1 是用 `grep -o 'use crate::[a-z_]*'` 统计的——**只覆盖 `use` 语句，漏掉函数体内联的 `crate::x::f()`**。开发窗口报的三条边全部属实：
+
+```text
+$ grep -rn 'crate::platform' src/core/src/domain
+231:        EnvHive::System => crate::platform::system::check_admin(),
+232:        EnvHive::User   => crate::platform::registry::can_write_user(),
+
+$ grep -rn 'crate::platform::backup' src/core/src/db
+6 处（backups.rs:24/219/309/397、maintenance.rs:14/259）
+
+$ grep -rn 'crate::db::' src/core/src/platform
+6 处 backups + 8 处 crypto，全部在 platform/backup/ 内
+```
+
+**重构前就存在**：
+
+```text
+$ git show 4734188:src/core/src/env_var.rs | grep -n 'crate::system\|crate::registry'
+231:        EnvHive::System => crate::system::check_admin(),
+232:        EnvHive::User => crate::registry::can_write_user(),
+```
+
+开发窗口的「§2 矩阵写错、§2.1 唯一 SCC 不成立」判断正确。
+
+### 12.2 裁断一：`domain → platform` 必须修，不白名单
+
+`capabilities_for` 与同文件的 `capabilities_for_with(writable, …)` 是同一套判定的两种包装——后者已参数化，注释甚至写明「避免本模块依赖注册表探测」。**设计意图本来就是参数化，只是便捷包装放错了层。**
+
+实测调用点：
+
+```text
+$ grep -rn 'capabilities_for\b' src --include='*.rs' | grep -v capabilities_for_with
+src/core/src/domain/env_var.rs:237  （定义）
+src/core/src/domain/env_var.rs:349  （测试）
+src/core/src/domain/env_var.rs:357  （测试）
+```
+
+除自身单测外**零调用**。
+
+**决定**：新增 **Task 3.5**，把 `capabilities_for` 连同两个测试移入 `platform/capabilities.rs`。签名不变、行为不变，纯移动。注意 `capabilities_for_with` 的文档注释里那行 `crate::platform::capabilities` 也要改——否则 `grep` 会把注释算进去造成假红。
+
+### 12.3 裁断二：`db ↔ platform::backup` 登记白名单（方案 A）
+
+**采用开发窗口推荐方案 A。**
+
+依据：
+
+- 消除它要动 `db/backups.rs`（497 行，SQL 与 `.pebak` 编解码混合）并搬 `db/{crypto,dpapi,dacl}`（约 55 处路径引用），是第二个重构轮的量。
+- 该环源于 `.pebak` 横跨「文件」与「数据库索引/密钥」，不是目录划分失误。
+- 白名单**精确可校验**：`grep -rn 'crate::\(db\|app\)' src/core/src/platform | grep -v '/backup/'` 必须为空。
+
+**方案 B 否决**：与方案一收益重叠，但要动公开签名，违背「零行为变更」。
+**方案 C 记为后续候选**：三步纯移动的做法已写进 spec §7，作为独立一轮。
+
+### 12.4 其余 7 处偏差：全部确认属实
+
+| 编号 | 开发窗口的发现                                     | 审核窗口复核                                                                                                                         |
+| ---- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| D-1  | `use path_editor_core as core;` 造成第四种路径形态 | 实测 11 处 alias、80 处 `core::<模块>`（platform 50 / db 12 / domain 9 / app 9）；`core::ffi` 等标准库靠「只替换目标模块名」天然避开 |
+| D-2  | `sed -i` 把整文件 CRLF 翻成 LF                     | 属实。`--binary` 是正解；`w/crlf` 计数校验保留为兜底                                                                                 |
+| D-3  | `include_str!` 相对路径随移动失效                  | 属实，已逐处补 `../`                                                                                                                 |
+| D-4  | Task 3 Step 5 检查 3 伪阳性                        | 复现确认：`use path_editor_core::{app::service, PathEntry};` 仍命中 `\bservice\b`。已改为「`{` 或 `,` 后紧跟裸模块名」               |
+| D-5  | `registry/` 目录 rename 被 Windows 占用            | 属实，逐文件 `git mv` 是正确处置                                                                                                     |
+| D-6  | `git mv` 自动暂存导致提交混入                      | 属实，提交前 `git status` 逐项确认                                                                                                   |
+| D-7  | 文档与代码混提交                                   | 属实，`git reset` 拆开                                                                                                               |
+
+### 12.5 结论
+
+- **spec 升到 v2**：§2 矩阵更正、§2.1 改为两个 SCC、§3.3 加白名单、§6/§7 同步、新增 §11 裁断记录。
+- **计划升到 v3**：新增 Task 3.5；Global Constraints 补「四种路径形态」与 `sed --binary`；修正 Task 3 Step 5/6 与 Task 7 Step 3。
+- **开发窗口从 Task 3.5 继续**，然后 Task 4 → 7。Task 3 保持已提交状态，不重做。

@@ -28,12 +28,25 @@
 
 另：任务 1 Step 1 增加行尾基线（`w/crlf` 计数），任务 7 Step 4 增加行尾比对。
 
+**v3（2026-10-28，开发轮裁断）**：开发窗口在 Task 3 撞到依赖方向契约不可达成，spec 有错、代码没错。
+
+| 编号      | 内容                                                                                                         | 处置                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| S1        | spec §2 矩阵漏了函数体内联的 `crate::x::f()` 调用，导致 `env_var → platform` 与 `backup → db` 两条边未被登记 | spec §2/§2.1 更正；新增 Task 3.5 消除 `domain → platform`               |
+| S2        | `db ↔ platform::backup` 是第二个强连通分量（既有事实）                                                       | 登记为**唯一白名单例外**，§3.3 契约与 Task 3/7 检查都带 `/backup/` 过滤 |
+| D-1       | `use path_editor_core as core;` 造成第四种路径形态                                                           | Global Constraints 列出四种形态                                         |
+| D-2       | 裸 `sed -i` 会把整文件 CRLF 翻成 LF                                                                          | 统一改 `sed --binary -i`                                                |
+| D-4       | Task 3 Step 5 检查 3 伪阳性（`{app::service` 仍命中）                                                        | 改为「`{` 或 `,` 后紧跟裸模块名」                                       |
+| D-3/5/6/7 | `include_str!` 相对路径、目录 rename 被占用、`git mv` 自动暂存、文档与代码混提交                             | 均为开发窗口已处置项，按回执执行                                        |
+
 ## Global Constraints
 
 - 分支：在 `refactor/module-layering` 上作业；不直接改 `main`。
 - **前置条件（已满足）**：工作区必须干净。原有 5 个未提交的文档改动已在 `4734188` 提交到 `main`，本分支已 rebase 到该提交。开工前再跑一次 `git status --porcelain`，非空即停下来报告。
 - **行尾契约**：`.rs` 工作区行尾以 CRLF 为主（`git ls-files --eol src` 可查），但**并非全部**。所有 `sed` 一律**不得使用 `$` 行尾锚点**——CRLF 下 `$` 永远不匹配，会静默失效。需要锚定行首时只用 `^`，或改用不带锚点的子串匹配。
-- **`sed -i` 后必须核对行尾未被整体改写**：每个用到 `sed -i` 的任务，提交前跑 `git ls-files --eol` 抽查被改文件，`w/` 列不得从 `crlf` 变成 `lf`（整体改写会把「改一行」变成「全文件重写」，破坏纯移动的可审性）。
+- **`sed` 必须带 `--binary`**：实测裸 `sed -i` 会把整文件 CRLF 翻成 LF（`w/crlf` 计数 269→0）。`.gitattributes` 的 `eol=crlf` 让 git 在索引侧归一化，`git diff --numstat` 仍显示 `1 1`——**看不出来**，但工作区文件已被整体重写。统一写 `sed --binary -i`。
+- **`sed -i` 后仍要核对行尾**：`git ls-files --eol src | grep -c 'w/crlf'` 不得低于基线（任务 1 记录）。`--binary` 是修复，这条是兜底。
+- **路径形态有四种，机械替换必须全覆盖**：`crate::x`、`path_editor_core::x`、`path_editor_core::{x, …}`（花括号）、`core::x`（`use path_editor_core as core;` 别名，11 处 alias / 80 处引用）。每条 sed 规则都要问一遍「这四种里漏了哪种」。
 - **零行为变更**：不改任何业务判定、不改 DB schema、不改同步包格式、不改 CLI 退出码（0/1/2/3/4/5）、不改 IPC 契约。
 - **不写注册表、不打开真实 `~/.patheditor`**：所有测试用 `TempDir`。
 - **全程 `git mv`**：提交前 `git status` 必须是 `renamed:`，不能是 `deleted:` + `new file:`。
@@ -397,23 +410,30 @@ grep -rlE --include='*.rs' 'path_editor_core::\{[^}]*(service|bootstrap|disabled
 ```bash
 grep -rnE --include='*.rs' '\bcrate::(service|bootstrap|disabled)\b' src | grep -v 'app::'
 grep -rnE --include='*.rs' '\bpath_editor_core::(service|bootstrap|disabled)\b' src | grep -v 'app::'
-grep -rnE --include='*.rs' '(path_editor_core|crate)::\{[^}]*\b(service|bootstrap|disabled)\b' src
+grep -rnE --include='*.rs' '\bcore::(service|bootstrap|disabled)\b' src | grep -v 'app::'
+grep -rnE --include='*.rs' '(path_editor_core|crate)::\{[^}]*([{,])[[:space:]]*(service|bootstrap|disabled)[[:space:]]*[,}]' src
 ls -1 src/core/src
 ```
 
-Expected: 前三条无输出；第四条恰为 `app`、`db`、`domain`、`lib.rs`、`platform` 五项。
+Expected: 前四条无输出；第五条恰为 `app`、`db`、`domain`、`lib.rs`、`platform` 五项。
 
-⚠️ 第二条是核对轮补的：原计划只查 `crate::`，漏掉 `path_editor_core::`，会让 Step 7 才炸。
+⚠️ 第三条是 `core::` 别名形态（`use path_editor_core as core;`，全仓库 11 处 alias、80 处引用）。漏掉这一种，编译会在 `--all-targets` 时才炸。
+
+⚠️ 第四条**不能写成** `\{[^}]*\b(service|…)\b`——那会命中 `{app::service`（`\b` 在 `::` 后仍然成立），造成伪阳性。必须要求模块名前面是 `{` 或 `,`。
 
 - [ ] **Step 6: 验证依赖方向契约**
 
 ```bash
 grep -rn 'crate::\(platform\|db\|app\)' src/core/src/domain
-grep -rn 'crate::\(db\|app\)'            src/core/src/platform
+grep -rn 'crate::\(db\|app\)'            src/core/src/platform | grep -v '/backup/'
 grep -rn 'crate::app'                    src/core/src/db
 ```
 
 Expected: 三条命令全部无输出。
+
+⚠️ **第二条带 `/backup/` 白名单**（spec §3.3 的 SCC-2）。`platform/backup/` 与 `db` 双向引用是登记在案的唯一例外：`.pebak` 加密备份横跨「文件」与「数据库索引/密钥」两侧。除这一对之外，任何反向边都必须为零。
+
+⚠️ 第一条现在必须有输出以外的结果为零——但 Task 3 刚完成时**会**有两条命中（`domain/env_var.rs` 的 `check_admin` / `can_write_user`），那是既有边，由 **Task 3.5** 消除。本步骤此时**预期失败**，记录后继续，Task 3.5 结束再复核。
 
 - [ ] **Step 7: 编译验证**
 
@@ -431,6 +451,99 @@ git commit -m "refactor: 抽出 core::app 编排层
 
 service / bootstrap / disabled 收进 app/，service.rs 改为 app/service/mod.rs，
 统一全 crate 的 mod.rs 约定。"
+```
+
+---
+
+### Task 3.5: 把 `capabilities_for` 移出 `domain`（消除 `domain → platform`）
+
+**背景**（spec v2 §11 裁断）：`domain/env_var.rs:231-232` 直接调用 `platform::system::check_admin()` 与 `platform::registry::can_write_user()`，使 §3.3 的 `domain` 契约不成立。**这两条边在重构前就存在**，不是本轮引入。
+
+同文件的 `capabilities_for_with(writable, ...)` 已把写能力参数化，注释也写明「调用方从 `capabilities` 取，避免本模块依赖注册表探测」——设计意图本来就是参数化，只是便捷包装放错了层。实测 `capabilities_for` 除自身单测外**没有调用点**。
+
+**Files:**
+
+- Modify: `src/core/src/domain/env_var.rs`（移出 `capabilities_for` 与它的两个测试，改一行注释）
+- Modify: `src/core/src/platform/capabilities.rs`（接收函数与测试）
+
+**Interfaces:**
+
+- Consumes: `crate::domain::env_var::{capabilities_for_with, EnvHive, EnvValueKind}`
+- Produces: `crate::platform::capabilities::capabilities_for(hive, name, kind) -> (bool, bool)`（签名不变）
+
+- [ ] **Step 1: 确认没有外部调用点**
+
+```bash
+grep -rn 'capabilities_for\b' src --include='*.rs' | grep -v 'capabilities_for_with'
+```
+
+Expected: 只命中 `src/core/src/domain/env_var.rs` 的定义行与两个测试行，共 3 行。若出现其他文件，先在回执里记下再继续。
+
+- [ ] **Step 2: 从 `domain/env_var.rs` 移出**
+
+删掉 `pub fn capabilities_for(...)` 整个函数（约 6 行，含文档注释），以及 `#[cfg(test)] mod tests` 中包含 `capabilities_for(` 调用的两个 `#[test]` 函数——**整体搬走，不要重写断言**。
+
+把 `capabilities_for_with` 的文档注释里这一句：
+
+```text
+/// （调用方从 `crate::platform::capabilities` 取，避免本模块依赖注册表探测）。
+```
+
+改为：
+
+```text
+/// （调用方从 `platform::capabilities` 取，避免本模块依赖注册表探测）。
+```
+
+⚠️ 注释也必须改：`grep -rn 'crate::platform' src/core/src/domain` 会把注释一起算进去，不改就是假红。
+
+- [ ] **Step 3: 在 `platform/capabilities.rs` 接收**
+
+新增（`use` 按文件已有顺序插入）：
+
+```rust
+use crate::domain::env_var::{capabilities_for_with, EnvHive, EnvValueKind};
+
+/// 按 hive 与当前进程权限计算 `(can_edit, can_delete)`。
+///
+/// 从 `domain::env_var` 移入：本函数需要探测注册表写权限，属于平台适配，
+/// 不是纯契约。纯判定部分仍在 `domain::env_var::capabilities_for_with`。
+pub fn capabilities_for(hive: EnvHive, name: &str, kind: EnvValueKind) -> (bool, bool) {
+    let writable = match hive {
+        EnvHive::System => crate::system::check_admin(),
+        EnvHive::User => crate::registry::can_write_user(),
+    };
+    capabilities_for_with(writable, name, kind)
+}
+```
+
+并在该文件的测试模块里放回搬来的两个 `#[test]`。
+
+- [ ] **Step 4: 验证 `domain` 已无跨层引用**
+
+```bash
+grep -rn 'crate::platform\|crate::db\|crate::app' src/core/src/domain
+```
+
+Expected: 无输出。
+
+- [ ] **Step 5: 编译并跑受影响的测试**
+
+```bash
+cargo check --workspace --all-targets
+cargo test -p path-editor-core --lib domain
+```
+
+Expected: 编译无 error / warning；测试通过（数量与搬移前一致）。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add -A
+git commit -m "refactor: 把 capabilities_for 移出 domain，消除 domain -> platform 反向边
+
+该函数自探测注册表写权限，属平台适配；纯判定仍在
+domain::env_var::capabilities_for_with。签名与行为不变。"
 ```
 
 ---
@@ -943,7 +1056,7 @@ Expected: 通过；Vitest 37 files / 413 passed。
 ls -1 src/core/src
 ls -1 src/cli/src
 grep -rn 'crate::\(platform\|db\|app\)' src/core/src/domain
-grep -rn 'crate::\(db\|app\)'            src/core/src/platform
+grep -rn 'crate::\(db\|app\)'            src/core/src/platform | grep -v '/backup/'
 grep -rn 'crate::app'                    src/core/src/db
 cmp CLAUDE.md AGENTS.md && echo IDENTICAL
 ```
