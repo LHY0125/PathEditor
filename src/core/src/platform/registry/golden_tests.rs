@@ -16,7 +16,7 @@
 //! 3. 权限失败（`capabilities_for_with`，hive 写能力参数化注入）
 //! 4. 备份格式契约（`backup.rs`；`backup_format_contract` 需读取注册表，仅读不写）
 //! 5. profile / 导入导出 / 禁用项兼容性（`persist` 信封、`fs` 导入导出；
-//!    `merge_hive` 用例在 `golden/merge_golden_tests.rs`，挂 `crate::app::disabled` 下）
+//!    `merge_hive` 用例在 `golden/merge_golden_tests.rs`，挂 `app::disabled` 下）
 
 use super::{
     clean_path_entries, join_path, make_path_value, select_path_value_type, split_path,
