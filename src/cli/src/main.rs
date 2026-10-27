@@ -3,25 +3,19 @@
 use clap::Parser;
 
 mod cli;
-mod env_ops;
-mod import_export;
-mod maintenance_ops;
+mod commands;
 mod output;
-mod path_ops;
-mod profile_ops;
 mod runtime;
-mod scan_ops;
-mod sync_ops;
 
 use cli::{Cli, Command, EnvCmd, MaintenanceCmd, ProfileCmd, SyncCmd};
-use import_export::{cmd_export, cmd_import};
-use path_ops::{
+use commands::import_export::{cmd_export, cmd_import};
+use commands::path::{
     cmd_add, cmd_backup, cmd_clean, cmd_edit, cmd_list, cmd_move, cmd_remove, cmd_toggle,
 };
-use profile_ops::{
+use commands::profile::{
     profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
 };
-use scan_ops::{cmd_check_admin, cmd_conflicts, cmd_scan};
+use commands::scan::{cmd_check_admin, cmd_conflicts, cmd_scan};
 
 fn main() {
     let cli = Cli::parse();
@@ -67,8 +61,8 @@ fn main() {
         Command::Scan { query, json } => cmd_scan(query, json),
         Command::CheckAdmin { json } => cmd_check_admin(json),
         Command::Env(cmd) => match cmd {
-            EnvCmd::List { system, user, json } => env_ops::cmd_env_list(system, user, json),
-            EnvCmd::Get { name, system } => env_ops::cmd_env_get(name, system),
+            EnvCmd::List { system, user, json } => commands::env::cmd_env_list(system, user, json),
+            EnvCmd::Get { name, system } => commands::env::cmd_env_get(name, system),
             EnvCmd::Set {
                 name,
                 value,
@@ -79,7 +73,7 @@ fn main() {
                 dry_run,
                 json,
                 system,
-            } => env_ops::cmd_env_set(
+            } => commands::env::cmd_env_set(
                 name, value, stdin, value_file, revision, force, dry_run, json, system,
             ),
             EnvCmd::Add {
@@ -91,7 +85,7 @@ fn main() {
                 dry_run,
                 json,
                 system,
-            } => env_ops::cmd_env_add(name, value, stdin, value_file, kind, dry_run, json, system),
+            } => commands::env::cmd_env_add(name, value, stdin, value_file, kind, dry_run, json, system),
             EnvCmd::Remove {
                 name,
                 revision,
@@ -99,15 +93,15 @@ fn main() {
                 dry_run,
                 json,
                 system,
-            } => env_ops::cmd_env_remove(name, revision, force, dry_run, json, system),
-            EnvCmd::Backup { json } => env_ops::cmd_env_backup(json),
-            EnvCmd::Backups { json } => env_ops::cmd_env_backups(json),
+            } => commands::env::cmd_env_remove(name, revision, force, dry_run, json, system),
+            EnvCmd::Backup { json } => commands::env::cmd_env_backup(json),
+            EnvCmd::Backups { json } => commands::env::cmd_env_backups(json),
             EnvCmd::Restore {
                 file,
                 dry_run,
                 force,
                 json,
-            } => env_ops::cmd_env_restore(file, dry_run, force, json),
+            } => commands::env::cmd_env_restore(file, dry_run, force, json),
         },
         Command::Profile(cmd) => match cmd {
             ProfileCmd::List { json } => profile_list(json),
@@ -118,16 +112,16 @@ fn main() {
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
         },
         Command::Sync(cmd) => match cmd {
-            SyncCmd::Export { file } => sync_ops::sync_export(&file),
-            SyncCmd::Import { file } => sync_ops::sync_import(&file),
-            SyncCmd::Status => sync_ops::sync_status(),
-            SyncCmd::Conflicts { all } => sync_ops::sync_conflicts(all),
-            SyncCmd::Resolve { id, take } => sync_ops::sync_resolve(id, &take),
+            SyncCmd::Export { file } => commands::sync::sync_export(&file),
+            SyncCmd::Import { file } => commands::sync::sync_import(&file),
+            SyncCmd::Status => commands::sync::sync_status(),
+            SyncCmd::Conflicts { all } => commands::sync::sync_conflicts(all),
+            SyncCmd::Resolve { id, take } => commands::sync::sync_resolve(id, &take),
         },
         Command::Maintenance(cmd) => match cmd {
-            MaintenanceCmd::Prune { dry_run } => maintenance_ops::maintenance_prune(dry_run),
+            MaintenanceCmd::Prune { dry_run } => commands::maintenance::maintenance_prune(dry_run),
             MaintenanceCmd::CleanupLegacyBackups { dry_run, yes } => {
-                maintenance_ops::maintenance_cleanup_legacy(dry_run, yes)
+                commands::maintenance::maintenance_cleanup_legacy(dry_run, yes)
             }
         },
     }
@@ -137,7 +131,7 @@ fn main() {
 mod help_tests {
     //! CLI help 文案的回归测试。
     //!
-    //! 放在 `main.rs`（crate root）而非 `env_ops.rs`：bin-only crate 的 root 模块
+    //! 放在 `main.rs`（crate root）而非 `commands/env/`：bin-only crate 的 root 模块
     //! 对子模块是私有的，`struct Cli` 未 `pub`，子模块里写 `crate::Cli` 不可见。
     //! root 内可直接取用。
     use super::*;

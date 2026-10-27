@@ -250,7 +250,7 @@ mod tests {
     //
     // 已知未覆盖项（如实标注）：本用例证明「`BackupOutcome::Failed` → 输出该警告」
     // 这个映射，以及删掉实现会让它失败；**不证明** 5 个 CLI 写路径都调用了本函数
-    // （「调用点已接线」由代码审阅确认，见 `env_ops.rs` 的 5 处调用）。
+    // （「调用点已接线」由代码审阅确认，见 `commands/env/` 的 5 处调用）。
 
     /// 子进程探针模式的环境变量名。
     const WARN_PROBE_ENV: &str = "PATHEDITOR_WARN_PROBE";
