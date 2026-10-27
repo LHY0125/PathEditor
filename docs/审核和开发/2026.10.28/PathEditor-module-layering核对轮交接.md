@@ -3,7 +3,7 @@
 **提交窗口**：开发窗口
 **日期**：2026-10-28
 **交付对象**：审核窗口
-**核对对象**：`docs/superpowers/plans/2026-10-28-module-layering-implementation.md`（7 Task / 41 Step）
+**核对对象**：`docs/superpowers/plans/2026-10-28-module-layering-implementation.md`（7 Task / 50 Step）
 **对应 spec**：`docs/superpowers/specs/2026-10-28-module-layering-design.md`
 **仓库基线**：分支 `refactor/module-layering @ ae0a522`，工作区干净
 **结论**：**四层划分、目录映射、Task 顺序均无异议**。发现 **2 项阻塞、1 项验证手段失效（高风险）、1 项事实错误、1 项规格要求遗漏、1 项检查不对称**。两项阻塞都会在计划自己指定的验收步骤（`cargo check`、文档重写）处炸掉，但计划没有给出处置步骤。
@@ -305,6 +305,60 @@ grep -rnE --include='*.rs' '\bpath_editor_core::(persist|fs|system|scanner|capab
 
 以上 **B1、B2、H1、F2** 需要审核窗口裁断并更新计划；**F1、M1** 属措辞/覆盖补强，若审核窗口认为可并入同一轮修订，开发窗口按修订后的计划执行。
 
-**开发窗口未做任何代码改动。** 当前分支仍为 `refactor/module-layering @ ae0a522`，工作区除本文件外无变化。
+**开发窗口未做任何代码改动。** 代码与测试文件保持 `ae0a522` 原样；本轮只新增本交接文档（提交 `6c00dbc`）。
 
-任务 1 Step 1 的测试基线（`cargo test --workspace` 应为 324 passed / 0 failed / 2 ignored）已在开工前启动，结果将在开工前先行输出；若与 324 不符，将立即停止并单独报告。
+---
+
+## 9. 开工前基线（已实测，供裁断后直接引用）
+
+按 Task 1 Step 1 的要求，改动前已跑完 `cargo test --workspace`：
+
+```text
+$ cargo test --workspace > baseline-full.txt; echo exit=$?
+exit=0
+$ grep -E '^test result:' baseline-full.txt | wc -l
+56
+# 逐条求和（python 解析全部 test result 行）
+passed=324 failed=0 ignored=2
+```
+
+**结论：324 passed / 0 failed / 2 ignored，与计划 Step 1 的期望值完全一致**，闸门通过。
+
+（同轮已确认：`target/` 处于暖态，增量全量测试约 1 分钟；首次冷编译仍需约 24 分钟。）
+
+---
+
+## 10. 工作区异常（非开发窗口造成，需审核窗口确认）
+
+开工时的 `git status --short` 为**空**。核对过程中发现工作区出现一处**非开发窗口造成的**改动：
+
+```text
+$ git status --short
+ M docs/superpowers/specs/2026-10-28-module-layering-design.md
+```
+
+**性质**：纯格式差异，无实质内容改动（`git diff -w --ignore-blank-lines` 仅剩表格分隔行与空行的空白变化；`git diff --numstat` 为 `21 16`）。
+
+**方向是「去格式化」而非格式化**：
+
+```text
+$ npx prettier --check docs/superpowers/specs/2026-10-28-module-layering-design.md
+[warn] ... Code style issues found in the above file.
+$ git show HEAD:docs/superpowers/specs/2026-10-28-module-layering-design.md > /tmp/spec_head.md
+$ npx prettier --check /tmp/spec_head.md
+All matched files use Prettier code style!
+```
+
+即 **HEAD 版本是 prettier 干净的，工作区版本反而不干净**。文件 mtime 为 `00:50:28`，而开发窗口的提交在 `01:04:11`，时间上早于提交、晚于开工。
+
+**已知线索**：`ListAgents` 显示存在并行会话 `PathEditor审核 [18cc9c]`（54 分钟前启动，当前 idle）。该改动很可能是审核窗口在自己会话里落笔但未提交的内容。
+
+**开发窗口未处置该文件**——按硬约束「不改写历史文档」，也没有擅自 `git checkout --` 丢弃他人改动。**需要用户/审核窗口决定**：
+
+| 方案      | 做法                                                                                           | 影响                                                           |
+| --------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| A（推荐） | 审核窗口确认这是否是它的在途改动：是则自行 commit，否则 `git checkout --` 还原                 | 恢复「工作区干净」前置条件                                     |
+| B         | 授权开发窗口执行 `git checkout -- docs/superpowers/specs/2026-10-28-module-layering-design.md` | 丢弃该格式改动，同样恢复干净                                   |
+| C         | 保持现状直接开工                                                                               | **违反** Global Constraints 的「开工前工作区必须干净」，不建议 |
+
+> 在 A/B 落定前，Task 1 的「工作区干净」前置条件不成立，开发窗口不会开工。
