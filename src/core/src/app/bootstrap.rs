@@ -13,7 +13,7 @@
 
 use crate::db::{self, Db};
 use crate::domain::history::EventSource;
-use crate::service;
+use crate::app::service;
 use crate::{CoreError, ErrorCode};
 use std::path::PathBuf;
 
@@ -70,7 +70,7 @@ pub fn initialize(
     let pending_path = options
         .pending_path
         .clone()
-        .unwrap_or_else(crate::disabled::default_pending_path);
+        .unwrap_or_else(crate::app::disabled::default_pending_path);
     match service::retry_pending_path_state_db_at(db, source, &pending_path) {
         Ok(_) => report.pending_retried = true,
         Err(e) => report

@@ -13,7 +13,7 @@ use crate::platform::backup;
 use crate::db::history::{self, NewSnapshot, SnapshotKind};
 use crate::db::history_sink::DbHistory;
 use crate::db::{search, Db};
-use crate::disabled;
+use crate::app::disabled;
 use crate::domain::env_var::EnvHive;
 use crate::domain::error::{CoreError, ErrorCode};
 use crate::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};

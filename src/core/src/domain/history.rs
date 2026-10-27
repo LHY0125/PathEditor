@@ -1,6 +1,6 @@
 //! 历史记录接缝：服务层通过 `HistorySink` 上报事件，不直接依赖数据库。
 //!
-//! 这样 `core::service::save_path_with_sidecar` 无需知道 `Db` 的存在：
+//! 这样 `core::app::service::save_path_with_sidecar` 无需知道 `Db` 的存在：
 //! 生产注入 `DbHistory`，测试注入 `NoopHistory`，既有测试零改动。
 
 use crate::domain::env_var::EnvHive;

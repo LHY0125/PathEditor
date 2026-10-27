@@ -8,7 +8,7 @@
 use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::db::history::{self, EventFilter, EventPage, SnapshotView};
 use path_editor_core::domain::history::EventSource;
-use path_editor_core::service::{self, ApplyOutcome};
+use path_editor_core::app::service::{self, ApplyOutcome};
 use path_editor_core::CoreError;
 use serde::Deserialize;
 use tauri::State;
@@ -116,7 +116,7 @@ pub fn history_reveal_env_value(
 
 /// 把历史快照恢复回注册表。
 ///
-/// 编排在 `core::service::restore_snapshot`：读快照 → 走既有保存编排
+/// 编排在 `core::app::service::restore_snapshot`：读快照 → 走既有保存编排
 /// （写注册表 + 当前快照 + 事件）。不新增写注册表的代码路径。
 ///
 /// **append-only**：恢复成功后追加**新快照 + 新事件**，旧快照原样保留——

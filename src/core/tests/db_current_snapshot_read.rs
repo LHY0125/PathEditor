@@ -10,7 +10,7 @@ use path_editor_core::db::history::{
 };
 use path_editor_core::db::Db;
 use path_editor_core::domain::history::EventSource;
-use path_editor_core::{service, PathEntry};
+use path_editor_core::{app::service, PathEntry};
 
 fn entry(path: &str, enabled: bool) -> PathEntry {
     PathEntry {

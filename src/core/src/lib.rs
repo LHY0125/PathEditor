@@ -1,9 +1,7 @@
-pub mod bootstrap;
+pub mod app;
 pub mod db;
-pub mod disabled;
 pub mod domain;
 pub mod platform;
-pub mod service;
 
 pub use domain::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue};
 pub use domain::error::{CoreError, ErrorCode};

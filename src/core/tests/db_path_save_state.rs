@@ -13,7 +13,7 @@ use path_editor_core::db::history::{
 use path_editor_core::db::Db;
 use path_editor_core::domain::error::CoreError;
 use path_editor_core::domain::history::EventSource;
-use path_editor_core::service::{self, PathHiveIo, PathHiveWrite};
+use path_editor_core::app::service::{self, PathHiveIo, PathHiveWrite};
 use path_editor_core::{EnvHive, PathEntry};
 
 fn entry(path: &str, enabled: bool) -> PathEntry {
@@ -97,7 +97,7 @@ fn cli_save_updates_current_snapshot_changes_and_event() {
 
     assert!(matches!(
         outcome.sidecar,
-        path_editor_core::service::SidecarOutcome::Saved
+        path_editor_core::app::service::SidecarOutcome::Saved
     ));
 
     let view = current_snapshot(&db).unwrap().expect("必须存在当前快照");

@@ -33,7 +33,7 @@ pub(crate) fn profile_save(name: String) {
     let mut db = open_db_or_exit();
     // 先合并注册表与 DB 当前快照，确保已禁用的孤儿条目也进入配置并保留顺序。
     let snapshot =
-        core::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_core_error(&e));
+        core::app::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_core_error(&e));
 
     let snap = core::db::history::NewSnapshot {
         kind: core::db::history::SnapshotKind::Profile,
@@ -81,7 +81,7 @@ pub(crate) fn profile_apply(name: String) {
     let mut db = open_db_or_exit();
     // 双 hive 一次编排：core 内按「读配置 → 只写变化的 hive → 记账」执行；
     // 记账失败只告警（注册表已写成功的事实优先于统计）。
-    core::service::apply_profile(&mut db, &name, core::domain::history::EventSource::Cli)
+    core::app::service::apply_profile(&mut db, &name, core::domain::history::EventSource::Cli)
         .unwrap_or_else(|e| exit_core_error(&e));
 
     println!("配置文件 \"{name}\" 已写入注册表。");

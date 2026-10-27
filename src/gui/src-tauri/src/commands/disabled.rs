@@ -1,4 +1,4 @@
-use path_editor_core::service;
+use path_editor_core::app::service;
 use path_editor_core::CoreError;
 use path_editor_core::PathSnapshot;
 use tauri::State;

@@ -6,7 +6,7 @@ use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{self, ProfileView};
 use path_editor_core::domain::history::EventSource;
-use path_editor_core::service::{self, ApplyOutcome};
+use path_editor_core::app::service::{self, ApplyOutcome};
 use path_editor_core::{CoreError, PathEntry};
 use serde::Deserialize;
 use tauri::State;
@@ -19,7 +19,7 @@ pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreE
 
 /// 应用一个配置方案：读配置内容、写注册表与当前快照、记录应用次数。
 ///
-/// 与 CLI 的 `profile apply` 共用 `core::service::apply_profile`：
+/// 与 CLI 的 `profile apply` 共用 `core::app::service::apply_profile`：
 /// 「读配置 → 保存 → 记账」只有一份实现。记账失败只告警，不影响保存结果。
 #[tauri::command]
 pub fn profile_apply(name: String, state: State<'_, DbState>) -> Result<ApplyOutcome, CoreError> {

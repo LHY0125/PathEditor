@@ -1,5 +1,5 @@
 use path_editor_core as core;
-use path_editor_core::service::{self, HiveOutcome, PathHiveWrite, SidecarOutcome};
+use path_editor_core::app::service::{self, HiveOutcome, PathHiveWrite, SidecarOutcome};
 
 pub(crate) fn exit_err(msg: &str) -> ! {
     eprintln!("错误: {msg}");
@@ -65,7 +65,7 @@ fn open_db_optional() -> Option<core::db::Db> {
 /// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则只读注册表。
 pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreError> {
     let db = open_db_optional();
-    core::service::load_path_snapshot_any(db.as_ref())
+    core::app::service::load_path_snapshot_any(db.as_ref())
 }
 
 /// 把「完整有序条目」交给 core 的唯一保存编排，并按结果决定退出行为。
