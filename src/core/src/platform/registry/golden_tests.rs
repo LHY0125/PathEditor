@@ -198,7 +198,7 @@ fn run_case(case: &GoldenCase) {
         // ── 第 4 类：备份格式契约（仅读注册表，不写） ──
         "backup_rejects_dir" => {
             let dir = case.input["custom_dir"].as_str().unwrap_or_default();
-            let err = crate::backup::backup_registry(Some(dir.to_string()))
+            let err = crate::platform::backup::backup_registry(Some(dir.to_string()))
                 .expect_err(&format!("golden 用例 {name}: 应拒绝系统目录"));
             let contains = case.expect["error_contains"].as_str().unwrap_or_default();
             assert!(
@@ -211,7 +211,7 @@ fn run_case(case: &GoldenCase) {
             let _temp = tempfile::TempDir::new()
                 .unwrap_or_else(|e| panic!("{name}: 创建临时目录失败: {e}"));
             let dir = _temp.path().to_path_buf();
-            let filepath = crate::backup::backup_registry(Some(dir.to_string_lossy().into_owned()))
+            let filepath = crate::platform::backup::backup_registry(Some(dir.to_string_lossy().into_owned()))
                 .unwrap_or_else(|e| {
                     panic!(
                         "golden 用例 {name}: backup_registry 失败: {}（本用例需可读取注册表，仅读不写）",
@@ -241,13 +241,13 @@ fn run_case(case: &GoldenCase) {
                 (
                     "system_lines",
                     "\n[System PATH]\n",
-                    crate::registry::load_system_paths()
+                    crate::platform::registry::load_system_paths()
                         .unwrap_or_else(|e| panic!("{name}: 读取系统 PATH 失败: {e}")),
                 ),
                 (
                     "user_lines",
                     "\n[User PATH]\n",
-                    crate::registry::load_user_paths()
+                    crate::platform::registry::load_user_paths()
                         .unwrap_or_else(|e| panic!("{name}: 读取用户 PATH 失败: {e}")),
                 ),
             ] {
@@ -315,7 +315,7 @@ fn run_case(case: &GoldenCase) {
             let filename = case.input["filename"].as_str().unwrap_or_default();
             let content = serde_json::to_string(&case.input["content"])
                 .unwrap_or_else(|e| panic!("{name}: 序列化 input.content 失败: {e}"));
-            let (sys, usr) = crate::fs::import_paths(filename, &content)
+            let (sys, usr) = crate::platform::fs::import_paths(filename, &content)
                 .unwrap_or_else(|e| panic!("golden 用例 {name}: 导入失败: {e}"));
             let expect_sys: Vec<PathEntry> = serde_json::from_value(case.expect["system"].clone())
                 .unwrap_or_else(|e| panic!("{name}: expect.system 解析失败: {e}"));
@@ -329,7 +329,7 @@ fn run_case(case: &GoldenCase) {
                 .unwrap_or_else(|e| panic!("{name}: input.system 解析失败: {e}"));
             let usr: Vec<PathEntry> = serde_json::from_value(case.input["user"].clone())
                 .unwrap_or_else(|e| panic!("{name}: input.user 解析失败: {e}"));
-            let out = crate::fs::export_path_entries(&sys, &usr, "csv")
+            let out = crate::platform::fs::export_path_entries(&sys, &usr, "csv")
                 .unwrap_or_else(|e| panic!("golden 用例 {name}: 导出失败: {e}"));
             let expect_lines: Vec<String> = serde_json::from_value(case.expect["lines"].clone())
                 .unwrap_or_else(|e| panic!("{name}: expect.lines 解析失败: {e}"));

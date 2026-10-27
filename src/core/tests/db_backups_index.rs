@@ -1,6 +1,6 @@
 #![cfg(windows)]
 // 一文件一测试（SQLCipher）。`.pebak` 走 DPAPI，因此整体限定 Windows。
-use path_editor_core::backup::{EnvBackupHives, EnvBackupPayload, EnvBackupVar};
+use path_editor_core::platform::backup::{EnvBackupHives, EnvBackupPayload, EnvBackupVar};
 use path_editor_core::db::backups::{
     index_backups, list_backups, read_env_backup_any, read_pebak_header, write_env_backup_pebak,
     HEADER_LEN,

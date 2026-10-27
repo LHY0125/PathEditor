@@ -48,7 +48,7 @@ impl WinregHive {
     /// 上。winreg 错误按 `io::ErrorKind` 诚实分类：
     /// `PermissionDenied` → [`ErrorCode::PermissionDenied`]，其余 → [`ErrorCode::Io`]。
     pub fn open(hive: EnvHive, write: bool) -> Result<Self, CoreError> {
-        let (root, sub_path, label) = crate::registry::hive_location(hive);
+        let (root, sub_path, label) = crate::platform::registry::hive_location(hive);
         let flags = if write {
             KEY_READ | KEY_WRITE
         } else {
@@ -79,8 +79,8 @@ impl WinregHive {
 /// 该 hive 对当前用户是否可写。
 fn hive_writable(hive: EnvHive) -> bool {
     match hive {
-        EnvHive::System => crate::system::check_admin(),
-        EnvHive::User => crate::registry::can_write_user(),
+        EnvHive::System => crate::platform::system::check_admin(),
+        EnvHive::User => crate::platform::registry::can_write_user(),
     }
 }
 

@@ -1,5 +1,5 @@
 use super::store::{EnvHiveStore, WinregHive};
-use crate::backup::{self, backup_env_vars, BackupOutcome};
+use crate::platform::backup::{self, backup_env_vars, BackupOutcome};
 use crate::domain::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
     EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
@@ -134,7 +134,7 @@ pub(crate) fn reset_write_broadcast() {
 ///
 /// 跳过真实调用的理由：真实广播每次约 **4s**（本机三次实测
 /// `3141 / 4025 / 4024 ms`，另一次复审实测 `3671 / 4021 / 4021 ms`，测量方式为
-/// 计时环绕 `crate::system::broadcast_env_change()` —— 内部即
+/// 计时环绕 `crate::platform::system::broadcast_env_change()` —— 内部即
 /// `SendMessageTimeoutW(HWND_BROADCAST, …, SMTO_ABORTIFHUNG, 5000)`），
 /// 5 个写入口的表驱动测试会让 core 套件白等约 20s。
 /// 测试要断言的是「这条路径走了广播」，不是 Win32 调用是否成功——后者由
@@ -142,7 +142,7 @@ pub(crate) fn reset_write_broadcast() {
 fn broadcast_after_write() {
     BROADCAST_OBSERVED.store(true, std::sync::atomic::Ordering::SeqCst);
     if !cfg!(test) {
-        crate::system::broadcast_env_change();
+        crate::platform::system::broadcast_env_change();
     }
 }
 
@@ -428,8 +428,8 @@ fn env_kind_label(store: &dyn EnvHiveStore, name: &str) -> Result<String, CoreEr
 /// 不能走 [`preview_env_change`]，后者对不存在变量返回 `Err`）。
 pub fn env_hive_writable(hive: EnvHive) -> bool {
     match hive {
-        EnvHive::System => crate::system::check_admin(),
-        EnvHive::User => crate::registry::can_write_user(),
+        EnvHive::System => crate::platform::system::check_admin(),
+        EnvHive::User => crate::platform::registry::can_write_user(),
     }
 }
 
@@ -687,9 +687,9 @@ fn create_env_var_with_store_at(
 /// 即可完全保持现状。
 ///
 /// `pub(crate)` 而非 `pub`：恢复执行（`core/src/backup.rs`）需要逐变量调用它
-/// （恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::registry`
+/// （恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::platform::registry`
 /// 对外公开 —— 外部入口一贯带写前备份（`create_env_var`），恢复自己不产生备份。
-/// `crate::registry` 根模块为其加了 `pub(crate) use` 重导出。
+/// `crate::platform::registry` 根模块为其加了 `pub(crate) use` 重导出。
 pub(crate) fn create_env_var_in_store(
     store: &dyn EnvHiveStore,
     hive: EnvHive,
@@ -997,10 +997,10 @@ pub(crate) fn delete_env_var_force_in_store(
 #[cfg(test)]
 mod env_var_tests {
     use super::*;
-    use crate::backup::BackupOutcome;
+    use crate::platform::backup::BackupOutcome;
     use crate::domain::env_var::{EnvHive, EnvValueKind};
-    use crate::registry::conflict::ERR_CONFLICT;
-    use crate::registry::store::memory::MemoryHive;
+    use crate::platform::registry::conflict::ERR_CONFLICT;
+    use crate::platform::registry::store::memory::MemoryHive;
     use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
     use winreg::types::FromRegValue;
 

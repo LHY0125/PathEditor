@@ -40,7 +40,7 @@ pub(crate) fn maintenance_prune(dry_run: bool) {
 /// dry-run 走 [`scan_legacy_env_backups`] 而**不加载密钥**——`load_or_create_key`
 /// 在密钥不存在时会新建 `~/.patheditor/keys/db.key.dpapi`，预览不该有磁盘副作用。
 pub(crate) fn maintenance_cleanup_legacy(dry_run: bool, yes: bool) {
-    let dir = core::backup::env_backup_dir();
+    let dir = core::platform::backup::env_backup_dir();
 
     if !dry_run && !yes {
         eprintln!("错误: 这会删除明文备份。先运行 --dry-run 查看计划，确认后加 --yes。");

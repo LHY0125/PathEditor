@@ -90,7 +90,7 @@ pub fn initialize(
     let backup_dir = options
         .backup_dir
         .clone()
-        .unwrap_or_else(crate::backup::env_backup_dir);
+        .unwrap_or_else(crate::platform::backup::env_backup_dir);
     match db::backups::index_backups(db, &backup_dir) {
         Ok(n) => report.backups_indexed = n,
         Err(e) => report

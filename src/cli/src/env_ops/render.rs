@@ -219,7 +219,7 @@ pub(crate) fn other_hive_hint(name: &str, current: EnvHive) -> Option<String> {
         EnvHive::System => EnvHive::User,
         EnvHive::User => EnvHive::System,
     };
-    let snapshot = core::registry::list_all_env_vars().ok()?;
+    let snapshot = core::platform::registry::list_all_env_vars().ok()?;
     let metas = match other {
         EnvHive::System => &snapshot.system,
         EnvHive::User => &snapshot.user,

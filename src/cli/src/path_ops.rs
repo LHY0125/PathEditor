@@ -159,11 +159,11 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
         "用户"
     };
     let list = if target == "system" {
-        core::registry::load_system_paths().unwrap_or_else(|e| exit_core_error(&e))
+        core::platform::registry::load_system_paths().unwrap_or_else(|e| exit_core_error(&e))
     } else {
-        core::registry::load_user_paths().unwrap_or_else(|e| exit_core_error(&e))
+        core::platform::registry::load_user_paths().unwrap_or_else(|e| exit_core_error(&e))
     };
-    let (kept, removed) = core::registry::clean_paths(list.clone());
+    let (kept, removed) = core::platform::registry::clean_paths(list.clone());
 
     if json_out {
         println!(
@@ -234,6 +234,6 @@ pub(crate) fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
 }
 
 pub(crate) fn cmd_backup() {
-    let path = core::backup::backup_registry(None).unwrap_or_else(|e| exit_core_error(&e));
+    let path = core::platform::backup::backup_registry(None).unwrap_or_else(|e| exit_core_error(&e));
     println!("备份已保存: {path}");
 }

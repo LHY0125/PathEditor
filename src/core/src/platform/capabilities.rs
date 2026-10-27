@@ -1,5 +1,5 @@
-use crate::registry;
-use crate::system;
+use crate::platform::registry;
+use crate::platform::system;
 use serde::Serialize;
 
 /// 按注册表 hive 拆分读写能力，避免用单一的“管理员”状态锁死用户 PATH。
@@ -37,7 +37,7 @@ mod tests {
         })
         .expect("序列化能力对象失败");
         let expected: Value = serde_json::from_str(include_str!(
-            "../../../src/gui/web/tests/fixtures/path-capabilities.json"
+            "../../../../src/gui/web/tests/fixtures/path-capabilities.json"
         ))
         .expect("解析共享契约 fixture 失败");
 

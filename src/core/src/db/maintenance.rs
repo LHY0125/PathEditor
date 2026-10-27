@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{db_err, Db};
-use crate::backup::EnvBackupPayload;
+use crate::platform::backup::EnvBackupPayload;
 use crate::db::crypto::KeyMaterial;
 use crate::domain::error::CoreError;
 
@@ -107,7 +107,7 @@ pub struct CleanupReport {
 ///
 /// 解析**不使用** `backup::read_env_backup`：后者在解析失败时会经
 /// `persist::parse_error_quarantined` 把文件重命名为 `.corrupt-<ts>`，
-/// 清理命令不能在 dry-run 时改动用户文件。这里直接反序列化 + [`crate::persist::migrate`]。
+/// 清理命令不能在 dry-run 时改动用户文件。这里直接反序列化 + [`crate::platform::persist::migrate`]。
 ///
 /// `dry_run = true` 时不使用 `material`；只想预览的调用方应改用
 /// [`scan_legacy_env_backups`]，免得为一次 dry-run 去创建密钥文件。
@@ -242,7 +242,7 @@ fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, Cor
             format!("读取 {} 失败: {e}", path.display()),
         )
     })?;
-    let versioned: crate::persist::Versioned<EnvBackupPayload> = serde_json::from_str(&content)
+    let versioned: crate::platform::persist::Versioned<EnvBackupPayload> = serde_json::from_str(&content)
         .map_err(|e| {
             CoreError::new(
                 crate::domain::error::ErrorCode::Parse,
@@ -250,16 +250,16 @@ fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, Cor
                 format!("解析 {} 失败: {e}", path.display()),
             )
         })?;
-    crate::persist::migrate(versioned, "env 备份")
+    crate::platform::persist::migrate(versioned, "env 备份")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backup::{EnvBackupHives, EnvBackupVar};
+    use crate::platform::backup::{EnvBackupHives, EnvBackupVar};
     use crate::db::crypto::load_or_create_key;
     use crate::domain::env_var::EnvValueKind;
-    use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
+    use crate::platform::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 
     /// 此文件只有一个测试：它用 DPAPI、不建 SQLCipher，因此可以放在单元测试模块里。
     #[test]

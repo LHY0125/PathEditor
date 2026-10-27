@@ -19,8 +19,8 @@ pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
 /// 备份失败时在 stderr 提示，**不改变退出码**。
 ///
 /// CLI 未初始化 logger，core 的 `log::warn!` 在此被丢弃 —— 必须经返回值显式打印。
-pub(crate) fn warn_if_backup_failed(outcome: &core::backup::BackupOutcome) {
-    if let core::backup::BackupOutcome::Failed(reason) = outcome {
+pub(crate) fn warn_if_backup_failed(outcome: &core::platform::backup::BackupOutcome) {
+    if let core::platform::backup::BackupOutcome::Failed(reason) = outcome {
         eprintln!("警告: 环境变量写前备份失败（写入已完成）: {reason}");
     }
 }
@@ -190,7 +190,7 @@ mod tests {
         // core 消息的稳定标识，测试改为直接断言 core 常量本身；CLI 退出码
         // 已由 `CoreError.exit_code()` 驱动，不再依赖文本前缀。
         use path_editor_core as core;
-        let msg = core::registry::conflict_message();
+        let msg = core::platform::registry::conflict_message();
         assert!(
             msg.starts_with("[E_CONFLICT]"),
             "core 冲突消息必须以 [E_CONFLICT] 开头，实际: {msg}"
@@ -203,7 +203,7 @@ mod tests {
         let e = core::CoreError::new(
             core::ErrorCode::Conflict,
             "update_env_var",
-            core::registry::conflict_message(),
+            core::platform::registry::conflict_message(),
         );
         assert_eq!(e.exit_code(), 3);
     }
@@ -270,9 +270,9 @@ mod tests {
             return false;
         };
         let outcome = match mode.as_str() {
-            "failed" => core::backup::BackupOutcome::Failed("磁盘已满".into()),
-            "created" => core::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json")),
-            "skipped" => core::backup::BackupOutcome::Skipped,
+            "failed" => core::platform::backup::BackupOutcome::Failed("磁盘已满".into()),
+            "created" => core::platform::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json")),
+            "skipped" => core::platform::backup::BackupOutcome::Skipped,
             other => panic!("未知探针模式: {other}"),
         };
         warn_if_backup_failed(&outcome);

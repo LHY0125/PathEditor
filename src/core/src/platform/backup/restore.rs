@@ -3,8 +3,8 @@
 use super::env::*;
 use crate::domain::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
 use crate::domain::error::{CoreError, ErrorCode};
-use crate::registry::store::{EnvHiveStore, WinregHive};
-use crate::registry::{
+use crate::platform::registry::store::{EnvHiveStore, WinregHive};
+use crate::platform::registry::{
     create_env_var_in_store, delete_env_var_force_in_store, hive_location,
     update_env_var_force_in_store,
 };
@@ -85,8 +85,8 @@ pub struct RestorePreview {
 /// **不做路径来源校验**（扩展名 / 是否在备份目录内）：那是
 /// [`validate_backup_path`] 的职责。本函数只负责「读出并验版本」。
 pub fn read_env_backup(path: &Path) -> Result<EnvBackupPayload, CoreError> {
-    let versioned = crate::persist::read_versioned_file::<EnvBackupPayload>(path, "env 备份")?;
-    crate::persist::migrate(versioned, "env 备份")
+    let versioned = crate::platform::persist::read_versioned_file::<EnvBackupPayload>(path, "env 备份")?;
+    crate::platform::persist::migrate(versioned, "env 备份")
 }
 
 /// `changes` 的 hive 排序键：**user 在前、system 在后**，与
@@ -628,7 +628,7 @@ pub(crate) fn inconsistent_change(name: &str) -> CoreError {
 /// 恢复结束后是否应广播 `WM_SETTINGCHANGE`。**门控条件只有一处**，见下。
 ///
 /// 抽成具名谓词是为了让这个分支**可被测试**：真实广播走
-/// `crate::system::broadcast_env_change()`，那是一次 Win32 `SendMessageTimeoutW`
+/// `crate::platform::system::broadcast_env_change()`，那是一次 Win32 `SendMessageTimeoutW`
 /// 调用（生产约 4s，且无观察点），core 单测里既不该触发也无法观测。
 /// 因此本文件测的是**决策**（[`restore_noop_does_not_broadcast`]），
 /// Win32 调用本身不在 core 单测覆盖范围内 —— 这是如实登记的边界，不是遗漏。
@@ -661,7 +661,7 @@ pub fn restore_env_backup_from(path: &Path, force: bool) -> Result<RestoreOutcom
     let outcome = restore_in_stores(&sys, &usr, &verified, force)?;
     // 广播只在确实写入过时发出：无差异的恢复不应惊动已运行的进程（判据见谓词）。
     if restore_should_broadcast(&outcome) {
-        crate::system::broadcast_env_change();
+        crate::platform::system::broadcast_env_change();
     }
     Ok(outcome)
 }

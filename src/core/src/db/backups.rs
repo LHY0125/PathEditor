@@ -21,7 +21,7 @@
 
 use super::crypto::KeyMaterial;
 use super::{db_err, Db};
-use crate::backup::{EnvBackupPayload, EnvBackupVar};
+use crate::platform::backup::{EnvBackupPayload, EnvBackupVar};
 use crate::domain::error::{CoreError, ErrorCode};
 use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
@@ -216,7 +216,7 @@ pub fn read_env_backup_any(
             "读取遗留明文备份 {}：DPAPI 加密的 .pebak 才是 v6 的默认格式",
             path.display()
         );
-        return crate::backup::read_env_backup(path);
+        return crate::platform::backup::read_env_backup(path);
     }
 
     let bytes = std::fs::read(path).map_err(|e| {
@@ -306,7 +306,7 @@ pub fn index_backups(db: &mut Db, dir: &Path) -> Result<usize, CoreError> {
             .unwrap_or(false)
         {
             // 遗留 .json：解析内容拿真实变量数（与 .pebak 不同，后者读头即可）
-            match crate::backup::read_env_backup(&path) {
+            match crate::platform::backup::read_env_backup(&path) {
                 Ok(p) => (
                     "env".to_string(),
                     p.captured_at,
@@ -394,7 +394,7 @@ pub fn list_backups(db: &Db) -> Result<Vec<BackupView>, CoreError> {
 /// 每次调用前先增量索引：只在启动时索引会漏掉「启动后新做的备份」。
 /// `index_backups` 按 `file_path` 去重，重复调用幂等。
 pub fn refresh_and_list(db: &mut Db) -> Result<Vec<BackupView>, CoreError> {
-    refresh_and_list_at(db, &crate::backup::env_backup_dir())
+    refresh_and_list_at(db, &crate::platform::backup::env_backup_dir())
 }
 
 /// [`refresh_and_list`] 的显式目录版本（测试注入 `TempDir`）。

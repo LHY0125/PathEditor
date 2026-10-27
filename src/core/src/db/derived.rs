@@ -47,7 +47,7 @@ fn read_watermark(path: &Path) -> Option<(i64, i64, i64, i64)> {
 /// 写入水位；失败只告警，不影响已完成的派生表重建结果。
 fn write_watermark(path: &Path, value: (i64, i64, i64, i64)) {
     let content = format!("{}:{}:{}:{}", value.0, value.1, value.2, value.3);
-    if let Err(e) = crate::fs::atomic_write(path, &content) {
+    if let Err(e) = crate::platform::fs::atomic_write(path, &content) {
         log::warn!("派生表水位写入失败（下次启动会重建）: {}", e);
     }
 }

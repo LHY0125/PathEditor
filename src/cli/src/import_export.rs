@@ -2,9 +2,9 @@ use crate::runtime::{exit_core_error, load_path_snapshot_any, save_path_write};
 use path_editor_core as core;
 
 pub(crate) fn cmd_import(file: String, target: String) {
-    let content = core::fs::read_text_file(&file).unwrap_or_else(|e| exit_core_error(&e));
+    let content = core::platform::fs::read_text_file(&file).unwrap_or_else(|e| exit_core_error(&e));
     let (sys_entries, usr_entries) =
-        core::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_core_error(&e));
+        core::platform::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_core_error(&e));
     match target.as_str() {
         "system" => {
             save_path_write(Some(sys_entries), None);
@@ -28,11 +28,11 @@ pub(crate) fn cmd_import(file: String, target: String) {
 
 pub(crate) fn cmd_export(format: String, output: Option<String>) {
     let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
-    let content = core::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
+    let content = core::platform::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
         .unwrap_or_else(|e| exit_core_error(&e));
     if let Some(path) = output {
         // 系统目录拒绝规则在 core（与备份共用），CLI 不复制判定。
-        core::fs::write_export_file(&path, &content).unwrap_or_else(|e| exit_core_error(&e));
+        core::platform::fs::write_export_file(&path, &content).unwrap_or_else(|e| exit_core_error(&e));
         println!("已导出到: {path}");
     } else {
         println!("{content}");

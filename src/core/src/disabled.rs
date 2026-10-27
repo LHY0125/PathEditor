@@ -5,11 +5,11 @@
 //! pending 是崩溃安全机制：注册表已写、DB 当前快照未落盘时记录，下次补写。
 
 use crate::domain::error::{CoreError, ErrorCode};
-use crate::fs::atomic_write;
-use crate::persist::{
+use crate::platform::fs::atomic_write;
+use crate::platform::persist::{
     migrate, parse_error_quarantined, rotate_backup, Versioned, PERSIST_SCHEMA_VERSION,
 };
-use crate::registry;
+use crate::platform::registry;
 use crate::{PathEntry, PathSnapshot};
 use std::collections::{HashMap, HashSet};
 use std::fs;

@@ -1,4 +1,4 @@
-use path_editor_core::scanner;
+use path_editor_core::platform::scanner;
 use path_editor_core::CoreError;
 
 #[tauri::command]

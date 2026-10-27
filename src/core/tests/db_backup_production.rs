@@ -10,7 +10,7 @@
 // `dirs::home_dir()`——在 Windows 上读 `USERPROFILE`，设 `HOME` 环境变量
 // **不会**重定向它。用它做测试会真实创建 `~/.patheditor/keys/db.key.dpapi`。
 // 显式传密钥的入口既验证了同一条写入路径，又不碰用户目录。
-use path_editor_core::backup::{
+use path_editor_core::platform::backup::{
     list_env_backups_in, write_env_backup_to_with_key, EnvBackupHives, EnvBackupPayload,
     EnvBackupVar,
 };

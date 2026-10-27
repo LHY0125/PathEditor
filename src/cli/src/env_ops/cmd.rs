@@ -8,7 +8,7 @@ use path_editor_core as core;
 
 /// `env list` —— 列出变量元数据（不含明文）。
 pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
-    let snapshot = core::registry::list_all_env_vars().unwrap_or_else(|e| exit_core_error(&e));
+    let snapshot = core::platform::registry::list_all_env_vars().unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         let value = snapshot_json(&snapshot, system, user);
         print_json(&value);
@@ -29,7 +29,7 @@ pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
 /// `env get` —— 读取单个变量的明文。这是 CLI 侧唯一的明文出口。
 pub(crate) fn cmd_env_get(name: String, system: bool) {
     let hive = select_hive(system, false);
-    match core::registry::reveal_env_var(hive, &name) {
+    match core::platform::registry::reveal_env_var(hive, &name) {
         Ok(revealed) => print!("{}", format_get_output(&revealed.value)),
         Err(e) => {
             let msg = e.message.clone();
@@ -69,7 +69,7 @@ pub(crate) fn cmd_env_set(
         // 预览是只读的：经 core 的 preview_env_change 取当前值/类型/写权限。
         // 变量不存在时 core 返回 NotFound，照常报错 —— 预览与执行判定一致（验收标准 8）。
         let preview =
-            core::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+            core::platform::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
         // 安全：旧值已由 core 打码/净化；新值来自命令行，须同样经 mask_new_value 处理。
         let json = build_change_preview(
             "set",
@@ -88,12 +88,12 @@ pub(crate) fn cmd_env_set(
     let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
-            let outcome = core::registry::update_env_var(hive, &name, &new_value, &r)
+            let outcome = core::platform::registry::update_env_var(hive, &name, &new_value, &r)
                 .unwrap_or_else(|e| exit_core_error(&e));
             warn_if_backup_failed(&outcome.backup);
         }
         Concurrency::Force => {
-            let outcome = core::registry::update_env_var_force(hive, &name, &new_value)
+            let outcome = core::platform::registry::update_env_var_force(hive, &name, &new_value)
                 .unwrap_or_else(|e| exit_core_error(&e));
             warn_if_backup_failed(&outcome.backup);
         }
@@ -131,7 +131,7 @@ pub(crate) fn cmd_env_add(
             None,
             mask_new_value(&name, new_value),
             Some(kind_label(parse_kind(&kind)).to_string()),
-            core::registry::env_hive_writable(hive),
+            core::platform::registry::env_hive_writable(hive),
             sensitive,
         );
         emit_preview(&json, json_out);
@@ -139,7 +139,7 @@ pub(crate) fn cmd_env_add(
     }
     let kind = parse_kind(&kind);
     // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
-    let outcome = core::registry::create_env_var(hive, &name, &new_value, kind)
+    let outcome = core::platform::registry::create_env_var(hive, &name, &new_value, kind)
         .unwrap_or_else(|e| exit_core_error(&e));
     warn_if_backup_failed(&outcome.backup);
     // 广播由 core 负责，此处不重复
@@ -163,7 +163,7 @@ pub(crate) fn cmd_env_remove(
     if dry_run {
         // 预览是只读的；变量不存在时 core 返回 NotFound，照常报错（验收标准 8）。
         let preview =
-            core::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+            core::platform::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
         let json = build_change_preview(
             "remove",
             hive,
@@ -181,12 +181,12 @@ pub(crate) fn cmd_env_remove(
     let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
-            let outcome = core::registry::delete_env_var(hive, &name, &r)
+            let outcome = core::platform::registry::delete_env_var(hive, &name, &r)
                 .unwrap_or_else(|e| exit_core_error(&e));
             warn_if_backup_failed(&outcome.backup);
         }
         Concurrency::Force => {
-            let outcome = core::registry::delete_env_var_force(hive, &name)
+            let outcome = core::platform::registry::delete_env_var_force(hive, &name)
                 .unwrap_or_else(|e| exit_core_error(&e));
             warn_if_backup_failed(&outcome.backup);
         }
@@ -203,7 +203,7 @@ pub(crate) fn cmd_env_remove(
 /// # Returns
 /// 无返回值：失败经 `exit_core_error` 终止进程（退出码由 `CoreError::exit_code()` 决定）。
 pub(crate) fn cmd_env_backup(json_out: bool) {
-    match core::backup::backup_env_vars() {
+    match core::platform::backup::backup_env_vars() {
         Ok(path) => {
             // production 路径优先写 .pebak；回落明文时 core 只 log::warn!，
             // 而 CLI 没有日志后端——必须在这里明说。
@@ -235,7 +235,7 @@ pub(crate) fn cmd_env_backup(json_out: bool) {
 /// # Returns
 /// 无返回值：失败经 `exit_core_error` 终止进程。
 pub(crate) fn cmd_env_backups(json_out: bool) {
-    let list = core::backup::list_env_backups().unwrap_or_else(|e| exit_core_error(&e));
+    let list = core::platform::backup::list_env_backups().unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&list);
         return;
@@ -243,7 +243,7 @@ pub(crate) fn cmd_env_backups(json_out: bool) {
     if list.is_empty() {
         println!(
             "暂无环境变量备份（目录: {}）",
-            core::backup::env_backup_dir().display()
+            core::platform::backup::env_backup_dir().display()
         );
         return;
     }
@@ -273,15 +273,15 @@ pub(crate) fn cmd_env_backups(json_out: bool) {
 /// # Returns
 /// 无返回值：失败经 `exit_core_error` 终止进程。
 pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out: bool) {
-    let path = core::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
+    let path = core::platform::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
 
     if dry_run {
         // 统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`
-        let (payload, format) = core::backup::read_env_backup_with_format(&path)
+        let (payload, format) = core::platform::backup::read_env_backup_with_format(&path)
             .unwrap_or_else(|e| exit_core_error(&e));
         // CLI 没有日志后端，core 的 `log::warn!` 到这里会被丢弃。
         // 明文警告必须走 stderr 才真的可见（README 承诺的就是这一条）。
-        if format == core::backup::BackupFormat::LegacyPlaintext {
+        if format == core::platform::backup::BackupFormat::LegacyPlaintext {
             eprintln!(
                 "警告: {} 是遗留明文备份（v6 起的备份为 DPAPI 加密的 .pebak）。\
                  恢复后建议重新执行 `patheditor env backup` 生成加密副本。",
@@ -289,7 +289,7 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
             );
         }
         let preview =
-            core::backup::preview_restore(&payload).unwrap_or_else(|e| exit_core_error(&e));
+            core::platform::backup::preview_restore(&payload).unwrap_or_else(|e| exit_core_error(&e));
         if json_out {
             print_json(&preview);
             return;
@@ -327,7 +327,7 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     }
 
     let outcome =
-        core::backup::restore_env_backup_from(&path, force).unwrap_or_else(|e| exit_core_error(&e));
+        core::platform::backup::restore_env_backup_from(&path, force).unwrap_or_else(|e| exit_core_error(&e));
 
     if json_out {
         print_json(&outcome);

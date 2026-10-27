@@ -1,6 +1,6 @@
 use path_editor_core::domain::env_var::{EnvHive, EnvValueKind, EnvVarSnapshot, RevealedValue};
 use path_editor_core::domain::error::CoreError;
-use path_editor_core::registry::{self, WriteOutcome};
+use path_editor_core::platform::registry::{self, WriteOutcome};
 
 /// 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）。
 ///

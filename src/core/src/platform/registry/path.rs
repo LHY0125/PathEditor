@@ -202,7 +202,7 @@ pub fn clean_path_entries(entries: Vec<PathEntry>) -> (Vec<PathEntry>, Vec<PathE
         }
         seen.insert(key);
 
-        let expanded = crate::system::expand_env_vars(trimmed);
+        let expanded = crate::platform::system::expand_env_vars(trimmed);
         let exists = expanded.contains('%') || Path::new(&expanded).is_dir();
         if exists {
             kept.push(PathEntry {

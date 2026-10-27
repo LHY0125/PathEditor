@@ -433,7 +433,7 @@ fn backups_list_json_shape_is_stable() {
     std::fs::create_dir_all(&dir).unwrap();
     std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
 
-    let list = path_editor_core::backup::list_env_backups().expect("空目录不得报错");
+    let list = path_editor_core::platform::backup::list_env_backups().expect("空目录不得报错");
     let json = serde_json::to_string(&list).unwrap();
     assert_eq!(json, "[]");
 
@@ -795,14 +795,14 @@ fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     // 生产备份是 DPAPI 加密的 `.pebak`，不能当 JSON 读。
     // 用核心库的统一读入口解密（密钥来自本机 ~/.patheditor —— 测试进程里
     // `env backup` 刚写过同一把密钥），改完再用同一个写入口重新加密。
-    let payload = core::backup::read_env_backup_from(&source).ok()?;
+    let payload = core::platform::backup::read_env_backup_from(&source).ok()?;
 
     let user = payload.hives.user;
     if user.len() < 4 {
         return None;
     }
     // user[0] 刻意不入 patched → 注册表有、备份无 → Removed（恰 1 条）
-    let mut patched: Vec<core::backup::EnvBackupVar> = user[3..].to_vec();
+    let mut patched: Vec<core::platform::backup::EnvBackupVar> = user[3..].to_vec();
     // user[1]、user[2]：revision 换成不可能匹配的值 → Conflict（恰 2 条）
     for index in [1, 2] {
         let mut conflicted = user[index].clone();
@@ -811,7 +811,7 @@ fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     }
     // 3 个注册表中不存在的名字 → Added（恰 3 条）
     for suffix in ["A", "B", "C"] {
-        patched.push(core::backup::EnvBackupVar {
+        patched.push(core::platform::backup::EnvBackupVar {
             name: format!("PATHEDITOR_T7_ABSENT_VAR_9F3{suffix}"),
             kind: core::EnvValueKind::String,
             value: "absent".to_string(),
@@ -819,14 +819,14 @@ fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         });
     }
 
-    let fixture_payload = core::backup::EnvBackupPayload {
+    let fixture_payload = core::platform::backup::EnvBackupPayload {
         captured_at: payload.captured_at,
-        hives: core::backup::EnvBackupHives {
+        hives: core::platform::backup::EnvBackupHives {
             system: payload.hives.system,
             user: patched,
         },
     };
-    let fixture = core::backup::write_env_backup_for_test(dir, &fixture_payload)?;
+    let fixture = core::platform::backup::write_env_backup_for_test(dir, &fixture_payload)?;
     // 夹具文件名不带时间戳，避免被后续 `env backups` 的排序断言干扰
     let _ = std::fs::remove_file(&source);
     Some(fixture)

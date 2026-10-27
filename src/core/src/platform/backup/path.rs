@@ -2,7 +2,7 @@
 
 use super::config::{backup_base_dir, path_backup_keep};
 use crate::domain::error::{CoreError, ErrorCode};
-use crate::registry::{self, SYS_REG_PATH, USER_REG_PATH};
+use crate::platform::registry::{self, SYS_REG_PATH, USER_REG_PATH};
 use chrono::Local;
 use std::path::{Path, PathBuf};
 use winreg::enums::*;
@@ -76,7 +76,7 @@ struct PathBackupTarget {
 pub fn backup_registry(custom_dir: Option<String>) -> Result<String, CoreError> {
     let target = match custom_dir {
         Some(ref dir) if !dir.is_empty() => {
-            crate::fs::ensure_not_system_dir(dir, "backup_registry", "备份")?;
+            crate::platform::fs::ensure_not_system_dir(dir, "backup_registry", "备份")?;
             PathBackupTarget {
                 dir: PathBuf::from(dir),
                 keep: None,

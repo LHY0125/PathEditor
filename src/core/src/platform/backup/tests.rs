@@ -2,10 +2,10 @@ use super::config::*;
 use super::*;
 use crate::domain::env_var::{revision_of, EnvHive, EnvValueKind};
 use crate::domain::error::ErrorCode;
-use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
-use crate::registry::store::memory::MemoryHive;
-use crate::registry::store::EnvHiveStore;
-use crate::registry::{
+use crate::platform::persist::{Versioned, PERSIST_SCHEMA_VERSION};
+use crate::platform::registry::store::memory::MemoryHive;
+use crate::platform::registry::store::EnvHiveStore;
+use crate::platform::registry::{
     create_env_var_in_store, delete_env_var_force_in_store, update_env_var_force_in_store,
 };
 use std::path::{Path, PathBuf};

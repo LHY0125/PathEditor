@@ -15,7 +15,7 @@ mod env_edit;
 mod path;
 pub(crate) mod store;
 
-// ── 对外公开 API（gui/cli 经 `core::registry::*` 引用，路径保持不变）──
+// ── 对外公开 API（gui/cli 经 `core::platform::registry::*` 引用，路径保持不变）──
 pub use access::can_write_user;
 pub use conflict::conflict_message;
 pub use env_edit::{
@@ -32,7 +32,7 @@ pub use path::{
 pub(crate) use access::hive_location;
 // 恢复执行（`backup.rs`）需要逐变量调用这三个写函数，且**保护名单 / 类型 /
 // 名称合法性判定只在它们内部实现一处。必须经根模块重导出：
-// 子模块 `mod env_edit;` 是私有的，`crate::registry::env_edit::X` 会报
+// 子模块 `mod env_edit;` 是私有的，`crate::platform::registry::env_edit::X` 会报
 // `error[E0603]: module env_edit is private`。
 pub(crate) use env_edit::{
     create_env_var_in_store, delete_env_var_force_in_store, update_env_var_force_in_store,

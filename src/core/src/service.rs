@@ -9,7 +9,7 @@
 //! - **pending**：注册表已写成功但快照未落盘时记录，下次补写（只补写快照，不触碰注册表）；
 //! - **广播**：任一 hive 注册表写成功后由服务层广播。
 
-use crate::backup;
+use crate::platform::backup;
 use crate::db::history::{self, NewSnapshot, SnapshotKind};
 use crate::db::history_sink::DbHistory;
 use crate::db::{search, Db};
@@ -18,8 +18,8 @@ use crate::domain::env_var::EnvHive;
 use crate::domain::error::{CoreError, ErrorCode};
 use crate::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
 use crate::domain::path_entry::{PathEntry, PathSnapshot};
-use crate::registry;
-use crate::system;
+use crate::platform::registry;
+use crate::platform::system;
 
 /// PATH 读写的可注入缝（仿 `EnvHiveStore` / `registry/env_var.rs` 的 `_with_store` 模式）。
 ///
@@ -209,7 +209,7 @@ fn check_expected(
         return Err(core_err(
             ErrorCode::Conflict,
             "check_expected",
-            crate::registry::conflict_message(),
+            crate::platform::registry::conflict_message(),
         ));
     }
     Ok(())

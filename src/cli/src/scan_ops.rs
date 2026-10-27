@@ -5,13 +5,13 @@ use serde_json::json;
 
 pub(crate) fn cmd_conflicts(json_out: bool) {
     let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::registry::load_system_paths() {
+    if let Ok(sys) = core::platform::registry::load_system_paths() {
         paths.extend(sys);
     }
-    if let Ok(usr) = core::registry::load_user_paths() {
+    if let Ok(usr) = core::platform::registry::load_user_paths() {
         paths.extend(usr);
     }
-    let conflicts = core::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
+    let conflicts = core::platform::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&conflicts);
     } else if conflicts.is_empty() {
@@ -38,13 +38,13 @@ pub(crate) fn cmd_conflicts(json_out: bool) {
 
 pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
     let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::registry::load_system_paths() {
+    if let Ok(sys) = core::platform::registry::load_system_paths() {
         paths.extend(sys);
     }
-    if let Ok(usr) = core::registry::load_user_paths() {
+    if let Ok(usr) = core::platform::registry::load_user_paths() {
         paths.extend(usr);
     }
-    let groups = core::scanner::scan_tools(paths, query.unwrap_or_default())
+    let groups = core::platform::scanner::scan_tools(paths, query.unwrap_or_default())
         .unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&groups);
@@ -63,7 +63,7 @@ pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
 }
 
 pub(crate) fn cmd_check_admin(json_out: bool) {
-    let is_admin = core::system::check_admin();
+    let is_admin = core::platform::system::check_admin();
     if json_out {
         println!("{}", json!({ "admin": is_admin }));
     } else {
