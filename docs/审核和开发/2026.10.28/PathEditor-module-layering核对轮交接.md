@@ -362,3 +362,123 @@ All matched files use Prettier code style!
 | C         | 保持现状直接开工                                                                               | **违反** Global Constraints 的「开工前工作区必须干净」，不建议 |
 
 > 在 A/B 落定前，Task 1 的「工作区干净」前置条件不成立，开发窗口不会开工。
+
+---
+
+## 11. 审核窗口裁断（2026-10-28）
+
+审核窗口逐条复跑，**未采信交接文档的结论**。下列证据均为本机实测。
+
+### 11.1 B1 —— 成立，已修
+
+```text
+$ grep -rnE 'path_editor_core::\{|crate::\{' src | grep -E 'service|bootstrap|disabled'
+src/core/tests/db_current_snapshot_read.rs:13:use path_editor_core::{service, PathEntry};
+src/core/tests/db_profile_apply.rs:9:use path_editor_core::{bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
+src/core/tests/db_restore_snapshot.rs:9:use path_editor_core::{bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
+```
+
+恰好 3 处，全部在 Task 3 范围内，交接文档的「全仓库花括号导入只有这 3 行」属实。
+
+**处置**：Task 3 Step 4 增加花括号专用 sed：
+
+```bash
+sed -i -E 's/path_editor_core::\{([^}]*)\b(service|bootstrap|disabled)\b/path_editor_core::{\1app::\2/g'
+```
+
+结果形如 `use path_editor_core::{app::service, PathEntry};`（合法 use 语法，行数不变）。Step 5 增加花括号守卫检查。
+
+### 11.2 B2 —— 成立，已修
+
+````text
+$ sed -n '6p;8p;66p;68p' docs/dev/architecture.md
+## 完整目录树
+```text
+````
+
+## 模块边界速记
+
+````
+
+第 6 行标题、第 8 行开围栏、第 66 行收围栏、第 68 行标题。交接文档的「真实区间是 8–66」属实。
+
+**处置**：Task 6 Step 3 改为「替换第 8–66 行」，并增加替换后的标题存活检查（`grep -n '^## 完整目录树$\|^## 模块边界速记$\|^## 数据流'`）。
+
+### 11.3 H1 —— 成立，已重写
+
+```text
+$ grep -rnE 'src/core/src/(error|...|disabled)\.rs' src docs/dev README.md CLAUDE.md AGENTS.md
+（无输出，退出码 1）
+````
+
+在未做任何改动的树上就已空过——交接文档判断正确。
+
+**处置**：Task 6 Step 6 重写为四条检查 (a)(b)(c)(d) + 一条正向断言，并要求「开工前先在未改动的树上跑，必须各有输出」。
+
+审核窗口在重写过程中又发现一个更隐蔽的同类问题：**`[├└]` 这类含多字节字符的括号表达式在 Git Bash 下会静默命中 0 行**。第一版改写用的正是 `[├└]`，实测 (c)(d) 只命中 2 行，改用 `(├──|└──)` 字面量择一后才全部命中。已写进计划作为 ⚠️。
+
+改动前实测应有：(b) 10 行、(c) 8 行、(d) 3 行、(e) 正向断言 `0`（改后应为 `3`）。
+
+### 11.4 F1 —— 成立，已修
+
+`src/cli/src/main.rs` 第 5–14 行实为 10 条 `mod`（`cli` / `env_ops` / `import_export` / `maintenance_ops` / `output` / `path_ops` / `profile_ops` / `runtime` / `scan_ops` / `sync_ops`）。已改「九条」→「十条」。
+
+### 11.5 F2 —— 成立，已修，且范围比交接文档写的更大
+
+```text
+$ grep -n 'crate::\|core/src/' src/core/src/registry/golden/README.md
+14:（挂 `crate::disabled` 下，访问 `merge_hive`）
+56:当前 `crate::system::broadcast_env_change()`
+59:core/src/registry/env_var.rs
+62:core/src/service.rs
+73:core/src/registry/env_var.rs
+47:core/src/backup.rs
+```
+
+交接文档只指出了 `env_var.rs`；实测还有 `crate::disabled` 与 `crate::system::` 两处 Rust 模块路径，通用前缀替换同样碰不到。
+
+**处置**：Task 6 Step 2 补三条规则，并固定顺序——`env_var.rs → env_edit.rs` 必须排在通用前缀替换**之前**，否则第 2 条先生成 `platform/registry/env_var.rs`，第 1 条就匹配不到。
+
+**范围外**：该 README 第 14 行提到的 `core/src/registry/golden/merge_golden_tests.rs` 在仓库中不存在（`golden/` 下只有 `README.md` 与 JSON 夹具）。这是另一处既有漂移，本轮不改。
+
+### 11.6 M1 —— 成立，已修
+
+Task 2 Step 5 补 `path_editor_core::` 一条与花括号守卫一条，与 Task 1 / Task 3 的检查对齐。
+
+### 11.7 审核窗口另补三条（开发窗口未提）
+
+| 编号 | 问题                                                     | 实测                                                           | 处置                                                            |
+| ---- | -------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------- |
+| E1   | `sed` 的 `$` 行尾锚点在 CRLF 下永不匹配                  | `db/mod.rs` 为 `w/crlf`；`s/^pub mod backups;$/…` 会静默不生效 | 全局禁止 `$` 锚点；Task 5 命令去掉 `$`                          |
+| E2   | README 与 CLAUDE.md 的替换只说「按四层改写」，无具体内容 | 两处各是一整块代码树                                           | 给出两个完整替换块 + 精确行区间（README 580–616、CLAUDE 71–91） |
+| E3   | `[├└]` 多字节括号表达式静默失效                          | 见 11.3                                                        | 改 `(├──                                                        | └──)`；并加「改动前必须有输出」的硬步骤 |
+
+另：Task 1 Step 1 增加行尾基线（`git ls-files --eol src \| grep -c 'w/crlf'`，2026-10-28 实测 `283`），Task 7 Step 4 增加行尾比对——防止某条 `sed -i` 把 CRLF 整体写成 LF，让「改一行」变成「全文件重写」。
+
+### 11.8 第 10 节工作区异常的裁断：采用 B，已执行
+
+**采用方案 B**：`git checkout -- docs/superpowers/specs/2026-10-28-module-layering-design.md`，已执行。
+
+依据：
+
+```text
+$ git diff -w --numstat -- <spec>
+10	5	docs/superpowers/specs/2026-10-28-module-layering-design.md
+$ npx prettier --check <spec>          # 还原前
+[warn] 工作区版本不合格
+$ npx prettier --check <spec>          # 还原后
+All matched files use Prettier code style!
+```
+
+- 差异只有表格分隔行的横线长度与若干空行，**无任何语义改动**，还原不丢内容。
+- HEAD 版本 prettier 干净，工作区版本不干净；保留工作区版本会让 `npm run verify` 的 `format:check` 不稳定。
+- 该文件属于审核窗口的交付物，审核窗口有权定夺。
+
+**给并行会话的提示**：`PathEditor审核 [18cc9c]` 若仍持有该文件的内容，请勿再次落笔覆盖；如需修改，请先 `git pull`/`git status` 确认基线。
+
+### 11.9 结论
+
+- **计划已升到 v2**，修订明细见计划文件顶部 `## 修订记录`。
+- 交接文档的 6 条全部采纳，无一条驳回。
+- **开发窗口可以从 Task 1 重新开工**，按 v2 执行。
+- 开工前确认：`git status --porcelain` 为空（审核窗口提交完 v2 后即恢复干净）。

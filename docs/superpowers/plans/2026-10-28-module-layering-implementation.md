@@ -10,10 +10,30 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-28-module-layering-design.md`
 
+## 修订记录
+
+**v2（2026-10-28，核对轮）**：开发窗口提出 6 条，全部采纳；审核窗口另补 3 条自查项。
+
+| 编号 | 位置                 | 问题                                                                    | 处置                                                              |
+| ---- | -------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------- |
+| B1   | 任务 3 Step 4        | 花括号导入 `path_editor_core::{service, …}` 不被任何 sed 规则命中，必炸 | 新增花括号专用 sed，列出 3 处改动结果                             |
+| B2   | 任务 6 Step 3        | 写的「第 6–68 行」会连带删掉两个二级标题                                | 改为 8–66（围栏区间），并加标题存活检查                           |
+| H1   | 任务 6 Step 6        | 唯一一条文档验收是空过（正则只认 `src/core/src/` 前缀）                 | 重写为 (a)(b)(c)(d) 四条 + 一条正向断言，并要求改动前先验证有输出 |
+| F1   | 任务 4 Step 3        | 「九条 `mod` 声明」实为十条                                             | 改为十条                                                          |
+| F2   | 任务 6 Step 2        | `golden/README.md` 的 `env_var.rs`（实为 `env_edit.rs`）未修            | 补第 4 条 sed 规则                                                |
+| M1   | 任务 2 Step 5        | 只查 `crate::`，漏 `path_editor_core::`                                 | 补第二条与花括号守卫                                              |
+| E1   | 全局 + 任务 5 Step 2 | `sed` 的 `$` 锚点在 CRLF 下永不匹配                                     | 全局禁止 `$` 锚点；任务 5 命令去掉 `$`                            |
+| E2   | 任务 6 Step 4/5      | README 与 CLAUDE.md 只说「按四层改写」，无具体内容                      | 给出两个完整替换块与精确行区间                                    |
+| E3   | 任务 6 Step 6        | `[├└]` 多字节括号表达式会静默命中 0 行                                  | 改用 `(├──                                                        | └──)` 字面量择一 |
+
+另：任务 1 Step 1 增加行尾基线（`w/crlf` 计数），任务 7 Step 4 增加行尾比对。
+
 ## Global Constraints
 
-- 分支：从 `main` 切 `refactor/module-layering` 后作业；不直接改 `main`。
-- **前置条件**：开工前工作区必须干净。当前有 5 个未提交的文档改动（`AGENTS.md`、`CLAUDE.md`、`README.md`、`ROADMAP.md`、`docs/dev/testing.md`），需由用户先提交或 stash——否则任务 6 会与其叠加，无法区分两类改动。
+- 分支：在 `refactor/module-layering` 上作业；不直接改 `main`。
+- **前置条件（已满足）**：工作区必须干净。原有 5 个未提交的文档改动已在 `4734188` 提交到 `main`，本分支已 rebase 到该提交。开工前再跑一次 `git status --porcelain`，非空即停下来报告。
+- **行尾契约**：`.rs` 工作区行尾以 CRLF 为主（`git ls-files --eol src` 可查），但**并非全部**。所有 `sed` 一律**不得使用 `$` 行尾锚点**——CRLF 下 `$` 永远不匹配，会静默失效。需要锚定行首时只用 `^`，或改用不带锚点的子串匹配。
+- **`sed -i` 后必须核对行尾未被整体改写**：每个用到 `sed -i` 的任务，提交前跑 `git ls-files --eol` 抽查被改文件，`w/` 列不得从 `crlf` 变成 `lf`（整体改写会把「改一行」变成「全文件重写」，破坏纯移动的可审性）。
 - **零行为变更**：不改任何业务判定、不改 DB schema、不改同步包格式、不改 CLI 退出码（0/1/2/3/4/5）、不改 IPC 契约。
 - **不写注册表、不打开真实 `~/.patheditor`**：所有测试用 `TempDir`。
 - **全程 `git mv`**：提交前 `git status` 必须是 `renamed:`，不能是 `deleted:` + `new file:`。
@@ -21,6 +41,7 @@
 - **不删除任何文件**：唯一例外是 `rmdir` 一个 `git mv` 之后变空的目录（不是文件）。
 - **历史文档不改**：`docs/superpowers/plans/`、`docs/superpowers/specs/`、`docs/审核和开发/` 一律不动。
 - **`AGENTS.md` 与 `CLAUDE.md` 字节级一致**：改一份必须同步另一份，用 `cmp` 验证。
+- **`CLAUDE.md` / `AGENTS.md` 改完必须跑 prettier**：`npm run verify` 的 `format:check` 覆盖这两个文件（不含 `docs/**`），未格式化会直接让质量门变红。命令见任务 6 Step 5。
 - 代码注释用中文；所有新增 `pub fn` / `pub(crate) fn` 带中文 `///`。
 - GNU 工具链本地构建前先设三行（只对当前 shell 生效，**不要**写进 `.cargo/config.toml`）：
 
@@ -56,9 +77,12 @@ $env:PATH            += ";$(scoop prefix git)\usr\bin"
 
 ```bash
 cargo test --workspace 2>&1 | tail -5
+git ls-files --eol src | grep -c 'w/crlf'
 ```
 
-Expected: `test result: ok. 324 passed; 0 failed; 2 ignored`（数字以 `docs/dev/testing.md` 的「质量门」一节为准）。若不是这个数，**先停下来报告**，不要继续。
+Expected: `test result: ok. 324 passed; 0 failed; 2 ignored`（数字以 `docs/dev/testing.md` 的「质量门」一节为准）；行尾基线为 `283`（2026-10-28 实测）。
+
+把这两个数字记下来，任务 7 要用它们比对。若通过数不是 324，**先停下来报告**，不要继续。若行尾数不是 283，记下实际值作为本次的基线。
 
 - [ ] **Step 2: 移动文件**
 
@@ -251,9 +275,13 @@ grep -rlE --include='*.rs' '(crate|path_editor_core)::(persist|fs|system|scanner
 
 ```bash
 grep -rnE --include='*.rs' '\bcrate::(persist|fs|system|scanner|capabilities|registry|backup)\b' src | grep -v 'platform::'
+grep -rnE --include='*.rs' '\bpath_editor_core::(persist|fs|system|scanner|capabilities|registry|backup)\b' src | grep -v 'platform::'
+grep -rnE --include='*.rs' '(path_editor_core|crate)::\{[^}]*\b(persist|fs|system|scanner|capabilities|registry|backup)\b' src
 ```
 
-Expected: 无输出。
+Expected: 三条全部无输出。
+
+⚠️ 第三条是花括号导入守卫：`use path_editor_core::{fs, …}` 这种写法里模块名不紧邻 `::`，前两条正则都匹配不到。当前仓库没有这类写法，但守卫成本一行，留着防手滑。
 
 - [ ] **Step 6: 编译验证**
 
@@ -349,14 +377,33 @@ grep -rlE --include='*.rs' '(crate|path_editor_core)::(service|bootstrap|disable
     -e 's/\bpath_editor_core::disabled\b/path_editor_core::app::disabled/g'
 ```
 
+**花括号导入单独处理**（核对轮补：全仓库 3 处，全部在本任务范围内）。`use path_editor_core::{service, PathEntry};` 不满足「模块名紧邻 `::`」，上一条 sed 匹配不到，漏掉会直接编译失败：
+
+```bash
+grep -rlE --include='*.rs' 'path_editor_core::\{[^}]*(service|bootstrap|disabled)' src \
+| xargs sed -i -E 's/path_editor_core::\{([^}]*)\b(service|bootstrap|disabled)\b/path_editor_core::{\1app::\2/g'
+```
+
+改动结果（`{app::service, …}` 是合法的 use 语法）：
+
+| 文件:行                                         | 改前                                                                              | 改后                                                                                   |
+| ----------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `src/core/tests/db_current_snapshot_read.rs:13` | `use path_editor_core::{service, PathEntry};`                                     | `use path_editor_core::{app::service, PathEntry};`                                     |
+| `src/core/tests/db_profile_apply.rs:9`          | `use path_editor_core::{bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};` | `use path_editor_core::{app::bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};` |
+| `src/core/tests/db_restore_snapshot.rs:9`       | 同上                                                                              | 同上                                                                                   |
+
 - [ ] **Step 5: 检查遗漏与顶层形状**
 
 ```bash
 grep -rnE --include='*.rs' '\bcrate::(service|bootstrap|disabled)\b' src | grep -v 'app::'
+grep -rnE --include='*.rs' '\bpath_editor_core::(service|bootstrap|disabled)\b' src | grep -v 'app::'
+grep -rnE --include='*.rs' '(path_editor_core|crate)::\{[^}]*\b(service|bootstrap|disabled)\b' src
 ls -1 src/core/src
 ```
 
-Expected: 第一条无输出；第二条恰为 `app`、`db`、`domain`、`lib.rs`、`platform` 五项。
+Expected: 前三条无输出；第四条恰为 `app`、`db`、`domain`、`lib.rs`、`platform` 五项。
+
+⚠️ 第二条是核对轮补的：原计划只查 `crate::`，漏掉 `path_editor_core::`，会让 Step 7 才炸。
 
 - [ ] **Step 6: 验证依赖方向契约**
 
@@ -439,7 +486,7 @@ pub mod sync;
 
 - [ ] **Step 3: 改 `main.rs` 的模块声明**
 
-把第 5–14 行的九条 `mod` 声明替换为四条：
+把第 5–14 行的十条 `mod` 声明替换为四条：
 
 ```rust
 mod cli;
@@ -524,8 +571,10 @@ Expected: 命中 `db/mod.rs` 的 `pub mod backups;`，以及 `db::backups` / `ba
 
 ```bash
 git mv src/core/src/db/backups.rs src/core/src/db/backup_index.rs
-sed -i 's/^pub mod backups;$/pub mod backup_index;/' src/core/src/db/mod.rs
+sed -i 's/^pub mod backups;/pub mod backup_index;/' src/core/src/db/mod.rs
 ```
+
+⚠️ **不要给这条 sed 加 `$` 锚点**。`db/mod.rs` 的工作区行尾是 CRLF，`^pub mod backups;$` 里的 `$` 会落在 `\r` 之后，永远不匹配——改不动还不报错，直到 `cargo check` 报 `file not found for module backups` 才暴露。
 
 - [ ] **Step 3: 替换限定路径**
 
@@ -605,15 +654,42 @@ grep -rlE --include='*.rs' 'core/src/(error|path_entry|env_var|history|persist|f
 
 ```bash
 sed -i -E \
+  -e 's|core/src/registry/env_var\.rs|core/src/platform/registry/env_edit.rs|g' \
   -e 's|core/src/registry/|core/src/platform/registry/|g' \
   -e 's|core/src/backup\.rs|core/src/platform/backup/mod.rs|g' \
   -e 's|core/src/service\.rs|core/src/app/service/mod.rs|g' \
+  -e 's|`crate::disabled`|`crate::app::disabled`|g' \
+  -e 's|`crate::system::|`crate::platform::system::|g' \
   src/core/src/platform/registry/golden/README.md
 ```
 
+⚠️ **顺序是硬要求**：`env_var.rs → env_edit.rs` 必须排在通用前缀替换**之前**。若反过来，第 2 条会先生成 `platform/registry/env_var.rs`，第 1 条就匹配不到了。
+
+⚠️ 后两条处理 README 里的 Rust 模块路径：第 14 行的 ``（挂 `crate::disabled` 下…）`` 与第 56 行的 `` `crate::system::broadcast_env_change()` ``。它们不是文件路径，通用前缀替换碰不到。
+
+改完复核：
+
+```bash
+grep -n 'core/src/\|crate::' src/core/src/platform/registry/golden/README.md
+```
+
+Expected: 文件路径全部以 `core/src/domain/`、`core/src/platform/`、`core/src/app/`、`core/src/db/` 开头；`crate::` 只剩 `crate::app::` 与 `crate::platform::` 两种前缀；不应再出现 `env_var.rs`（该文件不存在）。
+
+⚠️ 该 README 第 14 行还提到 `core/src/registry/golden/merge_golden_tests.rs`，而该文件在仓库中并不存在（`golden/` 下只有 `README.md` 与 JSON 夹具）。这是**另一处既有漂移，不在本轮范围**——按 §7 范围外处理，不要顺手删改。
+
 - [ ] **Step 3: 重写 `docs/dev/architecture.md` 的「完整目录树」块**
 
-把第 6–68 行的目录树替换为下列内容（保留其后的「模块边界速记」「数据流」两节不变）：
+把**第 8–66 行**（` ```text ` 开围栏到收围栏，含围栏本身）替换为下列内容。
+
+⚠️ 区间以核对轮实测为准：第 6 行是 `## 完整目录树` 标题，第 8 行才是围栏起始；第 66 行是收围栏，第 68 行是 `## 模块边界速记` 标题。原计划写的「6–68 行」会把两个二级标题一起删掉。
+
+替换后立刻验证标题还在：
+
+```bash
+grep -n '^## 完整目录树$\|^## 模块边界速记$\|^## 数据流' docs/dev/architecture.md
+```
+
+Expected: 三个标题各出现一次。若缺任何一个，说明区间取错了，`git checkout -- docs/dev/architecture.md` 重来。
 
 ```text
 PathEditor/
@@ -679,32 +755,131 @@ PathEditor/
 
 - [ ] **Step 4: 改 `README.md` 的「项目结构」代码块**
 
-把 `src/core/` 下的条目按第 3 步的四层结构改写；`src/cli/` 下的 `cli / path_ops / runtime / env_ops / …` 一行改为：
+把**第 580–616 行**（` ``` ` 开围栏到收围栏）整体替换为下列内容：
 
 ```text
+src/                          # 全部源码
+├── core/                     # Rust 核心库（零 Tauri 依赖）
+│   ├── domain/               # 契约与端口：零 OS、零 IO、零数据库
+│   │   ├── error.rs          # CoreError / ErrorCode（code 驱动错误码与前端本地化）
+│   │   ├── path_entry.rs     # PathEntry / PathSnapshot 契约
+│   │   ├── env_var.rs        # 通用环境变量契约 + 保留/保护/敏感判定
+│   │   └── history.rs        # HistorySink 端口 + EventSource
+│   ├── platform/             # 外部世界适配
+│   │   ├── registry/         # 注册表通路（path / access / env_edit / conflict / store）
+│   │   ├── backup/           # 注册表备份、env 备份（.pebak）
+│   │   ├── system.rs         # 权限检测、路径验证、环境变量展开
+│   │   ├── scanner.rs        # 冲突检测、工具清单
+│   │   ├── capabilities.rs   # 按 hive 探测 PathCapabilities
+│   │   ├── persist.rs        # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
+│   │   └── fs.rs             # 文件读写、导入导出解析
+│   ├── db/                   # v6 SQLCipher 数据层
+│   │   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
+│   │   ├── history.rs / history_sink.rs / profiles.rs / backup_index.rs
+│   │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
+│   │   ├── maintenance.rs
+│   │   └── sync/             # bundle / change_log / merge / conflict / export / import
+│   └── app/                  # 编排：唯一同时依赖 platform 与 db 的层
+│       ├── service/          # 应用服务层（多 hive 事务编排 + 侧车快照）
+│       ├── bootstrap.rs      # 启动引导序列
+│       └── disabled.rs       # 快照合并、pending 磁盘文件
 ├── cli/                      # 命令行工具（bin 产物 patheditor.exe）
 │   └── src/                  # main / cli（clap）/ runtime / output
 │                             #   commands/（path / profile / scan / sync /
 │                             #     maintenance / import_export / env）
+└── gui/
+    ├── src-tauri/            # Tauri 桌面应用（bin 产物 PathEditor.exe）
+    │   └── src/commands/     # 薄包装 → 调用 core
+    └── web/                  # React 前端
+        ├── src/core/         # 纯逻辑 — 零框架依赖
+        ├── src/store/        # Zustand：app / env / history / search / sync / theme
+        ├── src/services/     # backend IPC + path session
+        ├── src/components/   # layout / path-list / env-list / toolbar / dialogs /
+        │                     #   history / search / stats / sync / ui
+        ├── src/hooks/        # useAppActions、useKeyboard、usePathValidation
+        ├── src/i18n/         # zh-CN / en
+        ├── src/config/       # default.json
+        ├── tests/unit/       # 前端单元测试
+        └── e2e/tests/        # Playwright E2E（mock IPC）
+docs/dev/                     # 开发细节（架构/存储/接口/安全/测试/发布，按需读取）
+docs/审核和开发/                # 审查与开发记录
 ```
+
+⚠️ 行号以核对轮实测为准（`src/` 在第 581 行，收围栏在第 616 行）。替换后 `src/` 必须仍在代码块内。
 
 - [ ] **Step 5: 同步 `CLAUDE.md` 与 `AGENTS.md`**
 
-两份文件的「架构速览」代码块与「关键约束」中出现的模块路径，按同一份新内容改；改完执行：
+把 `CLAUDE.md` 第 71–91 行的 ` ```text ` 块整体替换为下列内容（`## 架构速览` 标题与块后的说明行保持不动）：
+
+```text
+PathEditor/
+├── src/
+│   ├── core/src/     # Rust 核心库（零 Tauri 依赖）
+│   │   ├── domain/   # 契约与端口：error / path_entry / env_var / history
+│   │   ├── platform/ # 外部世界适配：registry / backup / system / scanner /
+│   │   │             #   capabilities / persist / fs
+│   │   ├── db/       # v6 SQLCipher 数据层（schema/history/profiles/
+│   │   │             #   backup_index/search/stats/refs/compare/
+│   │   │             #   scan_history/maintenance/sync）
+│   │   ├── app/      # 编排：service / bootstrap / disabled
+│   │   └── lib.rs    # 四层声明 + 契约再导出
+│   ├── cli/src/      # Clap + 分派（main/cli/runtime/output +
+│   │                 #   commands/{path,profile,scan,sync,maintenance,
+│   │                 #   import_export,env}）
+│   └── gui/
+│       ├── src-tauri/src/commands/ # Tauri 薄包装（registry/system/backup/fs/
+│       │                           #   disabled/scanner/env_var/service/history/
+│       │                           #   profiles/analytics/sync）
+│       └── web/      # React + Vite（src/core/services/store/components/hooks/i18n）
+├── src/gui/web/tests/unit / src/gui/web/tests/fixtures / src/gui/web/e2e/tests
+├── probes/v6-sqlcipher（不在 workspace；v6 探针证据）
+└── docs/{superpowers,dev,审核和开发}
+```
+
+「关键约束」一节里只提到 `src/core/src/db/`、`src/gui/web/src/core/`、`src/cli`，重组后仍然成立，无需改动。
+
+然后同步 `AGENTS.md` 并做三重验证：
 
 ```bash
+cp CLAUDE.md AGENTS.md
+npx prettier --write CLAUDE.md AGENTS.md
+npx prettier --check CLAUDE.md AGENTS.md
 cmp CLAUDE.md AGENTS.md && echo "IDENTICAL"
 ```
 
-Expected: 输出 `IDENTICAL`。若 `cmp` 有输出，把 `AGENTS.md` 覆盖为 `CLAUDE.md` 的内容后重跑。
+Expected: `prettier --check` 无警告；`cmp` 输出 `IDENTICAL`。若 `cmp` 有输出，说明两次 prettier 结果不同，重跑 `cp` + `prettier --write` 后再比。
+
+⚠️ `cp` 覆盖 `AGENTS.md` 是**同步**不是删除；两份文件的内容必须完全相同，这是仓库硬约束。
 
 - [ ] **Step 6: 检查当前态文档不再含旧路径**
 
+**五条检查，全部必须无输出**（核对轮重写：原版只查带 `src/core/src/` 前缀的一行，而目录树写成 `│   │   ├── service.rs`，检查从头到尾都是空过）：
+
 ```bash
+# (a) 带路径前缀的散落引用
 grep -rnE 'src/core/src/(error|path_entry|env_var|history|persist|fs|system|scanner|capabilities|registry|backup|service|bootstrap|disabled)\.rs' src docs/dev README.md CLAUDE.md AGENTS.md
+
+# (b) architecture.md 里 core 顶层的旧条目（新树中这些文件缩进更深，不会命中）
+grep -nE '^│   │   ├── (service\.rs|bootstrap\.rs|disabled\.rs|error\.rs|path_entry\.rs|env_var\.rs|history\.rs|persist\.rs|fs\.rs|system\.rs|scanner\.rs|capabilities\.rs|backup\.rs)' docs/dev/architecture.md
+
+# (c) README.md 里 core 顶层的旧条目
+grep -nE '^│   (├──|└──) (error|service|persist|system|scanner|fs)\.rs' README.md
+grep -nE '^│   ├── registry/' README.md
+grep -nE '^│   ├── backup\.rs' README.md
+
+# (d) CLAUDE.md 里 core 顶层的旧条目
+grep -nE '^│   │   (├──|└──) (service\.rs|disabled\.rs|backup\.rs)' CLAUDE.md
 ```
 
-Expected: 无输出。
+⚠️ **不要用 `[├└]` 这类含多字节字符的括号表达式**。实测它在 Git Bash 下会静默失效（命中 0 行，却看起来像「已清理干净」）。改用 `(├──|└──)` 字面量择一。
+
+⚠️ **每条检查都必须在改动前先跑一遍并确认有输出**。当前实测应有：(b) 10 行、(c) 6+1+1 行、(d) 3 行。任何一条现在就是空的，说明正则没命中真实格式——先修正则再继续。空过的检查比没有检查更危险。
+
+**一条正向断言**（必须输出 `3`）：
+
+```bash
+grep -c '├── domain/\|├── platform/\|├── app/' docs/dev/architecture.md
+```
 
 - [ ] **Step 7: 编译与格式验证**
 
@@ -775,14 +950,19 @@ cmp CLAUDE.md AGENTS.md && echo IDENTICAL
 
 Expected: 前两条各输出 5 项（见验收标准）；中间三条无输出；最后一条输出 `IDENTICAL`。
 
-- [ ] **Step 4: 确认没有残留的空目录与未跟踪文件**
+- [ ] **Step 4: 确认行尾、空目录与未跟踪文件**
 
 ```bash
+# 行尾不得被 sed 整体改写：结果必须等于 Task 1 Step 1 记录的基线（默认 283）
+git ls-files --eol src | grep -c 'w/crlf'
+
 git status --porcelain
 find src -type d -empty
 ```
 
-Expected: 两条都无输出。
+Expected: 第一条为 `283`（或 Task 1 记录的实际基线）；后两条无输出。
+
+⚠️ 若行尾数下降，说明某些 `sed -i` 把 CRLF 写成了 LF——那会让「改一行」变成「整文件重写」，纯移动的可审性就没了。定位方法：`git ls-files --eol src | grep 'w/lf'`，与基线中同样的列表比对，新增的 `w/lf` 就是被破坏的文件。
 
 - [ ] **Step 5: 把结果写进开发回执**
 
@@ -826,4 +1006,3 @@ Expected: 两条都无输出。
 > 留给开发窗口回填偏离记录：哪条命令的输出与预期不符、怎么处置的、是否改了计划。
 
 - （待填）
-  </content>
