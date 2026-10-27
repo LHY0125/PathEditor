@@ -14,7 +14,7 @@ use path_editor_core::db::history::{
 };
 use path_editor_core::db::refs::{dependencies, dependents, find_cycles, parse_refs, rebuild_refs};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

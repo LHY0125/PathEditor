@@ -1,12 +1,12 @@
-//! 共享应用服务层（`core::service`）的 Tauri 命令封装。
+//! 共享应用服务层（`core::app::service`）的 Tauri 命令封装。
 //!
 //! 只做参数转换与错误呈现。DB 可用时把 PATH 保存交给
 //! `service::save_path_with_db`（写注册表 + 当前快照 + 事件）；DB 不可用时
 //! 降级为只写注册表，编辑照常成功，但禁用状态与历史无法持久化。
 
-use path_editor_core::history::EventSource;
-use path_editor_core::history::NoopHistory;
-use path_editor_core::service::{self, ApplyOutcome, PathHiveWrite};
+use path_editor_core::app::service::{self, ApplyOutcome, PathHiveWrite};
+use path_editor_core::domain::history::EventSource;
+use path_editor_core::domain::history::NoopHistory;
 use path_editor_core::CoreError;
 use tauri::State;
 

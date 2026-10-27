@@ -8,14 +8,14 @@
 // `refresh_and_list`（每次调用前增量索引），启动引导也会索引一次。
 //
 // 本测试验证「刷新 + 列表」这条生产路径本身能闭环，覆盖「启动后新增的备份也能被看到」。
-use path_editor_core::backup::{
-    list_env_backups_in, write_env_backup_to_with_key, EnvBackupPayload,
-};
-use path_editor_core::backup::{EnvBackupHives, EnvBackupVar};
-use path_editor_core::db::backups::refresh_and_list_at;
+use path_editor_core::db::backup_index::refresh_and_list_at;
 use path_editor_core::db::crypto::key_hex;
 use path_editor_core::db::crypto::load_or_create_key;
 use path_editor_core::db::Db;
+use path_editor_core::platform::backup::{
+    list_env_backups_in, write_env_backup_to_with_key, EnvBackupPayload,
+};
+use path_editor_core::platform::backup::{EnvBackupHives, EnvBackupVar};
 use path_editor_core::EnvValueKind;
 use tempfile::TempDir;
 

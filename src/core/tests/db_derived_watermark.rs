@@ -5,7 +5,7 @@ use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::derived::rebuild_if_stale;
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use tempfile::TempDir;
 
 #[test]

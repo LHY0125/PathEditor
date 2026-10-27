@@ -2,8 +2,15 @@
 //!
 //! **所有写事务 `BEGIN IMMEDIATE`**；
 //! 读-改-写必须带 `version` CAS。
+//!
+//! **安全边界文件**（改动需走安全审查，等同 `db/security/` 的职责）：
+//! `crypto.rs`（密钥派生与加解密）、`dpapi.rs`（DPAPI 保护数据库密钥）、
+//! `dacl.rs`（密钥文件访问控制，仅 Windows）。
+//!
+//! 这三个文件刻意留在 `db/` 顶层而不收进 `db/security/`——`db::crypto` 有 43 处
+//! 引用，加一层只会让路径变长。本清单是那次取舍的补偿措施（spec D4）。
 
-pub mod backups;
+pub mod backup_index;
 pub mod compare;
 pub mod crypto;
 #[cfg(windows)]
@@ -23,7 +30,7 @@ pub mod sync;
 #[cfg(windows)]
 pub mod dpapi;
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use std::path::Path;
 

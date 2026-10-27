@@ -16,8 +16,8 @@
 //! 因此 `PathDiff` 增加 `toggled` 维度。
 
 use super::{history, Db};
-use crate::error::CoreError;
-use crate::path_entry::PathEntry;
+use crate::domain::error::CoreError;
+use crate::domain::path_entry::PathEntry;
 use std::collections::HashMap;
 
 /// 顺序变化的一条。

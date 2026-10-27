@@ -20,7 +20,7 @@
 //! 本来也不该被当语法解析。
 
 use super::Db;
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 use rusqlite::{params, Transaction};
 
 /// 一条搜索命中。

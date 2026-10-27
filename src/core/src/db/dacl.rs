@@ -18,7 +18,7 @@
 //!   （宁可不写，也不留下权限过宽的密钥文件）。
 //! - 启动时**只校验不修改**：过宽仅 `log::warn!`，避免误伤用户自建目录。
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use std::path::Path;
 
 /// 取当前进程用户的 SID 字符串。

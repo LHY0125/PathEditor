@@ -1,10 +1,10 @@
 // 一文件一测试（SQLCipher）。
 //
 // 启动引导的幂等性：基线只建一次；FTS 只首次构建；派生表水位未变时跳过。
-use path_editor_core::bootstrap::{self, BootstrapOptions};
+use path_editor_core::app::bootstrap::{self, BootstrapOptions};
 use path_editor_core::db::search;
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::{PathEntry, PathSnapshot};
 use tempfile::TempDir;
 

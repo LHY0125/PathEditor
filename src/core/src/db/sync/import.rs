@@ -27,8 +27,8 @@ use crate::db::sync::change_log::{change_exists_tx, record_remote_change_tx, Cha
 use crate::db::sync::conflict::record_conflict_tx;
 use crate::db::sync::merge::{resolve, MergeDecision};
 use crate::db::Db;
-use crate::error::{CoreError, ErrorCode};
-use crate::history::EventSource;
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::domain::history::EventSource;
 
 /// 导入结果。
 #[derive(Debug, Clone, Default, serde::Serialize)]

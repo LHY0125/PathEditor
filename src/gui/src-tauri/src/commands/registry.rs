@@ -1,4 +1,4 @@
-use path_editor_core::registry;
+use path_editor_core::platform::registry;
 use path_editor_core::PathEntry;
 
 /// 清理 PATH 条目（移除空路径、不存在的目录与重复项）。

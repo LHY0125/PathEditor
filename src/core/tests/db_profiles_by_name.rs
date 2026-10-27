@@ -12,7 +12,7 @@ use path_editor_core::db::profiles::{
     profile_paths, rename_profile, save_profile,
 };
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::{ErrorCode, PathEntry};
 use tempfile::TempDir;
 

@@ -1,4 +1,4 @@
-use path_editor_core::fs;
+use path_editor_core::platform::fs;
 use path_editor_core::{CoreError, PathEntry};
 
 #[tauri::command]

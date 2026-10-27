@@ -72,14 +72,17 @@ $env:PATH            += ";$(scoop prefix git)\usr\bin"         # make 的 recipe
 PathEditor/
 ├── src/
 │   ├── core/src/     # Rust 核心库（零 Tauri 依赖）
-│   │   ├── registry/ # 注册表访问统一入口
-│   │   ├── db/       # v6 SQLCipher 数据层（schema/history/profiles/backups/
-│   │   │             #   search/stats/refs/compare/scan_history/maintenance/sync）
-│   │   ├── service.rs # 保存编排（save_path_with_db / save_path_registry_only）
-│   │   ├── disabled.rs / env_var.rs / path_entry.rs / scanner.rs / persist.rs
-│   │   └── backup.rs # 注册表备份、env 备份（.pebak）
-│   ├── cli/src/      # Clap + 分派（cli/path_ops/runtime/env_ops/profile_ops/
-│   │                 #   sync_ops/maintenance_ops/scan_ops/import_export）
+│   │   ├── domain/   # 契约与端口：error / path_entry / env_var / history
+│   │   ├── platform/ # 外部世界适配：registry / backup / system / scanner /
+│   │   │             #   capabilities / persist / fs
+│   │   ├── db/       # v6 SQLCipher 数据层（schema/history/profiles/
+│   │   │             #   backup_index/search/stats/refs/compare/
+│   │   │             #   scan_history/maintenance/sync）
+│   │   ├── app/      # 编排：service / bootstrap / disabled
+│   │   └── lib.rs    # 四层声明 + 契约再导出
+│   ├── cli/src/      # Clap + 分派（main/cli/runtime/output +
+│   │                 #   commands/{path,profile,scan,sync,maintenance,
+│   │                 #   import_export,env}）
 │   └── gui/
 │       ├── src-tauri/src/commands/ # Tauri 薄包装（registry/system/backup/fs/
 │       │                           #   disabled/scanner/env_var/service/history/

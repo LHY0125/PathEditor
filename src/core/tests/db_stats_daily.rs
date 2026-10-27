@@ -8,7 +8,9 @@ use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::history_sink::DbHistory;
 use path_editor_core::db::stats::{dashboard, rebuild_daily};
 use path_editor_core::db::Db;
-use path_editor_core::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
+use path_editor_core::domain::history::{
+    EventAction, EventResult, EventSource, HistoryEvent, HistorySink,
+};
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

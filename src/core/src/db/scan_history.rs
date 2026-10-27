@@ -4,7 +4,7 @@
 //! 无法从别的表重建。`daily_stats.conflicts` 才是从它派生出来的。
 
 use super::{stats, Db};
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 use rusqlite::params;
 use uuid::Uuid;
 
@@ -77,7 +77,7 @@ pub fn record_run(
     let serialize = |value: &[String], label: &str| {
         serde_json::to_string(value).map_err(|e| {
             CoreError::new(
-                crate::error::ErrorCode::Internal,
+                crate::domain::error::ErrorCode::Internal,
                 "record_run",
                 format!("序列化{label}失败: {e}"),
             )
@@ -242,9 +242,9 @@ fn load_conflicts(db: &Db, uid: &str) -> Result<Vec<String>, CoreError> {
             |r| r.get(0),
         )
         .map_err(|e| {
-            if e.code == crate::error::ErrorCode::Database {
+            if e.code == crate::domain::error::ErrorCode::Database {
                 CoreError::new(
-                    crate::error::ErrorCode::NotFound,
+                    crate::domain::error::ErrorCode::NotFound,
                     "load_conflicts",
                     format!("扫描记录不存在: {uid}"),
                 )

@@ -11,9 +11,9 @@
 use std::path::{Path, PathBuf};
 
 use super::{db_err, Db};
-use crate::backup::EnvBackupPayload;
 use crate::db::crypto::KeyMaterial;
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
+use crate::platform::backup::EnvBackupPayload;
 
 /// 已导出 `changes` 的保留期：90 天。
 pub const CHANGES_RETENTION_MS: i64 = 90 * 24 * 60 * 60 * 1000;
@@ -107,7 +107,7 @@ pub struct CleanupReport {
 ///
 /// 解析**不使用** `backup::read_env_backup`：后者在解析失败时会经
 /// `persist::parse_error_quarantined` 把文件重命名为 `.corrupt-<ts>`，
-/// 清理命令不能在 dry-run 时改动用户文件。这里直接反序列化 + [`crate::persist::migrate`]。
+/// 清理命令不能在 dry-run 时改动用户文件。这里直接反序列化 + [`crate::platform::persist::migrate`]。
 ///
 /// `dry_run = true` 时不使用 `material`；只想预览的调用方应改用
 /// [`scan_legacy_env_backups`]，免得为一次 dry-run 去创建密钥文件。
@@ -145,7 +145,7 @@ fn cleanup_legacy_impl(
 
     let entries = std::fs::read_dir(dir).map_err(|e| {
         CoreError::new(
-            crate::error::ErrorCode::Io,
+            crate::domain::error::ErrorCode::Io,
             "cleanup_legacy",
             format!("读取 {} 失败: {e}", dir.display()),
         )
@@ -155,7 +155,7 @@ fn cleanup_legacy_impl(
         let path = entry
             .map_err(|e| {
                 CoreError::new(
-                    crate::error::ErrorCode::Io,
+                    crate::domain::error::ErrorCode::Io,
                     "cleanup_legacy",
                     format!("读取目录项失败: {e}"),
                 )
@@ -181,7 +181,7 @@ fn cleanup_legacy_impl(
             continue;
         };
 
-        let pebak = match crate::db::backups::write_env_backup_pebak(dir, &payload, material) {
+        let pebak = match crate::db::backup_index::write_env_backup_pebak(dir, &payload, material) {
             Ok(p) => p,
             Err(e) => {
                 report
@@ -191,7 +191,7 @@ fn cleanup_legacy_impl(
             }
         };
         // **回读校验**：写成功不等于写对了（DPAPI 作用域、磁盘满都可能让文件不可读）。
-        if let Err(e) = crate::db::backups::read_env_backup_any(&pebak, material) {
+        if let Err(e) = crate::db::backup_index::read_env_backup_any(&pebak, material) {
             report
                 .skipped
                 .push((path, format!("加密备份回读失败，已保留明文: {}", e.message)));
@@ -237,29 +237,29 @@ fn is_legacy_env_backup(path: &Path) -> bool {
 fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, CoreError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         CoreError::new(
-            crate::error::ErrorCode::Io,
+            crate::domain::error::ErrorCode::Io,
             "cleanup_legacy",
             format!("读取 {} 失败: {e}", path.display()),
         )
     })?;
-    let versioned: crate::persist::Versioned<EnvBackupPayload> = serde_json::from_str(&content)
-        .map_err(|e| {
+    let versioned: crate::platform::persist::Versioned<EnvBackupPayload> =
+        serde_json::from_str(&content).map_err(|e| {
             CoreError::new(
-                crate::error::ErrorCode::Parse,
+                crate::domain::error::ErrorCode::Parse,
                 "cleanup_legacy",
                 format!("解析 {} 失败: {e}", path.display()),
             )
         })?;
-    crate::persist::migrate(versioned, "env 备份")
+    crate::platform::persist::migrate(versioned, "env 备份")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backup::{EnvBackupHives, EnvBackupVar};
     use crate::db::crypto::load_or_create_key;
-    use crate::env_var::EnvValueKind;
-    use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
+    use crate::domain::env_var::EnvValueKind;
+    use crate::platform::backup::{EnvBackupHives, EnvBackupVar};
+    use crate::platform::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 
     /// 此文件只有一个测试：它用 DPAPI、不建 SQLCipher，因此可以放在单元测试模块里。
     #[test]
@@ -310,7 +310,7 @@ mod tests {
         assert!(!legacy.exists(), "转换成功后删除明文");
 
         let (_, pebak) = &report.converted[0];
-        let read_back = crate::db::backups::read_env_backup_any(pebak, &material).unwrap();
+        let read_back = crate::db::backup_index::read_env_backup_any(pebak, &material).unwrap();
         assert_eq!(read_back, payload, ".pebak 必须可回读");
     }
 }

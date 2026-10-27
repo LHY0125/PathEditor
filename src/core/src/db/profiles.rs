@@ -4,7 +4,7 @@
 
 use super::history::{insert_snapshot_tx, NewSnapshot};
 use super::{db_err, Db};
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use crate::PathEntry;
 use rusqlite::{params, OptionalExtension, Transaction};
 use uuid::Uuid;

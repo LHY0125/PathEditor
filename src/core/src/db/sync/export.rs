@@ -18,7 +18,7 @@ use serde::Serialize;
 use crate::db::sync::bundle::{seal, BundleHeader};
 use crate::db::sync::change_log::{current_lamport, mark_exported, pending_export, ChangeRow};
 use crate::db::Db;
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 
 /// 导出结果。
 #[derive(Debug, Clone, serde::Serialize)]

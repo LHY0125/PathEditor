@@ -5,13 +5,13 @@ use tauri::Manager;
 /// 启动时的数据库初始化序列。
 ///
 /// 迁移、pending 补写、当前状态基线、备份索引、保留策略、派生表重建
-/// 全部在 `core::bootstrap`；这里只负责把结果写进 GUI 的日志。
+/// 全部在 `core::app::bootstrap`；这里只负责把结果写进 GUI 的日志。
 /// 引导失败（只有迁移失败会返回 `Err`）由调用方决定是否进入降级模式。
 fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_core::CoreError> {
-    let report = path_editor_core::bootstrap::initialize(
+    let report = path_editor_core::app::bootstrap::initialize(
         db,
-        path_editor_core::history::EventSource::Gui,
-        &path_editor_core::bootstrap::BootstrapOptions::default(),
+        path_editor_core::domain::history::EventSource::Gui,
+        &path_editor_core::app::bootstrap::BootstrapOptions::default(),
     )?;
 
     for warning in &report.warnings {

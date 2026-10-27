@@ -1,6 +1,6 @@
-use path_editor_core::backup;
-use path_editor_core::backup::{EnvBackupInfo, RestoreOutcome, RestorePreview};
-use path_editor_core::error::CoreError;
+use path_editor_core::domain::error::CoreError;
+use path_editor_core::platform::backup;
+use path_editor_core::platform::backup::{EnvBackupInfo, RestoreOutcome, RestorePreview};
 
 /// 立即创建一份环境变量备份，返回备份文件路径。
 ///

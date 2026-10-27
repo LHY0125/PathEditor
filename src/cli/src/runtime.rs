@@ -1,5 +1,5 @@
 use path_editor_core as core;
-use path_editor_core::service::{self, HiveOutcome, PathHiveWrite, SidecarOutcome};
+use path_editor_core::app::service::{self, HiveOutcome, PathHiveWrite, SidecarOutcome};
 
 pub(crate) fn exit_err(msg: &str) -> ! {
     eprintln!("错误: {msg}");
@@ -19,8 +19,8 @@ pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
 /// 备份失败时在 stderr 提示，**不改变退出码**。
 ///
 /// CLI 未初始化 logger，core 的 `log::warn!` 在此被丢弃 —— 必须经返回值显式打印。
-pub(crate) fn warn_if_backup_failed(outcome: &core::backup::BackupOutcome) {
-    if let core::backup::BackupOutcome::Failed(reason) = outcome {
+pub(crate) fn warn_if_backup_failed(outcome: &core::platform::backup::BackupOutcome) {
+    if let core::platform::backup::BackupOutcome::Failed(reason) = outcome {
         eprintln!("警告: 环境变量写前备份失败（写入已完成）: {reason}");
     }
 }
@@ -65,7 +65,7 @@ fn open_db_optional() -> Option<core::db::Db> {
 /// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则只读注册表。
 pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreError> {
     let db = open_db_optional();
-    core::service::load_path_snapshot_any(db.as_ref())
+    core::app::service::load_path_snapshot_any(db.as_ref())
 }
 
 /// 把「完整有序条目」交给 core 的唯一保存编排，并按结果决定退出行为。
@@ -91,14 +91,17 @@ pub(crate) fn save_path_write(
     let system = system.map(to_write);
     let user = user.map(to_write);
     let outcome = match open_db_optional() {
-        Some(mut db) => {
-            service::save_path_with_db(&mut db, core::history::EventSource::Cli, system, user)
-        }
+        Some(mut db) => service::save_path_with_db(
+            &mut db,
+            core::domain::history::EventSource::Cli,
+            system,
+            user,
+        ),
         None => service::save_path_registry_only(
             system,
             user,
-            core::history::EventSource::Cli,
-            &core::history::NoopHistory,
+            core::domain::history::EventSource::Cli,
+            &core::domain::history::NoopHistory,
         ),
     }
     .unwrap_or_else(|e| exit_core_error(&e));
@@ -190,7 +193,7 @@ mod tests {
         // core 消息的稳定标识，测试改为直接断言 core 常量本身；CLI 退出码
         // 已由 `CoreError.exit_code()` 驱动，不再依赖文本前缀。
         use path_editor_core as core;
-        let msg = core::registry::conflict_message();
+        let msg = core::platform::registry::conflict_message();
         assert!(
             msg.starts_with("[E_CONFLICT]"),
             "core 冲突消息必须以 [E_CONFLICT] 开头，实际: {msg}"
@@ -203,7 +206,7 @@ mod tests {
         let e = core::CoreError::new(
             core::ErrorCode::Conflict,
             "update_env_var",
-            core::registry::conflict_message(),
+            core::platform::registry::conflict_message(),
         );
         assert_eq!(e.exit_code(), 3);
     }
@@ -250,7 +253,7 @@ mod tests {
     //
     // 已知未覆盖项（如实标注）：本用例证明「`BackupOutcome::Failed` → 输出该警告」
     // 这个映射，以及删掉实现会让它失败；**不证明** 5 个 CLI 写路径都调用了本函数
-    // （「调用点已接线」由代码审阅确认，见 `env_ops.rs` 的 5 处调用）。
+    // （「调用点已接线」由代码审阅确认，见 `commands/env/` 的 5 处调用）。
 
     /// 子进程探针模式的环境变量名。
     const WARN_PROBE_ENV: &str = "PATHEDITOR_WARN_PROBE";
@@ -270,9 +273,11 @@ mod tests {
             return false;
         };
         let outcome = match mode.as_str() {
-            "failed" => core::backup::BackupOutcome::Failed("磁盘已满".into()),
-            "created" => core::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json")),
-            "skipped" => core::backup::BackupOutcome::Skipped,
+            "failed" => core::platform::backup::BackupOutcome::Failed("磁盘已满".into()),
+            "created" => {
+                core::platform::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json"))
+            }
+            "skipped" => core::platform::backup::BackupOutcome::Skipped,
             other => panic!("未知探针模式: {other}"),
         };
         warn_if_backup_failed(&outcome);

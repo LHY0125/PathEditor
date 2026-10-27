@@ -23,7 +23,7 @@ pub use export::{export_bundle, ExportReport};
 pub use import::{import_bundle, ImportReport};
 
 use crate::db::Db;
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 
 /// 同步中心首屏状态。
 #[derive(Debug, Clone, serde::Serialize)]

@@ -1,0 +1,1281 @@
+use super::render::*;
+use super::value::*;
+use path_editor_core as core;
+use path_editor_core::domain::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
+
+// ── 值通道互斥 ──
+
+#[test]
+fn value_source_argv_alone_is_accepted() {
+    let src = resolve_value(Some("C:\\Java".into()), false, None, true);
+    assert!(matches!(src, ValueSource::Argv(v) if v == "C:\\Java"));
+}
+
+#[test]
+fn value_source_stdin_alone_is_accepted() {
+    let src = resolve_value(None, true, None, true);
+    assert!(matches!(src, ValueSource::Stdin));
+}
+
+#[test]
+fn value_source_file_alone_is_accepted() {
+    let src = resolve_value(None, false, Some("secret.txt".into()), true);
+    assert!(matches!(src, ValueSource::File(f) if f == "secret.txt"));
+}
+
+#[test]
+fn value_source_rejects_multiple_channels() {
+    // 互斥校验必须在读取任何输入之前失败；用 catch_unwind 捕获 process::exit 不现实，
+    // 因此这里只断言「判定函数」的纯逻辑：通道计数 > 1 时为错误。
+    assert_eq!(channel_count(Some("v"), true, None), 2);
+    assert_eq!(channel_count(Some("v"), false, Some("f")), 2);
+    assert_eq!(channel_count(None, true, Some("f")), 2);
+    assert_eq!(channel_count(Some("v"), true, Some("f")), 3);
+    assert_eq!(channel_count(Some("v"), false, None), 1);
+    assert_eq!(channel_count(None, false, None), 0);
+}
+
+#[test]
+fn value_source_missing_when_required() {
+    assert_eq!(channel_count(None, false, None), 0);
+    // required=true 且 0 通道 → 调用方报错；required=false 且 0 通道 → 空值合法
+}
+
+// ── 末尾换行剥离 ──
+
+#[test]
+fn strips_single_lf() {
+    assert_eq!(strip_trailing_newline("C:\\Java\n"), "C:\\Java");
+}
+
+#[test]
+fn strips_single_crlf() {
+    assert_eq!(strip_trailing_newline("C:\\Java\r\n"), "C:\\Java");
+}
+
+#[test]
+fn strips_only_one_trailing_sequence() {
+    // 只剥一个 —— 值本身以换行结尾时靠第二个换行表达
+    assert_eq!(strip_trailing_newline("a\n\n"), "a\n");
+    assert_eq!(strip_trailing_newline("a\r\n\r\n"), "a\r\n");
+}
+
+#[test]
+fn leaves_value_without_newline_untouched() {
+    assert_eq!(strip_trailing_newline("C:\\Java"), "C:\\Java");
+    assert_eq!(strip_trailing_newline(""), "");
+}
+
+#[test]
+fn strips_lone_cr() {
+    // 单独的 \r（旧式 Mac / 误操作）也按换行处理
+    assert_eq!(strip_trailing_newline("a\r"), "a");
+}
+
+// ── 并发模式互斥 ──
+
+#[test]
+fn concurrency_accepts_revision_alone() {
+    let mode = resolve_concurrency(Some("a1b2c3".into()), false);
+    assert!(matches!(mode, Concurrency::Revision(r) if r == "a1b2c3"));
+}
+
+#[test]
+fn concurrency_accepts_force_alone() {
+    let mode = resolve_concurrency(None, true);
+    assert!(matches!(mode, Concurrency::Force));
+}
+
+#[test]
+fn concurrency_channel_count_rule() {
+    // 互斥与缺失的判定是纯函数，单独断言避免依赖 process::exit
+    assert_eq!(concurrency_count(Some("r"), false), 1);
+    assert_eq!(concurrency_count(None, true), 1);
+    assert_eq!(concurrency_count(Some("r"), true), 2); // 互斥冲突
+    assert_eq!(concurrency_count(None, false), 0); // 缺失
+}
+
+// ── 冲突结果映射到退出码 3 ──
+
+#[test]
+fn conflict_result_maps_to_exit_3() {
+    // 退出码由 CoreError.exit_code 决定，冲突码必须映射到 3
+    let e = core::CoreError::new(core::ErrorCode::Conflict, "update_env_var", "冲突");
+    assert_eq!(e.exit_code(), 3);
+    assert_eq!(
+        core::CoreError::new(core::ErrorCode::NotFound, "op", "不存在").exit_code(),
+        1
+    );
+}
+
+#[test]
+fn force_mode_never_carries_a_revision() {
+    // Force 分支不产生 revision 字符串，也不调用 current_revision ——
+    // 由 cmd 层直接调用 core 的 update_env_var_force。
+    let mode = resolve_concurrency(None, true);
+    assert!(matches!(mode, Concurrency::Force));
+}
+
+// ── 表格渲染 ──
+
+fn meta(
+    name: &str,
+    kind: EnvValueKind,
+    preview: Option<&str>,
+    can_edit: bool,
+    sensitive: bool,
+) -> EnvVarMeta {
+    EnvVarMeta {
+        name: name.into(),
+        kind,
+        hive: EnvHive::User,
+        can_edit,
+        can_delete: can_edit,
+        sensitive,
+        preview: preview.map(|p| p.to_string()),
+        revision: "0000000000000000".into(),
+    }
+}
+
+#[test]
+fn kind_label_maps_all_variants() {
+    assert_eq!(kind_label(EnvValueKind::String), "string");
+    assert_eq!(kind_label(EnvValueKind::ExpandString), "expand");
+    assert_eq!(kind_label(EnvValueKind::Unsupported), "unsupported");
+}
+
+#[test]
+fn sensitive_variable_hides_preview() {
+    let m = meta("MY_TOKEN", EnvValueKind::String, None, true, true);
+    assert_eq!(render_preview(&m), "(敏感)");
+}
+
+#[test]
+fn non_sensitive_variable_shows_preview() {
+    let m = meta(
+        "JAVA_HOME",
+        EnvValueKind::String,
+        Some("C:\\Java"),
+        true,
+        false,
+    );
+    assert_eq!(render_preview(&m), "C:\\Java");
+}
+
+#[test]
+fn empty_preview_renders_dash() {
+    // preview=None 且非敏感（空值 / Unsupported）→ 占位
+    let m = meta("EMPTY_VAR", EnvValueKind::String, None, true, false);
+    assert_eq!(render_preview(&m), "-");
+}
+
+#[test]
+fn unwritable_variable_shows_readonly_marker() {
+    let m = meta(
+        "windir",
+        EnvValueKind::String,
+        Some("C:\\Windows"),
+        false,
+        false,
+    );
+    assert_eq!(render_name(&m), "windir (只读)");
+}
+
+#[test]
+fn writable_variable_has_no_marker() {
+    let m = meta(
+        "JAVA_HOME",
+        EnvValueKind::String,
+        Some("C:\\Java"),
+        true,
+        false,
+    );
+    assert_eq!(render_name(&m), "JAVA_HOME");
+}
+
+#[test]
+fn table_contains_header_and_rows() {
+    let metas = vec![
+        meta(
+            "JAVA_HOME",
+            EnvValueKind::String,
+            Some("C:\\Java"),
+            true,
+            false,
+        ),
+        meta("MY_TOKEN", EnvValueKind::String, None, true, true),
+    ];
+    let table = render_table(&metas);
+    assert!(table.contains("NAME"));
+    assert!(table.contains("KIND"));
+    assert!(table.contains("PREVIEW"));
+    assert!(table.contains("JAVA_HOME"));
+    assert!(table.contains("string"));
+    assert!(table.contains("C:\\Java"));
+    assert!(table.contains("(敏感)"));
+}
+
+#[test]
+fn empty_table_reports_none() {
+    assert_eq!(render_table(&[]), "（无变量）");
+}
+
+// ── JSON 输出 ──
+
+fn sample_snapshot() -> EnvVarSnapshot {
+    EnvVarSnapshot {
+        system: vec![meta(
+            "windir",
+            EnvValueKind::String,
+            Some("C:\\Windows"),
+            false,
+            false,
+        )],
+        user: vec![meta(
+            "JAVA_HOME",
+            EnvValueKind::String,
+            Some("C:\\Java"),
+            true,
+            false,
+        )],
+        captured_at: 0,
+    }
+}
+
+#[test]
+fn json_both_hives_included_by_default() {
+    let value = snapshot_json(&sample_snapshot(), false, false);
+    assert!(value.get("system").is_some());
+    assert!(value.get("user").is_some());
+}
+
+#[test]
+fn json_system_only_filters_user() {
+    let value = snapshot_json(&sample_snapshot(), true, false);
+    assert!(value.get("system").is_some());
+    assert!(value.get("user").is_none(), "单 hive 模式不得输出另一 hive");
+}
+
+#[test]
+fn json_user_only_filters_system() {
+    let value = snapshot_json(&sample_snapshot(), false, true);
+    assert!(value.get("user").is_some());
+    assert!(value.get("system").is_none());
+}
+
+#[test]
+fn json_uses_camel_case_contract() {
+    let value = snapshot_json(&sample_snapshot(), false, true);
+    let first = &value["user"][0];
+    assert!(first.get("canEdit").is_some(), "契约字段必须是 camelCase");
+    assert!(first.get("canDelete").is_some());
+    assert!(first.get("name").is_some());
+    assert!(first.get("revision").is_some());
+    assert!(
+        first.get("value").is_none(),
+        "契约上不得出现 value 字段（明文只经 env get 输出）"
+    );
+    assert!(first.get("can_edit").is_none(), "不得混入 snake_case");
+}
+
+#[test]
+fn json_empty_hive_is_empty_array() {
+    let empty = EnvVarSnapshot::default();
+    let value = snapshot_json(&empty, false, false);
+    assert_eq!(value["system"].as_array().map(Vec::len), Some(0));
+    assert_eq!(value["user"].as_array().map(Vec::len), Some(0));
+}
+
+// ── hive 选择 ──
+
+#[test]
+fn hive_defaults_to_user() {
+    assert_eq!(select_hive(false, false), EnvHive::User);
+}
+
+#[test]
+fn hive_system_flag_wins() {
+    assert_eq!(select_hive(true, false), EnvHive::System);
+}
+
+#[test]
+fn hive_user_flag_selects_user() {
+    assert_eq!(select_hive(false, true), EnvHive::User);
+}
+
+#[test]
+fn hive_label_is_chinese() {
+    assert_eq!(hive_label(EnvHive::System), "系统");
+    assert_eq!(hive_label(EnvHive::User), "用户");
+}
+
+// ── get 的输出必须是裸值 ──
+
+#[test]
+fn get_output_is_bare_value() {
+    // stdout 契约：值 + 换行，无前缀、无引号、无标签
+    assert_eq!(format_get_output("C:\\Java"), "C:\\Java\n");
+    assert_eq!(format_get_output(""), "\n");
+    assert_eq!(format_get_output("a b"), "a b\n");
+}
+
+#[test]
+fn get_output_preserves_inner_newlines() {
+    // 值内部的换行不处理，仅补一个结尾换行
+    assert_eq!(format_get_output("a\nb"), "a\nb\n");
+}
+
+// ── kind 解析 ──
+
+#[test]
+fn parse_kind_maps_both_writable_kinds() {
+    assert_eq!(parse_kind("string"), EnvValueKind::String);
+    assert_eq!(parse_kind("expand"), EnvValueKind::ExpandString);
+}
+
+#[test]
+fn parse_kind_is_case_insensitive() {
+    assert_eq!(parse_kind("STRING"), EnvValueKind::String);
+    assert_eq!(parse_kind("Expand"), EnvValueKind::ExpandString);
+}
+
+// ── env backup / env backups / env restore：命令行参数解析 ──
+
+/// 恢复命令的参数解析：`--dry-run` 与 `--force` 可共存（先看差异再覆盖）。
+///
+/// 本用例不止断言「解析成功」—— 那只说明 clap 没报错，无法区分
+/// 「两个标志都被接受」与「其中一个被静默忽略 / 未接线到结构体字段」。
+/// 因此逐字段断言，且断言两个布尔值**都为 `true`**：把任一标志改成别名、
+/// 或把字段默认值写死，对应断言就会失败。
+#[test]
+fn restore_flags_are_independent() {
+    use clap::Parser;
+    let cli = crate::Cli::try_parse_from([
+        "patheditor",
+        "env",
+        "restore",
+        "env_backup_x.json",
+        "--dry-run",
+        "--force",
+    ])
+    .expect("--dry-run 与 --force 必须可共存");
+    let crate::Command::Env(crate::EnvCmd::Restore {
+        file,
+        dry_run,
+        force,
+        json,
+    }) = cli.command
+    else {
+        panic!("应解析为 env restore");
+    };
+    assert!(dry_run, "--dry-run 必须解析为 true，而不是被静默忽略");
+    assert!(force, "--force 必须解析为 true，而不是被静默忽略");
+    assert!(!json, "未给 --json 时应为 false");
+    assert_eq!(file, "env_backup_x.json", "位置参数必须落到 file");
+}
+
+/// 恢复命令的默认值是「所有开关关闭」，即默认走真恢复而不是 dry-run。
+///
+/// 这条断言与安全相关：若 `dry_run` 默认成 `true`，用户敲
+/// `patheditor env restore <file>` 会以为已恢复、实际什么都没写；
+/// 若 `force` 默认成 `true`，则 revision 保护会被静默跳过。
+#[test]
+fn restore_defaults_are_all_off() {
+    use clap::Parser;
+    let cli = crate::Cli::try_parse_from(["patheditor", "env", "restore", "env_backup_x.json"])
+        .expect("不带任何标志的形式必须可解析");
+    let crate::Command::Env(crate::EnvCmd::Restore {
+        dry_run,
+        force,
+        json,
+        ..
+    }) = cli.command
+    else {
+        panic!("应解析为 env restore");
+    };
+    assert!(!dry_run, "默认必须是真恢复，而不是 dry-run");
+    assert!(!force, "默认不得跳过 revision 校验");
+    assert!(!json);
+}
+
+/// `env backup` / `env backups` 的标志解析各自落到正确字段。
+#[test]
+fn backup_and_backups_flags_parse() {
+    use clap::Parser;
+    let cli = crate::Cli::try_parse_from(["patheditor", "env", "backup", "--json"])
+        .expect("env backup --json 必须可解析");
+    let crate::Command::Env(crate::EnvCmd::Backup { json }) = cli.command else {
+        panic!("应解析为 env backup");
+    };
+    assert!(json, "--json 必须解析为 true");
+
+    let cli = crate::Cli::try_parse_from(["patheditor", "env", "backups"])
+        .expect("env backups 必须可解析");
+    let crate::Command::Env(crate::EnvCmd::Backups { json }) = cli.command else {
+        panic!("应解析为 env backups");
+    };
+    assert!(!json, "未给 --json 时应为 false");
+}
+
+/// 备份列表在空目录下返回空数组而非报错（JSON 输出形状稳定）。
+///
+/// 环境变量重定向只服务本用例：`--bins` 测试跑在**独立进程**里，与 core 的
+/// 测试不共享进程状态；本文件内也只有这一个测试触碰 `PATHEDITOR_BACKUP_DIR`，
+/// 因此不需要全局测试锁。
+///
+/// 说明：本用例断言的是 core 的契约（空目录不报错、`[]` 形状），
+/// **不是**本任务改动的回归测试 —— 删掉 `cmd_env_backups` 它依然会通过。
+/// 本任务对 CLI 行为的覆盖在下面的进程级用例里。
+#[test]
+fn backups_list_json_shape_is_stable() {
+    let dir = std::env::temp_dir().join(format!("patheditor_t7_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::env::set_var("PATHEDITOR_BACKUP_DIR", &dir);
+
+    let list = path_editor_core::platform::backup::list_env_backups().expect("空目录不得报错");
+    let json = serde_json::to_string(&list).unwrap();
+    assert_eq!(json, "[]");
+
+    std::env::remove_var("PATHEDITOR_BACKUP_DIR");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── env backup / env backups / env restore：进程级行为 ──
+//
+// 为什么用子进程而不是直接调用 `cmd_env_*`：这三个函数在错误路径上调用
+// `std::process::exit`，并直接打印 stdout / stderr，进程内既拿不到退出码也
+// 拿不到输出。「测试看似通过但测不到东西」是本波反复出现的失败模式，因此这里
+// 断言的是**退出码 + stdout + stderr + 文件系统副作用**四者。
+//
+// 安全边界：只走只读路径，以及「只写临时目录」的备份路径。
+// `env backup` 只读注册表、只写 `PATHEDITOR_BACKUP_DIR`（本文件把它指向临时
+// 目录），`env backups` 与 `env restore --dry-run` 完全不写；
+// **没有任何用例会写真实注册表** —— `env restore`（非 dry-run）的用例在未提权
+// 环境下必定在第一次写入之前以权限错误失败，这一点由用例自身断言。
+
+/// 已构建的 CLI 二进制路径。
+///
+/// **不用 `env!("CARGO_BIN_EXE_patheditor")`**：该变量只对 `tests/` 下的集成测试
+/// target 注入，对 `--bins`（bin target 自身的 `#[cfg(test)]`）是 `None`
+/// （实测 `option_env!` 为 `None`、运行时 `std::env::var` 为 `NotPresent`）。
+///
+/// 改为按需构建二进制并缓存路径。嵌套 `cargo build` 在首次跑测试时已完成编译，
+/// 此处是秒级的空跑；加锁保证并行用例只构建一次。
+///
+/// **target 目录从 `cargo metadata` 读，不写死 `target/`**：后者只是
+/// 「`CARGO_TARGET_DIR` 未设置且无 `--target`」时的约定。若外部环境设了
+/// `CARGO_TARGET_DIR`，嵌套构建会把产物写到别处，而写死的仓库内路径可能被
+/// **上一次构建的陈旧二进制**满足 —— 测试就「为错误的原因通过」了。
+/// 让「问 cargo 拿目录」与「让 cargo 往那里构建」共用同一个答案，二者才必然一致。
+///
+/// 刻意**不**用 mtime 断言「产物晚于本次构建」：cargo 对已是最新的产物不重写
+/// （实测第二次空跑 mtime 不变），那种断言会在任何 no-op 重建上假失败。
+/// 排除陈旧产物要靠路径正确，不是靠时间戳。
+///
+/// 已知未覆盖项：`Command::output()` 无超时，若并发 `cargo` 持锁会阻塞而非失败
+/// （未被观测到；加超时需自建 spawn+poll 循环，评估为不划算，记为待办）。
+fn cli_bin() -> std::path::PathBuf {
+    static BUILD: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BUILD
+        .get_or_init(|| {
+            let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            let root = manifest_dir
+                .parent()
+                .expect("cli crate 必有父目录（workspace 根）");
+
+            // 1) 问 cargo 真实的 target 目录（它自己会考虑 CARGO_TARGET_DIR 与配置）。
+            let meta = std::process::Command::new("cargo")
+                .args(["metadata", "--format-version", "1", "--no-deps"])
+                .current_dir(root)
+                .output()
+                .expect("启动 cargo metadata 失败");
+            assert!(
+                meta.status.success(),
+                "cargo metadata 失败: {}",
+                String::from_utf8_lossy(&meta.stderr)
+            );
+            let meta_json: serde_json::Value =
+                serde_json::from_slice(&meta.stdout).expect("cargo metadata 输出不是合法 JSON");
+            let target_dir = std::path::PathBuf::from(
+                meta_json["target_directory"]
+                    .as_str()
+                    .expect("cargo metadata 缺少 target_directory"),
+            );
+
+            // 2) 用**同一个** target 目录构建（不显式传 --target-dir，让它走默认解析，
+            //   与 metadata 的答案保持一致）。
+            let out = std::process::Command::new("cargo")
+                .args(["build", "-p", "patheditor-cli"])
+                .current_dir(root)
+                .output()
+                .expect("启动 cargo build 失败");
+            assert!(
+                out.status.success(),
+                "构建 CLI 二进制失败: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+
+            let bin = target_dir.join("debug").join("patheditor.exe");
+            assert!(bin.is_file(), "构建后仍找不到二进制: {}", bin.display());
+            bin
+        })
+        .clone()
+}
+
+/// 本次用例独占的临时目录（进程号 + 标签，避免并行用例互相干扰）。
+fn temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("patheditor_t7_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("创建临时目录失败");
+    dir
+}
+
+/// 在 `dir` 下真备份一份（只读注册表 + 只写临时目录），返回备份文件路径。
+///
+/// 作为多个进程级用例的前置条件使用；前置失败直接 panic（后续断言无意义）。
+fn make_backup(dir: &std::path::Path) -> std::path::PathBuf {
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "backup"])
+        .env("PATHEDITOR_BACKUP_DIR", dir)
+        .output()
+        .expect("启动 env backup 失败");
+    assert!(
+        out.status.success(),
+        "前置备份必须成功（只写临时目录）: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::read_dir(dir)
+        .expect("枚举备份目录失败")
+        .next()
+        .expect("备份目录应恰好有一个文件")
+        .expect("读取目录项失败")
+        .path()
+}
+
+/// `env backups`（无 `--json`）的人类可读表格：含表头、文件名、真实字节数与路径。
+///
+/// 覆盖非 JSON 分支 —— 该分支没有断言（变异测试把表格里的 `sizeBytes`
+/// 整个删掉时用例仍然全绿）。
+#[test]
+fn env_backups_table_lists_file_size_and_path() {
+    let dir = temp_dir("backups_table");
+    let file = make_backup(&dir);
+    let name = file.file_name().unwrap().to_string_lossy().into_owned();
+    let size = std::fs::metadata(&file).unwrap().len();
+
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "backups"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env backups 失败");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "列备份必须成功: {stdout} / {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("文件"), "表格必须有表头: {stdout}");
+    assert!(
+        stdout.contains("大小(字节)"),
+        "表头必须标注字节数: {stdout}"
+    );
+    assert!(stdout.contains(&name), "表格必须列出文件名: {stdout}");
+    assert!(
+        stdout.contains(&size.to_string()),
+        "表格必须列出真实字节数 {size}: {stdout}"
+    );
+    assert!(
+        stdout.contains(&file.to_string_lossy().to_string()),
+        "表格必须列出完整路径: {stdout}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `env backups` 在空目录下成功、输出 `[]`，且不创建任何文件。
+#[test]
+fn env_backups_reports_empty_dir_without_touching_it() {
+    let dir = temp_dir("backups_empty");
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "backups", "--json"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env backups 失败");
+
+    assert!(
+        out.status.success(),
+        "空目录必须成功退出: {:?} / {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[]");
+    assert!(
+        std::fs::read_dir(&dir).unwrap().next().is_none(),
+        "env backups 是纯读命令，不得在备份目录里创建任何文件"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `env backups` **不解析备份内容**：目录里存在一个损坏文件时仍然成功，
+/// 且把它一并列出。
+///
+/// 这是「不解析内容」（S5）的可证伪断言：若实现改为逐个读取/解析备份文件，
+/// 损坏文件会让命令失败或让该条目消失 —— 两种改动都会让本用例失败。
+#[test]
+fn env_backups_lists_entries_without_parsing_contents() {
+    let dir = temp_dir("backups_corrupt");
+    let _ = make_backup(&dir); // 一份正常备份
+                               // 一份故意损坏的备份：命名合规、内容不是 JSON
+    let corrupt = dir.join("env_backup_00000000_000000_000.json");
+    std::fs::write(&corrupt, b"{{{ not json at all").unwrap();
+
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "backups", "--json"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env backups 失败");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "损坏文件不得让列表失败（列表不解析内容）: {stdout} / {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let list: serde_json::Value = serde_json::from_str(&stdout).expect("必须是合法 JSON");
+    let files: Vec<&str> = list
+        .as_array()
+        .expect("--json 必须输出数组")
+        .iter()
+        .map(|item| item["file"].as_str().expect("每项必须含 file"))
+        .collect();
+    assert_eq!(files.len(), 2, "两个文件都应被列出: {files:?}");
+    assert!(
+        files.contains(&"env_backup_00000000_000000_000.json"),
+        "损坏文件也必须出现在列表里: {files:?}"
+    );
+    // 列表不解析内容。`.pebak` 的变量数来自**文件头**（ 允许，
+    // 不触发解密）；`.json` 仍恒为 0（S5：解析会让单个损坏文件拖垮整份列表）。
+    for item in list.as_array().unwrap() {
+        let file = item["file"].as_str().unwrap();
+        let is_pebak = file.to_ascii_lowercase().ends_with(".pebak");
+        if !is_pebak {
+            assert_eq!(
+                item["variableCount"].as_u64(),
+                Some(0),
+                "遗留 .json 的 variableCount 恒为 0（列表不解析内容）: {item}"
+            );
+        }
+        // encrypted 标志必须与扩展名一致
+        assert_eq!(
+            item["encrypted"].as_bool(),
+            Some(is_pebak),
+            "encrypted 必须与文件格式一致: {item}"
+        );
+        assert_eq!(
+            item["format"].as_str(),
+            Some(if is_pebak { "pebak" } else { "json" }),
+            "format 必须与文件格式一致: {item}"
+        );
+        let expected = std::fs::metadata(dir.join(file)).unwrap().len();
+        assert_eq!(
+            item["sizeBytes"].as_u64(),
+            Some(expected),
+            "sizeBytes 必须来自 stat，与实际文件大小一致: {item}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `env backup --json` 真写出一份备份文件，`path` 字段指向真实存在的文件。
+#[test]
+fn env_backup_writes_a_file_and_reports_its_path() {
+    let dir = temp_dir("backup_write");
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "backup", "--json"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env backup 失败");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "备份应成功: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("--json 必须输出合法 JSON");
+    let reported = value["path"].as_str().expect("JSON 必须含 path 字段");
+    assert!(
+        std::path::Path::new(reported).is_file(),
+        "报告的路径必须真实存在: {reported}"
+    );
+
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names.len(), 1, "目录里应恰好一份备份: {names:?}");
+    // 生产产物是 DPAPI 加密的 .pebak
+    assert!(
+        names[0].starts_with("env_backup_") && names[0].ends_with(".pebak"),
+        "备份文件命名必须符合 env_backup_*.pebak: {names:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `env restore --dry-run` 成功预览、四个计数全为 0（刚采集的备份与注册表一致），
+/// 打印「未写入任何内容」，且**不**打印手工兜底指引、**不**写任何文件。
+///
+/// 「四个计数全为 0」由刚生成的备份保证：备份与注册表逐条同 name / type / value，
+/// revision 必然相等，故既无 `Added` / `Removed` 也无 `Conflict`。
+/// 这同时钉住了 `modified` 恒为 0 的现状（见 `RestoreChangeKind::Modified` 文档）。
+///
+/// 计数器**字段映射**的证伪靠 [`env_restore_dry_run_reports_each_counter_field`]：
+/// 全 0 的计数无法区分「四个字段接对了」与「四个字段互相串了」。
+#[test]
+fn env_restore_dry_run_previews_without_writing() {
+    let dir = temp_dir("restore_dry");
+    let file = make_backup(&dir);
+
+    let out = std::process::Command::new(cli_bin())
+        .arg("env")
+        .arg("restore")
+        .arg(&file)
+        .arg("--dry-run")
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore 失败");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "dry-run 必须成功: {stdout} / {stderr}"
+    );
+    assert!(
+        stdout.contains("将新增 0 个、修改 0 个、删除 0 个；冲突 0 个"),
+        "dry-run 计数不符（备份即当前状态应为全 0）: {stdout}"
+    );
+    assert!(stdout.contains("未写入任何内容"), "实际 stdout: {stdout}");
+    assert!(
+        !stderr.contains("patheditor env backup"),
+        "dry-run 不得打印手工兜底指引（它什么都没改）: {stderr}"
+    );
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names.len(), 1, "dry-run 不得新增文件: {names:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 把真实备份改造成「新增 3 / 修改 0 / 删除 1 / 冲突 2」的夹具，返回其路径。
+///
+/// **四个计数两两不等是本夹具的存在理由**：若计数有重复（例如删除与冲突都是 1），
+/// 把格式串里两个字段对调仍然是「通过」的 —— 断言就成了自证的。
+/// 本夹具的第一次版本正是 `删除 1 / 冲突 1`，变异测试（对调 `removed` 与
+/// `conflicts`）**没有**让它失败，因此重做为两两不等：
+/// 新增 3、修改 0、删除 1、冲突 2 互不相同，任两个字段对调都会被断言抓到。
+///
+/// 三个改动都只落在**临时目录里的副本**上，不碰注册表：
+/// - 塞入 3 个注册表中不存在的名字 → `Added`；
+/// - 从载荷里删掉 `user[0]` → 注册表有、备份无 → `Removed`（恰 1 条）；
+/// - 把 `user[1]`、`user[2]` 的 **revision 换成不可能匹配的固定值** → `Conflict`（恰 2 条）。
+///
+/// 注意冲突的造法：`diff_one_hive` 比较的是**载荷里存的 revision**
+/// 与注册表当前 revision，而不是重算 `revision_of(name, type, value)`。
+/// 因此只改 `value` 字段是无效的 —— 存的 revision 仍是旧值、与注册表一致，
+/// 该条目会被判为「无变化」而**静默消失**（本用例首次运行即踩到这个坑）。
+/// 必须把 `revision` 本身改成不匹配的固定值。
+///
+/// 需要至少 4 个用户变量（`user[1]` / `user[2]` 造冲突，`user[3..]` 保持不变）；
+/// 不足时返回 `None`，由调用方显式失败而不是静默跳过。
+fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let source = make_backup(dir);
+    // 生产备份是 DPAPI 加密的 `.pebak`，不能当 JSON 读。
+    // 用核心库的统一读入口解密（密钥来自本机 ~/.patheditor —— 测试进程里
+    // `env backup` 刚写过同一把密钥），改完再用同一个写入口重新加密。
+    let payload = core::platform::backup::read_env_backup_from(&source).ok()?;
+
+    let user = payload.hives.user;
+    if user.len() < 4 {
+        return None;
+    }
+    // user[0] 刻意不入 patched → 注册表有、备份无 → Removed（恰 1 条）
+    let mut patched: Vec<core::platform::backup::EnvBackupVar> = user[3..].to_vec();
+    // user[1]、user[2]：revision 换成不可能匹配的值 → Conflict（恰 2 条）
+    for index in [1, 2] {
+        let mut conflicted = user[index].clone();
+        conflicted.revision = "ffffffffffffffff".to_string();
+        patched.push(conflicted);
+    }
+    // 3 个注册表中不存在的名字 → Added（恰 3 条）
+    for suffix in ["A", "B", "C"] {
+        patched.push(core::platform::backup::EnvBackupVar {
+            name: format!("PATHEDITOR_T7_ABSENT_VAR_9F3{suffix}"),
+            kind: core::EnvValueKind::String,
+            value: "absent".to_string(),
+            revision: "0000000000000000".to_string(),
+        });
+    }
+
+    let fixture_payload = core::platform::backup::EnvBackupPayload {
+        captured_at: payload.captured_at,
+        hives: core::platform::backup::EnvBackupHives {
+            system: payload.hives.system,
+            user: patched,
+        },
+    };
+    let fixture = core::platform::backup::write_env_backup_for_test(dir, &fixture_payload)?;
+    // 夹具文件名不带时间戳，避免被后续 `env backups` 的排序断言干扰
+    let _ = std::fs::remove_file(&source);
+    Some(fixture)
+}
+
+/// 造出四类差异计数两两不等的夹具，逐个断言**计数器字段的映射**。
+///
+/// 这条是本任务里唯一能证伪「格式串里字段串位」的用例：期望值
+/// 新增 3 / 修改 0 / 删除 1 / 冲突 2 **两两不等**，任两个字段对调都会被断言抓到。
+/// （初版用「删除 1 / 冲突 1」时对调 `removed` 与 `conflicts` 变异**测不出来**，
+/// 已按变异结果重做夹具 —— 见 [`craft_preview_fixture`]。）
+/// 同时断言 `--json` 输出的同名字段，钉住 camelCase 契约。
+#[test]
+fn env_restore_dry_run_reports_each_counter_field() {
+    let dir = temp_dir("restore_counters");
+    let Some(fixture) = craft_preview_fixture(&dir) else {
+        panic!("本机用户变量不足 4 个，无法构造夹具；不要让它静默跳过");
+    };
+
+    let out = std::process::Command::new(cli_bin())
+        .arg("env")
+        .arg("restore")
+        .arg(&fixture)
+        .arg("--dry-run")
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore 失败");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "dry-run 必须成功: {stdout} / {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("将新增 3 个、修改 0 个、删除 1 个；冲突 2 个"),
+        "计数器映射不符（期望 新增3/修改0/删除1/冲突2）: {stdout}"
+    );
+
+    // 同一夹具走 --json：字段名与取值都必须一致
+    let out = std::process::Command::new(cli_bin())
+        .arg("env")
+        .arg("restore")
+        .arg(&fixture)
+        .arg("--dry-run")
+        .arg("--json")
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore --json 失败");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let preview: serde_json::Value =
+        serde_json::from_str(&stdout).expect("--json 必须输出合法 JSON");
+    assert_eq!(preview["added"].as_u64(), Some(3), "added: {stdout}");
+    assert_eq!(preview["modified"].as_u64(), Some(0), "modified: {stdout}");
+    assert_eq!(preview["removed"].as_u64(), Some(1), "removed: {stdout}");
+    assert_eq!(
+        preview["conflicts"].as_u64(),
+        Some(2),
+        "conflicts: {stdout}"
+    );
+    assert_eq!(
+        preview["changes"].as_array().map(Vec::len),
+        Some(6),
+        "changes 条数必须与计数之和（3+0+1+2）一致: {stdout}"
+    );
+    // 逐条差异必须带 hive / name / kind（camelCase 契约）
+    let first = &preview["changes"][0];
+    assert!(first["hive"].is_string(), "差异项必须有 hive: {stdout}");
+    assert!(first["name"].is_string(), "差异项必须有 name: {stdout}");
+    assert!(first["kind"].is_string(), "差异项必须有 kind: {stdout}");
+
+    // 契约：dry-run 的预览**不受 --force 影响**（差异计算与 force 无关）。
+    // 同一夹具再加 --force，输出必须逐字节相同 —— 若实现把 force 传进预览，
+    // 或为 force 走了另一条分支，这里就会失败。
+    let out = std::process::Command::new(cli_bin())
+        .arg("env")
+        .arg("restore")
+        .arg(&fixture)
+        .arg("--dry-run")
+        .arg("--force")
+        .arg("--json")
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore --dry-run --force 失败");
+    assert!(
+        out.status.success(),
+        "--dry-run --force 必须可共存: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let with_force: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&out.stdout))
+        .expect("--dry-run --force --json 必须输出合法 JSON");
+    assert_eq!(
+        with_force, preview,
+        "dry-run 的预览必须与 force 无关（E3），加 --force 后输出应完全相同"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 回归守卫：`env restore --dry-run` 读遗留明文 `.json` 时，
+/// 明文警告必须出现在 **stderr**。
+///
+/// 这条测试的存在理由：core 里原本只有 `log::warn!`，而 CLI **没有日志后端**
+/// （`grep set_logger cli/` 零命中），所以那条警告在 CLI 下是空操作——
+/// README 承诺的「会提示明文警告」在当时并不成立。
+/// 若将来有人把 `eprintln!` 改回 `log::warn!`，本用例会失败。
+#[test]
+fn env_restore_warns_about_legacy_plaintext_on_stderr() {
+    let dir = temp_dir("restore_legacy_warn");
+    // 手工造一份**遗留明文**备份（不是 `env backup` 生成的 .pebak）
+    let legacy = dir.join("env_backup_20260101_000000_000.json");
+    std::fs::write(
+        &legacy,
+        r#"{"schemaVersion":1,"capturedAt":1700000000000,"hives":{"system":[],"user":[]}}"#,
+    )
+    .unwrap();
+
+    let out = std::process::Command::new(cli_bin())
+        .arg("env")
+        .arg("restore")
+        .arg(&legacy)
+        .arg("--dry-run")
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore 失败");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("遗留明文备份"),
+        "读遗留 .json 必须在 stderr 提示明文风险: stderr={stderr:?}"
+    );
+    assert!(
+        stderr.contains("pebak"),
+        "提示必须说明 v6 的加密格式是 .pebak: stderr={stderr:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `env restore`（非 dry-run）在**任何写入之前**把手工兜底指引打印到 stderr，
+/// stdout 保持干净；未提权时以退出码 1 失败（已登记的已知限制）。
+///
+/// 区分两个分支，两个分支都断言到底：
+/// - 未提权（本机常规情形）：HKLM 无法以写权限打开 → `PermissionDenied` →
+///   退出码 1，且此时尚未写入任何内容（core 先开 hive、后写入）；
+/// - 已提权：备份即当前状态 → 零变更、零失败。
+#[test]
+fn env_restore_prints_manual_fallback_guidance_to_stderr() {
+    let dir = temp_dir("restore_guidance");
+    let file = make_backup(&dir);
+
+    let out = std::process::Command::new(cli_bin())
+        .arg("env")
+        .arg("restore")
+        .arg(&file)
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore 失败");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // 兜底指引必须打印，且走 stderr —— 绝不能污染 stdout 的输出契约。
+    // 这两条断言与退出码无关，两个分支都成立。
+    assert!(
+        stderr.contains("patheditor backup"),
+        "必须提示 patheditor backup: {stderr}"
+    );
+    assert!(
+        stderr.contains("patheditor env backup"),
+        "必须提示 patheditor env backup: {stderr}"
+    );
+
+    match out.status.code() {
+        // 未提权：HKLM 写权限错误，退出码 1（这是允许的）。
+        // 这条路径**没有成功输出**，所以 stdout 必须干净 —— 指引没有漏进 stdout。
+        Some(1) => {
+            assert!(
+                stderr.contains("错误:"),
+                "退出码 1 时必须打印错误文本: {stderr}"
+            );
+            assert!(
+                stdout.is_empty(),
+                "失败路径 stdout 必须保持干净（指引走 stderr）: {stdout}"
+            );
+        }
+        // 已提权：备份即当前状态，零变更零失败。
+        // 注意：成功路径**必然**往 stdout 打「恢复完成」那一行，所以
+        // 「stdout 必须干净」的断言绝不能提到 match 之前 —— 那会让本分支
+        // 构造上不可达（提权环境含 GitHub windows-latest runner）。
+        Some(0) => {
+            assert!(
+                stdout.contains("恢复完成: 成功 0 个"),
+                "零差异恢复应报 0: {stdout}"
+            );
+            assert!(!stderr.contains("警告:"), "不应有逐条失败: {stderr}");
+        }
+        other => panic!(
+            "退出码应为 0（已提权）或 1（未提权，HKLM 无写权限），实际: {other:?} / {stderr}"
+        ),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 备份文件不存在时 `env restore` 以退出码 1 失败（路径校验在 core 侧）。
+#[test]
+fn env_restore_rejects_missing_file_with_exit_code_1() {
+    let dir = temp_dir("restore_missing");
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "restore", "env_backup_missing.json"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env restore 失败");
+
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "文件不存在必须是退出码 1（不是 2，也不是 3）"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("错误:"), "必须打印错误文本: {stderr}");
+    assert!(
+        out.stdout.is_empty(),
+        "失败路径 stdout 必须干净: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── ：dry-run 变更预览的 JSON / 文本契约 ──
+
+/// 预览 JSON 的字段与类型契约。
+///
+/// 字段名错一个就会破坏脚本消费，故逐字段断言，而非只断言「是合法 JSON」。
+#[test]
+fn change_preview_json_has_stable_contract() {
+    let v = build_change_preview(
+        "set",
+        EnvHive::User,
+        "JAVA_HOME",
+        Some("C:\\jdk-17".into()),
+        Some("C:\\jdk-21".into()),
+        Some("string".into()),
+        true,
+        false,
+    );
+    assert_eq!(v["operation"], "set");
+    assert_eq!(v["hive"], "user");
+    assert_eq!(v["name"], "JAVA_HOME");
+    assert_eq!(v["oldValue"], "C:\\jdk-17");
+    assert_eq!(v["newValue"], "C:\\jdk-21");
+    assert_eq!(v["kind"], "string");
+    assert_eq!(v["writable"], true);
+    assert_eq!(v["sensitive"], false);
+}
+
+/// `add` 的 oldValue 为 null、`remove` 的 newValue 为 null（字段表契约）。
+#[test]
+fn change_preview_nulls_are_correct_per_operation() {
+    let add = build_change_preview(
+        "add",
+        EnvHive::User,
+        "X",
+        None,
+        Some("v".into()),
+        Some("string".into()),
+        true,
+        false,
+    );
+    assert!(add["oldValue"].is_null(), "add 的 oldValue 必须为 null");
+
+    let rm = build_change_preview(
+        "remove",
+        EnvHive::User,
+        "X",
+        Some("v".into()),
+        None,
+        None,
+        true,
+        false,
+    );
+    assert!(rm["newValue"].is_null(), "remove 的 newValue 必须为 null");
+}
+
+/// 文本预览必须点明「未写入任何内容」，且带 hive 标签。
+#[test]
+fn change_preview_text_mentions_no_write() {
+    let v = build_change_preview(
+        "set",
+        EnvHive::System,
+        "JAVA_HOME",
+        Some("a".into()),
+        Some("b".into()),
+        Some("string".into()),
+        false,
+        false,
+    );
+    let text = render_change_preview_text(&v);
+    assert!(text.contains("未写入任何内容"), "必须点明未写入: {text}");
+    assert!(text.contains("系统"), "必须带 hive 标签: {text}");
+}
+
+// ── 安全审查修正：敏感值打码 + 控制字符净化 ──
+
+/// 安全：敏感变量的新值不得进入预览（`mask_new_value` 返回 `None`）。
+#[test]
+fn mask_new_value_hides_sensitive_plaintext() {
+    // 以 core 的敏感判定为准，取一个必然命中的名字。
+    assert!(
+        core::domain::env_var::is_sensitive("MY_API_TOKEN"),
+        "前置：MY_API_TOKEN 应命中敏感规则"
+    );
+    assert_eq!(
+        mask_new_value("MY_API_TOKEN", "sk-realsecret".into()),
+        None,
+        "敏感变量的新值不得出现在预览里"
+    );
+}
+
+/// 安全：非敏感值经净化（剔除控制字符），且空/纯控制字符返回 `None`。
+#[test]
+fn mask_new_value_sanitizes_control_chars() {
+    assert_eq!(
+        mask_new_value("JAVA_HOME", "C:\\Java\x1b[2J".into()),
+        Some("C:\\Java[2J".to_string()),
+        "ANSI 转义序列的 ESC 字节必须被剔除"
+    );
+    assert_eq!(mask_new_value("JAVA_HOME", "\r\n".into()), None);
+}
+
+/// 安全：敏感变量在文本预览里显示 `(敏感)` 而非明文占位 `-`。
+#[test]
+fn sensitive_preview_text_shows_mask_marker() {
+    let v = build_change_preview(
+        "set",
+        EnvHive::User,
+        "MY_API_TOKEN",
+        None,
+        None,
+        Some("string".into()),
+        true,
+        true,
+    );
+    let text = render_change_preview_text(&v);
+    assert!(text.contains("(敏感)"), "敏感变量应显示 (敏感): {text}");
+    assert!(!text.contains("sk-"), "不得泄漏明文: {text}");
+}
+
+// ── S：dry-run 的写安全（进程级）──
+//
+// 上面三条测的是**纯函数**（打码 / 净化 / 渲染）。它们**证明不了**「命令真的
+// 没写注册表、没产生备份、没广播」——那是 `cmd_env_*` 的运行时行为。本组用例
+// 补上这一层：以子进程跑真实二进制，断言**可观测的副作用为零**。
+//
+// 可证伪性（这是本组存在的全部理由）：若有人在 dry-run 分支后误加一行写入
+// 或备份调用，下面的断言会红。
+// - `probe_absent_after_dry_run_*`：dry-run 后该变量在注册表中**不存在**
+//  （若误写，`env get` 会返回 0 而非 notFound）；
+// - `dry_run_produces_no_backup_file`：dry-run 后备份目录**为空**
+//  （若误触发写前备份，目录会出现 env_backup_*.json）。
+//
+// 安全边界：`env add --dry-run` **确定不写注册表**（这正是被断言的性质），
+// 故本用例不触碰真实注册表；备份目录经 `PATHEDITOR_BACKUP_DIR` 重定向到临时目录。
+
+/// dry-run 后变量必须**不存在**于注册表 —— 用只读的 `env get` 反证「没写」。
+///
+/// 探针名带进程号，避免并发用例互扰（`--bins` 用例跑在各自进程里）。
+#[test]
+fn probe_absent_after_dry_run_add() {
+    let dir = temp_dir("dryrun_noreg");
+    let probe = format!("PATHEDITOR_SP1_PROBE_{}", std::process::id());
+
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "add", &probe, "should-not-be-written", "--dry-run"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env add --dry-run 失败");
+    assert!(
+        out.status.success(),
+        "dry-run 必须成功: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // 反证：只读读取该变量必须 notFound（退出码 1）。若 dry-run 误写，这里会是 0。
+    let check = std::process::Command::new(cli_bin())
+        .args(["env", "get", &probe])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env get 失败");
+    assert_eq!(
+        check.status.code(),
+        Some(1),
+        "dry-run 后变量不得存在（退出码 1 = notFound）；若为 0 说明 dry-run 写了注册表: {} / {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// dry-run 不得触发写前备份 —— 备份目录必须保持为空。
+#[test]
+fn dry_run_produces_no_backup_file() {
+    let dir = temp_dir("dryrun_nobackup");
+    let probe = format!("PATHEDITOR_SP1_NOBK_{}", std::process::id());
+
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "add", &probe, "v", "--dry-run"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env add --dry-run 失败");
+    assert!(
+        out.status.success(),
+        "dry-run 必须成功: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .expect("枚举备份目录失败")
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        names.is_empty(),
+        "dry-run 不得产生任何备份文件（若误触发写前备份则非空）: {names:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 对照：`env add --dry-run --json` 输出可解析、字段完整（端到端契约）。
+#[test]
+fn dry_run_json_end_to_end_shape() {
+    let dir = temp_dir("dryrun_json");
+    let probe = format!("PATHEDITOR_SP1_JSON_{}", std::process::id());
+
+    let out = std::process::Command::new(cli_bin())
+        .args(["env", "add", &probe, "v", "--dry-run", "--json"])
+        .env("PATHEDITOR_BACKUP_DIR", &dir)
+        .output()
+        .expect("启动 env add --dry-run --json 失败");
+    assert!(
+        out.status.success(),
+        "dry-run --json 必须成功: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("--json 必须输出合法 JSON");
+    assert_eq!(value["operation"], "add");
+    assert_eq!(value["name"], probe.as_str());
+    assert!(value["oldValue"].is_null(), "add 的 oldValue 应为 null");
+    assert_eq!(value["newValue"], "v");
+    assert_eq!(value["sensitive"], false);
+    let _ = std::fs::remove_dir_all(&dir);
+}

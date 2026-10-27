@@ -1,6 +1,6 @@
 //! CLI 的 clap 命令定义。
 //!
-//! 参数语义与冲突规则只写在这里；命令实现见 `path_ops` / `env_ops` 等模块。
+//! 参数语义与冲突规则只写在这里；命令实现见 `commands/path.rs` / `commands/env/`。
 
 use clap::{Parser, Subcommand};
 

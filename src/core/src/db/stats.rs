@@ -4,7 +4,7 @@
 //! 可随时重建。
 
 use super::Db;
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 use rusqlite::params;
 
 /// 单日聚合点。

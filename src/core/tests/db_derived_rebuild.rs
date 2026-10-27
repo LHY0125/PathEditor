@@ -2,7 +2,7 @@
 //
 // 派生表重建的验收判据：清空三张派生表 → 跑一遍重建 → 数据恢复。
 //
-// 启动序列的编排在 `core::bootstrap`（`search_fts` 仅在为空时构建、
+// 启动序列的编排在 `core::app::bootstrap`（`search_fts` 仅在为空时构建、
 // `daily_stats` / `var_references` 按水位判断）；编排的幂等性由
 // `bootstrap_initialize` 覆盖。本测试守的是更根本的性质：三个 rebuild
 // 函数能各自独立完成重建。
@@ -14,7 +14,7 @@ use path_editor_core::db::refs::rebuild_refs;
 use path_editor_core::db::search::{rebuild_index, search};
 use path_editor_core::db::stats::{dashboard, rebuild_daily};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

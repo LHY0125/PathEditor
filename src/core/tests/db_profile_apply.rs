@@ -1,12 +1,12 @@
 // 一文件一测试（SQLCipher）。
 //
 // 配置应用编排：读配置 → 只写变化的 hive → 记账；重复应用同内容不重复写注册表。
+use path_editor_core::app::service::{self, PathHiveIo};
 use path_editor_core::db::history::NewSnapshot;
 use path_editor_core::db::profiles::{get_profile_paths_view, list_profiles, save_profile};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
-use path_editor_core::service::{self, PathHiveIo};
-use path_editor_core::{bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
+use path_editor_core::domain::history::EventSource;
+use path_editor_core::{app::bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
 use std::cell::RefCell;
 use tempfile::TempDir;
 
@@ -106,7 +106,7 @@ fn apply_profile_writes_changed_hive_then_skips_identical_second_apply() {
     assert_eq!(io.writes.borrow()[0].0, EnvHive::System);
     assert!(matches!(
         first.system,
-        path_editor_core::service::HiveOutcome::Applied
+        path_editor_core::app::service::HiveOutcome::Applied
     ));
 
     let view = list_profiles(&db)
@@ -123,11 +123,11 @@ fn apply_profile_writes_changed_hive_then_skips_identical_second_apply() {
     assert_eq!(io.write_count(), 1, "内容一致时不得重复写注册表");
     assert!(matches!(
         second.system,
-        path_editor_core::service::HiveOutcome::Skipped
+        path_editor_core::app::service::HiveOutcome::Skipped
     ));
     assert!(matches!(
         second.user,
-        path_editor_core::service::HiveOutcome::Skipped
+        path_editor_core::app::service::HiveOutcome::Skipped
     ));
 
     let view = list_profiles(&db)

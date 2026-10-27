@@ -15,7 +15,7 @@
 use rusqlite::{params, Transaction};
 
 use crate::db::{db_err, Db};
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 
 /// 待写入的一条变更（调用方构造）。
 #[derive(Debug, Clone)]
