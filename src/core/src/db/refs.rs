@@ -12,7 +12,7 @@
 //! 否则会静默混入历史快照的边——而且不会报错，只会给出「看起来合理」的错答案。
 
 use super::Db;
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 use rusqlite::params;
 
 /// 一条引用边。

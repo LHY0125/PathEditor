@@ -1,7 +1,7 @@
 use super::config::*;
 use super::*;
-use crate::env_var::{revision_of, EnvHive, EnvValueKind};
-use crate::error::ErrorCode;
+use crate::domain::env_var::{revision_of, EnvHive, EnvValueKind};
+use crate::domain::error::ErrorCode;
 use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 use crate::registry::store::memory::MemoryHive;
 use crate::registry::store::EnvHiveStore;

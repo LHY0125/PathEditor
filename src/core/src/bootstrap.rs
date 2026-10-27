@@ -12,7 +12,7 @@
 //! 且下次启动会重试。调用方（GUI/CLI）负责把 warnings 写入自己的日志系统。
 
 use crate::db::{self, Db};
-use crate::history::EventSource;
+use crate::domain::history::EventSource;
 use crate::service;
 use crate::{CoreError, ErrorCode};
 use std::path::PathBuf;

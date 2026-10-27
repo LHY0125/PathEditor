@@ -5,8 +5,8 @@
 //! - `*_tx` 变体供已在事务内的调用方复用（SQLite 不支持嵌套事务）。
 
 use super::{db_err, Db};
-use crate::error::{CoreError, ErrorCode};
-use crate::history::{EventAction, EventResult, EventSource};
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::domain::history::{EventAction, EventResult, EventSource};
 use crate::PathEntry;
 use rusqlite::{params, OptionalExtension, Transaction};
 use uuid::Uuid;
@@ -324,7 +324,7 @@ pub(crate) fn insert_snapshot_with_uid_tx(
             ));
         }
         // sensitive 以 core 判定为准，忽略调用方传值。
-        let sensitive = crate::env_var::is_sensitive(&v.name);
+        let sensitive = crate::domain::env_var::is_sensitive(&v.name);
         // Unsupported 只存元数据
         let value = if v.restorable {
             v.value.as_deref()

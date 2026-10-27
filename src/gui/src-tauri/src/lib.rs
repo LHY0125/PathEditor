@@ -10,7 +10,7 @@ use tauri::Manager;
 fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_core::CoreError> {
     let report = path_editor_core::bootstrap::initialize(
         db,
-        path_editor_core::history::EventSource::Gui,
+        path_editor_core::domain::history::EventSource::Gui,
         &path_editor_core::bootstrap::BootstrapOptions::default(),
     )?;
 

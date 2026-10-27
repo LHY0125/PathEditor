@@ -4,7 +4,7 @@
 use path_editor_core::bootstrap::{self, BootstrapOptions};
 use path_editor_core::db::search;
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::{PathEntry, PathSnapshot};
 use tempfile::TempDir;
 

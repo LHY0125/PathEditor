@@ -11,8 +11,8 @@ use path_editor_core::db::history::{
     SnapshotKind,
 };
 use path_editor_core::db::Db;
-use path_editor_core::error::CoreError;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::error::CoreError;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::service::{self, PathHiveIo, PathHiveWrite};
 use path_editor_core::{EnvHive, PathEntry};
 

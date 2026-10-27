@@ -1,4 +1,4 @@
-use crate::env_var::EnvHive;
+use crate::domain::env_var::EnvHive;
 use winreg::enums::*;
 use winreg::RegKey;
 

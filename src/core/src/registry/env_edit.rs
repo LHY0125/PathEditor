@@ -1,10 +1,10 @@
 use super::store::{EnvHiveStore, WinregHive};
 use crate::backup::{self, backup_env_vars, BackupOutcome};
-use crate::env_var::{
+use crate::domain::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
     EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
 };
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use serde::{Deserialize, Serialize};
 use winreg::enums::*;
 use winreg::types::{FromRegValue, ToRegValue};
@@ -998,7 +998,7 @@ pub(crate) fn delete_env_var_force_in_store(
 mod env_var_tests {
     use super::*;
     use crate::backup::BackupOutcome;
-    use crate::env_var::{EnvHive, EnvValueKind};
+    use crate::domain::env_var::{EnvHive, EnvValueKind};
     use crate::registry::conflict::ERR_CONFLICT;
     use crate::registry::store::memory::MemoryHive;
     use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
@@ -1067,12 +1067,12 @@ mod env_var_tests {
         let hive = MemoryHive::new(true);
         hive.seed("MY_VAR", "original", REG_SZ);
         let (vtype, value) = read_env_var(&hive, "MY_VAR").expect("读取失败");
-        let revision = crate::env_var::revision_of("MY_VAR", vtype, &value);
+        let revision = crate::domain::env_var::revision_of("MY_VAR", vtype, &value);
 
         hive.seed("MY_VAR", "changed-by-other-process", REG_SZ);
 
         let (vtype2, value2) = read_env_var(&hive, "MY_VAR").expect("读取失败");
-        let current = crate::env_var::revision_of("MY_VAR", vtype2, &value2);
+        let current = crate::domain::env_var::revision_of("MY_VAR", vtype2, &value2);
         assert_ne!(revision, current, "外部修改后 revision 必须不同");
     }
 
@@ -1142,7 +1142,7 @@ mod env_var_tests {
         let result =
             update_env_var_in_store(&hive, EnvHive::User, "MY_VAR", "mine", &stale_revision);
         assert!(result.is_err(), "revision 不匹配必须 Err");
-        assert_eq!(result.unwrap_err().code, crate::error::ErrorCode::Conflict);
+        assert_eq!(result.unwrap_err().code, crate::domain::error::ErrorCode::Conflict);
 
         let raw = hive.get_raw("MY_VAR").expect("读取失败");
         assert_eq!(String::from_reg_value(&raw).unwrap(), "changed-by-other");
@@ -1165,7 +1165,7 @@ mod env_var_tests {
         let err = result.unwrap_err();
         assert_eq!(
             err.code,
-            crate::error::ErrorCode::UnsupportedType,
+            crate::domain::error::ErrorCode::UnsupportedType,
             "必须断言 code 而非文本"
         );
         assert!(
@@ -1222,7 +1222,7 @@ mod env_var_tests {
         assert!(protected.is_err(), "保护名单变量不允许创建");
         assert_eq!(
             protected.unwrap_err().code,
-            crate::error::ErrorCode::Protected
+            crate::domain::error::ErrorCode::Protected
         );
 
         let duplicate = create_env_var_in_store(
@@ -1235,7 +1235,7 @@ mod env_var_tests {
         assert!(duplicate.is_err(), "同名变量不允许重复创建");
         assert_eq!(
             duplicate.unwrap_err().code,
-            crate::error::ErrorCode::NameExists
+            crate::domain::error::ErrorCode::NameExists
         );
 
         let raw = hive.get_raw("Existing").expect("读取失败");
@@ -1308,7 +1308,7 @@ mod env_var_tests {
 
         let result = delete_env_var_in_store(&hive, EnvHive::User, "MY_VAR", &stale_revision);
         assert!(result.is_err(), "revision 不匹配必须 Err");
-        assert_eq!(result.unwrap_err().code, crate::error::ErrorCode::Conflict);
+        assert_eq!(result.unwrap_err().code, crate::domain::error::ErrorCode::Conflict);
         assert!(hive.contains("MY_VAR"), "冲突时不得删除变量");
     }
 

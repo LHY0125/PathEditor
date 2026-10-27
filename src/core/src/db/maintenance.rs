@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use super::{db_err, Db};
 use crate::backup::EnvBackupPayload;
 use crate::db::crypto::KeyMaterial;
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 
 /// 已导出 `changes` 的保留期：90 天。
 pub const CHANGES_RETENTION_MS: i64 = 90 * 24 * 60 * 60 * 1000;
@@ -145,7 +145,7 @@ fn cleanup_legacy_impl(
 
     let entries = std::fs::read_dir(dir).map_err(|e| {
         CoreError::new(
-            crate::error::ErrorCode::Io,
+            crate::domain::error::ErrorCode::Io,
             "cleanup_legacy",
             format!("读取 {} 失败: {e}", dir.display()),
         )
@@ -155,7 +155,7 @@ fn cleanup_legacy_impl(
         let path = entry
             .map_err(|e| {
                 CoreError::new(
-                    crate::error::ErrorCode::Io,
+                    crate::domain::error::ErrorCode::Io,
                     "cleanup_legacy",
                     format!("读取目录项失败: {e}"),
                 )
@@ -237,7 +237,7 @@ fn is_legacy_env_backup(path: &Path) -> bool {
 fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, CoreError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         CoreError::new(
-            crate::error::ErrorCode::Io,
+            crate::domain::error::ErrorCode::Io,
             "cleanup_legacy",
             format!("读取 {} 失败: {e}", path.display()),
         )
@@ -245,7 +245,7 @@ fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, Cor
     let versioned: crate::persist::Versioned<EnvBackupPayload> = serde_json::from_str(&content)
         .map_err(|e| {
             CoreError::new(
-                crate::error::ErrorCode::Parse,
+                crate::domain::error::ErrorCode::Parse,
                 "cleanup_legacy",
                 format!("解析 {} 失败: {e}", path.display()),
             )
@@ -258,7 +258,7 @@ mod tests {
     use super::*;
     use crate::backup::{EnvBackupHives, EnvBackupVar};
     use crate::db::crypto::load_or_create_key;
-    use crate::env_var::EnvValueKind;
+    use crate::domain::env_var::EnvValueKind;
     use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 
     /// 此文件只有一个测试：它用 DPAPI、不建 SQLCipher，因此可以放在单元测试模块里。

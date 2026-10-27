@@ -5,7 +5,7 @@
 
 use crate::db::sync::change_log::{next_lamport, record_change_tx, ChangeRow, NewChange};
 use crate::db::{db_err, Db};
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use rusqlite::{params, OptionalExtension};
 
 /// 冲突的对外视图。

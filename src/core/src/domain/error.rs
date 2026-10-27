@@ -3,7 +3,7 @@
 //! `code` 是机器可读的稳定判定依据：GUI 按它选 i18n、CLI 按它映射退出码。
 //! `message` 是安全展示文案（中文），仅供人工阅读；程序分支**不得**匹配它。
 
-use crate::env_var::EnvHive;
+use crate::domain::env_var::EnvHive;
 
 /// 稳定错误码。新增变体应保持向后兼容（前端/CLI 对未知码统一按 Internal 处理）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

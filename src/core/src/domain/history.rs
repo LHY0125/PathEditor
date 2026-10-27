@@ -3,8 +3,8 @@
 //! 这样 `core::service::save_path_with_sidecar` 无需知道 `Db` 的存在：
 //! 生产注入 `DbHistory`，测试注入 `NoopHistory`，既有测试零改动。
 
-use crate::env_var::EnvHive;
-use crate::error::CoreError;
+use crate::domain::env_var::EnvHive;
+use crate::domain::error::CoreError;
 
 /// 事件来源。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]

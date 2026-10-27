@@ -4,7 +4,7 @@
 // 旧快照保留（append-only），保证「恢复」本身可被撤销。
 use path_editor_core::db::history::{current_snapshot, insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::service::{self, HiveOutcome, PathHiveIo};
 use path_editor_core::{bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
 use std::cell::RefCell;

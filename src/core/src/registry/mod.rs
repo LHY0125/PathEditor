@@ -1,6 +1,6 @@
 //! 注册表访问统一入口。外部（gui/cli）一律经此路径引用，拆分对调用方不可见。
 //!
-//! 与 crate 根的 `crate::error` 区分：那是结构化 `CoreError`；
+//! 与 crate 根的 `crate::domain::error` 区分：那是结构化 `CoreError`；
 //! 本模块的 `conflict` 只承载注册表侧的冲突常量与构造。
 //!
 //! 子模块划分：

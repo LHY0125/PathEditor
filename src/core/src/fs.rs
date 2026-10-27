@@ -1,7 +1,7 @@
 // TS 端 src/core/import-export.ts 仅保留为历史测试夹具；GUI/CLI 运行时统一使用本模块。
 
-use crate::error::{CoreError, ErrorCode};
-use crate::path_entry::PathEntry;
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::domain::path_entry::PathEntry;
 
 /// 过滤导入条目：去除空白、排除 null 字节和分号（PATH 分隔符冲突）
 fn sanitize_entries(entries: Vec<PathEntry>) -> Vec<PathEntry> {

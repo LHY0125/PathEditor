@@ -22,8 +22,8 @@ use super::{
     clean_path_entries, join_path, make_path_value, select_path_value_type, split_path,
     validate_and_join_paths,
 };
-use crate::env_var::{capabilities_for_with, EnvValueKind};
-use crate::path_entry::PathEntry;
+use crate::domain::env_var::{capabilities_for_with, EnvValueKind};
+use crate::domain::path_entry::PathEntry;
 use serde::Deserialize;
 use winreg::enums::{RegType, REG_DWORD, REG_EXPAND_SZ, REG_SZ};
 use winreg::types::FromRegValue;

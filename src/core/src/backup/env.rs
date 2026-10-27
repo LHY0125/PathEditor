@@ -1,8 +1,8 @@
 //! 环境变量备份的采集、写入、轮换与列表。
 
 use super::config::{env_backup_dir, env_backup_keep};
-use crate::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
+use crate::domain::error::{CoreError, ErrorCode};
 use crate::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 use crate::registry::hive_location;
 use crate::registry::store::{EnvHiveStore, WinregHive};

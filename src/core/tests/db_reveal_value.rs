@@ -11,7 +11,7 @@ use path_editor_core::db::history::{
     get_snapshot, insert_snapshot, reveal_env_value, EnvValueRow, NewSnapshot, SnapshotKind,
 };
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

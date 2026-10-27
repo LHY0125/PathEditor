@@ -4,8 +4,8 @@
 
 use super::history::{action_str, result_str, source_str};
 use super::Db;
-use crate::error::{CoreError, ErrorCode};
-use crate::history::{HistoryEvent, HistorySink};
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::domain::history::{HistoryEvent, HistorySink};
 use rusqlite::{params, OptionalExtension};
 use std::cell::RefCell;
 use uuid::Uuid;
@@ -90,8 +90,8 @@ impl HistorySink for DbHistory<'_> {
                     source_str(event.source),
                     action_str(event.action),
                     event.hive.map(|h| match h {
-                        crate::env_var::EnvHive::System => "system",
-                        crate::env_var::EnvHive::User => "user",
+                        crate::domain::env_var::EnvHive::System => "system",
+                        crate::domain::env_var::EnvHive::User => "user",
                     }),
                     event.target,
                     changed_fields,

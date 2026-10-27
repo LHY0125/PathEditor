@@ -1,5 +1,5 @@
-use crate::error::{CoreError, ErrorCode};
-use crate::path_entry::PathEntry;
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::domain::path_entry::PathEntry;
 use std::path::Path;
 use winreg::enums::*;
 use winreg::types::ToRegValue;

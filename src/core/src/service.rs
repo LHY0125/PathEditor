@@ -14,10 +14,10 @@ use crate::db::history::{self, NewSnapshot, SnapshotKind};
 use crate::db::history_sink::DbHistory;
 use crate::db::{search, Db};
 use crate::disabled;
-use crate::env_var::EnvHive;
-use crate::error::{CoreError, ErrorCode};
-use crate::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
-use crate::path_entry::{PathEntry, PathSnapshot};
+use crate::domain::env_var::EnvHive;
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
+use crate::domain::path_entry::{PathEntry, PathSnapshot};
 use crate::registry;
 use crate::system;
 

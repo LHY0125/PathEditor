@@ -1,4 +1,4 @@
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;

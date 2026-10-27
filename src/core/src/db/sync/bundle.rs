@@ -27,7 +27,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 
 /// 包魔数。
 ///

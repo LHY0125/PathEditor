@@ -8,7 +8,7 @@
 //! **并发安全**：用命名互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，
 //! 密钥文件以 `create_new(true)` 原子创建 —— **禁止「先 exists() 再写」的 TOCTOU**。
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use std::path::{Path, PathBuf};
 
 /// 密钥材料的明文长度：`version(1) + db_key(32) + hash_salt(16)`。

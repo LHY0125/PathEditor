@@ -14,7 +14,7 @@ use path_editor_core::db::refs::rebuild_refs;
 use path_editor_core::db::search::{rebuild_index, search};
 use path_editor_core::db::stats::{dashboard, rebuild_daily};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

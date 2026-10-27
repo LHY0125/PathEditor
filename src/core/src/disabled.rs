@@ -4,7 +4,7 @@
 //! DB 不可用时没有持久化快照，只返回注册表当前状态。
 //! pending 是崩溃安全机制：注册表已写、DB 当前快照未落盘时记录，下次补写。
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use crate::fs::atomic_write;
 use crate::persist::{
     migrate, parse_error_quarantined, rotate_backup, Versioned, PERSIST_SCHEMA_VERSION,

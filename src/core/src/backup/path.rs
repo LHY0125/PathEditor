@@ -1,7 +1,7 @@
 //! PATH 备份与轮换。
 
 use super::config::{backup_base_dir, path_backup_keep};
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use crate::registry::{self, SYS_REG_PATH, USER_REG_PATH};
 use chrono::Local;
 use std::path::{Path, PathBuf};

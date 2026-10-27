@@ -1,8 +1,8 @@
 //! 环境变量备份的预览与恢复。
 
 use super::env::*;
-use crate::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::env_var::{is_reserved, revision_of, EnvHive, EnvValueKind};
+use crate::domain::error::{CoreError, ErrorCode};
 use crate::registry::store::{EnvHiveStore, WinregHive};
 use crate::registry::{
     create_env_var_in_store, delete_env_var_force_in_store, hive_location,

@@ -123,7 +123,7 @@ pub(crate) fn cmd_env_add(
         // add 的 kind 来自 --kind（默认 string），非注册表读取；writable 经 core 判定。
         // 同名已存在时**照常展示**（不在预览层拒绝），执行时才由 core 拒 NameExists（验收标准 9）。
         // 安全：新值来自命令行，经 mask_new_value 打码/净化（敏感名不预览明文）。
-        let sensitive = core::env_var::is_sensitive(&name);
+        let sensitive = core::domain::env_var::is_sensitive(&name);
         let json = build_change_preview(
             "add",
             hive,

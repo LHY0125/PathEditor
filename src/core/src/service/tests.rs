@@ -1,7 +1,7 @@
 //! `service` 的契约测试（fake PathHiveIo，零真实注册表）。
 
 use super::*;
-use crate::path_entry::PathEntry;
+use crate::domain::path_entry::PathEntry;
 use std::cell::RefCell;
 
 fn entry(path: &str, enabled: bool) -> PathEntry {

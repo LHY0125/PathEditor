@@ -2,7 +2,7 @@
 
 use crate::output::print_json;
 use path_editor_core as core;
-use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
+use path_editor_core::domain::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
 
 /// 注册表类型的人类可读标签。
 pub(crate) fn kind_label(kind: EnvValueKind) -> &'static str {
@@ -69,10 +69,10 @@ pub(crate) fn build_change_preview(
 /// 命中 `is_sensitive` 时返回 `None`（不预览明文），否则经 `sanitize_preview` 净化控制字符。
 /// **判定复用 core 的 `is_sensitive` / `sanitize_preview`，不在此重写规则**。
 pub(crate) fn mask_new_value(name: &str, value: String) -> Option<String> {
-    if core::env_var::is_sensitive(name) {
+    if core::domain::env_var::is_sensitive(name) {
         None
     } else {
-        core::env_var::sanitize_preview(&value)
+        core::domain::env_var::sanitize_preview(&value)
     }
 }
 

@@ -37,7 +37,7 @@ pub(crate) fn profile_save(name: String) {
 
     let snap = core::db::history::NewSnapshot {
         kind: core::db::history::SnapshotKind::Profile,
-        source: core::history::EventSource::Cli,
+        source: core::domain::history::EventSource::Cli,
         system: snapshot.system,
         user: snapshot.user,
         env: Vec::new(),
@@ -81,7 +81,7 @@ pub(crate) fn profile_apply(name: String) {
     let mut db = open_db_or_exit();
     // 双 hive 一次编排：core 内按「读配置 → 只写变化的 hive → 记账」执行；
     // 记账失败只告警（注册表已写成功的事实优先于统计）。
-    core::service::apply_profile(&mut db, &name, core::history::EventSource::Cli)
+    core::service::apply_profile(&mut db, &name, core::domain::history::EventSource::Cli)
         .unwrap_or_else(|e| exit_core_error(&e));
 
     println!("配置文件 \"{name}\" 已写入注册表。");

@@ -5,7 +5,7 @@
 use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{self, ProfileView};
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::service::{self, ApplyOutcome};
 use path_editor_core::{CoreError, PathEntry};
 use serde::Deserialize;

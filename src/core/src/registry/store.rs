@@ -7,8 +7,8 @@
 use winreg::enums::*;
 use winreg::RegValue;
 
-use crate::env_var::EnvHive;
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::env_var::EnvHive;
+use crate::domain::error::{CoreError, ErrorCode};
 
 /// 单个 hive 的环境变量键抽象。
 ///
@@ -372,7 +372,7 @@ mod memory_tests {
         let err = hive.get_raw("ABSENT").expect_err("不存在应返回 Err");
         assert_eq!(
             err.code,
-            crate::error::ErrorCode::NotFound,
+            crate::domain::error::ErrorCode::NotFound,
             "不存在的变量必须是 NotFound 码，实际: {:?}",
             err.code
         );

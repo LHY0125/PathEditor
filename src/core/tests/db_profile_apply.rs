@@ -4,7 +4,7 @@
 use path_editor_core::db::history::NewSnapshot;
 use path_editor_core::db::profiles::{get_profile_paths_view, list_profiles, save_profile};
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::service::{self, PathHiveIo};
 use path_editor_core::{bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
 use std::cell::RefCell;

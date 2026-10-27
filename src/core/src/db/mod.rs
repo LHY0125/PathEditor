@@ -23,7 +23,7 @@ pub mod sync;
 #[cfg(windows)]
 pub mod dpapi;
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use std::path::Path;
 

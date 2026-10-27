@@ -1,7 +1,7 @@
 use super::render::*;
 use super::value::*;
 use path_editor_core as core;
-use path_editor_core::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
+use path_editor_core::domain::env_var::{EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot};
 
 // ── 值通道互斥 ──
 
@@ -1135,7 +1135,7 @@ fn change_preview_text_mentions_no_write() {
 fn mask_new_value_hides_sensitive_plaintext() {
     // 以 core 的敏感判定为准，取一个必然命中的名字。
     assert!(
-        core::env_var::is_sensitive("MY_API_TOKEN"),
+        core::domain::env_var::is_sensitive("MY_API_TOKEN"),
         "前置：MY_API_TOKEN 应命中敏感规则"
     );
     assert_eq!(

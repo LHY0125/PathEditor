@@ -4,7 +4,7 @@
 //! - 写入前把上一份主文件轮换为 `<file>.bak`（[`rotate_backup`]）；
 //! - 解析失败时把坏文件隔离为 `<file>.corrupt-<ts>`（[`quarantine`]）。
 
-use crate::error::{CoreError, ErrorCode};
+use crate::domain::error::{CoreError, ErrorCode};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fs;

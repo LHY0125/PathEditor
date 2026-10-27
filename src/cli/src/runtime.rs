@@ -92,13 +92,13 @@ pub(crate) fn save_path_write(
     let user = user.map(to_write);
     let outcome = match open_db_optional() {
         Some(mut db) => {
-            service::save_path_with_db(&mut db, core::history::EventSource::Cli, system, user)
+            service::save_path_with_db(&mut db, core::domain::history::EventSource::Cli, system, user)
         }
         None => service::save_path_registry_only(
             system,
             user,
-            core::history::EventSource::Cli,
-            &core::history::NoopHistory,
+            core::domain::history::EventSource::Cli,
+            &core::domain::history::NoopHistory,
         ),
     }
     .unwrap_or_else(|e| exit_core_error(&e));

@@ -5,7 +5,7 @@ use path_editor_core::db::history::{
     NewSnapshot, SnapshotKind,
 };
 use path_editor_core::db::Db;
-use path_editor_core::history::EventSource;
+use path_editor_core::domain::history::EventSource;
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

@@ -7,7 +7,7 @@
 //! 水位是**派生元数据**，不是真相源；文件损坏或丢失只会导致一次多余重建。
 
 use crate::db::{refs, stats, Db};
-use crate::error::CoreError;
+use crate::domain::error::CoreError;
 use std::path::Path;
 
 /// 当前水位：`(events_count, events_max_id, snapshots_count, snapshots_max_id)`。

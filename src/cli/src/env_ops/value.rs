@@ -1,7 +1,7 @@
 //! 值输入通道与并发选项的解析。
 
 use crate::runtime::exit_err;
-use path_editor_core::env_var::EnvValueKind;
+use path_editor_core::domain::env_var::EnvValueKind;
 
 /// 值的输入通道。三选一，互斥。
 pub(crate) enum ValueSource {
