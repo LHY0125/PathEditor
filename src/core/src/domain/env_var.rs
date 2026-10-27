@@ -217,21 +217,12 @@ pub fn sanitize_preview(value: &str) -> Option<String> {
 /// 计算某变量的编辑/删除权限。
 ///
 /// 保护名单、`Unsupported` 类型都是硬拒绝；hive 写能力由 `writable` 传入
-/// （调用方从 `crate::platform::capabilities` 取，避免本模块依赖注册表探测）。
+/// （调用方从 `platform::capabilities` 取，避免本模块依赖注册表探测）。
 pub fn capabilities_for_with(writable: bool, name: &str, kind: EnvValueKind) -> (bool, bool) {
     if is_reserved(name) || is_protected(name) || !kind.is_writable() {
         return (false, false);
     }
     (writable, writable)
-}
-
-/// 按 hive 与当前进程权限计算 `(can_edit, can_delete)`。
-pub fn capabilities_for(hive: EnvHive, name: &str, kind: EnvValueKind) -> (bool, bool) {
-    let writable = match hive {
-        EnvHive::System => crate::platform::system::check_admin(),
-        EnvHive::User => crate::platform::registry::can_write_user(),
-    };
-    capabilities_for_with(writable, name, kind)
 }
 
 #[cfg(test)]
@@ -341,22 +332,6 @@ mod tests {
         let sanitized = sanitize_preview(&long).expect("长值不应为 None");
         assert_eq!(sanitized.chars().count(), 257); // 256 + '…'
         assert!(sanitized.ends_with('…'));
-    }
-
-    #[test]
-    fn capabilities_deny_unsupported_kind() {
-        let (can_edit, can_delete) =
-            capabilities_for(EnvHive::User, "SOME_BINARY_VAR", EnvValueKind::Unsupported);
-        assert!(!can_edit);
-        assert!(!can_delete);
-    }
-
-    #[test]
-    fn capabilities_deny_protected_even_when_writable() {
-        let (can_edit, can_delete) =
-            capabilities_for(EnvHive::User, "windir", EnvValueKind::String);
-        assert!(!can_edit);
-        assert!(!can_delete);
     }
 
     #[test]
