@@ -10,8 +10,8 @@
 每用例一个 JSON：`name` / `input` / `op` / `expect`，可选 `note`
 （语义说明，不参与断言）。`op` 字符串在测试代码中 match 到具体函数：
 
-- `core/src/registry/golden_tests.rs`（挂 `registry/path.rs` 下，访问其私有 fn）
-- `core/src/registry/golden/merge_golden_tests.rs`（挂 `crate::disabled` 下，访问 `merge_hive`）
+- `core/src/platform/registry/golden_tests.rs`（挂 `registry/path.rs` 下，访问其私有 fn）
+- `core/src/platform/registry/golden/merge_golden_tests.rs`（挂 `app::disabled` 下，访问 `merge_hive`）
 
 ## 六类覆盖矩阵
 
@@ -44,7 +44,7 @@
 > **2026-09-21 更新**：本节曾写「本项目无独立『从备份恢复』入口，恢复靠手工
 > 把备份内容粘贴回 PATH」。该声明**已不再成立**——v5.1.4 新增了独立恢复入口
 > （CLI `patheditor env restore`、GUI 恢复命令 `restore_env_backup`），经
-> `core/src/backup.rs` 的 `restore_env_backup_from` 实现，差异计算与写入判定
+> `core/src/platform/backup/mod.rs` 的 `restore_env_backup_from` 实现，差异计算与写入判定
 > 均在 core 一处（设计文档 §S6）。恢复本身**不产生新备份**（核对轮 C7 裁断：
 > 每次恢复都新增文件会与保留策略互相吞噬），因此「恢复错了」没有自动回退，
 > CLI 与 GUI 都只**提示**手工兜底出口、不自动执行。本条仍是**既有 golden 基线
@@ -53,13 +53,13 @@
 
 ### 第 6 类延后：`WM_SETTINGCHANGE` 广播时机
 
-**广播端口尚未抽出**（F-08 只迁移了部分）。当前 `crate::system::broadcast_env_change()`
+**广播端口尚未抽出**（F-08 只迁移了部分）。当前 `crate::platform::system::broadcast_env_change()`
 在以下调用点是**硬编码、不可注入**的：
 
-- `core/src/registry/env_var.rs`：`update_env_var` / `create_env_var` /
+- `core/src/platform/registry/env_edit.rs`：`update_env_var` / `create_env_var` /
   `delete_env_var` / `update_env_var_force` / `delete_env_var_force` 的
   公开 API 层（`*_in_store` 注入核心不含广播）。
-- `core/src/service.rs`：`save_path_with_db` / `save_path_registry_only`
+- `core/src/app/service/mod.rs`：`save_path_with_db` / `save_path_registry_only`
   任一 hive 写成功后广播（符号名为准；行号随重构易漂移）。
 
 要按 brief 的替身方案断言「成功路径调用广播、失败/冲突路径不调用」，
@@ -70,7 +70,7 @@
 >
 > 本节曾写「**在端口可注入之前，本类不做测试**——不硬造」。该结论**已过时**，
 > 且会误导读者以为这类**仍无任何测试**。实际做法**不是**把广播抽成端口，
-> 而是加了一个全局观察标志：`core/src/registry/env_var.rs` 的
+> 而是加了一个全局观察标志：`core/src/platform/registry/env_edit.rs` 的
 > `BROADCAST_OBSERVED`（写入成功路径置位，仅测试读取）+ 写入口共用的
 > `broadcast_after_write()`（含 `cfg!(test)` 门控，测试构建跳过真实 Win32
 > 广播调用、生产构建无条件执行）。表驱动测试

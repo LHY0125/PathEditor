@@ -1,10 +1,10 @@
 use super::store::{EnvHiveStore, WinregHive};
-use crate::platform::backup::{self, backup_env_vars, BackupOutcome};
 use crate::domain::env_var::{
     capabilities_for_with, is_protected, is_reserved, is_sensitive, revision_of, sanitize_preview,
     EnvHive, EnvValueKind, EnvVarMeta, EnvVarSnapshot, RevealedValue,
 };
 use crate::domain::error::{CoreError, ErrorCode};
+use crate::platform::backup::{self, backup_env_vars, BackupOutcome};
 use serde::{Deserialize, Serialize};
 use winreg::enums::*;
 use winreg::types::{FromRegValue, ToRegValue};
@@ -686,7 +686,7 @@ fn create_env_var_with_store_at(
 /// list 的字面范围**。若不愿引入该变更，改 `store.enum_names().unwrap_or_default()`
 /// 即可完全保持现状。
 ///
-/// `pub(crate)` 而非 `pub`：恢复执行（`core/src/backup.rs`）需要逐变量调用它
+/// `pub(crate)` 而非 `pub`：恢复执行（`core/src/platform/backup/mod.rs`）需要逐变量调用它
 /// （恢复不得用 `set_raw` 绕过判定），但本函数不经 `core::platform::registry`
 /// 对外公开 —— 外部入口一贯带写前备份（`create_env_var`），恢复自己不产生备份。
 /// `crate::platform::registry` 根模块为其加了 `pub(crate) use` 重导出。
@@ -916,7 +916,7 @@ fn update_env_var_force_with_store_at(
 
 /// `update_env_var_force` 的核心逻辑，存储可注入。
 ///
-/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它。
+/// `pub(crate)`：恢复执行（`core/src/platform/backup/mod.rs`）逐变量调用它。
 /// **只豁免 revision 校验，保护名单 / 保留名 / 类型 / 名值合法性判定照旧** ——
 /// 这正是恢复 `--force` 需要的语义（不允许在恢复层自行实现「跳过校验」）。
 pub(crate) fn update_env_var_force_in_store(
@@ -978,7 +978,7 @@ fn delete_env_var_force_with_store_at(
 
 /// `delete_env_var_force` 的核心逻辑，存储可注入。
 ///
-/// `pub(crate)`：恢复执行（`core/src/backup.rs`）逐变量调用它。
+/// `pub(crate)`：恢复执行（`core/src/platform/backup/mod.rs`）逐变量调用它。
 /// 同 [`update_env_var_force_in_store`]：只豁免 revision 校验，保护名单判定照旧。
 pub(crate) fn delete_env_var_force_in_store(
     store: &dyn EnvHiveStore,
@@ -997,8 +997,8 @@ pub(crate) fn delete_env_var_force_in_store(
 #[cfg(test)]
 mod env_var_tests {
     use super::*;
-    use crate::platform::backup::BackupOutcome;
     use crate::domain::env_var::{EnvHive, EnvValueKind};
+    use crate::platform::backup::BackupOutcome;
     use crate::platform::registry::conflict::ERR_CONFLICT;
     use crate::platform::registry::store::memory::MemoryHive;
     use winreg::enums::{REG_DWORD, REG_EXPAND_SZ, REG_SZ};
@@ -1142,7 +1142,10 @@ mod env_var_tests {
         let result =
             update_env_var_in_store(&hive, EnvHive::User, "MY_VAR", "mine", &stale_revision);
         assert!(result.is_err(), "revision 不匹配必须 Err");
-        assert_eq!(result.unwrap_err().code, crate::domain::error::ErrorCode::Conflict);
+        assert_eq!(
+            result.unwrap_err().code,
+            crate::domain::error::ErrorCode::Conflict
+        );
 
         let raw = hive.get_raw("MY_VAR").expect("读取失败");
         assert_eq!(String::from_reg_value(&raw).unwrap(), "changed-by-other");
@@ -1308,7 +1311,10 @@ mod env_var_tests {
 
         let result = delete_env_var_in_store(&hive, EnvHive::User, "MY_VAR", &stale_revision);
         assert!(result.is_err(), "revision 不匹配必须 Err");
-        assert_eq!(result.unwrap_err().code, crate::domain::error::ErrorCode::Conflict);
+        assert_eq!(
+            result.unwrap_err().code,
+            crate::domain::error::ErrorCode::Conflict
+        );
         assert!(hive.contains("MY_VAR"), "冲突时不得删除变量");
     }
 

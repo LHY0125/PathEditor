@@ -28,11 +28,13 @@ pub(crate) fn cmd_import(file: String, target: String) {
 
 pub(crate) fn cmd_export(format: String, output: Option<String>) {
     let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
-    let content = core::platform::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
-        .unwrap_or_else(|e| exit_core_error(&e));
+    let content =
+        core::platform::fs::export_path_entries(&snapshot.system, &snapshot.user, &format)
+            .unwrap_or_else(|e| exit_core_error(&e));
     if let Some(path) = output {
         // 系统目录拒绝规则在 core（与备份共用），CLI 不复制判定。
-        core::platform::fs::write_export_file(&path, &content).unwrap_or_else(|e| exit_core_error(&e));
+        core::platform::fs::write_export_file(&path, &content)
+            .unwrap_or_else(|e| exit_core_error(&e));
         println!("已导出到: {path}");
     } else {
         println!("{content}");

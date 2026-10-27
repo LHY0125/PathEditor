@@ -21,8 +21,8 @@
 
 use super::crypto::KeyMaterial;
 use super::{db_err, Db};
-use crate::platform::backup::{EnvBackupPayload, EnvBackupVar};
 use crate::domain::error::{CoreError, ErrorCode};
+use crate::platform::backup::{EnvBackupPayload, EnvBackupVar};
 use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;

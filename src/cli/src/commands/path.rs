@@ -234,6 +234,7 @@ pub(crate) fn cmd_toggle(index: usize, system: bool, user: bool, enable: bool) {
 }
 
 pub(crate) fn cmd_backup() {
-    let path = core::platform::backup::backup_registry(None).unwrap_or_else(|e| exit_core_error(&e));
+    let path =
+        core::platform::backup::backup_registry(None).unwrap_or_else(|e| exit_core_error(&e));
     println!("备份已保存: {path}");
 }

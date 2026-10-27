@@ -9,61 +9,59 @@
 PathEditor/
 ├── src/
 │   ├── core/src/                # Rust 核心库（零 Tauri 依赖）
-│   │   ├── registry/            # 注册表访问统一入口
-│   │   │   ├── path.rs / access.rs / env_var.rs / conflict.rs
-│   │   │   └── store.rs         # 注册表值类型读写（EnvHiveStore 端口）
+│   │   ├── domain/              # 契约与端口：零 OS、零 IO、零数据库
+│   │   │   ├── error.rs         # CoreError / ErrorCode（含 exit_code）
+│   │   │   ├── path_entry.rs    # PathEntry / PathSnapshot
+│   │   │   ├── env_var.rs       # 通用环境变量契约 + 保留/保护/敏感判定
+│   │   │   └── history.rs       # HistorySink 端口 + EventSource
+│   │   ├── platform/            # 外部世界适配
+│   │   │   ├── persist.rs       # 版本化文件信封、轮换、损坏隔离
+│   │   │   ├── fs.rs            # 受限文件读取、导入导出
+│   │   │   ├── system.rs        # 权限、变量展开、环境广播
+│   │   │   ├── scanner.rs       # scan_paths 单次枚举、冲突与工具清单
+│   │   │   ├── capabilities.rs  # 按 hive 探测 PathCapabilities
+│   │   │   ├── registry/        # 注册表访问统一入口（path/access/env_edit/conflict/store）
+│   │   │   └── backup/          # 注册表备份、env 备份（.pebak）
 │   │   ├── db/                  # v6 SQLCipher 数据层
 │   │   │   ├── mod.rs           # Db 句柄、事务、open_default / open_and_migrate
 │   │   │   ├── schema.rs        # DDL v1/v2/v3；CURRENT_SCHEMA_VERSION = 3
-│   │   │   ├── crypto.rs / dpapi.rs / dacl.rs   # 密钥、DPAPI、DACL
-│   │   │   ├── history.rs / history_sink.rs      # 快照、事件、HistorySink 接缝
+│   │   │   ├── crypto.rs / dpapi.rs / dacl.rs   # 安全边界：密钥、DPAPI、DACL
+│   │   │   ├── history.rs / history_sink.rs      # 快照、事件、HistorySink 实现
 │   │   │   ├── profiles.rs      # 配置元数据/版本（DB 版）
-│   │   │   ├── backups.rs       # .pebak 写入/读取、备份索引
+│   │   │   ├── backup_index.rs  # 备份索引表（磁盘文件在 platform/backup/）
 │   │   │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
 │   │   │   ├── maintenance.rs   # 保留策略 + 遗留明文清理
 │   │   │   └── sync/            # bundle / change_log / merge / conflict / export / import
-│   │   ├── service.rs           # 保存编排：save_path_with_db / save_path_registry_only
-│   │   ├── capabilities.rs      # 按 hive 探测 PathCapabilities
-│   │   ├── system.rs            # 权限、路径验证、变量展开、环境广播
-│   │   ├── disabled.rs          # 快照合并、pending 磁盘文件
-│   │   ├── env_var.rs           # 通用环境变量契约与保留/保护/敏感判定
-│   │   ├── path_entry.rs        # PathEntry / PathSnapshot 契约
-│   │   ├── error.rs             # 结构化 CoreError / ErrorCode（含 exit_code）
-│   │   ├── persist.rs           # 持久化文件解析与损坏隔离
-│   │   ├── scanner.rs           # scan_paths 单次枚举、冲突和工具清单
-│   │   ├── fs.rs                # 受限文件读取、导入导出
-│   │   └── backup.rs            # 注册表备份、env 备份（.pebak）
-│   ├── cli/src/                 # Clap 定义 + 命令分派（bin-only crate，无 lib target）
+│   │   ├── app/                 # 编排：唯一同时依赖 platform 与 db 的层
+│   │   │   ├── bootstrap.rs     # 启动引导序列
+│   │   │   ├── disabled.rs      # 快照合并、pending 磁盘文件
+│   │   │   └── service/         # 保存编排：save_path_with_db / save_path_registry_only
+│   │   └── lib.rs               # 四层声明 + 契约再导出
+│   ├── cli/src/                 # bin-only crate，无 lib target
+│   │   ├── main.rs              # 入口 + 命令分派
 │   │   ├── cli.rs               # clap 定义
-│   │   ├── path_ops.rs          # PATH 子命令实现
-│   │   ├── runtime.rs           # 注册表安全保存、错误退出、快照提交
-│   │   ├── env_ops/             # env 子命令（value/render/cmd/tests）
-│   │   ├── import_export.rs     # 导入导出命令
-│   │   ├── profile_ops.rs       # profile 子命令
-│   │   ├── sync_ops.rs          # sync 子命令（口令隐藏输入）
-│   │   ├── maintenance_ops.rs   # maintenance 子命令
-│   │   ├── scan_ops.rs          # 冲突、扫描、权限检查
-│   │   └── output.rs            # JSON 输出出口
+│   │   ├── runtime.rs           # AppContext、错误退出码、快照提交
+│   │   ├── output.rs            # JSON / 文本输出出口
+│   │   └── commands/
+│   │       ├── path.rs          # PATH 子命令
+│   │       ├── profile.rs       # profile 子命令
+│   │       ├── scan.rs          # 冲突、扫描、权限检查
+│   │       ├── sync.rs          # sync 子命令（口令隐藏输入）
+│   │       ├── maintenance.rs   # maintenance 子命令
+│   │       ├── import_export.rs # 导入导出命令
+│   │       └── env/             # env 子命令（cmd / render / value / tests）
 │   └── gui/
-│       ├── src-tauri/src/commands/ # #[tauri::command] 薄包装，调用 core
-│       │   ├── db_state.rs         # 共享 DbState 与取用辅助
-│       │   ├── registry.rs / system.rs / backup.rs / fs.rs / disabled.rs / scanner.rs
-│       │   ├── env_var.rs / service.rs
-│       │   ├── history.rs          # 历史快照
-│       │   ├── profiles.rs         # 配置方案
-│       │   ├── analytics.rs        # 检索 / 统计 / 对比 / 引用图 / 冲突历史
-│       │   └── sync.rs             # 同步状态 / 导出 / 导入 / 冲突
+│       ├── src-tauri/src/commands/ #[tauri::command] 薄包装，调用 core
 │       └── web/                    # React + Vite
-│           ├── src/                # 纯逻辑与 UI（core/services/store/components/hooks/i18n）
-│           ├── tests/              # Vitest 测试 + 跨 Rust/TS 契约夹具
-│           └── e2e/                # Playwright 测试（mock IPC）
-├── probes/v6-sqlcipher/         # v6 SQLCipher 探针（不在 workspace）
-├── .github/workflows/           # ci.yml（MSVC 质量门）/ release.yml（tag 发布）/ 探针
-├── docs/superpowers/specs/      # 特性设计文档（YYYY-MM-DD-*-design.md）
-├── docs/superpowers/plans/      # 实施计划（M1–M4）
-├── docs/dev/                    # 本目录：按需读取的开发细节
-└── docs/审核和开发/YYYY.MM.DD/  # 审核与开发记录
 ```
+
+层间依赖只允许往下走：
+
+    app → db → platform → domain
+     └──────────↗
+
+`platform` 内部 `registry` ↔ `backup` 互相引用（写前备份 / 备份后回读），
+是唯一的层内强连通分量，因此两者必须同层。
 
 ## 模块边界速记
 

@@ -27,7 +27,7 @@ pub struct EnvBackupVar {
 
 /// 按 hive 分组的备份内容。
 ///
-/// 加 `rename_all = "camelCase"` 与 `EnvVarSnapshot`（`core/src/env_var.rs:127`）
+/// 加 `rename_all = "camelCase"` 与 `EnvVarSnapshot`（`core/src/domain/env_var.rs:127`）
 /// 及本文件的 `EnvBackupPayload` 保持风格一致；`system` / `user` 两个单字字段
 /// 在此宏下不变形，无功能影响。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,10 +55,10 @@ pub struct EnvBackupPayload {
 ///
 /// **：`Unsupported` 必须「跳过该变量」，不得让整次采集失败。** 因此本函数
 /// 用 `store.get_raw` + `from_reg_type` 自己判类型，而**不能**用 `read_env_var`
-/// ——后者（`core/src/registry/env_var.rs:30-36`）对 `Unsupported` 直接返回
+/// ——后者（`core/src/platform/registry/env_edit.rs:30-36`）对 `Unsupported` 直接返回
 /// `Err`，配上调用方的 `?` 会让「机器上存在一个 `REG_DWORD` 变量」变成
 /// 「每次写前备份都失败」。写法与 `list_env_vars_in_store`
-/// （`core/src/registry/env_var.rs:116-199`）保持一致。
+/// （`core/src/platform/registry/env_edit.rs:116-199`）保持一致。
 ///
 /// # Returns
 /// - `Ok(Vec<EnvBackupVar>)` — 该 hive 的可恢复变量，含明文与 revision

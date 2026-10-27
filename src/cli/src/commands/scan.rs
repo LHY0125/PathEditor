@@ -11,7 +11,8 @@ pub(crate) fn cmd_conflicts(json_out: bool) {
     if let Ok(usr) = core::platform::registry::load_user_paths() {
         paths.extend(usr);
     }
-    let conflicts = core::platform::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
+    let conflicts =
+        core::platform::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&conflicts);
     } else if conflicts.is_empty() {

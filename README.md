@@ -580,23 +580,33 @@ npx tauri build
 ```
 src/                          # 全部源码
 ├── core/                     # Rust 核心库（零 Tauri 依赖）
+│   ├── domain/               # 契约与端口：零 OS、零 IO、零数据库
+│   │   ├── error.rs          # CoreError / ErrorCode（code 驱动错误码与前端本地化）
+│   │   ├── path_entry.rs     # PathEntry / PathSnapshot 契约
+│   │   ├── env_var.rs        # 通用环境变量契约 + 保留/保护/敏感判定
+│   │   └── history.rs        # HistorySink 端口 + EventSource
+│   ├── platform/             # 外部世界适配
+│   │   ├── registry/         # 注册表通路（path / access / env_edit / conflict / store）
+│   │   ├── backup/           # 注册表备份、env 备份（.pebak）
+│   │   ├── system.rs         # 权限检测、路径验证、环境变量展开
+│   │   ├── scanner.rs        # 冲突检测、工具清单
+│   │   ├── capabilities.rs   # 按 hive 探测 PathCapabilities
+│   │   ├── persist.rs        # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
+│   │   └── fs.rs             # 文件读写、导入导出解析
 │   ├── db/                   # v6 SQLCipher 数据层
 │   │   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
-│   │   ├── history.rs / history_sink.rs / profiles.rs / backups.rs
+│   │   ├── history.rs / history_sink.rs / profiles.rs / backup_index.rs
 │   │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
 │   │   ├── maintenance.rs
 │   │   └── sync/             # bundle / change_log / merge / conflict / export / import
-│   ├── error.rs              # CoreError 结构化错误（code 驱动错误码与前端本地化）
-│   ├── service.rs            # 应用服务层（多 hive 事务编排 + 侧车快照）
-│   ├── persist.rs            # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
-│   ├── registry/             # 注册表通路（path / access / env_var / conflict / store）
-│   ├── system.rs             # 权限检测、路径验证、环境变量展开
-│   ├── scanner.rs            # 冲突检测、工具清单
-│   ├── backup.rs / disabled.rs # 备份（.pebak）、禁用状态
-│   └── fs.rs                 # 文件读写、导入导出解析
+│   └── app/                  # 编排：唯一同时依赖 platform 与 db 的层
+│       ├── service/          # 应用服务层（多 hive 事务编排 + 侧车快照）
+│       ├── bootstrap.rs      # 启动引导序列
+│       └── disabled.rs       # 快照合并、pending 磁盘文件
 ├── cli/                      # 命令行工具（bin 产物 patheditor.exe）
-│   └── src/                  # cli / path_ops / runtime / env_ops / import_export /
-│                             #   profile_ops / scan_ops / sync_ops / maintenance_ops
+│   └── src/                  # main / cli（clap）/ runtime / output
+│                             #   commands/（path / profile / scan / sync /
+│                             #     maintenance / import_export / env）
 └── gui/
     ├── src-tauri/            # Tauri 桌面应用（bin 产物 PathEditor.exe）
     │   └── src/commands/     # 薄包装 → 调用 core

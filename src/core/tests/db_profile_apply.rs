@@ -1,11 +1,11 @@
 // 一文件一测试（SQLCipher）。
 //
 // 配置应用编排：读配置 → 只写变化的 hive → 记账；重复应用同内容不重复写注册表。
+use path_editor_core::app::service::{self, PathHiveIo};
 use path_editor_core::db::history::NewSnapshot;
 use path_editor_core::db::profiles::{get_profile_paths_view, list_profiles, save_profile};
 use path_editor_core::db::Db;
 use path_editor_core::domain::history::EventSource;
-use path_editor_core::app::service::{self, PathHiveIo};
 use path_editor_core::{app::bootstrap, CoreError, EnvHive, PathEntry, PathSnapshot};
 use std::cell::RefCell;
 use tempfile::TempDir;

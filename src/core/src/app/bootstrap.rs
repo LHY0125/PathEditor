@@ -11,9 +11,9 @@
 //! [`BootstrapReport::warnings`]——DB 可用性与注册表编辑优先于派生数据新鲜度，
 //! 且下次启动会重试。调用方（GUI/CLI）负责把 warnings 写入自己的日志系统。
 
+use crate::app::service;
 use crate::db::{self, Db};
 use crate::domain::history::EventSource;
-use crate::app::service;
 use crate::{CoreError, ErrorCode};
 use std::path::PathBuf;
 

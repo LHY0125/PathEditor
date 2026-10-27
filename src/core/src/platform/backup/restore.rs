@@ -85,7 +85,8 @@ pub struct RestorePreview {
 /// **不做路径来源校验**（扩展名 / 是否在备份目录内）：那是
 /// [`validate_backup_path`] 的职责。本函数只负责「读出并验版本」。
 pub fn read_env_backup(path: &Path) -> Result<EnvBackupPayload, CoreError> {
-    let versioned = crate::platform::persist::read_versioned_file::<EnvBackupPayload>(path, "env 备份")?;
+    let versioned =
+        crate::platform::persist::read_versioned_file::<EnvBackupPayload>(path, "env 备份")?;
     crate::platform::persist::migrate(versioned, "env 备份")
 }
 

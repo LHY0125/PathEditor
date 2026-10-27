@@ -11,9 +11,9 @@
 use std::path::{Path, PathBuf};
 
 use super::{db_err, Db};
-use crate::platform::backup::EnvBackupPayload;
 use crate::db::crypto::KeyMaterial;
 use crate::domain::error::CoreError;
+use crate::platform::backup::EnvBackupPayload;
 
 /// 已导出 `changes` 的保留期：90 天。
 pub const CHANGES_RETENTION_MS: i64 = 90 * 24 * 60 * 60 * 1000;
@@ -242,8 +242,8 @@ fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, Cor
             format!("读取 {} 失败: {e}", path.display()),
         )
     })?;
-    let versioned: crate::platform::persist::Versioned<EnvBackupPayload> = serde_json::from_str(&content)
-        .map_err(|e| {
+    let versioned: crate::platform::persist::Versioned<EnvBackupPayload> =
+        serde_json::from_str(&content).map_err(|e| {
             CoreError::new(
                 crate::domain::error::ErrorCode::Parse,
                 "cleanup_legacy",
@@ -256,9 +256,9 @@ fn read_legacy_backup_no_quarantine(path: &Path) -> Result<EnvBackupPayload, Cor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::backup::{EnvBackupHives, EnvBackupVar};
     use crate::db::crypto::load_or_create_key;
     use crate::domain::env_var::EnvValueKind;
+    use crate::platform::backup::{EnvBackupHives, EnvBackupVar};
     use crate::platform::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 
     /// 此文件只有一个测试：它用 DPAPI、不建 SQLCipher，因此可以放在单元测试模块里。

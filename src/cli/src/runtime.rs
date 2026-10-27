@@ -91,9 +91,12 @@ pub(crate) fn save_path_write(
     let system = system.map(to_write);
     let user = user.map(to_write);
     let outcome = match open_db_optional() {
-        Some(mut db) => {
-            service::save_path_with_db(&mut db, core::domain::history::EventSource::Cli, system, user)
-        }
+        Some(mut db) => service::save_path_with_db(
+            &mut db,
+            core::domain::history::EventSource::Cli,
+            system,
+            user,
+        ),
         None => service::save_path_registry_only(
             system,
             user,
@@ -271,7 +274,9 @@ mod tests {
         };
         let outcome = match mode.as_str() {
             "failed" => core::platform::backup::BackupOutcome::Failed("磁盘已满".into()),
-            "created" => core::platform::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json")),
+            "created" => {
+                core::platform::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json"))
+            }
             "skipped" => core::platform::backup::BackupOutcome::Skipped,
             other => panic!("未知探针模式: {other}"),
         };

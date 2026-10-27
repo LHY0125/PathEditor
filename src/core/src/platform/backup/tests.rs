@@ -1245,7 +1245,7 @@ fn failure_names(outcome: &RestoreOutcome, name: &str) -> bool {
 /// `delete_env_var_force_in_store` 里是**三处独立代码**。只核对一条
 /// 会漏掉另外两条 —— 那正是「测试看似通过但测不到东西」的典型形态。
 ///
-/// 可证伪性：把 `windir` 从 `PROTECTED_NAMES`（`core/src/env_var.rs`）删掉，
+/// 可证伪性：把 `windir` 从 `PROTECTED_NAMES`（`core/src/domain/env_var.rs`）删掉，
 /// 三个断言全部失败。
 #[test]
 fn windir_seed_really_hits_protected_branch() {
@@ -1659,7 +1659,7 @@ fn restore_empty_backup_without_force_also_removes_all() {
 ///
 /// 构造方式：备份条目由 [`backup_var`] 生成（revision 与自身 name/type/value
 /// 自洽），注册表里是**同样的值** → `diff_one_hive` 走「revision 相同 → 不进差异」
-/// 分支（`core/src/backup.rs` 的 `Some((_, current_revision)) if ... == &var.revision`），
+/// 分支（`core/src/platform/backup/mod.rs` 的 `Some((_, current_revision)) if ... == &var.revision`），
 /// 又因备份侧 `seen` 抑制了 `Removed`，于是 `changes.len() == 0`。
 ///
 /// **可证伪性**：

@@ -9,15 +9,15 @@
 //! - **pending**：注册表已写成功但快照未落盘时记录，下次补写（只补写快照，不触碰注册表）；
 //! - **广播**：任一 hive 注册表写成功后由服务层广播。
 
-use crate::platform::backup;
+use crate::app::disabled;
 use crate::db::history::{self, NewSnapshot, SnapshotKind};
 use crate::db::history_sink::DbHistory;
 use crate::db::{search, Db};
-use crate::app::disabled;
 use crate::domain::env_var::EnvHive;
 use crate::domain::error::{CoreError, ErrorCode};
 use crate::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
 use crate::domain::path_entry::{PathEntry, PathSnapshot};
+use crate::platform::backup;
 use crate::platform::registry;
 use crate::platform::system;
 

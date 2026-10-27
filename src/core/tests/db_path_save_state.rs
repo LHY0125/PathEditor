@@ -6,6 +6,7 @@
 // 3. 记录一条 `source = cli` 的事件。
 //
 // **本测试使用 SQLCipher**，因此整个文件只放一个 `#[test]`。
+use path_editor_core::app::service::{self, PathHiveIo, PathHiveWrite};
 use path_editor_core::db::history::{
     app_state_version, current_snapshot, insert_snapshot, set_current_snapshot, NewSnapshot,
     SnapshotKind,
@@ -13,7 +14,6 @@ use path_editor_core::db::history::{
 use path_editor_core::db::Db;
 use path_editor_core::domain::error::CoreError;
 use path_editor_core::domain::history::EventSource;
-use path_editor_core::app::service::{self, PathHiveIo, PathHiveWrite};
 use path_editor_core::{EnvHive, PathEntry};
 
 fn entry(path: &str, enabled: bool) -> PathEntry {

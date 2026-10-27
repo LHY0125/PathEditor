@@ -9,7 +9,9 @@ use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{list_events, EventFilter, NewSnapshot, SnapshotKind};
 use path_editor_core::db::history_sink::DbHistory;
 use path_editor_core::db::Db;
-use path_editor_core::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
+use path_editor_core::domain::history::{
+    EventAction, EventResult, EventSource, HistoryEvent, HistorySink,
+};
 use path_editor_core::PathEntry;
 use tempfile::TempDir;
 

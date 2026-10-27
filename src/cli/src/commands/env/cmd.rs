@@ -8,7 +8,8 @@ use path_editor_core as core;
 
 /// `env list` —— 列出变量元数据（不含明文）。
 pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
-    let snapshot = core::platform::registry::list_all_env_vars().unwrap_or_else(|e| exit_core_error(&e));
+    let snapshot =
+        core::platform::registry::list_all_env_vars().unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         let value = snapshot_json(&snapshot, system, user);
         print_json(&value);
@@ -68,8 +69,8 @@ pub(crate) fn cmd_env_set(
     if dry_run {
         // 预览是只读的：经 core 的 preview_env_change 取当前值/类型/写权限。
         // 变量不存在时 core 返回 NotFound，照常报错 —— 预览与执行判定一致（验收标准 8）。
-        let preview =
-            core::platform::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+        let preview = core::platform::registry::preview_env_change(hive, &name)
+            .unwrap_or_else(|e| exit_core_error(&e));
         // 安全：旧值已由 core 打码/净化；新值来自命令行，须同样经 mask_new_value 处理。
         let json = build_change_preview(
             "set",
@@ -162,8 +163,8 @@ pub(crate) fn cmd_env_remove(
     let hive = select_hive(system, false);
     if dry_run {
         // 预览是只读的；变量不存在时 core 返回 NotFound，照常报错（验收标准 8）。
-        let preview =
-            core::platform::registry::preview_env_change(hive, &name).unwrap_or_else(|e| exit_core_error(&e));
+        let preview = core::platform::registry::preview_env_change(hive, &name)
+            .unwrap_or_else(|e| exit_core_error(&e));
         let json = build_change_preview(
             "remove",
             hive,
@@ -273,7 +274,8 @@ pub(crate) fn cmd_env_backups(json_out: bool) {
 /// # Returns
 /// 无返回值：失败经 `exit_core_error` 终止进程。
 pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out: bool) {
-    let path = core::platform::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
+    let path =
+        core::platform::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
 
     if dry_run {
         // 统一读入口，同时支持 `.pebak`（解密）与遗留 `.json`
@@ -288,8 +290,8 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
                 path.display()
             );
         }
-        let preview =
-            core::platform::backup::preview_restore(&payload).unwrap_or_else(|e| exit_core_error(&e));
+        let preview = core::platform::backup::preview_restore(&payload)
+            .unwrap_or_else(|e| exit_core_error(&e));
         if json_out {
             print_json(&preview);
             return;
@@ -326,8 +328,8 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
         );
     }
 
-    let outcome =
-        core::platform::backup::restore_env_backup_from(&path, force).unwrap_or_else(|e| exit_core_error(&e));
+    let outcome = core::platform::backup::restore_env_backup_from(&path, force)
+        .unwrap_or_else(|e| exit_core_error(&e));
 
     if json_out {
         print_json(&outcome);

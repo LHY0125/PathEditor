@@ -85,7 +85,9 @@ fn main() {
                 dry_run,
                 json,
                 system,
-            } => commands::env::cmd_env_add(name, value, stdin, value_file, kind, dry_run, json, system),
+            } => commands::env::cmd_env_add(
+                name, value, stdin, value_file, kind, dry_run, json, system,
+            ),
             EnvCmd::Remove {
                 name,
                 revision,
