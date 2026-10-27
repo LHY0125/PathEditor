@@ -313,7 +313,7 @@ pub fn preview_restore(payload: &EnvBackupPayload) -> Result<RestorePreview, Cor
 /// 读取任意格式的 env 备份：`.pebak` 解密，`.json` 明文兼容。
 ///
 /// 这是 `backup.rs` 内部的**统一读入口**——生产路径（预览、恢复）都走它，
-/// 保证「新备份能读、旧备份也能读」。委托给 [`crate::db::backups::read_env_backup_any`]，
+/// 保证「新备份能读、旧备份也能读」。委托给 [`crate::db::backup_index::read_env_backup_any`]，
 /// 因为 DPAPI 密钥与 `.pebak` 头部解析都在那一层。
 ///
 /// **`.pebak` 但密钥不可用**时返回 `Crypto` 错误，
@@ -333,7 +333,7 @@ pub(crate) fn read_env_backup_any(path: &Path) -> Result<EnvBackupPayload, CoreE
     }
     let home = crate::db::crypto::config_dir();
     let material = crate::db::crypto::load_or_create_key(&home)?;
-    crate::db::backups::read_env_backup_any(path, &material)
+    crate::db::backup_index::read_env_backup_any(path, &material)
 }
 
 /// 读取任意格式的 env 备份（**公开入口**）：`.pebak` 解密，`.json` 明文兼容。
@@ -395,7 +395,7 @@ pub fn read_env_backup_with_format(
 #[doc(hidden)]
 pub fn write_env_backup_for_test(dir: &Path, payload: &EnvBackupPayload) -> Option<PathBuf> {
     let key = crate::db::crypto::load_or_create_key(&crate::db::crypto::config_dir()).ok()?;
-    let path = crate::db::backups::write_env_backup_pebak(dir, payload, &key).ok()?;
+    let path = crate::db::backup_index::write_env_backup_pebak(dir, payload, &key).ok()?;
     // 固定文件名，避免被列表排序断言干扰
     let fixed = dir.join("env_backup_t7_fixture.pebak");
     std::fs::rename(&path, &fixed).ok()?;

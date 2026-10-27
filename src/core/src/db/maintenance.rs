@@ -181,7 +181,7 @@ fn cleanup_legacy_impl(
             continue;
         };
 
-        let pebak = match crate::db::backups::write_env_backup_pebak(dir, &payload, material) {
+        let pebak = match crate::db::backup_index::write_env_backup_pebak(dir, &payload, material) {
             Ok(p) => p,
             Err(e) => {
                 report
@@ -191,7 +191,7 @@ fn cleanup_legacy_impl(
             }
         };
         // **回读校验**：写成功不等于写对了（DPAPI 作用域、磁盘满都可能让文件不可读）。
-        if let Err(e) = crate::db::backups::read_env_backup_any(&pebak, material) {
+        if let Err(e) = crate::db::backup_index::read_env_backup_any(&pebak, material) {
             report
                 .skipped
                 .push((path, format!("加密备份回读失败，已保留明文: {}", e.message)));
@@ -310,7 +310,7 @@ mod tests {
         assert!(!legacy.exists(), "转换成功后删除明文");
 
         let (_, pebak) = &report.converted[0];
-        let read_back = crate::db::backups::read_env_backup_any(pebak, &material).unwrap();
+        let read_back = crate::db::backup_index::read_env_backup_any(pebak, &material).unwrap();
         assert_eq!(read_back, payload, ".pebak 必须可回读");
     }
 }

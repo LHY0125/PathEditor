@@ -186,7 +186,7 @@ pub fn write_env_backup_to_with_key(
     payload: &EnvBackupPayload,
     material: &crate::db::crypto::KeyMaterial,
 ) -> Result<PathBuf, CoreError> {
-    let path = crate::db::backups::write_env_backup_pebak(dir, payload, material)?;
+    let path = crate::db::backup_index::write_env_backup_pebak(dir, payload, material)?;
     rotate_env_backups(dir, env_backup_keep())?;
     log::info!("env 备份已加密保存到: {}", path.display());
     Ok(path)
@@ -389,7 +389,7 @@ pub fn list_env_backups_in(dir: &Path) -> Result<Vec<EnvBackupInfo>, CoreError> 
         let timestamp = stem.trim_start_matches("env_backup_").to_string();
         // `.pebak` 的变量数从**文件头**读；`.json` 仍不解析。
         let variable_count = if encrypted {
-            crate::db::backups::read_pebak_header(&path)
+            crate::db::backup_index::read_pebak_header(&path)
                 .map(|h| h.variable_count as u64)
                 .unwrap_or(0)
         } else {

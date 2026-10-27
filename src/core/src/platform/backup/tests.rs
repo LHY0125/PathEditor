@@ -1148,7 +1148,7 @@ fn read_env_backup_round_trips_and_quarantines_corrupt() {
         let key_dir = tempfile::TempDir::new().unwrap();
         let key = crate::db::crypto::load_or_create_key(key_dir.path()).unwrap();
         let path = write_env_backup_to_with_key(dir, &payload, &key).expect("写备份失败");
-        let back = crate::db::backups::read_env_backup_any(&path, &key).expect("读备份失败");
+        let back = crate::db::backup_index::read_env_backup_any(&path, &key).expect("读备份失败");
         assert_eq!(back, payload, "读回的载荷必须与写入的一致");
 
         // 遗留明文路径也必须仍可读

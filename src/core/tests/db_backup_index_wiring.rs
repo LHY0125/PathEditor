@@ -12,7 +12,7 @@ use path_editor_core::platform::backup::{
     list_env_backups_in, write_env_backup_to_with_key, EnvBackupPayload,
 };
 use path_editor_core::platform::backup::{EnvBackupHives, EnvBackupVar};
-use path_editor_core::db::backups::refresh_and_list_at;
+use path_editor_core::db::backup_index::refresh_and_list_at;
 use path_editor_core::db::crypto::key_hex;
 use path_editor_core::db::crypto::load_or_create_key;
 use path_editor_core::db::Db;

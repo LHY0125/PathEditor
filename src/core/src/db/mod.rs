@@ -3,7 +3,7 @@
 //! **所有写事务 `BEGIN IMMEDIATE`**；
 //! 读-改-写必须带 `version` CAS。
 
-pub mod backups;
+pub mod backup_index;
 pub mod compare;
 pub mod crypto;
 #[cfg(windows)]
