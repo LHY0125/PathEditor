@@ -247,7 +247,7 @@ $ find src -type d -empty
 
 ## 9. 合并与分支状态
 
-- 分支 `refactor/module-layering`，领先 `main` 15 个提交（6 docs + 1 计划修订 + 7 refactor + 1 docs 回执）。
+- 分支 `refactor/module-layering`，领先 `main` **17 个提交**（10 docs + 7 refactor，含本回执与其数字修正）。
 - 工作区**干净**：`git status --porcelain` 无输出。
 - **未推送、未升级版本号、未合并到 main**——三项均待用户明确授权。
 
