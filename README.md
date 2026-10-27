@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-720%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-737%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -570,8 +570,8 @@ npx tauri build
 | 数据库    | SQLCipher（rusqlite + bundled OpenSSL）   |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (33 files / 398) + Playwright (54) |
-| Rust 测试 | cargo test (322 passed / 2 ignored)       |
+| 前端测试  | Vitest (37 files / 413) + Playwright (54) |
+| Rust 测试 | cargo test (324 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 
@@ -637,6 +637,9 @@ docs/审核和开发/                # 审查与开发记录
 - Rust 1.95+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
 - MinGW-w64（GNU 下测试需要 `windres`；MSVC 下由链接器清单处理）
 - 首次全量构建需要 `make`、`perl`（MSVC 下还需 NASM），约 45 分钟
+- **GNU 目标下 `perl` 必须是 POSIX 路径风格**：原生 Windows perl（Strawberry / Scoop）会在 OpenSSL 的
+  `Configure` 阶段被拒。可用 Git for Windows 自带的 `usr\bin\perl.exe`，并用 `PERL5LIB` 指向
+  `probes/v6-sqlcipher/perl5lib` 补齐该 perl 被裁剪的模块；三行命令见 `docs/dev/testing.md` 的「其他」一节
 
 ### 代码规范
 

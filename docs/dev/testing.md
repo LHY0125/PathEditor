@@ -31,7 +31,10 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**。
 - 提交前优先运行 `npm run verify:all`。
-- 当前基线（v6.0.0）：Rust **322 passed / 0 failed / 2 ignored**；前端 **33 files / 398 passed**；E2E **54 passed**。
+- **当前基线（v6.1.1）**：Rust **324 passed / 0 failed / 2 ignored**；前端 **37 files / 413 passed**；E2E **54 passed**。
+  - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
+  - 三项均为 2026-10-24 本机实测（GNU 工具链）：`cargo test --workspace` → 324 passed / 2 ignored；
+    `npx vitest run` → 37 files / 413 passed；`npm run test:e2e` → 54 passed。
 
 ## CI
 
@@ -70,6 +73,23 @@ npm run verify:all    # verify + Playwright E2E
 
 ## 其他
 
+- **Windows + GNU 目标本地构建需要三件事**，缺任一条都会在 `openssl-sys` 处失败：
+  1. 能产出 POSIX 路径的 perl。原生 Windows perl（`osname=MSWin32`，如 Strawberry/Scoop）会被
+     OpenSSL 的 `Configurations/unix-checker.pm`（`rel2abs('.') !~ m|/|`）拦下并中止。
+     Git for Windows 自带的 perl 是 cygwin 版、能过检查：
+     `$env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe"`
+  2. 补齐该 perl 被裁剪掉的模块（缺 `Locale::Maketext::Simple` 等，`IPC::Cmd` 因此加载失败）。
+     仓库已把需要的模块树放在 `probes/v6-sqlcipher/perl5lib/`：
+     `$env:PERL5LIB = "$PWD\probes\v6-sqlcipher\perl5lib"`
+  3. 给 `make` 的 recipe 提供 `sh` / `cp` / `rm`：
+     `$env:PATH += ";$(scoop prefix git)\usr\bin"`
+     三行都是会话级环境变量，**不要写进 `.cargo/config.toml`**——CI 走 MSVC 也会读它，
+     指向本机路径会直接把 CI 弄红。兜底方案：装 MSYS2 并 `pacman -S perl`，
+     把 `OPENSSL_SRC_PERL` 指向其 `usr\bin\perl.exe`。
+     验证记录：2026-10-24 本机 `cargo check -p path-editor-core` 通过（23m52s）。
+- CI 与发布一律走 MSVC（原生 perl + NASM），不受上述限制。
+- 前端全量跑曾出现 `use-path-validation.test.tsx` 的隔离抖动（期望 3 实得 11）；
+  该文件单独跑 3/3 通过，属用例间 pending 未清理，与本轮改动无关，重跑即可判定。
 - 代码风格：UTF-8、CRLF；TS 2 空格，Rust/TOML 4 空格；Prettier 使用单引号、尾逗号和 100 列。
 - 从仓库根目录跑 `npm test` 时，`vitest.config.ts` 的 `exclude` 必须包含 `.claude/**`——否则会扫到
   `.claude/worktrees/` 下嵌套 worktree 的 e2e 文件并大面积假失败。

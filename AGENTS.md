@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json`（v6.0.0）。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **6.1.1**）。
 
 v6 起数据层是一个 **SQLCipher 加密数据库（sidecar）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
 
@@ -50,6 +50,21 @@ cargo test -p <crate> <test_name>                 # 单个 Rust 测试
 cargo test -p path-editor-core --test <file>      # core 集成测试（包名是连字符，不是下划线）
 cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins）
 ```
+
+### 本地构建环境（Windows + GNU）
+
+首次 `cargo check` / `cargo test` 前，先在**当前会话**设好这三行，否则 `openssl-sys` 会在 OpenSSL
+`Configure` 阶段中止。本机 2026-10-24 已按此跑通（`cargo test --workspace` 324 passed，clippy 与 fmt 全绿）。
+
+```powershell
+$env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe" # 原生 Windows perl 产不出 POSIX 路径，会被拒
+$env:PERL5LIB         = "$PWD\probes\v6-sqlcipher\perl5lib"    # Git 自带 perl 被裁剪，补 Locale/Maketext、Pod 等
+$env:PATH            += ";$(scoop prefix git)\usr\bin"         # make 的 recipe 需要 sh / cp / rm
+```
+
+- 只对当前 shell 生效；**不要**写进 `.cargo/config.toml`——CI 走 MSVC 也会读它，指向本机路径会把 CI 弄红。
+- 首次全量编译约 24 分钟、`target/` 约 8–9 GB；之后增量是分钟级。
+- CI 与发布一律走 MSVC（原生 perl + NASM），不需要这些设置。原理与兜底方案见 `docs/dev/testing.md`。
 
 ## 架构速览
 
@@ -137,7 +152,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v6.0.0）：Rust **322 passed / 2 ignored**；前端 **33 files / 398**；E2E **54**。
+- 基线（v6.1.1，2026-10-24 本机实测）：Rust **324 passed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **37 files / 413**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 
