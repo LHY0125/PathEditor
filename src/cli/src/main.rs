@@ -178,4 +178,84 @@ mod help_tests {
             "list --help 必须把「不含明文」限定到敏感变量: {help}"
         );
     }
+
+    /// 顶层 `-h` 与 `--help` 必须分层：速查 / 详解各司其职。
+    ///
+    /// 可证伪性：删掉 `Cli` 的 `long_about` 或 `after_long_help`，两者输出趋同，
+    /// `assert_ne!` 或「快速上手」断言失败。这是把「帮助分两层」从约定变成
+    /// **可执行的契约**——否则下次改文案时分层会被无声抹平。
+    #[test]
+    fn top_level_help_layers_short_and_long() {
+        let mut cmd = Cli::command();
+        let short = cmd.render_help().to_string();
+        let long = cmd.render_long_help().to_string();
+
+        assert_ne!(
+            short, long,
+            "顶层 -h 与 --help 不应完全相同——分层失效（缺 long_about / after_long_help）"
+        );
+        assert!(
+            !short.contains("快速上手"),
+            "快速上手示例只应出现在 --help，不应污染 -h: {short}"
+        );
+        assert!(
+            long.contains("快速上手"),
+            "--help 必须给出快速上手示例: {long}"
+        );
+        assert!(long.contains("退出码"), "--help 必须给出退出码总表: {long}");
+    }
+
+    /// `env --help` 必须写明 `set` / `remove` 的 revision / force 二选一契约。
+    ///
+    /// 可证伪性：删掉 `EnvCmd` 的 `after_long_help`，`互斥` 与 `退出码` 消失，断言失败。
+    /// 这条契约此前只存在于 `docs/dev/interfaces.md`，终端里看不到。
+    #[test]
+    fn env_help_documents_revision_or_force_requirement() {
+        let mut cmd = Cli::command();
+        let env = cmd.find_subcommand_mut("env").expect("env 子命令必须存在");
+        let help = env.render_long_help().to_string();
+
+        assert!(
+            help.contains("--revision") && help.contains("--force"),
+            "env --help 必须同时提到 --revision 与 --force: {help}"
+        );
+        assert!(
+            help.contains("互斥"),
+            "env --help 必须写明 --revision 与 --force 互斥、缺一报错: {help}"
+        );
+        assert!(
+            help.contains("退出码"),
+            "env --help 必须给出退出码说明: {help}"
+        );
+    }
+
+    /// PATH 命令的 hive 选项必须有说明，且区分「筛选」与「二选一」两种语义。
+    ///
+    /// `list` / `clean` 的 `--system` / `--user` 是**筛选器**（同给则两者都处理），
+    /// `add` / `enable` / `disable` 的是**二选一**（同给报错）。两者语义相反，
+    /// 文案写混会误导用户，故分别断言。
+    ///
+    /// 可证伪性：删掉 `List` 变体上 `system` / `user` 的字段注释，`HKLM` 消失，断言失败。
+    #[test]
+    fn path_commands_document_hive_flags() {
+        let mut cmd = Cli::command();
+
+        let list = cmd.find_subcommand_mut("list").expect("list 必须存在");
+        let help = list.render_long_help().to_string();
+        assert!(
+            help.contains("HKLM") && help.contains("HKCU"),
+            "list --help 必须说明 --system / --user 各指向哪个 hive: {help}"
+        );
+        assert!(
+            help.contains("两者都看"),
+            "list 的 --system / --user 是筛选器，必须写明同给时两者都看: {help}"
+        );
+
+        let add = cmd.find_subcommand_mut("add").expect("add 必须存在");
+        let help = add.render_long_help().to_string();
+        assert!(
+            help.contains("互斥"),
+            "add 的 --system / --user 是二选一，必须写明互斥: {help}"
+        );
+    }
 }
