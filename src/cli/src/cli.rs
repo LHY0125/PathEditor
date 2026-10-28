@@ -302,24 +302,61 @@ pub(crate) enum ProfileCmd {
 }
 
 #[derive(Subcommand)]
+#[command(after_long_help = "\
+默认操作用户 hive（HKCU），加 --system 才操作系统 hive（HKLM，写需管理员）。
+Path 不在通用通路内 —— 它只能经 PATH 专用命令编辑。
+
+set / remove 必须显式给出 --revision 或 --force（互斥，缺一报错）：
+  --revision <R>  并发安全。R 取自 `env list --json` 的 revision 字段，
+                  不匹配时以退出码 3 退出。
+  --force         跳过校验直接覆盖（最后写入者胜），仍受保护名单/类型/权限约束，
+                  不会产生退出码 3。
+
+get 是 CLI 侧唯一的明文出口：stdout 只打印裸值 + 换行（管道友好）。
+敏感值建议用 --stdin 或 --value-file 传入，避免明文进入 shell 历史与进程列表。
+
+示例:
+  # 1) 并发安全的修改：先取 revision，再带上它
+  patheditor env list --json
+  patheditor env set JAVA_HOME --value \"C:\\jdk-25\" --revision <R>
+
+  # 2) 敏感值走 stdin，不进 shell 历史
+  echo -n \"secret\" | patheditor env set API_KEY --stdin --force
+
+  # 3) 先预览再执行（--json 必须与 --dry-run 同用）
+  patheditor env set FOO --value bar --force --dry-run --json
+
+  # 4) 新建（纯新建语义：同名会被拒绝，不会覆盖）
+  patheditor env add MY_TOOL --value \"C:\\tools\" --kind expand
+
+  # 5) 读明文（管道友好）
+  patheditor env get JAVA_HOME
+
+退出码: 0 成功 / 1 一般错误 / 2 参数解析失败 / 3 revision 冲突 / 5 密钥或 DPAPI。")]
 pub(crate) enum EnvCmd {
     /// 列出环境变量元数据（敏感变量不含明文，非敏感变量给出可能截断的 preview）
     List {
+        /// 只看系统 hive（HKLM）。与 --user 同给则两者都看
         #[arg(short, long)]
         system: bool,
+        /// 只看用户 hive（HKCU）。与 --system 互斥
         #[arg(short, long, conflicts_with = "system")]
         user: bool,
+        /// 以 JSON 输出（含 revision 字段，供 set/remove 使用）
         #[arg(long)]
         json: bool,
     },
     /// 读取单个变量的明文
     Get {
+        /// 变量名
         name: String,
+        /// 从系统 hive 读取（默认用户 hive）
         #[arg(short, long)]
         system: bool,
     },
     /// 修改已有变量的值（类型不变）
     Set {
+        /// 变量名（不能是 Path，Path 走专用命令）
         name: String,
         /// 值（敏感值建议改用 --stdin 或 --value-file，避免进 shell 历史）
         #[arg(long)]
@@ -342,6 +379,7 @@ pub(crate) enum EnvCmd {
         /// 以 JSON 输出变更摘要（需与 --dry-run 同用）
         #[arg(long, requires = "dry_run")]
         json: bool,
+        /// 操作系统 hive（HKLM，写需管理员）。默认用户 hive（HKCU）
         #[arg(short, long)]
         system: bool,
     },
@@ -372,11 +410,13 @@ pub(crate) enum EnvCmd {
         /// 以 JSON 输出变更摘要（需与 --dry-run 同用）
         #[arg(long, requires = "dry_run")]
         json: bool,
+        /// 操作系统 hive（HKLM，写需管理员）。默认用户 hive（HKCU）
         #[arg(short, long)]
         system: bool,
     },
     /// 删除变量
     Remove {
+        /// 变量名（不能是 Path，Path 走专用命令）
         name: String,
         #[arg(long, conflicts_with = "force")]
         revision: Option<String>,
@@ -389,6 +429,7 @@ pub(crate) enum EnvCmd {
         /// 以 JSON 输出变更摘要（需与 --dry-run 同用）
         #[arg(long, requires = "dry_run")]
         json: bool,
+        /// 操作系统 hive（HKLM，写需管理员）。默认用户 hive（HKCU）
         #[arg(short, long)]
         system: bool,
     },
