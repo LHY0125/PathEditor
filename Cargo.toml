@@ -10,7 +10,7 @@ members = [
 exclude = ["probes/v6-sqlcipher"]
 
 [workspace.package]
-version = "6.1.1"
+version = "6.2.0"
 edition = "2021"
 license = "MIT"
 authors = ["刘航宇"]

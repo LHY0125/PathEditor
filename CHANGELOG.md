@@ -1,5 +1,28 @@
 # Changelog
 
+## 6.2.0 (2026-10-29)
+
+### 变更
+
+- **模块分层重组**：`src/core/src` 由 17 个并列项收敛为四层 —— `domain`（契约与端口）/ `platform`（外部世界适配）/ `db`（SQLCipher 数据层）/ `app`（编排）。依赖方向由三条可复跑的 grep 契约保证；`src/cli/src` 的 `*_ops.rs` 收进 `commands/`。**零行为变更**，全部为文件移动与路径改写。
+- `db::backups` 改名为 `db::backup_index`，与 `backup_index` 表名对齐。
+- `capabilities_for` 从 `domain::env_var` 移入 `platform`：它需要探测注册表写权限，属平台适配而非纯契约；纯判定部分仍在 `domain::env_var::capabilities_for_with`。
+
+### 改进
+
+- **CLI 帮助分两层**：`-h` 只给速查，`--help` 给详解。顶层 `--help` 新增快速上手示例与退出码总表；`env` / `sync` / `maintenance` / `profile` 各补可照抄的示例段落。
+- CLI 的 62 个参数现已全部带中文说明。此前 PATH 那批命令的选项大面积空白（`list` 4 个选项 3 个空、`clean` 5 个空 4 个），`--system` / `--user` / `--json` 均无说明。
+- `env --help` 写明 `set` / `remove` 的 `--revision` 与 `--force` 互斥契约及退出码 —— 此前该契约只存在于 `docs/dev/interfaces.md`，终端里看不到。
+
+### 测试
+
+- 新增 3 条 CLI help 回归测试：顶层 `-h`/`--help` 分层、`env` 的 revision/force 契约、PATH 命令的 hive 语义（区分「筛选」与「二选一」）。断言具体短语而非「解析成功」，删掉对应文案即变红。
+- 基线：Rust 327 passed / 0 failed / 2 ignored；CLI 69 passed；前端 37 files / 413；E2E 54。
+
+### 说明
+
+- 本次为纯重构与帮助文案，**无用户可见的功能或数据变更**；退出码、参数语义、注册表行为均未改动。
+
 ## 6.1.1 (2026-10-24)
 
 ### 修复
