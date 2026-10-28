@@ -47,87 +47,118 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// 列出 PATH 路径
     List {
+        /// 只看系统 PATH（HKLM）。与 --user 同给则两者都看
         #[arg(short, long)]
         system: bool,
+        /// 只看用户 PATH（HKCU）。与 --system 同给则两者都看
         #[arg(short, long)]
         user: bool,
+        /// 以 JSON 输出
         #[arg(long)]
         json: bool,
     },
     /// 添加一条路径
     Add {
+        /// 要添加的路径
         path: String,
+        /// 写入系统 PATH（HKLM，需管理员）。与 --user 互斥
         #[arg(short, long)]
         system: bool,
+        /// 写入用户 PATH（HKCU，默认）。与 --system 互斥
         #[arg(short, long)]
         user: bool,
     },
     /// 删除指定位置的路径
     Remove {
+        /// 路径序号（来自 `list` 的输出）
         index: usize,
+        /// 操作系统 PATH（默认用户 PATH）
         #[arg(short, long)]
         system: bool,
     },
     /// 编辑指定位置的路径
     Edit {
+        /// 路径序号（来自 `list` 的输出）
         index: usize,
+        /// 替换成的新路径
         new_path: String,
+        /// 操作系统 PATH（默认用户 PATH）
         #[arg(short, long)]
         system: bool,
     },
     /// 上移路径（--steps 指定移动格数，默认 1）
     MoveUp {
+        /// 路径序号（来自 `list` 的输出）
         index: usize,
+        /// 上移格数
         #[arg(long, default_value = "1")]
         steps: usize,
+        /// 操作系统 PATH（默认用户 PATH）
         #[arg(short, long)]
         system: bool,
     },
     /// 下移路径（--steps 指定移动格数，默认 1）
     MoveDown {
+        /// 路径序号（来自 `list` 的输出）
         index: usize,
+        /// 下移格数
         #[arg(long, default_value = "1")]
         steps: usize,
+        /// 操作系统 PATH（默认用户 PATH）
         #[arg(short, long)]
         system: bool,
     },
     /// 清理无效和重复路径
     Clean {
+        /// 只清理系统 PATH。与 --user 同给则两者都清
         #[arg(short, long)]
         system: bool,
+        /// 只清理用户 PATH。与 --system 同给则两者都清
         #[arg(short, long)]
         user: bool,
+        /// 只预览将删除的条目，不写注册表
         #[arg(long)]
         dry_run: bool,
+        /// 以 JSON 输出
         #[arg(long)]
         json: bool,
     },
     /// 启用指定位置的路径
     Enable {
+        /// 路径序号（来自 `list` 的输出）
         index: usize,
+        /// 操作系统 PATH（默认用户 PATH）。与 --user 互斥
         #[arg(short, long)]
         system: bool,
+        /// 操作用户 PATH（默认）。与 --system 互斥
         #[arg(short, long)]
         user: bool,
     },
     /// 禁用指定位置的路径
     Disable {
+        /// 路径序号（来自 `list` 的输出）
         index: usize,
+        /// 操作系统 PATH（默认用户 PATH）。与 --user 互斥
         #[arg(short, long)]
         system: bool,
+        /// 操作用户 PATH（默认）。与 --system 互斥
         #[arg(short, long)]
         user: bool,
     },
     /// 从文件导入 PATH（JSON/CSV/TXT）
     Import {
+        /// 源文件路径
         file: String,
+        /// 导入到哪个 hive：system / user / both
         #[arg(long, default_value = "both")]
         target: String,
     },
     /// 导出 PATH 为文件
     Export {
+        /// 导出格式：json / csv / txt
         #[arg(long, default_value = "json")]
         format: String,
+        /// 输出文件路径；省略则写到 stdout
         #[arg(short, long)]
         output: Option<String>,
     },
@@ -135,18 +166,22 @@ pub(crate) enum Command {
     Backup,
     /// 检测可执行文件冲突
     Conflicts {
+        /// 以 JSON 输出
         #[arg(long)]
         json: bool,
     },
     /// 列出 PATH 目录中的可执行文件
     Scan {
+        /// 按名称过滤（子串匹配）
         #[arg(long)]
         query: Option<String>,
+        /// 以 JSON 输出
         #[arg(long)]
         json: bool,
     },
     /// 检查管理员权限
     CheckAdmin {
+        /// 以 JSON 输出
         #[arg(long)]
         json: bool,
     },
