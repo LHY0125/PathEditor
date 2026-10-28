@@ -201,6 +201,15 @@ pub(crate) enum Command {
 
 /// 维护子命令。
 #[derive(Subcommand)]
+#[command(after_long_help = "\
+示例:
+  patheditor maintenance prune --dry-run        先看会清理多少条
+  patheditor maintenance prune                  按保留策略清理
+  patheditor maintenance cleanup-legacy-backups --dry-run
+  patheditor maintenance cleanup-legacy-backups --yes
+
+保留策略: 已导出的 changes 90 天、已解决的 sync_conflicts 30 天。
+待导出队列永不删除。cleanup-legacy-backups 未给 --yes 时只打印计划并以 1 退出。")]
 pub(crate) enum MaintenanceCmd {
     /// 清理过期的变更与冲突（已导出 90 天 / 已解决 30 天）
     Prune {
@@ -220,6 +229,16 @@ pub(crate) enum MaintenanceCmd {
 }
 
 #[derive(Subcommand)]
+#[command(after_long_help = "\
+示例:
+  patheditor sync status                        看待导出变更与未解决冲突
+  patheditor sync export out.pesync             导出加密同步包（口令隐藏输入）
+  patheditor sync import out.pesync             在另一台机器上应用
+  patheditor sync conflicts --all               列出冲突（含已解决）
+  patheditor sync resolve 3 --take local        取本地一侧
+
+同步只改 DB，不写注册表 —— 要让改动生效须另走 apply_path_snapshot 或前端保存。
+退出码: 合并冲突 4 / 包格式或口令或篡改 1 / 密钥或 DPAPI 5。")]
 pub(crate) enum SyncCmd {
     /// 把待导出的变更写成加密同步包
     Export {
@@ -250,6 +269,15 @@ pub(crate) enum SyncCmd {
 }
 
 #[derive(Subcommand)]
+#[command(after_long_help = "\
+示例:
+  patheditor profile list                       列出所有配置
+  patheditor profile save work                  把当前 PATH 存为 work
+  patheditor profile load work                  预览（不写注册表）
+  patheditor profile apply work                 应用（写注册表）
+  patheditor profile rename --old work --new office
+
+load 只预览，apply 才写注册表。配置保存在 DB 中，DB 不可用时不可用。")]
 pub(crate) enum ProfileCmd {
     /// 列出所有配置
     List {
