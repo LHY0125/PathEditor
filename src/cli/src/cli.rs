@@ -1,11 +1,43 @@
 //! CLI 的 clap 命令定义。
 //!
 //! 参数语义与冲突规则只写在这里；命令实现见 `commands/path.rs` / `commands/env/`。
+//!
+//! **帮助文案分两层**：`-h` 只给速查（命令名 + 一行说明），`--help` 给详解
+//! （长说明 + 示例 + 退出码）。机制上，变体文档注释的**第一段**进 `about`、
+//! **全部内容**进 `long_about`；示例统一放 `after_long_help`，只在 `--help` 出现。
+//!
+//! 改文案前先看 `main.rs` 的 `help_tests`：那里断言了 `env add` 的「纯新建」
+//! 「不进入交互提示」与 `env list` 的「敏感变量不含明文」。删掉对应注释会让测试失败。
 
 use clap::{Parser, Subcommand};
 
+/// 顶层 `--help` 的详解正文（`-h` 不显示）。
+const TOP_LONG_ABOUT: &str = "\
+Windows PATH / 环境变量管理器
+
+PATH 命令默认操作用户 hive，加 --system 才动系统 hive（写系统 hive 需管理员）。
+环境变量走 env 子命令，Path 例外 —— 它只能经 PATH 专用命令编辑。";
+
+/// 顶层 `--help` 末尾的快速上手与指引（`-h` 不显示）。
+const TOP_AFTER_LONG_HELP: &str = "\
+快速上手:
+  patheditor list --user               看用户 PATH
+  patheditor add \"C:\\tools\" --user     加一条（默认就是用户 hive）
+  patheditor clean --user --dry-run    先预览清理，不写注册表
+  patheditor env list --json           看环境变量（含 revision 字段）
+
+退出码: 0 成功 / 1 一般错误 / 2 参数解析失败 / 3 revision 冲突 / 4 同步合并冲突 / 5 密钥
+
+完整语义见仓库文档 docs/dev/interfaces.md。";
+
 #[derive(Parser)]
-#[command(name = "patheditor", version = env!("CARGO_PKG_VERSION"))]
+#[command(
+    name = "patheditor",
+    version = env!("CARGO_PKG_VERSION"),
+    about = "Windows PATH / 环境变量管理器",
+    long_about = TOP_LONG_ABOUT,
+    after_long_help = TOP_AFTER_LONG_HELP
+)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
