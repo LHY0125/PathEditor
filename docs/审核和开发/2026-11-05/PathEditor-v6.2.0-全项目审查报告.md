@@ -49,10 +49,10 @@
 > 本地 GNU 构建需要三条环境变量（`OPENSSL_SRC_PERL` / `PERL5LIB` / `PATH` 追加 Git 的 `usr/bin`），
 > 而 `perl5lib` 目录被 `.gitignore` 排除（P2-28）——新克隆按文档设置会失败。
 
-**现况（2026-11-06 整改后实测）**：Rust **335 passed / 0 failed / 2 ignored**（较审查时 +8：新增逐 hive 失败传播、FTS 自愈、
+**现况（2026-11-06 整改后实测）**：Rust **336 passed / 0 failed / 2 ignored**（较审查时 +8：新增逐 hive 失败传播、FTS 自愈、
 拖放权限、PATH 备份告警、扫描合并等用例）；
-前端 **40 files / 425 passed**；覆盖率行 87.61%；`cargo audit` 0 告警；README 徽章 760
-（335 + 425）。审查当天的数字仅作对照。
+前端 **40 files / 425 passed**；覆盖率行 87.61%；`cargo audit` 0 告警；README 徽章 761
+（336 + 425）。审查当天的数字仅作对照。
 
 ---
 
@@ -674,7 +674,7 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 | P2-25 | 已修复   | 保留策略保留每实体最新变更 + 全部墓碑                                                                                                        |
 | P2-26 | 已修复   | `Watermark` 纳入 scan_runs 与 current_snapshot_id                                                                                            |
 | P2-27 | 已修复   | 密钥读也在互斥量内                                                                                                                           |
-| P2-28 | 已修复   | DACL `D:P` + keys 目录加固 + 白名单校验                                                                                                      |
+| P2-28 | 已修复   | DACL `D:P` + keys 目录加固；校验改为**按 SID** 遍历 ACE（SDDL 别名 `LA` 曾令 CI 误判）                                                       |
 | P2-29 | 本轮补修 | bundle 64 MiB / 10 万条 + 文本导入 8 MiB + header 64 KiB 上限                                                                                |
 | P2-30 | 已修复   | lamport 钳制 + `saturating_add`                                                                                                              |
 | P2-31 | 已修复   | 导入保留远端 `createdAt`                                                                                                                     |

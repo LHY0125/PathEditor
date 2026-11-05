@@ -23,6 +23,12 @@
 - `scan`/`conflicts` 的「两侧都读失败」判据改为按错误数：某侧 PATH 本就是空的机器上，
   单侧读取失败不再被误报成「都读取失败」而中止扫描。
 - CLI 的 PATH 写入在写前备份失败时打印 stderr 警告（此前只对 env 写入告警，PATH 静默）。
+- **密钥 DACL 校验改为按 SID 比较**：旧实现按 SDDL 文本比较主体，而 SDDL 会把众所周知的 SID
+  写成别名（`SY`/`LA`/`BA`…）。CI runner 的令牌属于 `S-1-5-114`（SDDL 写作 `LA`），
+  合法 DACL 会被误判为「存在非预期主体」。现在遍历 ACE 取 SID 规范字符串再比较；
+  新增 `dacl_principal_check` 用例（补一个 `BUILTIN\Users` 授权后必须判否）。
+- 依赖审计 job 显式 `RUSTUP_TOOLCHAIN: stable`：仓库的 `rust-toolchain.toml` 钉的是 Windows GNU
+  目标，Linux runner 上 rustup 报「target tuple in channel name」。
 - 文本导入加 8 MiB 上限、同步包 header 加 64 KiB 上限。
 - 环境变量删除确认显示引用数：被 `%NAME%` 引用的条目删掉后会让那些引用失效。
 - 路径/变量表在无选中项时首行可 Tab 进入（此前整表没有 tab stop）。
