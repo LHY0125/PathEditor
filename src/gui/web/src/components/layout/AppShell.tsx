@@ -87,18 +87,30 @@ export function AppShell() {
       try {
         unlisten = await getCurrentWindow().onDragDropEvent((event) => {
           if (event.payload.type !== 'drop') return;
+          // 先把 paths 取到局部常量：TS 不会把 `event.payload` 的收窄带进下面的闭包
+          const droppedPaths = event.payload.paths;
           const tab = useAppStore.getState().activeTab;
           if (tab !== 'system' && tab !== 'user') return;
           const target = tab === 'user' ? TargetType.USER : TargetType.SYSTEM;
-          for (const droppedPath of event.payload.paths) {
-            // PATH 条目必须是目录；含 `%VAR%` 的路径由 core 判为未知并放行。
-            void backend
-              .validatePath(droppedPath)
-              .then((isDir) => {
-                if (isDir) useAppStore.getState().addPath(droppedPath, target);
-              })
-              .catch(() => {});
-          }
+          void (async () => {
+            let rejected = 0;
+            for (const droppedPath of droppedPaths) {
+              // PATH 条目必须是目录；含 `%VAR%` 的路径由 core 判为未知并放行。
+              try {
+                if (await backend.validatePath(droppedPath)) {
+                  useAppStore.getState().addPath(droppedPath, target);
+                } else {
+                  rejected += 1;
+                }
+              } catch {
+                // 校验失败按「无法判断」处理：不添加，也不误报「只能拖拽文件夹」
+              }
+            }
+            // 拖入的是文件时给出明确提示，而不是静默丢弃
+            if (rejected > 0) {
+              useAppStore.getState().setStatusMessage(i18n.t('status.dragFolderOnly'));
+            }
+          })();
         });
         if (disposed) unlisten();
       } catch {

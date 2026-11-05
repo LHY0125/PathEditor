@@ -575,9 +575,9 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 
 ---
 
-## 11. 整改状态（2026-11-05 按本报告实施）
+## 11. 整改状态（2026-11-05 按本报告实施，2026-11-06 补做剩余项）
 
-**已修复**：P0-1；P1-1～P1-13；P2-1～P2-50、P2-53～P2-62；P3-1、P3-2、P3-4、P3-5。
+**已修复**：P0-1；P1-1～P1-13；P2-1～P2-50、P2-52～P2-62；P3-1～P3-6。
 主要落点：
 
 | 主题                                  | 落点                                                                                                 |
@@ -591,17 +591,33 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 | CLI 破坏性缺陷与契约                  | `cli/src/commands/{import_export,path,scan,maintenance,sync}.rs`、`cli.rs`、`runtime.rs`             |
 | GUI 主线程 / 权限面 / 拖放 / 竞态     | `gui/src-tauri/src/{lib.rs,commands/*,capabilities/default.json,tauri.conf.json}`、前端 store 与组件 |
 | 工程门禁                              | `.github/workflows/{ci,release,v6-sqlcipher-probe}.yml`、`tests/setup.ts`、`Cargo.toml`              |
+| 依赖审计                              | `.cargo/audit.toml`、`Cargo.lock`（plist/quick-xml/anyhow/tokio）                                    |
 
 **新增回归测试**：`db_sync_conflict_remote_applies`、`db_search_profile`、
 `broadcast_env_change_does_not_block_caller`、`app-store-save-race`、Escape 清草稿、
-降级 sidecar 与备份失败提示。
+降级 sidecar 与备份失败提示、`app-shell-drag-drop`（拖放新增 / 拖入文件提示）。
 
 **刻意未做（有明确理由）**：
 
-1. **P2-52 CLI 测试隔离**：夹具依赖真实 `~/.patheditor` 密钥，而 `config_dir()` 按既有决策
-   不可被环境变量重定向；彻底隔离需要新增「显式密钥注入」的 CLI 入口，属接口设计变更，另行立项。
-2. **P3-3 删除 22 个未使用 i18n 键**：其中部分可能对应尚未接线的功能（`status.dragFolderOnly`
-   已随着拖放修复接回），逐个删除前需要产品取舍。
-3. **P3-6 `demo.gif`（5.28 MB）**：迁移到 Release 附件或对象存储属于发布资产决策。
-4. **P2-37 中的文件删除**：仅移除了 `bundle.resources` 条目；`src/gui/src-tauri/WebView2Loader.dll`
+1. **P2-37 中的文件删除**：仅移除了 `bundle.resources` 条目；`src/gui/src-tauri/WebView2Loader.dll`
    与嵌套 `Cargo.lock` 仍保留在仓库——按用户规则「未经书面同意不得删除任何文件」，删除需单独确认。
+   （该嵌套 `Cargo.lock` 已是陈旧副本：`src/gui/src-tauri` 是 workspace 成员，cargo 只读根 `Cargo.lock`。）
+
+**2026-11-06 补做（本轮从「刻意未做」转为已修复）**：
+
+1. **P2-52 CLI 测试隔离**：密钥解析新增 `crypto::key_home()`，支持 `PATHEDITOR_KEY_DIR`
+   重定向（默认仍是 `config_dir()`），只在子进程用例里下发；`make_backup` 改为进程内
+   `collect_env_backup()` + `write_env_backup_to_with_key()`；差异夹具改用**系统 hive**
+   （`SystemRoot` 等，任何 Windows 都有），不再要求宿主 HKCU 预置 4 个变量。
+   CI 删除预置变量的步骤；实测跑完 CLI 用例后真实密钥文件 mtime 不变。
+   同时删掉因整改而失去调用方的 `write_env_backup_for_test`。
+2. **P3-3 未使用 i18n 键**：复核 38 个候选（含 3 组动态键族，已排除），删除 19 个确认无引用的静态键，
+   两套语言文件同步；`status.dragFolderOnly` 不是删除而是**接线** —— 拖入非目录时状态栏提示
+   （此前静默丢弃），并新增 `app-shell-drag-drop` 两条回归用例。
+3. **P3-6 `demo.gif`**：用 ffmpeg 重编码为 720×585 / 8 fps / 80 色无抖动调色板，
+   **5,280,665 → 1,825,269 字节（−65.4%）**，抽帧核对文字仍清晰；原图保留在 git 历史中。
+4. **依赖告警**：`plist` 1.9.0 → 1.10.3 把 `quick-xml` 从 0.39.4 提到 0.42.0（修掉
+   RUSTSEC-2026-0194/0195 两条 high）；`anyhow` → 1.0.104、`tokio` → 1.54.1 消掉两条 unsound 告警。
+   剩余 5 类告警全部核实不可达（rkyv 未进依赖图、proc-macro-error 与 glib 仅 Linux GTK、
+   unic-\* 无已知漏洞且为 urlpattern 内部依赖），写入 `.cargo/audit.toml` 并附复核命令；
+   CI 新增独立 `cargo audit` job。`cargo audit` 现退出码 0、无输出。

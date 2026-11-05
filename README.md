@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-750%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-752%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -570,7 +570,7 @@ npx tauri build
 | 数据库    | SQLCipher（rusqlite + bundled OpenSSL）   |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (39 files / 420) + Playwright (54) |
+| 前端测试  | Vitest (40 files / 422) + Playwright (54) |
 | Rust 测试 | cargo test (330 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |

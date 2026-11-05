@@ -49,6 +49,9 @@
 - PATH 读改写增加注册表类型白名单（`REG_SZ`/`REG_EXPAND_SZ`），保存拒绝含分号的条目；
   系统目录判定使用规范化路径与 `%SystemDrive%`。
 - 扫描结果按 `(名称, 目录)` 去重，工作线程 panic 不再静默丢分片。
+- 拖入非目录不再被静默丢弃：按 `status.dragFolderOnly` 在状态栏提示（此前该文案从未接线）。
+- 清理 19 个全仓无引用的 i18n 键（`dialog.exportTitle`、`status.adminWarning` 等），
+  两套语言文件保持同构；`status.dragFolderOnly` 改为真正使用。
 
 ### 工程
 
@@ -58,7 +61,15 @@
 - MSRV 声明统一为 `rust-version = "1.82"`（代码实际使用 `Option::is_none_or`）。
 - 发布工作流额外校验 README 徽章与 CHANGELOG 段落；预发布 tag 不再标 `latest`。
 - 文档同步：IPC 入口路径、版本号、测试基线、覆盖率范围、perl5lib 生成方式。
-- 新增回归测试：冲突采纳远端应用实体、配置 FTS 增量、保存竞态、Escape 清草稿。
+- 新增回归测试：冲突采纳远端应用实体、配置 FTS 增量、保存竞态、Escape 清草稿、拖放新增 PATH。
+- **CLI 进程级用例不再触碰真实 `~/.patheditor`**：密钥解析新增 `PATHEDITOR_KEY_DIR`
+  （`crypto::key_home()`），测试子进程把密钥目录指向临时目录；差异夹具从「用户 hive 前 4 个变量」
+  改为系统 hive（`SystemRoot` 等），CI 因此删掉预置 4 个用户环境变量的步骤。实测跑完 CLI 用例后
+  真实密钥文件 mtime 不变。
+- 依赖升级：`plist` 1.9.0 → 1.10.3（`quick-xml` 0.39.4 → 0.42.0，修掉 RUSTSEC-2026-0194/0195）、
+  `anyhow` 1.0.104、`tokio` 1.54.1。新增 `.cargo/audit.toml` 记录放行项与可达性证据，
+  CI 增加独立的 `cargo audit` job。
+- `docs/screenshots/demo.gif` 5.28 MB → 1.83 MB（720×585、8 fps、80 色无抖动调色板）。
 
 ## 6.2.0 (2026-10-29)
 

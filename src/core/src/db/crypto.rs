@@ -48,6 +48,27 @@ pub fn config_dir() -> PathBuf {
         .join(".patheditor")
 }
 
+/// 密钥目录：默认 [`config_dir`]，可被 `PATHEDITOR_KEY_DIR` 重定向。
+///
+/// **只为「子进程」测试隔离而存在**：CLI 的进程级用例要跑真实的 `env backup`
+/// / `env restore`，而子进程拿到密钥的唯一通道是环境变量 —— 它无法像同进程
+/// 测试那样把 `home` 当参数传给 [`load_or_create_key`]。把
+/// `PATHEDITOR_KEY_DIR` 指向临时目录后，密钥文件落在临时目录里，不再读写用户
+/// 真实的 `~/.patheditor/keys/db.key.dpapi`。
+///
+/// **不要在同进程测试里 `set_var` 用它**：那是进程级全局状态，会污染同进程
+/// 其它测试（同 [`config_dir`] 的说明）。
+pub fn key_home() -> PathBuf {
+    std::env::var_os("PATHEDITOR_KEY_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(config_dir)
+}
+
+/// 生产入口：按 [`key_home`] 加载（或首次创建）密钥。
+pub fn load_default_key() -> Result<KeyMaterial, CoreError> {
+    load_or_create_key(&key_home())
+}
+
 /// 密钥文件路径：`<home>/keys/db.key.dpapi`。
 fn key_path(home: &Path) -> PathBuf {
     home.join("keys").join("db.key.dpapi")

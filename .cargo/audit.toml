@@ -1,0 +1,41 @@
+# cargo-audit 策略：只放行「经核实不可达」的告警。
+#
+# 运行：cargo audit
+# 每条放行都必须写明「为什么当前 workspace 不会编译到它」与复核命令；
+# 不放行的条目（真能编译进来且有漏洞）必须升级或改代码，不许往这里加。
+#
+# 注意：cargo-audit 0.22 的 ignore 只接受字符串数组，理由只能写成注释。
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0235（rkyv 归档校验越界读）
+    # rkyv 只出现在 Cargo.lock 里（rust_decimal 的可选特性 rkyv），本 workspace
+    # 的依赖图不包含它。复核：
+    #   cargo tree --target all -e normal,build -i rkyv  → "nothing to print"
+    #   cargo tree -p rust_decimal -e normal              → 只有 arrayvec / num-traits
+    "RUSTSEC-2026-0235",
+
+    # RUSTSEC-2024-0370（proc-macro-error 已无人维护）
+    # 仅由 glib-macros / gtk3-macros 引入（Linux GTK 目标）；本仓库 CI 与发布
+    # 目标均为 Windows，该分支不参与构建。复核：
+    #   cargo tree -i proc-macro-error                   → Windows 下 "nothing to print"
+    "RUSTSEC-2024-0370",
+
+    # RUSTSEC-2025-0081 / 0075 / 0080（unic-char-* 已无人维护）
+    # 经 tauri-utils → urlpattern 引入，只有 unmaintained 告警、无已知漏洞，
+    # 不 fork urlpattern 就无法替换。复核：
+    #   cargo tree -i unic-ucd-ident
+    "RUSTSEC-2025-0081",
+    "RUSTSEC-2025-0075",
+    "RUSTSEC-2025-0080",
+
+    # RUSTSEC-2025-0100 / 0098（unic-ucd-* 已无人维护）
+    # 同上，urlpattern 的直接依赖。复核：cargo tree -i unic-ucd-version
+    "RUSTSEC-2025-0100",
+    "RUSTSEC-2025-0098",
+
+    # RUSTSEC-2024-0429（glib::VariantStrIter 的 Iterator 实现不健全）
+    # glib 只在 Linux GTK 目标下编译；本仓库 CI 与发布目标均为 Windows。
+    # 复核：cargo tree -i glib → Windows 下 "nothing to print"
+    "RUSTSEC-2024-0429",
+]

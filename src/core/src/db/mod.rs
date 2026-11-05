@@ -240,7 +240,7 @@ pub(crate) fn db_err(op: &'static str, e: rusqlite::Error) -> CoreError {
 ///
 /// **不静默重建空库**：密钥丢失/DPAPI 不可用时必须明确报错，否则会静默丢失历史。
 pub fn open_default() -> Result<Db, CoreError> {
-    let home = crypto::config_dir();
+    let home = crypto::key_home();
     let material = crypto::load_or_create_key(&home)?;
 
     // 启动时校验密钥文件 DACL（过宽只告警，**不自动修改**——

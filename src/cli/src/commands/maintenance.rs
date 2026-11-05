@@ -63,9 +63,7 @@ pub(crate) fn maintenance_cleanup_legacy(dry_run: bool, yes: bool) {
     let report = if dry_run {
         scan_legacy_env_backups(&dir).unwrap_or_else(|e| exit_core_error(&e))
     } else {
-        let home = core::db::crypto::config_dir();
-        let material =
-            core::db::crypto::load_or_create_key(&home).unwrap_or_else(|e| exit_core_error(&e));
+        let material = core::db::crypto::load_default_key().unwrap_or_else(|e| exit_core_error(&e));
         cleanup_legacy_env_backups(&dir, &material, false).unwrap_or_else(|e| exit_core_error(&e))
     };
 

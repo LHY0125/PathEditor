@@ -10,7 +10,7 @@ use crate::platform::registry::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use winreg::types::FromRegValue;
 
 /// 恢复差异的类型。
@@ -350,8 +350,7 @@ pub(crate) fn read_env_backup_any(path: &Path) -> Result<EnvBackupPayload, CoreE
         );
         return read_env_backup(path);
     }
-    let home = crate::db::crypto::config_dir();
-    let material = crate::db::crypto::load_or_create_key(&home)?;
+    let material = crate::db::crypto::load_default_key()?;
     crate::db::backup_index::read_env_backup_any(path, &material)
 }
 
@@ -402,23 +401,6 @@ pub fn read_env_backup_with_format(
             BackupFormat::LegacyPlaintext
         },
     ))
-}
-
-/// **仅供测试**：把载荷写成 `.pebak` 到给定目录（用本机默认密钥）。
-///
-/// 生产写入走 [`write_env_backup_to`]（自动取密钥并轮换）。本函数存在的理由：
-/// CLI 的夹具需要「改过的载荷 → 可被 CLI 读回」这一步，而测试进程
-/// 里的 CLI 子进程与主进程用的是同一把 `~/.patheditor` 密钥。
-///
-/// **不要在生产代码里调用**：它跳过轮换，且失败只返回 `None`。
-#[doc(hidden)]
-pub fn write_env_backup_for_test(dir: &Path, payload: &EnvBackupPayload) -> Option<PathBuf> {
-    let key = crate::db::crypto::load_or_create_key(&crate::db::crypto::config_dir()).ok()?;
-    let path = crate::db::backup_index::write_env_backup_pebak(dir, payload, &key).ok()?;
-    // 固定文件名，避免被列表排序断言干扰
-    let fixed = dir.join("env_backup_t7_fixture.pebak");
-    std::fs::rename(&path, &fixed).ok()?;
-    Some(fixed)
 }
 
 /// 从文件读取备份后计算差异（GUI 确认弹窗用）。

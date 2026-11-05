@@ -533,26 +533,61 @@ fn temp_dir(tag: &str) -> std::path::PathBuf {
     dir
 }
 
-/// 在 `dir` 下真备份一份（只读注册表 + 只写临时目录），返回备份文件路径。
+/// 测试进程独占的密钥目录（`PATHEDITOR_KEY_DIR` 的取值）。
 ///
-/// 作为多个进程级用例的前置条件使用；前置失败直接 panic（后续断言无意义）。
+/// CLI 的进程级用例跑的是子进程，无法把 `home` 当参数传进去；唯一的通道是
+/// 环境变量。把它指向临时目录后，密钥文件
+/// （`<dir>/keys/db.key.dpapi`）落在临时目录里，测试**不读写**用户真实的
+/// `~/.patheditor/keys/db.key.dpapi`。
+///
+/// 进程号保证并行运行的两个测试进程互不干扰；同一进程内的用例共用一把密钥
+/// （`create_new` + 命名互斥量保证首次创建安全）。
+fn key_home() -> std::path::PathBuf {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("patheditor_t7_keys_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("创建测试密钥目录失败");
+        dir
+    })
+    .clone()
+}
+
+/// 启动 CLI 子进程，并把密钥目录重定向到 [`key_home`]。
+///
+/// 所有进程级用例都必须走这里：漏掉重定向的 `env backup` / `env restore`
+/// 会读写用户真实的 `~/.patheditor` 密钥。
+fn cli_cmd() -> std::process::Command {
+    let mut cmd = std::process::Command::new(cli_bin());
+    cmd.env("PATHEDITOR_KEY_DIR", key_home());
+    cmd
+}
+
+/// 在 `dir` 下写一份**当前状态**的加密备份，返回备份文件路径。
+///
+/// 不走 `env backup` 子进程：子进程读注册表没问题，但会顺带创建/读取真实的
+/// `~/.patheditor` 密钥（`env backup` 的密钥来自 `config_dir()`）。这里直接在
+/// 测试进程内采集 + 用测试密钥加密，得到的载荷与真实备份逐字段相同。
+///
+/// 先写到独立的暂存目录再移入 `dir`：`write_env_backup_to_with_key` 会执行
+/// 保留策略轮换，而保留份数来自用户真实的 `config.ini`（`env_backup_keep`
+/// 可能被设成 0，那会把刚写的文件也删掉）。
 fn make_backup(dir: &std::path::Path) -> std::path::PathBuf {
-    let out = std::process::Command::new(cli_bin())
-        .args(["env", "backup"])
-        .env("PATHEDITOR_BACKUP_DIR", dir)
-        .output()
-        .expect("启动 env backup 失败");
-    assert!(
-        out.status.success(),
-        "前置备份必须成功（只写临时目录）: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    std::fs::read_dir(dir)
-        .expect("枚举备份目录失败")
-        .next()
-        .expect("备份目录应恰好有一个文件")
-        .expect("读取目录项失败")
-        .path()
+    let payload =
+        core::platform::backup::collect_env_backup().expect("采集当前环境变量失败（只读注册表）");
+    let material = core::db::crypto::load_or_create_key(&key_home()).expect("加载测试密钥失败");
+    let staging = temp_dir(&format!(
+        "stage_{}",
+        dir.file_name()
+            .expect("备份目录必有文件名")
+            .to_string_lossy()
+    ));
+    let written =
+        core::platform::backup::write_env_backup_to_with_key(&staging, &payload, &material)
+            .expect("写加密备份失败");
+    let target = dir.join(written.file_name().expect("备份文件必有文件名"));
+    std::fs::rename(&written, &target).expect("移动备份文件失败");
+    let _ = std::fs::remove_dir_all(&staging);
+    target
 }
 
 /// `env backups`（无 `--json`）的人类可读表格：含表头、文件名、真实字节数与路径。
@@ -566,7 +601,7 @@ fn env_backups_table_lists_file_size_and_path() {
     let name = file.file_name().unwrap().to_string_lossy().into_owned();
     let size = std::fs::metadata(&file).unwrap().len();
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "backups"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -599,7 +634,7 @@ fn env_backups_table_lists_file_size_and_path() {
 #[test]
 fn env_backups_reports_empty_dir_without_touching_it() {
     let dir = temp_dir("backups_empty");
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "backups", "--json"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -632,7 +667,7 @@ fn env_backups_lists_entries_without_parsing_contents() {
     let corrupt = dir.join("env_backup_00000000_000000_000.json");
     std::fs::write(&corrupt, b"{{{ not json at all").unwrap();
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "backups", "--json"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -693,7 +728,7 @@ fn env_backups_lists_entries_without_parsing_contents() {
 #[test]
 fn env_backup_writes_a_file_and_reports_its_path() {
     let dir = temp_dir("backup_write");
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "backup", "--json"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -739,7 +774,7 @@ fn env_restore_dry_run_previews_without_writing() {
     let dir = temp_dir("restore_dry");
     let file = make_backup(&dir);
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .arg("env")
         .arg("restore")
         .arg(&file)
@@ -771,7 +806,7 @@ fn env_restore_dry_run_previews_without_writing() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 把真实备份改造成「新增 3 / 修改 0 / 删除 1 / 冲突 2」的夹具，返回其路径。
+/// 把当前注册表状态改造成「新增 3 / 修改 0 / 删除 1 / 冲突 2」的夹具，返回其路径。
 ///
 /// **四个计数两两不等是本夹具的存在理由**：若计数有重复（例如删除与冲突都是 1），
 /// 把格式串里两个字段对调仍然是「通过」的 —— 断言就成了自证的。
@@ -779,10 +814,10 @@ fn env_restore_dry_run_previews_without_writing() {
 /// `conflicts`）**没有**让它失败，因此重做为两两不等：
 /// 新增 3、修改 0、删除 1、冲突 2 互不相同，任两个字段对调都会被断言抓到。
 ///
-/// 三个改动都只落在**临时目录里的副本**上，不碰注册表：
+/// 三个改动都只落在**临时目录里的备份副本**上，不碰注册表：
 /// - 塞入 3 个注册表中不存在的名字 → `Added`；
-/// - 从载荷里删掉 `user[0]` → 注册表有、备份无 → `Removed`（恰 1 条）；
-/// - 把 `user[1]`、`user[2]` 的 **revision 换成不可能匹配的固定值** → `Conflict`（恰 2 条）。
+/// - 从载荷里删掉一个系统变量 → 注册表有、备份无 → `Removed`（恰 1 条）；
+/// - 把另外两个系统变量的 **revision 换成不可能匹配的固定值** → `Conflict`（恰 2 条）。
 ///
 /// 注意冲突的造法：`diff_one_hive` 比较的是**载荷里存的 revision**
 /// 与注册表当前 revision，而不是重算 `revision_of(name, type, value)`。
@@ -790,27 +825,22 @@ fn env_restore_dry_run_previews_without_writing() {
 /// 该条目会被判为「无变化」而**静默消失**（本用例首次运行即踩到这个坑）。
 /// 必须把 `revision` 本身改成不匹配的固定值。
 ///
-/// 需要至少 4 个用户变量（`user[1]` / `user[2]` 造冲突，`user[3..]` 保持不变）；
-/// 不足时返回 `None`，由调用方显式失败而不是静默跳过。
+/// **用系统 hive 而不是用户 hive**：任何 Windows 的系统变量都远多于 3 个
+/// （`SystemRoot` / `ComSpec` / `windir` …），夹具不再依赖宿主 HKCU 预置
+/// 用户变量，CI 也就不必再 `SetEnvironmentVariable` 造变量。
+/// 不足 3 个时返回 `None`，由调用方显式失败而不是静默跳过。
 fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let source = make_backup(dir);
-    // 生产备份是 DPAPI 加密的 `.pebak`，不能当 JSON 读。
-    // 用核心库的统一读入口解密（密钥来自本机 ~/.patheditor —— 测试进程里
-    // `env backup` 刚写过同一把密钥），改完再用同一个写入口重新加密。
-    let payload = core::platform::backup::read_env_backup_from(&source).ok()?;
+    let payload = core::platform::backup::collect_env_backup().ok()?;
 
-    let user = payload.hives.user;
-    if user.len() < 4 {
+    let mut patched = payload.hives.system;
+    if patched.len() < 3 {
         return None;
     }
-    // user[0] 刻意不入 patched → 注册表有、备份无 → Removed（恰 1 条）
-    let mut patched: Vec<core::platform::backup::EnvBackupVar> = user[3..].to_vec();
-    // user[1]、user[2]：revision 换成不可能匹配的值 → Conflict（恰 2 条）
-    for index in [1, 2] {
-        let mut conflicted = user[index].clone();
-        conflicted.revision = "ffffffffffffffff".to_string();
-        patched.push(conflicted);
-    }
+    // [0]、[1]：revision 换成不可能匹配的值 → Conflict（恰 2 条）
+    patched[0].revision = "ffffffffffffffff".to_string();
+    patched[1].revision = "eeeeeeeeeeeeeeee".to_string();
+    // [2] 从 patched 删除 → 注册表有、备份无 → Removed（恰 1 条）
+    patched.remove(2);
     // 3 个注册表中不存在的名字 → Added（恰 3 条）
     for suffix in ["A", "B", "C"] {
         patched.push(core::platform::backup::EnvBackupVar {
@@ -824,14 +854,25 @@ fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     let fixture_payload = core::platform::backup::EnvBackupPayload {
         captured_at: payload.captured_at,
         hives: core::platform::backup::EnvBackupHives {
-            system: payload.hives.system,
-            user: patched,
+            system: patched,
+            // 用户 hive 原样保留：与注册表一致，不贡献任何差异
+            user: payload.hives.user,
         },
     };
-    let fixture = core::platform::backup::write_env_backup_for_test(dir, &fixture_payload)?;
-    // 夹具文件名不带时间戳，避免被后续 `env backups` 的排序断言干扰
-    let _ = std::fs::remove_file(&source);
-    Some(fixture)
+    // 用测试密钥加密（与生产同为 `.pebak`），先写暂存目录再以固定名移入：
+    // 固定名避免被 `env backups` 的排序断言干扰，暂存目录隔离保留策略轮换。
+    let material = core::db::crypto::load_or_create_key(&key_home()).ok()?;
+    let staging = temp_dir(&format!(
+        "stage_fixture_{}",
+        dir.file_name()?.to_string_lossy()
+    ));
+    let written =
+        core::platform::backup::write_env_backup_to_with_key(&staging, &fixture_payload, &material)
+            .ok()?;
+    let fixed = dir.join("env_backup_t7_fixture.pebak");
+    std::fs::rename(&written, &fixed).ok()?;
+    let _ = std::fs::remove_dir_all(&staging);
+    Some(fixed)
 }
 
 /// 造出四类差异计数两两不等的夹具，逐个断言**计数器字段的映射**。
@@ -845,10 +886,10 @@ fn craft_preview_fixture(dir: &std::path::Path) -> Option<std::path::PathBuf> {
 fn env_restore_dry_run_reports_each_counter_field() {
     let dir = temp_dir("restore_counters");
     let Some(fixture) = craft_preview_fixture(&dir) else {
-        panic!("本机用户变量不足 4 个，无法构造夹具；不要让它静默跳过");
+        panic!("本机系统环境变量不足 3 个，无法构造夹具；不要让它静默跳过");
     };
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .arg("env")
         .arg("restore")
         .arg(&fixture)
@@ -868,7 +909,7 @@ fn env_restore_dry_run_reports_each_counter_field() {
     );
 
     // 同一夹具走 --json：字段名与取值都必须一致
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .arg("env")
         .arg("restore")
         .arg(&fixture)
@@ -902,7 +943,7 @@ fn env_restore_dry_run_reports_each_counter_field() {
     // 契约：dry-run 的预览**不受 --force 影响**（差异计算与 force 无关）。
     // 同一夹具再加 --force，输出必须逐字节相同 —— 若实现把 force 传进预览，
     // 或为 force 走了另一条分支，这里就会失败。
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .arg("env")
         .arg("restore")
         .arg(&fixture)
@@ -945,7 +986,7 @@ fn env_restore_warns_about_legacy_plaintext_on_stderr() {
     )
     .unwrap();
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .arg("env")
         .arg("restore")
         .arg(&legacy)
@@ -979,7 +1020,7 @@ fn env_restore_prints_manual_fallback_guidance_to_stderr() {
     let dir = temp_dir("restore_guidance");
     let file = make_backup(&dir);
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .arg("env")
         .arg("restore")
         .arg(&file)
@@ -1036,7 +1077,7 @@ fn env_restore_prints_manual_fallback_guidance_to_stderr() {
 #[test]
 fn env_restore_rejects_missing_file_with_exit_code_1() {
     let dir = temp_dir("restore_missing");
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "restore", "env_backup_missing.json"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -1200,7 +1241,7 @@ fn probe_absent_after_dry_run_add() {
     let dir = temp_dir("dryrun_noreg");
     let probe = format!("PATHEDITOR_SP1_PROBE_{}", std::process::id());
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "add", &probe, "should-not-be-written", "--dry-run"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -1212,7 +1253,7 @@ fn probe_absent_after_dry_run_add() {
     );
 
     // 反证：只读读取该变量必须 notFound（退出码 1）。若 dry-run 误写，这里会是 0。
-    let check = std::process::Command::new(cli_bin())
+    let check = cli_cmd()
         .args(["env", "get", &probe])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -1233,7 +1274,7 @@ fn dry_run_produces_no_backup_file() {
     let dir = temp_dir("dryrun_nobackup");
     let probe = format!("PATHEDITOR_SP1_NOBK_{}", std::process::id());
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "add", &probe, "v", "--dry-run"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()
@@ -1261,7 +1302,7 @@ fn dry_run_json_end_to_end_shape() {
     let dir = temp_dir("dryrun_json");
     let probe = format!("PATHEDITOR_SP1_JSON_{}", std::process::id());
 
-    let out = std::process::Command::new(cli_bin())
+    let out = cli_cmd()
         .args(["env", "add", &probe, "v", "--dry-run", "--json"])
         .env("PATHEDITOR_BACKUP_DIR", &dir)
         .output()

@@ -160,7 +160,7 @@ pub fn write_env_backup_to(dir: &Path, payload: &EnvBackupPayload) -> Result<Pat
     // 优先写 DPAPI 加密的 `.pebak`。只有拿不到密钥时（降级模式/
     // 密钥文件不可用）才回落明文 `.json` —— 那条路径**必须**留下明确日志，
     // 因为它是「磁盘上新增了一个明文敏感文件」。
-    match crate::db::crypto::load_or_create_key(&crate::db::crypto::config_dir()) {
+    match crate::db::crypto::load_default_key() {
         Ok(material) => write_env_backup_to_with_key(dir, payload, &material),
         Err(e) => {
             log::warn!(

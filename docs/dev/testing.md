@@ -31,11 +31,12 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}`（`services/` 与 `components/` 不在门槛内）。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v6.2.0）**：Rust **330 passed / 0 failed / 2 ignored**；前端 **39 files / 420 passed**；E2E **54 passed**。
+- **当前基线（v6.2.0）**：Rust **330 passed / 0 failed / 2 ignored**；前端 **40 files / 422 passed**；E2E **54 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
-  - Rust 为 2026-11-05 本机实测（GNU 工具链）：`cargo test --workspace` → 330 passed / 2 ignored
+  - Rust 为 2026-11-06 本机实测（GNU 工具链）：`cargo test --workspace` → 330 passed / 2 ignored
     （较 v6.1.1 增 6 条：3 条 CLI help + 冲突远端应用 / 配置 FTS / 广播非阻塞）；前端为同日实测：
-    `npx vitest run` → 39 files / 420 passed；E2E 沿用 2026-10-24 实测（本轮未跑）→ 54 passed。
+    `npx vitest run` → 40 files / 422 passed（2026-11-06 增 2 条拖放用例）；E2E 沿用 2026-10-24
+    实测（本轮未跑）→ 54 passed。
 
 ## CI
 
@@ -51,12 +52,16 @@ npm run verify:all    # verify + Playwright E2E
 6. `npm run lint` / `npm run format:check`
 7. `npm run test:coverage`（覆盖率门槛只有带 `--coverage` 才生效）
 
+另有独立的 `audit` job（`ubuntu-latest`）：`rustsec/audit-check` 跑 `cargo audit`，
+放行项与理由集中在 `.cargo/audit.toml`——只允许「经核实不可达」的告警（未启用特性的可选依赖、
+仅 Linux GTK 目标的依赖），能编译进来的漏洞必须升级而非加白名单。
+
 要点：
 
 - 用 `rustup override set stable-x86_64-pc-windows-msvc` 覆盖 `rust-toolchain.toml` 的 GNU 设置。
 - OpenSSL 的 MSVC 构建需要 NASM；runner 缺失时 `choco install nasm`。
-- CLI 的 `env restore` 夹具要求本机至少有 4 个用户环境变量；CI 用
-  `[Environment]::SetEnvironmentVariable(..., "User")` 预置 4 个。
+- CLI 的 `env restore` 夹具**不需要**预置宿主环境变量：差异夹具改用系统 hive（任何 Windows 都有
+  `SystemRoot` 等十几个变量），进程级用例通过 `PATHEDITOR_KEY_DIR` 把密钥目录指向临时目录。
 - **CI 不跑 E2E**——E2E 证据来自本地 `npm run verify:all`。
 
 ### `.github/workflows/release.yml`（发布）
@@ -71,7 +76,15 @@ npm run verify:all    # verify + Playwright E2E
 因此凡是走它的测试（密钥、备份、数据库），必须**显式传路径**
 （`load_or_create_key(&tempdir)`、`write_env_backup_to_with_key(dir, payload, &material)`），
 不能在测试里调用会内部走 `config_dir()` 的入口（`backup_env_vars()`、`open_default()`）。
-只有 `PATHEDITOR_BACKUP_DIR` 这类项目自定义变量是可重定向的。
+
+**例外：子进程用例。** CLI 的进程级用例跑的是 `patheditor.exe` 子进程，拿不到参数，
+只能靠环境变量。为此密钥解析走 `crypto::key_home()`：
+`PATHEDITOR_KEY_DIR` 存在时用它，否则回落 `config_dir()`（见 `crypto.rs` 的注释）。
+测试里由 `cli_cmd()` 统一下发这个变量，密钥落在临时目录，**不读写**真实的
+`~/.patheditor/keys/db.key.dpapi`（实测：跑完 CLI 用例后真实密钥 mtime 不变）。
+
+**不要在同进程测试里 `set_var` 打开它**：那是进程级全局状态，会污染同进程其它测试。
+`PATHEDITOR_BACKUP_DIR` 是同一类可重定向变量（备份目录）。
 
 ## 其他
 
