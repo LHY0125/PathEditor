@@ -115,6 +115,27 @@ describe('拖放新增 PATH 条目', () => {
     expect(useAppStore.getState().statusMessage).toBe('');
   });
 
+  it('无写权限的标签页不接受拖放，且给出权限提示', async () => {
+    // 系统 PATH 需要管理员；此时若把条目加进草稿，用户既保存不了、也撤销不掉。
+    useAppStore.setState({
+      pathCapabilities: {
+        canReadSystem: true,
+        canWriteSystem: false,
+        canReadUser: true,
+        canWriteUser: true,
+      },
+    });
+    mockBackend.validatePath.mockResolvedValue(true);
+
+    await dropPaths(['C:\\Windows\\system32']);
+
+    await waitFor(() =>
+      expect(useAppStore.getState().statusMessage).toBe(i18n.t('status.noSystemPermission')),
+    );
+    expect(useAppStore.getState().sysPaths).toHaveLength(0);
+    expect(mockBackend.validatePath).not.toHaveBeenCalled();
+  });
+
   it('拖入文件时提示只能拖拽文件夹，且不新增条目', async () => {
     mockBackend.validatePath.mockResolvedValue(false);
 

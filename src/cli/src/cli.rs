@@ -238,7 +238,7 @@ pub(crate) enum MaintenanceCmd {
   patheditor sync resolve 3 --take local        取本地一侧
 
 同步只改 DB，不写注册表 —— 要让改动生效须另走 apply_path_snapshot 或前端保存。
-退出码: 合并冲突 4 / 包格式或口令或篡改 1 / 密钥或 DPAPI 5。")]
+退出码: 合并冲突 4 / 包结构不合法 1 / 口令错误或包被篡改、密钥或 DPAPI 不可用 5。")]
 pub(crate) enum SyncCmd {
     /// 把待导出的变更写成加密同步包
     Export {

@@ -159,18 +159,19 @@ pub fn ensure_baseline_from(db: &mut Db, snapshot: crate::PathSnapshot) -> Resul
 
 /// 重建三张派生表；失败只记 warning。
 fn rebuild_derived(db: &mut Db, options: &BootstrapOptions, report: &mut BootstrapReport) {
-    // `search_fts`：仅当为空时才重建；写入路径会增量维护。
-    match db::search::index_count(db) {
-        Ok(0) => match db::search::rebuild_index(db) {
+    // `search_fts`：行数与实体表不一致就重建；一致时写入路径的增量维护已足够。
+    // 旧行为是「仅当为空才重建」，旧库升级后（索引非空但缺配置行）永远补不上缺口。
+    match db::search::index_needs_rebuild(db) {
+        Ok(true) => match db::search::rebuild_index(db) {
             Ok(n) => report.fts_indexed = n,
             Err(e) => report
                 .warnings
                 .push(format!("FTS 索引重建失败（继续启动）: {}", e.message)),
         },
-        Ok(_) => {}
+        Ok(false) => {}
         Err(e) => report
             .warnings
-            .push(format!("FTS 索引计数失败（继续启动）: {}", e.message)),
+            .push(format!("FTS 索引一致性检查失败（继续启动）: {}", e.message)),
     }
 
     // `daily_stats` / `var_references`：事件/快照水位未变则跳过。

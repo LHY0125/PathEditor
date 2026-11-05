@@ -57,6 +57,26 @@ pub fn read_text_file(path: &str) -> Result<String, CoreError> {
 /// 分开的原因是 scoped 版本要先 `canonicalize` 做白名单校验，再**用同一个
 /// 规范化路径**读取——按原路径二次打开会留下「校验后换链接」的窗口。
 fn read_text_file_impl(display: &str, read_path: &std::path::Path) -> Result<String, CoreError> {
+    // 文本导入（PATH / 环境变量列表）的正常体积是几十 KB；8 MiB 之外只可能是
+    // 选错文件（视频、镜像）。先 stat 再读，避免把整文件读进内存才发现不对。
+    const MAX_TEXT_BYTES: u64 = 8 * 1024 * 1024;
+    match std::fs::metadata(read_path) {
+        Ok(meta) if meta.len() > MAX_TEXT_BYTES => {
+            return Err(CoreError::new(
+                ErrorCode::InvalidValue,
+                "read_text_file",
+                format!(
+                    "文件过大（{} 字节，上限 {} 字节），请确认选的是 PATH/变量列表文本",
+                    meta.len(),
+                    MAX_TEXT_BYTES
+                ),
+            ));
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => {} // 读取阶段会给出更准确的错误
+    }
+
     let ext = std::path::Path::new(display)
         .extension()
         .and_then(|e| e.to_str())

@@ -10,6 +10,20 @@
   广播改为独立线程执行，lParam 使用进程级静态缓冲区（生命周期覆盖整次发送）；CLI 在 `main` 返回前
   `flush_env_broadcasts()` 等待发送完成（短命进程不丢通知）。集成测试 `db_profile_apply`
   4.35s → 0.07s，core 单测 2.74s → 0.21s。新增回归测试 `broadcast_env_change_does_not_block_caller`。
+- **配置应用失败不再被记成一次成功应用**：`mark_profile_applied_by_name` 原本在失败判定之前执行，
+  某个 hive 写失败时 applyCount 仍 +1；现在先判失败再记账，错误文案补上「系统/用户 PATH」前缀。
+- **FTS 启动自愈按行数一致性判断**：旧行为只在索引为空时重建，旧库升级后（索引非空但缺配置行）
+  永远补不上；现在与「PATH 条目 + 变量名 + 配置」的总数比对，不一致即重建。
+- **拖放按写权限过滤**：非管理员把目录拖到「系统 PATH」时不再进入草稿——此前会留下既不能保存
+  （按钮禁用）也不能撤销的「未保存」状态。
+- **明文备份回落现在可见**：`BackupOutcome::Created` 携带 `encrypted`，GUI 在回落明文时显示
+  「备份为明文（密钥不可用）」并给出重新加密命令；此前只显示「已保存」。
+- `capabilities::detect` 的写权限判定收敛到 `store::hive_writable`；`scan_history` 的瞬时数据库错误
+  不再被降级成「扫描记录不存在」。
+- 文本导入加 8 MiB 上限、同步包 header 加 64 KiB 上限。
+- 环境变量删除确认显示引用数：被 `%NAME%` 引用的条目删掉后会让那些引用失效。
+- 路径/变量表在无选中项时首行可 Tab 进入（此前整表没有 tab stop）。
+- `<html lang>` 监听 i18n `languageChanged`，不再只在挂载与菜单点击时同步。
 
 ### 安全
 
@@ -61,6 +75,9 @@
 - MSRV 声明统一为 `rust-version = "1.82"`（代码实际使用 `Option::is_none_or`）。
 - 发布工作流额外校验 README 徽章与 CHANGELOG 段落；预发布 tag 不再标 `latest`。
 - 文档同步：IPC 入口路径、版本号、测试基线、覆盖率范围、perl5lib 生成方式。
+- `docs/dev/testing.md` 补「被 `#[ignore]` 的用例」表（2 条），并删掉「重跑即可判定」的过时抖动说明
+  （根因是 setup 缺 RTL cleanup，已修复）。
+- MSRV 由 1.82 提到 **1.88**：锁定的 `plist` / `time` / `serde_with` 都要求 1.88，1.82 上 cargo 会直接拒绝编译。
 - 新增回归测试：冲突采纳远端应用实体、配置 FTS 增量、保存竞态、Escape 清草稿、拖放新增 PATH。
 - **CLI 进程级用例不再触碰真实 `~/.patheditor`**：密钥解析新增 `PATHEDITOR_KEY_DIR`
   （`crypto::key_home()`），测试子进程把密钥目录指向临时目录；差异夹具从「用户 hive 前 4 个变量」

@@ -388,7 +388,12 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
 describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链路）', () => {
   const backupFailedOutcome: WriteOutcome = { backup: { failed: '磁盘已满' } };
   const backupCreatedOutcome: WriteOutcome = {
-    backup: { created: 'C:\\Users\\me\\.patheditor\\backups\\env_backup_1.json' },
+    backup: {
+      created: {
+        path: 'C:\\Users\\me\\.patheditor\\backups\\env_backup_1.json',
+        encrypted: true,
+      },
+    },
   };
 
   it('save：备份失败 → 「保存成功（备份失败）」且仍返回 true', async () => {

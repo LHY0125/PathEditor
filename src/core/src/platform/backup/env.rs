@@ -523,8 +523,13 @@ pub fn validate_backup_path(path: &str) -> Result<PathBuf, CoreError> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BackupOutcome {
-    /// 备份已写入，携带文件路径
-    Created(PathBuf),
+    /// 备份已写入
+    Created {
+        /// 备份文件路径
+        path: PathBuf,
+        /// 是否为 DPAPI 加密的 `.pebak`；`false` 表示密钥不可用、回落成明文
+        encrypted: bool,
+    },
     /// 本次操作无需备份
     Skipped,
     /// 备份失败（不阻断写入），携带原因

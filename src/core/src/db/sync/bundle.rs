@@ -169,6 +169,12 @@ fn split(
         return Err(bad(&format!("同步包格式版本 {version} 不受支持")));
     }
     let header_len = u32::from_le_bytes(bytes[12..16].try_into().expect("已校验长度")) as usize;
+    // 显式上限：header 只有版本号与几个计数字段，正常 < 1 KiB。文件体积虽有 64 MiB
+    // 上限兜底，但把 64 MiB 全当 header 会让 `from_slice` 先做一次大分配。
+    const MAX_HEADER_LEN: usize = 64 * 1024;
+    if header_len > MAX_HEADER_LEN {
+        return Err(bad("同步包 header 长度超出上限"));
+    }
     let header_end = FIXED
         .checked_add(header_len)
         .ok_or_else(|| bad("同步包 header 长度溢出"))?;

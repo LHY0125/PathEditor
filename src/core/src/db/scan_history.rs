@@ -235,22 +235,20 @@ fn first_and_last_seen(history: &[(String, i64, Vec<String>)]) -> (Vec<FirstSeen
 
 /// 读取一次扫描的冲突列表。
 fn load_conflicts(db: &Db, uid: &str) -> Result<Vec<String>, CoreError> {
+    // 只有「查无此行」才是 `NotFound`；`SQLITE_BUSY` 之类的瞬时错误必须原样上抛，
+    // 否则 UI 会把「库忙」显示成「扫描记录不存在」并让用户丢掉这次对比。
     let json: String = db
-        .query_row_with(
+        .query_row_optional(
             "SELECT conflicts_json FROM scan_runs WHERE uid = ?1",
             params![uid],
             |r| r.get(0),
-        )
-        .map_err(|e| {
-            if e.code == crate::domain::error::ErrorCode::Database {
-                CoreError::new(
-                    crate::domain::error::ErrorCode::NotFound,
-                    "load_conflicts",
-                    format!("扫描记录不存在: {uid}"),
-                )
-            } else {
-                e
-            }
+        )?
+        .ok_or_else(|| {
+            CoreError::new(
+                crate::domain::error::ErrorCode::NotFound,
+                "load_conflicts",
+                format!("扫描记录不存在: {uid}"),
+            )
         })?;
     Ok(parse_string_list(&json))
 }

@@ -96,7 +96,11 @@ fn entity_content(
             // 掩码只发生在 UI 展示层，不在同步层。
             match crate::db::history::get_snapshot(db, entity_uid, true) {
                 Ok(v) => Ok(Some(serde_json::to_value(&v).map_err(|e| {
-                    CoreError::new(ErrorCode::Sync, "export", format!("快照序列化失败: {e}"))
+                    CoreError::new(
+                        ErrorCode::Internal,
+                        "export",
+                        format!("快照序列化失败: {e}"),
+                    )
                 })?)),
                 // 快照被软删/不存在 → 无内容可带，但变更本身仍然有效
                 Err(e) if e.code == ErrorCode::NotFound => Ok(None),
@@ -107,7 +111,11 @@ fn entity_content(
             let view = crate::db::profiles::get_profile(db, entity_uid)?;
             match view {
                 Some(v) => Ok(Some(serde_json::to_value(&v).map_err(|e| {
-                    CoreError::new(ErrorCode::Sync, "export", format!("配置序列化失败: {e}"))
+                    CoreError::new(
+                        ErrorCode::Internal,
+                        "export",
+                        format!("配置序列化失败: {e}"),
+                    )
                 })?)),
                 None => Ok(None),
             }

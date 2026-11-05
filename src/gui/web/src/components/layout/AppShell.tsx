@@ -92,6 +92,20 @@ export function AppShell() {
           const tab = useAppStore.getState().activeTab;
           if (tab !== 'system' && tab !== 'user') return;
           const target = tab === 'user' ? TargetType.USER : TargetType.SYSTEM;
+          // 写权限必须在入口拦掉：非管理员拖到「系统 PATH」时若仍加进草稿，
+          // 保存按钮是禁用的，撤销也因「无历史」不可用 —— 用户会卡在一个
+          // 既保存不了、又清不掉的「未保存」状态里。
+          const { isAdmin, pathCapabilities, setStatusError } = useAppStore.getState();
+          if (!canWriteTarget(isAdmin, pathCapabilities, target)) {
+            setStatusError(
+              i18n.t(
+                target === TargetType.USER
+                  ? 'status.noUserPermission'
+                  : 'status.noSystemPermission',
+              ),
+            );
+            return;
+          }
           void (async () => {
             let rejected = 0;
             for (const droppedPath of droppedPaths) {
@@ -130,6 +144,10 @@ export function AppShell() {
   };
   useEffect(() => {
     syncHtmlLang();
+    // 只挂在挂载时不够：语言也可能由其它入口改变（快捷键、系统事件），
+    // 读屏用的 `lang` 必须跟着 i18next 的真实状态走。
+    i18n.on('languageChanged', syncHtmlLang);
+    return () => i18n.off('languageChanged', syncHtmlLang);
   }, []);
 
   // 进入「全部变量」时刷新列表与 revision；工具栏「刷新」共用同一入口。
@@ -199,16 +217,35 @@ export function AppShell() {
     { id: 'sync', label: t('tab.sync') },
   ];
 
-  /** 确认后删除环境变量；成功后快照刷新，派生选中自动清除。 */
+  /**
+   * 确认后删除环境变量；成功后快照刷新，派生选中自动清除。
+   *
+   * 确认文案带**引用数**：被其它变量 `%NAME%` 引用的条目删掉后会让那些引用
+   * 失效（core 只校验格式，不会替你改引用方）。查询失败不阻断删除流程 ——
+   * 拿不到引用信息时退回普通文案，而不是把删除入口整个卡死。
+   */
   const confirmRemoveVar = (meta: EnvVarMeta) => {
-    // 异步确认替代阻塞式 window.confirm（同关窗路径机制）。删除是破坏性操作，
-    // 对话框 IPC 失败时按「取消」处理（fail-closed），绝不静默删除。
-    void backend
-      .confirmDialog(t('envVar.deleteConfirm', { name: meta.name }))
-      .then((confirmed) => {
-        if (confirmed) void useEnvStore.getState().remove(meta);
-      })
-      .catch(() => {});
+    void (async () => {
+      let dependents: number | null;
+      try {
+        dependents = (await backend.refsDependents(meta.name)).length;
+      } catch {
+        dependents = null;
+      }
+      const message =
+        dependents !== null && dependents > 0
+          ? t('envVar.deleteConfirmWithRefs', { name: meta.name, count: dependents })
+          : t('envVar.deleteConfirm', { name: meta.name });
+      try {
+        // 异步确认替代阻塞式 window.confirm。删除是破坏性操作，
+        // 对话框 IPC 失败时按「取消」处理（fail-closed），绝不静默删除。
+        if (await backend.confirmDialog(message)) {
+          void useEnvStore.getState().remove(meta);
+        }
+      } catch {
+        // fail-closed：确认框没弹出来就等于用户没同意
+      }
+    })();
   };
 
   return (
@@ -303,8 +340,9 @@ export function AppShell() {
               // 以 i18next 解析后的语言为准，不能读 localStorage 原始值：
               // 检测器会缓存 'en-US' 这类区域变体，与 'zh-CN' 比较会得出错误结论。
               const current = i18n.resolvedLanguage ?? i18n.language;
-              i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
-              syncHtmlLang();
+              // 不在这里手调 syncHtmlLang：changeLanguage 会触发 languageChanged，
+              // 由上面的监听统一更新，避免两条路径各写一份。
+              void i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
             }}
             onProfiles={() => setProfilesOpen(true)}
             onAnalyze={() => setAnalyzeOpen(true)}

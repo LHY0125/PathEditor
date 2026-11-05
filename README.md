@@ -7,10 +7,10 @@
   <img src="https://img.shields.io/badge/version-6.2.0-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
-  <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
+  <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-752%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-757%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -333,7 +333,7 @@ patheditor env set JAVA_HOME --value "C:\Java\jdk-21" --dry-run --json
 
 命中敏感规则的变量（如 `*_TOKEN` / `*_KEY`）在预览里不回传明文：`oldValue` / `newValue` 为 `null`、`sensitive` 为 `true`，文本预览显示 `(敏感)`。这与 `env list` 的打码一致 —— 预览不新开明文出口。
 
-CLI 退出码约定：`0` 成功、`1` 一般错误、`2` clap 参数解析失败、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）、`4` 同步合并冲突（需人工解决）、`5` 密钥/DPAPI。`--force` 不携带 revision，不会因并发冲突产生退出码 3；同步包格式/口令/篡改 → `1`（重试无用）。
+CLI 退出码约定：`0` 成功、`1` 一般错误、`2` clap 参数解析失败、`3` revision 冲突（仅 `env set` / `env remove` 且使用 `--revision` 时；PATH 命令恒为 `1`）、`4` 同步合并冲突（需人工解决）、`5` 密钥/DPAPI。`--force` 不携带 revision，不会因并发冲突产生退出码 3；同步包结构不合法 → `1`（`SyncFormat`，重试无用）；口令错误、包被篡改、密钥/DPAPI 不可用 → `5`（`Crypto`）。
 
 完整 19 条顶层命令（另有 `env` / `profile` / `sync` / `maintenance` 子命令组）：`patheditor --help`
 
@@ -570,8 +570,8 @@ npx tauri build
 | 数据库    | SQLCipher（rusqlite + bundled OpenSSL）   |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (40 files / 422) + Playwright (54) |
-| Rust 测试 | cargo test (330 passed / 2 ignored)       |
+| 前端测试  | Vitest (40 files / 425) + Playwright (54) |
+| Rust 测试 | cargo test (332 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 
@@ -644,7 +644,7 @@ docs/审核和开发/                # 审查与开发记录
 ### 本地开发环境
 
 - Node.js 20+（CI 使用 Node 20）
-- Rust 1.95+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
+- Rust 1.88+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
 - MinGW-w64（GNU 下测试需要 `windres`；MSVC 下由链接器清单处理）
 - 首次全量构建需要 `make`、`perl`（MSVC 下还需 NASM），约 45 分钟
 - **GNU 目标下 `perl` 必须是 POSIX 路径风格**：原生 Windows perl（Strawberry / Scoop）会在 OpenSSL 的

@@ -91,7 +91,8 @@
       "equals": "Variable name cannot contain '='"
     },
     "noResults": "No matching variables",
-    "empty": "No environment variables"
+    "empty": "No environment variables",
+    "deleteConfirmWithRefs": "Delete {{name}}? {{count}} variable(s) reference it via %{{name}}%; those references will break. This cannot be undone."
   },
   "table": {
     "path": "Path",
@@ -174,7 +175,8 @@
     "saveFailure": "Save failed: {{details}}",
     "saveSystemFailed": "System PATH: {{error}}",
     "saveUserFailed": "User PATH: {{error}}",
-    "cleanChanged": "The list changed while cleaning; please run clean again"
+    "cleanChanged": "The list changed while cleaning; please run clean again",
+    "saved_plaintext_backup": "Saved — backup is plaintext (key unavailable). After fixing the key, run patheditor maintenance cleanup-legacy-backups --yes to re-encrypt"
   },
   "dialog": {
     "newPath": "New Path",

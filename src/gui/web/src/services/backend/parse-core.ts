@@ -390,13 +390,18 @@ export function parseEnvVarSnapshot(value: unknown): EnvVarSnapshot {
 /**
  * 解析 Rust `BackupOutcome`（外部标签枚举）：`{created}` / `"skipped"` / `{failed}`。
  *
- * 只认 `created` 的有效形状（字符串路径）：`{created: null}` 这类「键对值错」
- * 会让 `backupFailed` 静默判成非失败，等于把上游回归吞掉。
+ * `created` 必须是 `{ path: string, encrypted: boolean }`：只认路径会让
+ * 「是否为明文回落」无处判断；只认形状的一半（缺 `encrypted`）等于把上游回归吞掉。
  */
 export function parseBackupOutcome(value: unknown, label: string): BackupOutcome {
   if (value === 'skipped') return 'skipped';
   if (isRecord(value)) {
-    if (typeof value.created === 'string') return { created: value.created };
+    if (isRecord(value.created)) {
+      const created = value.created;
+      if (typeof created.path === 'string' && typeof created.encrypted === 'boolean') {
+        return { created: { path: created.path, encrypted: created.encrypted } };
+      }
+    }
     if (typeof value.failed === 'string') return { failed: value.failed };
   }
   // 文案统一挂在 WriteOutcome.backup 上：调用方只认一个入口，报错定位到具体字段。

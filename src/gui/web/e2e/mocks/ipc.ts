@@ -328,7 +328,9 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
                 message: '[E_CONFLICT] 变量已被其他进程修改，请重新加载',
               };
             }
-            return { backup: { created: 'C:\\\\backups\\\\env_backup_x.json' } };
+            return {
+              backup: { created: { path: 'C:\\\\backups\\\\env_backup_x.json', encrypted: true } },
+            };
           case 'create_env_var': return { backup: 'skipped' };
           case 'delete_env_var': return { backup: 'skipped' };
           default: throw new Error('Unexpected invoke: ' + cmd);

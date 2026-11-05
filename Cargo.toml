@@ -12,7 +12,7 @@ exclude = ["probes/v6-sqlcipher"]
 [workspace.package]
 version = "6.2.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.88"
 license = "MIT"
 authors = ["刘航宇"]
 repository = "https://github.com/LHY0125/PathEditor"

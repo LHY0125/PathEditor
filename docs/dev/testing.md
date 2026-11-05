@@ -31,11 +31,11 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}`（`services/` 与 `components/` 不在门槛内）。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v6.2.0）**：Rust **330 passed / 0 failed / 2 ignored**；前端 **40 files / 422 passed**；E2E **54 passed**。
+- **当前基线（v6.2.0）**：Rust **332 passed / 0 failed / 2 ignored**；前端 **40 files / 425 passed**；E2E **54 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
-  - Rust 为 2026-11-06 本机实测（GNU 工具链）：`cargo test --workspace` → 330 passed / 2 ignored
+  - Rust 为 2026-11-06 本机实测（GNU 工具链）：`cargo test --workspace` → 332 passed / 2 ignored
     （较 v6.1.1 增 6 条：3 条 CLI help + 冲突远端应用 / 配置 FTS / 广播非阻塞）；前端为同日实测：
-    `npx vitest run` → 40 files / 422 passed（2026-11-06 增 2 条拖放用例）；E2E 沿用 2026-10-24
+    `npx vitest run` → 40 files / 425 passed（2026-11-06：拖放 2 条 + 权限/明文备份 3 条）；E2E 沿用 2026-10-24
     实测（本轮未跑）→ 54 passed。
 
 ## CI
@@ -103,8 +103,22 @@ npm run verify:all    # verify + Playwright E2E
      把 `OPENSSL_SRC_PERL` 指向其 `usr\bin\perl.exe`。
      验证记录：2026-10-24 本机 `cargo check -p path-editor-core` 通过（23m52s）。
 - CI 与发布一律走 MSVC（原生 perl + NASM），不受上述限制。
-- 前端全量跑曾出现 `use-path-validation.test.tsx` 的隔离抖动（期望 3 实得 11）；
-  该文件单独跑 3/3 通过，属用例间 pending 未清理，与本轮改动无关，重跑即可判定。
+- 前端全量跑曾出现 `use-path-validation.test.tsx` 的隔离抖动（期望 3 实得 11）。根因不是随机抖动：
+  5 个测试文件各自挂了 `afterEach`、其余文件没挂，RTL 的 DOM 会跨用例残留。现在 `tests/setup.ts`
+  统一注册 `afterEach(cleanup)`，单独跑与全量跑结果一致 —— 再遇到「单独跑绿、全量红」，按缺 cleanup 排查。
+
+### 被 `#[ignore]` 的用例
+
+两个用例因环境前提被显式忽略，`cargo test` 全量跑时列为 ignored 且**不会执行**；
+改动注册表编解码后请手动跑一次：
+
+| 用例                                         | 位置                            | 忽略原因                                                      |
+| -------------------------------------------- | ------------------------------- | ------------------------------------------------------------- |
+| `list_fails_when_decode_fails`               | `platform/registry/env_edit.rs` | winreg 0.52 对字符串类型按 lossy 解码，解码失败分支当前不可达 |
+| `save_paths_keeps_expand_sz_in_isolated_key` | `platform/registry/path.rs`     | 需要真实注册表写权限（只用隔离测试键，不接触 PATH）           |
+
+运行：`cargo test -- --ignored <名字片段>`。
+
 - 代码风格：UTF-8、CRLF；TS 2 空格，Rust/TOML 4 空格；Prettier 使用单引号、尾逗号和 100 列。
 - 从仓库根目录跑 `npm test` 时，`vitest.config.ts` 的 `exclude` 必须包含 `.claude/**`——否则会扫到
   `.claude/worktrees/` 下嵌套 worktree 的 e2e 文件并大面积假失败。

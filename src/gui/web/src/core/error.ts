@@ -18,9 +18,10 @@ export function isCoreError(error: unknown): error is { code: string; message: s
  * 直接 `String(err)` 会得到 `[object Object]`。所有展示层错误文案都走这里，
  * 避免每个调用点各写一份形状判断。
  */
-export function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown, fallbackByCode?: (code: string) => string): string {
   if (isCoreError(error)) {
-    return error.message.trim().length > 0 ? error.message : String(error);
+    if (error.message.trim().length > 0) return error.message;
+    return fallbackByCode?.(error.code) ?? String(error);
   }
   return error instanceof Error ? error.message : String(error);
 }

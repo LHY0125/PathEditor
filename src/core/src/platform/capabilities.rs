@@ -1,6 +1,5 @@
 use crate::domain::env_var::{capabilities_for_with, EnvHive, EnvValueKind};
 use crate::platform::registry;
-use crate::platform::system;
 use serde::Serialize;
 
 /// 按注册表 hive 拆分读写能力，避免用单一的“管理员”状态锁死用户 PATH。
@@ -17,9 +16,11 @@ pub struct PathCapabilities {
 pub fn detect() -> PathCapabilities {
     PathCapabilities {
         can_read_system: registry::load_system_paths().is_ok(),
-        can_write_system: system::check_admin(),
+        // 写权限只认 `store::hive_writable`：此处若另用 `check_admin` 判定，
+        // 会出现「detect 说不可写、真正的写入口却能写」的第二套规则。
+        can_write_system: registry::store::hive_writable(EnvHive::System),
         can_read_user: registry::load_user_paths().is_ok(),
-        can_write_user: registry::can_write_user(),
+        can_write_user: registry::store::hive_writable(EnvHive::User),
     }
 }
 

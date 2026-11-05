@@ -277,9 +277,10 @@ mod tests {
         };
         let outcome = match mode.as_str() {
             "failed" => core::platform::backup::BackupOutcome::Failed("磁盘已满".into()),
-            "created" => {
-                core::platform::backup::BackupOutcome::Created(std::path::PathBuf::from("x.json"))
-            }
+            "created" => core::platform::backup::BackupOutcome::Created {
+                path: std::path::PathBuf::from("x.json"),
+                encrypted: false,
+            },
             "skipped" => core::platform::backup::BackupOutcome::Skipped,
             other => panic!("未知探针模式: {other}"),
         };

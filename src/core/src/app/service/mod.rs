@@ -163,11 +163,24 @@ pub struct ApplyOutcome {
 /// `ApplyOutcome` 内部，若任由 `Failed` 装在 `Ok` 里，CLI 会打印「已写入注册表」
 /// 并 exit 0，GUI 会静默关窗。GUI 的保存链路有自己的逐 hive 呈现，不走这里。
 pub(crate) fn fail_on_hive_error(outcome: &ApplyOutcome) -> Result<(), CoreError> {
+    // 失败原因来自具体写入函数，未必带 hive 信息（fake 注入的、注册表 API 原样返回的
+    // 都可能是「拒绝访问」这类通用文案）。这里统一补上「哪个 hive」，调用方与用户
+    // 才知道去提权还是查 HKCU —— 这句是错误链里唯一知道上下文的地方。
     if let HiveOutcome::Failed(e) = &outcome.system {
-        return Err(e.clone());
+        return Err(CoreError::new(
+            e.code,
+            "apply_path",
+            format!("系统 PATH 写入失败: {}", e.message),
+        )
+        .with_hive(EnvHive::System));
     }
     if let HiveOutcome::Failed(e) = &outcome.user {
-        return Err(e.clone());
+        return Err(CoreError::new(
+            e.code,
+            "apply_path",
+            format!("用户 PATH 写入失败: {}", e.message),
+        )
+        .with_hive(EnvHive::User));
     }
     Ok(())
 }

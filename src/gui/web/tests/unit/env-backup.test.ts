@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 // 差异摘要用例不依赖 IPC，但同一文件引入 backend —— 顺带锁定其形状校验行为。
 import { invoke } from '@tauri-apps/api/core';
 import { backend } from '@/services/backend';
-import { backupFailed, type BackupOutcome } from '@/core/env-var';
+import { backupFailed, backupPlaintext, type BackupOutcome } from '@/core/env-var';
 import {
   formatSize,
   summarizePreview as summarizeWithLabels,
@@ -113,7 +113,9 @@ describe('backupFailed 形状判定（成对用例）', () => {
   });
 
   it('{created:"路径"} → 非失败，返回 null', () => {
-    expect(backupFailed({ created: 'C:\\b\\env_backup_x.json' })).toBeNull();
+    expect(
+      backupFailed({ created: { path: 'C:\\b\\env_backup_x.json', encrypted: true } }),
+    ).toBeNull();
   });
 
   it("'skipped' → 非失败，返回 null", () => {
@@ -129,7 +131,23 @@ describe('backupFailed 形状判定（成对用例）', () => {
 
   it('{failed} 与 {created} 同形不同键时不得混淆（成对反例）', () => {
     expect(backupFailed({ failed: 'x' })).toBe('x');
-    expect(backupFailed({ created: 'x' })).toBeNull();
+    expect(backupFailed({ created: { path: 'x', encrypted: false } })).toBeNull();
+  });
+});
+
+describe('backupPlaintext 明文回落判定', () => {
+  it('{created, encrypted:false} → 返回路径（必须告警）', () => {
+    expect(
+      backupPlaintext({ created: { path: 'C:\\b\\env_backup_x.json', encrypted: false } }),
+    ).toBe('C:\\b\\env_backup_x.json');
+  });
+
+  it('{created, encrypted:true} / skipped / failed → 非明文', () => {
+    expect(
+      backupPlaintext({ created: { path: 'C:\\b\\env_backup_x.pebak', encrypted: true } }),
+    ).toBeNull();
+    expect(backupPlaintext('skipped')).toBeNull();
+    expect(backupPlaintext({ failed: '磁盘已满' })).toBeNull();
   });
 });
 
@@ -143,11 +161,15 @@ describe('formatSize', () => {
 
 describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => {
   it('合法 {backup:{created}} 通过并白名单构造', async () => {
-    mockInvoke.mockResolvedValue({ backup: { created: 'C:\\b\\env_backup_1.json' } });
+    mockInvoke.mockResolvedValue({
+      backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
+    });
 
     const outcome = await backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1');
 
-    expect(outcome).toEqual({ backup: { created: 'C:\\b\\env_backup_1.json' } });
+    expect(outcome).toEqual({
+      backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
+    });
   });
 
   it("合法 'skipped' 与 {failed} 通过", async () => {

@@ -45,6 +45,28 @@ pub fn index_count(db: &Db) -> Result<i64, CoreError> {
     db.query_row_with("SELECT count(*) FROM search_fts", [], |r| r.get(0))
 }
 
+/// 索引是否与实体表脱节（供启动时自愈）。
+///
+/// 判据是**行数**：`search_fts` 的行数应等于「未删除快照的 PATH 条目 +
+/// 环境变量名 + 未删除配置」之和。只比空/非空（旧行为）会漏掉「索引非空但缺
+/// 配置行」这类旧库：升级后增量维护只覆盖新写入，历史缺口永远补不上。
+///
+/// 行数相等但内容陈旧（例如某行内容被改而计数不变）不会被这里发现 ——
+/// 派生表纪律允许这种情况，代价是搜索命中内容过期，`rebuild_index` 随时可修。
+pub fn index_needs_rebuild(db: &Db) -> Result<bool, CoreError> {
+    let expected: i64 = db.query_row_with(
+        "SELECT
+           (SELECT count(*) FROM path_entries p
+              JOIN snapshots s ON s.id = p.snapshot_id WHERE s.deleted_at IS NULL)
+         + (SELECT count(*) FROM env_values e
+              JOIN snapshots s ON s.id = e.snapshot_id WHERE s.deleted_at IS NULL)
+         + (SELECT count(*) FROM profiles WHERE deleted_at IS NULL)",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(index_count(db)? != expected)
+}
+
 /// 全量重建索引，返回写入的行数。
 ///
 /// 派生表纪律：本函数必须能从 `path_entries` /

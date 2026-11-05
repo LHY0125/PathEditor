@@ -37,7 +37,16 @@ fn backup_before_write(dir: Option<&std::path::Path>) -> BackupOutcome {
         None => backup_env_vars(),
     };
     match result {
-        Ok(path) => BackupOutcome::Created(path),
+        Ok(path) => {
+            // 格式由扩展名决定：`write_env_backup_to` 拿不到密钥时回落明文 `.json`
+            //（见该函数的降级分支）。GUI 靠这个布尔值决定是否常驻告警，
+            // 与 `restore::BackupFormat` 用同一判定口径。
+            let encrypted = path
+                .extension()
+                .map(|e| e.eq_ignore_ascii_case("pebak"))
+                .unwrap_or(false);
+            BackupOutcome::Created { path, encrypted }
+        }
         Err(e) => {
             // GUI 侧 logger 会收到；CLI 侧经 WriteOutcome 返回值显式打印
             // （CLI 未初始化 logger，这条 warn 在 CLI 下被丢弃）。
@@ -1461,7 +1470,7 @@ mod env_var_tests {
         // 「结果被算出来又被丢弃」这类退化；失败路径由
         // `update_env_var_succeeds_even_when_backup_fails` 的可证伪断言覆盖。
         assert!(
-            matches!(outcome.backup, BackupOutcome::Created(_)),
+            matches!(outcome.backup, BackupOutcome::Created { .. }),
             "备份目录可写时必须返回 Created，实际: {:?}",
             outcome.backup
         );

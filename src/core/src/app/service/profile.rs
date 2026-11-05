@@ -69,12 +69,16 @@ pub fn apply_profile_io(
         }
     };
 
+    // 顺序要紧：先判失败、再记账。反过来的话，某个 hive 写失败仍会被算作
+    // 一次成功应用（applyCount +1），用户看到「失败」却在配置列表里看到计数增长。
+    //
+    // 调用方只按 `Result` 判成败（CLI 打印「已写入注册表」、GUI 关闭弹窗），
+    // 逐 hive 的 `Failed` 必须在这里抬成 Err，否则注册表没改也报成功。
+    super::fail_on_hive_error(&outcome)?;
+
     if let Err(e) = crate::db::profiles::mark_profile_applied_by_name(db, name) {
         log::warn!("配置应用计数更新失败（保存已成功）: {}", e.message);
     }
 
-    // 调用方只按 `Result` 判成败（CLI 打印「已写入注册表」、GUI 关闭弹窗），
-    // 逐 hive 的 `Failed` 必须在这里抬成 Err，否则注册表没改也报成功。
-    super::fail_on_hive_error(&outcome)?;
     Ok(outcome)
 }

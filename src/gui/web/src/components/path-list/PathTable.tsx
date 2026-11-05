@@ -158,8 +158,12 @@ export function PathTable({ tabId }: PathTableProps) {
               data-state={rowState}
               role="row"
               aria-selected={isSelected}
-              // roving tabindex：选中行可 Tab 进入，其余行用方向键移动
-              tabIndex={isSelected ? 0 : -1}
+              // roving tabindex：选中行可 Tab 进入；无选中时首行是入口，
+              // 否则整张表没有 tab stop，键盘用户必须先鼠标点一下才能用方向键。
+              tabIndex={isSelected || (!isActive && rowIdx === 0) ? 0 : -1}
+              onFocus={() => {
+                if (!isActive) setSelectedIndices([index]);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();

@@ -125,8 +125,11 @@ export function EnvVarTable({
                 onClick={() => onSelect?.(meta)}
                 role="row"
                 aria-selected={isSelected}
-                // roving tabindex：选中行可 Tab 进入，其余行由方向键移动
-                tabIndex={isSelected ? 0 : -1}
+                // roving tabindex：选中行可 Tab 进入；无选中时首行是入口
+                tabIndex={isSelected || (selectedKey === null && rowIdx === 0) ? 0 : -1}
+                onFocus={() => {
+                  if (!isSelected) onSelect?.(meta);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();

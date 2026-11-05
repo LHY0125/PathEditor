@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { isCoreError } from '@/core/error';
+import { errorMessage, isCoreError } from '@/core/error';
 import i18n from '@/i18n';
 import {
   backupFailed,
+  backupPlaintext,
   envVarKey,
   validateVarName,
   type EnvHive,
@@ -34,6 +35,9 @@ function isConflictError(err: unknown): boolean {
  * 调用方的 `return true` 照旧，只有状态栏措辞变化。
  */
 function savedStatusMessage(backup: BackupOutcome): string {
+  // 明文回落必须单独告警：文件里有全部变量（含 `*_TOKEN`），只显示「已保存」
+  // 会让用户以为敏感值仍是加密状态。三态互斥，按严重度排序。
+  if (backupPlaintext(backup) !== null) return i18n.t('status.saved_plaintext_backup');
   return backupFailed(backup) !== null
     ? i18n.t('status.saved_without_backup')
     : i18n.t('status.saved');
@@ -44,13 +48,11 @@ function savedStatusMessage(backup: BackupOutcome): string {
  * 变量名与上下文）；message 缺失时兜底到按 code 本地化的 `error.code.*`。
  * `error.code.*` 键同时是未来按 code 分支扩展（如冲突引导重新加载）的锚点。
  */
-function errorMessage(err: unknown): string {
-  if (isCoreError(err)) {
-    return err.message.trim().length > 0
-      ? err.message
-      : i18n.t(`error.code.${err.code}`, { defaultValue: i18n.t('error.code.internal') });
-  }
-  return String(err);
+/// 骨架错误文案统一走 `core/error.ts`；这里的唯一差异是「message 为空时按 code 本地化」。
+function describeError(err: unknown): string {
+  return errorMessage(err, (code) =>
+    i18n.t(`error.code.${code}`, { defaultValue: i18n.t('error.code.internal') }),
+  );
 }
 
 interface EnvState {
@@ -124,7 +126,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         set({
           isLoading: false,
           statusIsError: true,
-          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+          statusMessage: `${i18n.t('status.error')}: ${describeError(error)}`,
         });
       }
     },
@@ -187,10 +189,10 @@ export const useEnvStore = create<EnvState>((set, get) => {
       } catch (error) {
         if (isConflictError(error)) {
           // 冲突：Rust 已拒绝写入，刷新拿最新 revision；草稿保留（输入不丢）
-          const message = errorMessage(error);
+          const message = describeError(error);
           await refreshAfterError(message);
         } else {
-          const message = errorMessage(error);
+          const message = describeError(error);
           set({
             isSaving: false,
             statusIsError: true,
@@ -217,7 +219,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         set({
           isSaving: false,
           statusIsError: true,
-          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+          statusMessage: `${i18n.t('status.error')}: ${describeError(error)}`,
         });
         return false;
       }
@@ -232,12 +234,12 @@ export const useEnvStore = create<EnvState>((set, get) => {
         return true;
       } catch (error) {
         if (isConflictError(error)) {
-          await refreshAfterError(errorMessage(error));
+          await refreshAfterError(describeError(error));
         } else {
           set({
             isSaving: false,
             statusIsError: true,
-            statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+            statusMessage: `${i18n.t('status.error')}: ${describeError(error)}`,
           });
         }
         return false;
@@ -264,7 +266,7 @@ export const useEnvStore = create<EnvState>((set, get) => {
         set({
           revealed,
           statusIsError: true,
-          statusMessage: `${i18n.t('status.error')}: ${errorMessage(error)}`,
+          statusMessage: `${i18n.t('status.error')}: ${describeError(error)}`,
         });
         // 值可能已不存在或类型不受支持，刷新以同步真实状态
         await get().load();

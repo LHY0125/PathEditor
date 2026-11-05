@@ -91,7 +91,8 @@
       "equals": "变量名不能包含等号"
     },
     "noResults": "没有匹配的变量",
-    "empty": "暂无环境变量"
+    "empty": "暂无环境变量",
+    "deleteConfirmWithRefs": "确定删除变量 {{name}} 吗？有 {{count}} 个变量通过 %{{name}}% 引用它，删除后这些引用会失效。此操作不可撤销。"
   },
   "table": {
     "path": "路径",
@@ -174,7 +175,8 @@
     "saveFailure": "保存失败: {{details}}",
     "saveSystemFailed": "系统 PATH: {{error}}",
     "saveUserFailed": "用户 PATH: {{error}}",
-    "cleanChanged": "列表在清理期间已变化，请重新执行清理"
+    "cleanChanged": "列表在清理期间已变化，请重新执行清理",
+    "saved_plaintext_backup": "已保存 — 备份为明文（密钥不可用）。修复密钥后运行 patheditor maintenance cleanup-legacy-backups --yes 可重新加密"
   },
   "dialog": {
     "newPath": "新建路径",

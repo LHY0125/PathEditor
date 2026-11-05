@@ -13,11 +13,17 @@ export type HiveFilter = 'system' | 'user' | 'all';
  * 一次写操作前的备份结果（Rust `backup::BackupOutcome` 的 serde 形状）。
  *
  * 是**外部标签枚举**（externally tagged），JSON 形如：
- * - `Created(PathBuf)` → `{ "created": "C:\\…\\env_backup_….json" }`
- * - `Skipped`          → `"skipped"`
- * - `Failed(String)`   → `{ "failed": "原因" }`
+ * - `Created { path, encrypted }` → `{ "created": { "path": "C:\\…", "encrypted": true } }`
+ * - `Skipped`                     → `"skipped"`
+ * - `Failed(String)`              → `{ "failed": "原因" }`
+ *
+ * `encrypted = false` 表示密钥不可用、回落成明文 `.json` —— 这种备份含全部变量
+ * （包括 `*_TOKEN`），界面必须显式告警，不能只显示「已保存」。
  */
-export type BackupOutcome = { created: string } | 'skipped' | { failed: string };
+export type BackupOutcome =
+  | { created: { path: string; encrypted: boolean } }
+  | 'skipped'
+  | { failed: string };
 
 /** 一次环境变量写操作的结果（Rust `registry::WriteOutcome`）。 */
 export interface WriteOutcome {
@@ -31,8 +37,20 @@ export interface WriteOutcome {
  * 不能用「是对象 → 失败」这种粗判，否则备份成功也会被报成失败。
  */
 export function backupFailed(backup: BackupOutcome): string | null {
-  return typeof backup === 'object' && backup !== null && 'failed' in backup
-    ? (backup as { failed: string }).failed
+  return typeof backup === 'object' && backup !== null && 'failed' in backup ? backup.failed : null;
+}
+
+/**
+ * 明文回落：`created` 且 `encrypted === false` 时返回备份路径，否则 `null`。
+ *
+ * 与 [`backupFailed`] 并列而不是合并：两者是互斥的成功/降级分支，
+ * 合并成一个「状态字符串」会让调用方重新去做字符串匹配。
+ */
+export function backupPlaintext(backup: BackupOutcome): string | null {
+  return typeof backup === 'object' && backup !== null && 'created' in backup
+    ? backup.created.encrypted
+      ? null
+      : backup.created.path
     : null;
 }
 
