@@ -27,6 +27,8 @@
   写成别名（`SY`/`LA`/`BA`…）。CI runner 的令牌属于 `S-1-5-114`（SDDL 写作 `LA`），
   合法 DACL 会被误判为「存在非预期主体」。现在遍历 ACE 取 SID 规范字符串再比较；
   新增 `dacl_principal_check` 用例（补一个 `BUILTIN\Users` 授权后必须判否）。
+- CI/发布工作流的 Node 由 20 提到 **22**（`package.json` 增 `engines.node >= 22`）：
+  测试用到 `Promise.withResolvers`（Node 22+），Node 20 上直接 `TypeError`。
 - 依赖审计 job 显式 `RUSTUP_TOOLCHAIN: stable`：仓库的 `rust-toolchain.toml` 钉的是 Windows GNU
   目标，Linux runner 上 rustup 报「target tuple in channel name」。
 - 文本导入加 8 MiB 上限、同步包 header 加 64 KiB 上限。
