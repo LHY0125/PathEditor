@@ -599,9 +599,7 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 
 **刻意未做（有明确理由）**：
 
-1. **P2-37 中的文件删除**：仅移除了 `bundle.resources` 条目；`src/gui/src-tauri/WebView2Loader.dll`
-   与嵌套 `Cargo.lock` 仍保留在仓库——按用户规则「未经书面同意不得删除任何文件」，删除需单独确认。
-   （该嵌套 `Cargo.lock` 已是陈旧副本：`src/gui/src-tauri` 是 workspace 成员，cargo 只读根 `Cargo.lock`。）
+- 无。原列的 P2-37 文件删除已获用户书面同意，见下方「2026-11-06 补做」第 5 条。
 
 **2026-11-06 补做（本轮从「刻意未做」转为已修复）**：
 
@@ -621,3 +619,17 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
    剩余 5 类告警全部核实不可达（rkyv 未进依赖图、proc-macro-error 与 glib 仅 Linux GTK、
    unic-\* 无已知漏洞且为 urlpattern 内部依赖），写入 `.cargo/audit.toml` 并附复核命令；
    CI 新增独立 `cargo audit` job。`cargo audit` 现退出码 0、无输出。
+
+5. **P2-37 文件删除（已获用户书面同意）**：
+   - 删除 `src/gui/src-tauri/WebView2Loader.dll`：`webview2-com-sys` 的
+     `link_webview2!` 宏按 `target_env` 二选一 —— MSVC 静态链 `WebView2LoaderStatic`，
+     其它环境用导入库 `WebView2Loader.dll`。因此这份副本对 MSVC 发布是死文件，
+     对 GNU 本地运行却是必需的。
+   - 删除 `src/gui/src-tauri/Cargo.lock`：该 crate 是 workspace 成员，cargo 只读根
+     `Cargo.lock`，这份副本停在 5.1.2（其内 `quick-xml` 仍是 0.39.4，会让就地审计误报）。
+   - 配套（不是单纯删除）：`build.rs` 新增 `stage_webview2_loader_for_local_runs()`，
+     GNU 目标下从 `target/<profile>/build/webview2-com-sys-*/out/x64/` 复制 DLL 到
+     `target/<profile>/`；`release.yml` 的 portable zip 不再放入该 DLL（只含 exe）。
+   - 验证：删掉 `target/debug/WebView2Loader.dll` 后重编，文件被重新生成（160320 字节、
+     md5 `b7f10b8…`），`objdump -p` 仍显示 `DLL Name: WebView2Loader.dll`（GNU 导入），
+     且 `Start-Process target\debug\PathEditor.exe` 启动后 4 秒仍在运行（未被 0xC0000135 打死）。

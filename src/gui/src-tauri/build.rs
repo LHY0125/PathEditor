@@ -4,6 +4,73 @@ use std::process::Command;
 fn main() {
     tauri_build::build();
     embed_manifest_for_test_binaries();
+    stage_webview2_loader_for_local_runs();
+}
+
+/// 给 **GNU** 本地构建补齐运行期的 `WebView2Loader.dll`。
+///
+/// ## 为什么只有 GNU 需要
+///
+/// `webview2-com-sys` 按目标环境二选一（见该 crate `src/lib.rs` 的
+/// `link_webview2!` 宏）：
+/// - `target_env = "msvc"` → `link(name = "WebView2LoaderStatic", kind = "static")`，
+///   加载器被静态链进 exe，**不需要**外部 DLL（发布产物即此路径）；
+/// - 其它（本机 GNU）→ `link(name = "WebView2Loader.dll")`，走导入库，
+///   exe 会真实导入 `WebView2Loader.dll`。
+///
+/// 导入库和 DLL 都由该 crate 的构建脚本放进
+/// `target/<profile>/build/webview2-com-sys-*/out/x64/`，但 cargo 不会把它复制到
+/// exe 旁边。仓库里曾直接跟踪一份 160 KB 的 DLL 来顶这个坑；那份副本对 MSVC 发布
+/// 是死文件，且是经典的 DLL 劫持目标名，已删除。改为构建时从依赖的 OUT_DIR 取样，
+/// 只动 `target/`，不进索引。
+///
+/// 失败只告警不中断：DLL 缺失只影响本机直接双击 `target/debug/PathEditor.exe`，
+/// 不影响编译产物本身的正确性。
+fn stage_webview2_loader_for_local_runs() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    // MSVC 静态链接，不需要外部 DLL
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        return;
+    }
+
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR 必须存在"));
+    // OUT_DIR = target/<profile>/build/<pkg>-<hash>/out
+    let Some(profile_dir) = out_dir.ancestors().nth(3).map(PathBuf::from) else {
+        return;
+    };
+    let build_root = profile_dir.join("build");
+
+    let Ok(entries) = std::fs::read_dir(&build_root) else {
+        return;
+    };
+    let source = entries
+        .flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("webview2-com-sys-")
+        })
+        .map(|e| e.path().join("out").join("x64").join("WebView2Loader.dll"))
+        .find(|p| p.is_file());
+
+    let Some(source) = source else {
+        println!(
+            "cargo:warning=未找到 webview2-com-sys 的 WebView2Loader.dll（GNU 构建运行时需要它）；\
+             `target/<profile>/PathEditor.exe` 可能启动失败"
+        );
+        return;
+    };
+
+    let target = profile_dir.join("WebView2Loader.dll");
+    // 已是同一份就跳过：避免每次增量构建都改动文件时间戳
+    if std::fs::read(&target).ok() == std::fs::read(&source).ok() {
+        return;
+    }
+    if let Err(e) = std::fs::copy(&source, &target) {
+        println!("cargo:warning=复制 WebView2Loader.dll 失败（{e}）");
+    }
 }
 
 /// 给测试二进制嵌入 comctl32 v6 清单。

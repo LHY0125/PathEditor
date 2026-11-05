@@ -504,7 +504,7 @@ scoop bucket add lhy https://github.com/LHY0125/scoop-bucket
 scoop install lhy/patheditor-gui
 ```
 
-从 portable zip 解压即用（`PathEditor.exe` + `WebView2Loader.dll`），开始菜单生成 PathEditor 快捷方式。
+从 portable zip 解压即用（zip 里只有 `PathEditor.exe`；MSVC 构建静态链接 WebView2 加载器，不需要额外 DLL），开始菜单生成 PathEditor 快捷方式。
 
 **方式三：源码构建**
 

@@ -70,6 +70,10 @@
   `anyhow` 1.0.104、`tokio` 1.54.1。新增 `.cargo/audit.toml` 记录放行项与可达性证据，
   CI 增加独立的 `cargo audit` job。
 - `docs/screenshots/demo.gif` 5.28 MB → 1.83 MB（720×585、8 fps、80 色无抖动调色板）。
+- 删除被跟踪的 `src/gui/src-tauri/WebView2Loader.dll` 与嵌套 `Cargo.lock`：前者对 MSVC 发布
+  是死文件（`webview2-com-sys` 在 `target_env = "msvc"` 下静态链 `WebView2LoaderStatic`），
+  且是经典 DLL 劫持目标名；后者是陈旧副本（workspace 成员只读根 `Cargo.lock`）。GNU 本地运行
+  需要的那份 DLL 改由 `build.rs` 从依赖 OUT_DIR 复制到 `target/<profile>/`；portable zip 不再放入它。
 
 ## 6.2.0 (2026-10-29)
 
