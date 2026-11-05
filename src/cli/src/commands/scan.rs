@@ -3,14 +3,38 @@ use crate::runtime::exit_core_error;
 use path_editor_core as core;
 use serde_json::json;
 
+/// 读取两边的 PATH 用于扫描。
+///
+/// **不吞错误**：旧实现 `if let Ok(..)` 让读失败退化成空 PATH，
+/// `conflicts` 会打印「未发现冲突」并 exit 0 —— 脚本把「读失败」当「无冲突」。
+fn load_scan_paths() -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    let mut errors: Vec<(&str, core::CoreError)> = Vec::new();
+    match core::platform::registry::load_system_paths() {
+        Ok(v) => paths.extend(v),
+        Err(e) => errors.push(("系统", e)),
+    }
+    match core::platform::registry::load_user_paths() {
+        Ok(v) => paths.extend(v),
+        Err(e) => errors.push(("用户", e)),
+    }
+    if let Some((_, first)) = errors.first() {
+        if paths.is_empty() {
+            eprintln!("错误: 系统与用户 PATH 都读取失败，扫描中止");
+            exit_core_error(first);
+        }
+        for (label, e) in &errors {
+            eprintln!(
+                "警告: 读取{label} PATH 失败，扫描结果可能不完整: {}",
+                e.message
+            );
+        }
+    }
+    paths
+}
+
 pub(crate) fn cmd_conflicts(json_out: bool) {
-    let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::platform::registry::load_system_paths() {
-        paths.extend(sys);
-    }
-    if let Ok(usr) = core::platform::registry::load_user_paths() {
-        paths.extend(usr);
-    }
+    let paths = load_scan_paths();
     let conflicts =
         core::platform::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
@@ -38,13 +62,7 @@ pub(crate) fn cmd_conflicts(json_out: bool) {
 }
 
 pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
-    let mut paths: Vec<String> = vec![];
-    if let Ok(sys) = core::platform::registry::load_system_paths() {
-        paths.extend(sys);
-    }
-    if let Ok(usr) = core::platform::registry::load_user_paths() {
-        paths.extend(usr);
-    }
+    let paths = load_scan_paths();
     let groups = core::platform::scanner::scan_tools(paths, query.unwrap_or_default())
         .unwrap_or_else(|e| exit_core_error(&e));
     if json_out {

@@ -228,7 +228,7 @@ describe('备份/恢复命令返回值的运行时形状校验', () => {
     const result = await backend.previewEnvBackup('C:\\b\\env_backup_1.json');
 
     expect(result).toEqual({
-      changes: [{ hive: 'user', name: 'JAVA_HOME', kind: 'conflict' }],
+      changes: [{ hive: 'user', name: 'JAVA_HOME', kind: 'conflict', valuePreview: null }],
       added: 1,
       modified: 0,
       removed: 2,

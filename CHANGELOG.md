@@ -1,5 +1,65 @@
 # Changelog
 
+## 未发布
+
+### 修复
+
+- **保存 PATH 不再等待环境变量广播**：`WM_SETTINGCHANGE` 用 `HWND_BROADCAST` 逐窗口同步发送，
+  单次耗时是各顶层窗口处理时间的累加（本机实测 3.3–4.0 秒；`SMTO_ABORTIFHUNG` 只在窗口真正挂起时
+  才提前放弃）。这条广播原本落在保存编排里，且调用方持有 DB 互斥量，GUI 保存因此固定多等数秒。
+  广播改为独立线程执行，lParam 使用进程级静态缓冲区（生命周期覆盖整次发送）；CLI 在 `main` 返回前
+  `flush_env_broadcasts()` 等待发送完成（短命进程不丢通知）。集成测试 `db_profile_apply`
+  4.35s → 0.07s，core 单测 2.74s → 0.21s。新增回归测试 `broadcast_env_change_does_not_block_caller`。
+
+### 安全
+
+- **`import --target system|user` 在该侧为空时会清空整条 PATH**：单 hive 分支补空侧守卫（TXT 源
+  永远只产生用户侧条目，`--target system` 原本会把 HKLM PATH 写成空串）。
+- 密钥文件 DACL 改用 `D:P`（禁用继承），并对 `keys` 目录同样加固；校验从黑名单改为
+  「每条 ACE 的主体 ∈ {SYSTEM, 当前用户}」的白名单。
+- 密钥的首次读取也进入命名互斥量：避免读到另一进程刚 `create_new`、尚未写完的半截文件。
+- 备份轮换只匹配本工具生成的时间戳文件名；目录外的恢复文件也必须使用该命名，`env_backup_evil.json`
+  不再放行。恢复预览新增 `valuePreview`（敏感变量为 `null`）。
+- 同步包与文本导入读取前检查体积上限（bundle 64 MiB / 条数 100k）；导入的 `baseLamport` 钳制到
+  `i64::MAX / 2`，`+1` 改 `saturating_add`（溢出会让本地记账永久失败）。
+- `expand_env_vars` 不再展开命中敏感规则且不在 PATH 白名单内的 `%VAR%`，避免绕过 `reveal_env_var`。
+- Tauri capabilities 收敛为 `core:event:default` + `core:window:allow-destroy` + `dialog:default`；
+  同步导出路径经 core 校验（扩展名 + 允许根目录）。
+
+### 改进
+
+- **同步冲突「采纳远端」真正生效**：`sync_conflicts` 新增 `remote_content`（schema v4），
+  `resolve_conflict(Remote)` 在同一事务内应用远端实体或墓碑。旧实现只追加变更、不改实体。
+- **FTS 增量索引覆盖配置与导入**：新建/改名/删除配置、同步导入的快照与配置都会更新索引；
+  删除会清掉索引行（不再返回死引用）。
+- 迁移版本号在 `BEGIN IMMEDIATE` 之后重读，GUI 与 CLI 并发首次迁移不会再重跑 DDL。
+- `get_snapshot` 只在 `QueryReturnedNoRows` 时映射 `NotFound`；瞬时 DB 错误不再被当成「实体已删除」。
+- 导入快照保留远端 `createdAt`；重复 uid 的快照改为幂等（只补索引）。
+- 保留策略清理保留每个实体的最新变更与全部墓碑，避免旧包复活已删除配置。
+- 派生表水位纳入 `scan_runs` 与 `app_state.current_snapshot_id`。
+- `ApplyOutcome` 新增 `backup` 字段：PATH 写前备份失败在 CLI/GUI 都可见；
+  `SidecarOutcome` 新增 `Skipped`（DB 不可用的降级模式不再被 CLI 判成 exit 1）。
+- 32 个重型 IPC 命令改为 `#[tauri::command(async)]`，扫描/保存/同步不再阻塞 UI 线程。
+- GUI：拖放改用 Tauri `onDragDropEvent`（HTML5 `drop` 在 Windows WebView2 下收不到事件）；
+  保存期间的新编辑不再被判成「已保存」；撤销/重做按钮状态随历史刷新；Escape/遮罩取消会清草稿；
+  应用配置/恢复快照后重新加载 PATH 与环境变量；明文备份回落会在状态栏提示。
+- 前端错误守卫统一到 `core/error.ts` 的 `isCoreError` / `errorMessage`（消除 7 份重复实现）。
+- `clean --json` 需与 `--dry-run` 同用；`clean` 使用完整快照，保留禁用项。
+- `sync import` 记录到待解决冲突时以退出码 4 结束；`env restore --strict` 让部分失败可被脚本检出。
+- PATH 读改写增加注册表类型白名单（`REG_SZ`/`REG_EXPAND_SZ`），保存拒绝含分号的条目；
+  系统目录判定使用规范化路径与 `%SystemDrive%`。
+- 扫描结果按 `(名称, 目录)` 去重，工作线程 panic 不再静默丢分片。
+
+### 工程
+
+- CI 前端类型检查改为 `tsc -b`（`tsc --noEmit` 在 solution 配置下检查 0 个文件），
+  并补 `lint` / `format:check` / `test:coverage`（覆盖率门槛在 CI 真正生效）。
+- 测试 setup 注册 RTL `cleanup()`，消除跨用例污染。
+- MSRV 声明统一为 `rust-version = "1.82"`（代码实际使用 `Option::is_none_or`）。
+- 发布工作流额外校验 README 徽章与 CHANGELOG 段落；预发布 tag 不再标 `latest`。
+- 文档同步：IPC 入口路径、版本号、测试基线、覆盖率范围、perl5lib 生成方式。
+- 新增回归测试：冲突采纳远端应用实体、配置 FTS 增量、保存竞态、Escape 清草稿。
+
 ## 6.2.0 (2026-10-29)
 
 ### 变更

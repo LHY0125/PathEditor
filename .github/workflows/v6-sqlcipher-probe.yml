@@ -1,5 +1,8 @@
 name: v6-sqlcipher-probe
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main, "feat/**", "v6/**"]
@@ -45,16 +48,9 @@ jobs:
           # （GNU 与 MSVC 均复现；--test-threads=1 无效；系统内存充足时仍复现）。
           # 因此每个测试文件只放一个 #[test]，逐文件调用，每个文件一个进程。
           # 见 M0 结果文档 §五。
-          $files = @(
-            'p1_open',
-            'p2_wrong_key',
-            'p3_fts_json',
-            'p4_export',
-            'p5_vacuum',
-            'p6_bench',
-            'p7_dpapi',
-            'p8_dacl'
-          )
+          # 动态枚举，避免新增/改名测试文件时工作流静默漏跑。
+          $files = Get-ChildItem -LiteralPath 'tests' -Filter '*.rs' |
+            ForEach-Object { $_.BaseName }
           $failed = @()
           foreach ($f in $files) {
             Write-Host "::group::$f"

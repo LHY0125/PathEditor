@@ -1,6 +1,10 @@
 # Git 行尾符规范化
 # 本仓库统一 CRLF（Windows 原生项目）
 
+# Cargo.lock 由 cargo 固定写 LF，显式声明避免与「统一 CRLF」自相矛盾
+Cargo.lock     text eol=lf
+*.mjs      text eol=crlf
+
 # 源码文本文件
 *.ts        text eol=crlf
 *.tsx       text eol=crlf

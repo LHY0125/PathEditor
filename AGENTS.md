@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **6.1.1**）。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **6.2.0**）。
 
 v6 起数据层是一个 **SQLCipher 加密数据库（sidecar）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
 
@@ -54,7 +54,7 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 ### 本地构建环境（Windows + GNU）
 
 首次 `cargo check` / `cargo test` 前，先在**当前会话**设好这三行，否则 `openssl-sys` 会在 OpenSSL
-`Configure` 阶段中止。本机 2026-10-24 已按此跑通（`cargo test --workspace` 324 passed，clippy 与 fmt 全绿）。
+`Configure` 阶段中止。本机 2026-11-05 已按此跑通（`cargo test --workspace` 330 passed，clippy 与 fmt 全绿）。
 
 ```powershell
 $env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe" # 原生 Windows perl 产不出 POSIX 路径，会被拒
@@ -97,7 +97,7 @@ PathEditor/
 
 ### 关键约束（始终生效）
 
-- `src/gui/web/src/core/` 保持纯函数和零框架依赖；组件和 Store 不得直接调用 `invoke`，统一走 `src/gui/web/src/services/backend.ts`。
+- `src/gui/web/src/core/` 保持纯函数和零框架依赖；组件和 Store 不得直接调用 `invoke`，统一走 `src/gui/web/src/services/backend/`。
 - `src/gui/src-tauri` 和 `src/cli` 只做参数转换、命令分派和错误呈现，业务规则放在 `src/core`。CLI 侧**零安全判定逻辑**：保留名、保护名单、`Unsupported` 类型、hive 写权限、revision 校验全部由 core 判定；CLI 仅透传错误文本，新增命令时不要复制任何判定规则。
 - `patheditor-cli` 是 **bin-only crate**；对 CLI 跑单测必须用 `--bins`。
 - `PathCapabilities` 使用 camelCase 序列化；共享契约见 `src/gui/web/tests/fixtures/path-capabilities.json`。
@@ -125,7 +125,7 @@ PathEditor/
 
 - **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；DB 打不开时 fail-open，不静默重建空库。
 - **密钥**：`~/.patheditor/keys/db.key.dpapi`，DPAPI 当前用户作用域；DACL 限当前用户 + SYSTEM。
-- **schema**：`CURRENT_SCHEMA_VERSION = 3`；`PRAGMA user_version` 只在建库/迁移事务内写。
+- **schema**：`CURRENT_SCHEMA_VERSION = 4`；`PRAGMA user_version` 只在建库/迁移事务内写。
 - **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件只放一个 `#[test]`（同进程第二个会 `STATUS_STACK_OVERFLOW`）。
 - **DB 初始化**：`migrate_to_current` 只做 schema 迁移；首次启动用注册表当前状态建 `kind=current` 基线。
 - **同步**：bundle = `PESYNC1\0 + version + header_len + header JSON + salt + nonce + ciphertext + tag`；Argon2id + ChaCha20-Poly1305；LWW；`snapshot`/`profile` 按整实体比较；导入不写注册表。
@@ -135,7 +135,7 @@ PathEditor/
 
 ## 接口速览（IPC / CLI）
 
-- **IPC 唯一入口**：`src/gui/web/src/services/backend.ts` + 运行时形状校验；v6 的 DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
+- **IPC 唯一入口**：`src/gui/web/src/services/backend/` + 运行时形状校验；v6 的 DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
 - **CLI 退出码**：0 成功 / 1 一般错误（含 `SyncFormat`）/ 2 clap / 3 revision 冲突 / 4 同步合并冲突 / 5 密钥。
 - **同步与维护**：`patheditor sync …`、`patheditor maintenance …`；同步只改 DB，不写注册表。
 
@@ -148,14 +148,14 @@ PathEditor/
 - env 备份默认 `.pebak`（DPAPI）；密钥不可用时回落明文 `.json` 并告警。遗留 `.json` 清理需 `--yes`。
 - E2E 使用 mock IPC，**不得写真实注册表**；同步导入同样不写注册表。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果。
 - 所有 `unsafe` 块必须有 `// SAFETY:` 注释；所有 `pub fn` / `pub(crate) fn` 有中文 `///`。
-- `backend.ts` 必须拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝）。
+- `services/backend/` 必须拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝）。
 
 **完整的数据/事务/安全规则**：`docs/dev/data-and-security.md`。
 
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v6.1.1，2026-10-24 本机实测）：Rust **324 passed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **37 files / 413**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 基线（v6.2.0，2026-10-29 本机实测）：Rust **330 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **39 files / 420**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 

@@ -1,7 +1,9 @@
 import { create } from 'zustand';
+import { isCoreError } from '@/core/error';
 import i18n from '@/i18n';
 import { backend, type EventFilter, type EventView, type SnapshotView } from '@/services/backend';
-import type { CoreError } from '@/core/env-var';
+import { useAppStore } from '@/store/app-store';
+import { useEnvStore } from '@/store/env-store';
 
 /**
  * 把 rejection 转成用户可读文案。
@@ -11,15 +13,6 @@ import type { CoreError } from '@/core/env-var';
  * `String(e)` 即 `"[object Object]"`，降级条幅永远显示乱码。
  * 判定方式与 `env-store.ts` 的 `isCoreError` 保持一致。
  */
-function isCoreError(err: unknown): err is Pick<CoreError, 'code' | 'message'> {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    typeof (err as { message?: unknown }).message === 'string'
-  );
-}
-
 /** 错误文案；`crypto` 单独给出更具体的说明。 */
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
@@ -56,6 +49,9 @@ interface HistoryState {
 }
 
 const PAGE_SIZE = 50;
+
+/** 详情请求代次：慢响应不得覆盖后选中的事件。 */
+let detailSeq = 0;
 
 export const useHistoryStore = create<HistoryState>((set) => ({
   events: [],
@@ -118,6 +114,7 @@ export const useHistoryStore = create<HistoryState>((set) => ({
    * **恒用 `reveal = false`**：历史面板默认掩码，明文只能经显式操作获取。
    */
   selectEvent: async (event: EventView) => {
+    const seq = ++detailSeq;
     if (!event.snapshotUid) {
       set({ detail: null, detailLoading: false });
       return;
@@ -125,9 +122,13 @@ export const useHistoryStore = create<HistoryState>((set) => ({
     set({ detailLoading: true });
     try {
       const detail = await backend.historyGetSnapshot(event.snapshotUid, false);
+      // 快速点两条事件时，先发后到的响应会覆盖后选中项的详情。
+      if (seq !== detailSeq) return;
       set({ detail, detailLoading: false });
-    } catch {
-      set({ detail: null, detailLoading: false });
+    } catch (e) {
+      if (seq !== detailSeq) return;
+      // 静默吞错会让 DB 降级时只显示空态，用户以为「没有快照」。
+      set({ detail: null, detailLoading: false, error: errorMessage(e) });
     }
   },
 
@@ -169,7 +170,13 @@ export const useHistoryStore = create<HistoryState>((set) => ({
     try {
       await backend.historyRestoreSnapshot(uid);
       set({ restoring: false, detail: null });
-      await useHistoryStore.getState().load();
+      // 恢复会写注册表（PATH 与环境变量）：主界面必须重新读，
+      // 否则显示旧值，且后续保存带着过期 expected 被 core 判冲突。
+      await Promise.all([
+        useAppStore.getState().loadPaths(),
+        useEnvStore.getState().load(),
+        useHistoryStore.getState().load(),
+      ]);
     } catch (e) {
       set({ restoring: false, error: errorMessage(e) });
       throw e;

@@ -427,10 +427,7 @@ fn env_kind_label(store: &dyn EnvHiveStore, name: &str) -> Result<String, CoreEr
 /// 供 CLI 的 `env add --dry-run` 预览写权限用（该变量可能尚不存在，
 /// 不能走 [`preview_env_change`]，后者对不存在变量返回 `Err`）。
 pub fn env_hive_writable(hive: EnvHive) -> bool {
-    match hive {
-        EnvHive::System => crate::platform::system::check_admin(),
-        EnvHive::User => crate::platform::registry::can_write_user(),
-    }
+    super::store::hive_writable(hive)
 }
 
 /// 变更预览的返回结构（camelCase 与前端/CLI 契约一致）。

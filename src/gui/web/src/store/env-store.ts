@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isCoreError } from '@/core/error';
 import i18n from '@/i18n';
 import {
   backupFailed,
@@ -12,7 +13,7 @@ import {
   type RevealedValue,
 } from '@/core/env-var';
 import { backend } from '@/services/backend';
-import type { BackupOutcome, CoreError } from '@/core/env-var';
+import type { BackupOutcome } from '@/core/env-var';
 
 /**
  * 错误判定完全按 `code` —— backend.ts 已把 Tauri rejection
@@ -25,17 +26,6 @@ function isConflictError(err: unknown): boolean {
 }
 
 /** backend 解析层产物的形状校验（防御 mock / 上游回归）。 */
-function isCoreError(err: unknown): err is CoreError {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    typeof (err as { code: unknown }).code === 'string' &&
-    'message' in err &&
-    typeof (err as { message: unknown }).message === 'string'
-  );
-}
-
 /**
  * 写入成功后的状态文案：写前自动备份失败时如实降级为「保存成功（备份失败）」。
  *

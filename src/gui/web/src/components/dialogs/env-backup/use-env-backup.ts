@@ -29,11 +29,28 @@ import { errorMessage } from '@/core/error';
 export function buildRestoreConfirm(
   intro: string,
   summary: BackupSummary | null,
-  labels: { deleteWarning: string; deleteHint: string; manualFallback: string },
+  labels: {
+    deleteWarning: string;
+    deleteHint: string;
+    manualFallback: string;
+    writeTitle?: string;
+    sensitiveValue?: string;
+  },
 ): string {
   const lines = [intro];
   if (summary) {
     lines.push('', summary.text);
+    // 将被写入的变量必须可核对：只有计数时，一份伪装成备份的文件
+    // 也能让用户在没有信息的情况下点确认。
+    if ((summary.writes ?? []).length > 0 && labels.writeTitle) {
+      lines.push(
+        '',
+        labels.writeTitle,
+        ...(summary.writes ?? []).map(
+          (w) => `  • ${w.label} = ${w.preview ?? labels.sensitiveValue ?? '(sensitive)'}`,
+        ),
+      );
+    }
     // 删除是最不可逆的部分：变量名必须逐个列出，不能只给计数。
     if (summary.removedNames.length > 0) {
       lines.push(
@@ -211,6 +228,8 @@ export function useEnvBackup(open: boolean, onRestored: () => void): EnvBackupCo
       deleteWarning: t('envBackup.deleteWarning'),
       deleteHint: t('envBackup.deleteWarningHint'),
       manualFallback: t('envBackup.manualFallback'),
+      writeTitle: t('envBackup.writePreview'),
+      sensitiveValue: t('envBackup.sensitiveValue'),
     });
     // 破坏性操作：对话框 IPC 失败按「取消」处理（fail-closed）。
     const confirmed = await backend.confirmDialog(text).catch(() => false);

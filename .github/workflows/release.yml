@@ -92,6 +92,16 @@ jobs:
           if ($tauriVersion -ne $version) { $mismatches += "src/gui/src-tauri/tauri.conf.json=$tauriVersion" }
           if ($cargoVersion -ne $version) { $mismatches += "Cargo.toml=$cargoVersion" }
 
+          # README 徽章与 CHANGELOG 段落也是发布契约的一部分（docs/dev/release.md 的「四处一致」）。
+          $readme = Get-Content -LiteralPath 'README.md' -Raw
+          if ($readme -notmatch [regex]::Escape("version-$version-blue")) {
+            $mismatches += "README.md 徽章不是 $version"
+          }
+          $changelog = Get-Content -LiteralPath 'CHANGELOG.md' -Raw
+          if ($changelog -notmatch ("(?m)^##\s+v?" + [regex]::Escape($version) + "(\s|\()")) {
+            $mismatches += "CHANGELOG.md 缺少 $version 段落"
+          }
+
           if ($mismatches.Count -gt 0) {
             throw "tag=$env:RELEASE_TAG 与项目版本号不一致：$($mismatches -join ', ')"
           }
@@ -202,9 +212,17 @@ jobs:
           $assets = Get-ChildItem -LiteralPath 'release-assets' -File |
             ForEach-Object { $_.FullName }
 
-          gh release create "$env:RELEASE_TAG" `
-            --repo "$env:GITHUB_REPOSITORY" `
-            --title "PathEditor $env:RELEASE_TAG" `
-            --notes-file RELEASE_NOTES.md `
-            --latest `
-            @assets
+          # 预发布 tag（含 -beta 等后缀）不能占 latest，否则会把 beta 推给所有用户。
+          $releaseArgs = @(
+            "$env:RELEASE_TAG",
+            '--repo', "$env:GITHUB_REPOSITORY",
+            '--title', "PathEditor $env:RELEASE_TAG",
+            '--notes-file', 'RELEASE_NOTES.md'
+          )
+          if ($env:RELEASE_TAG.Contains('-')) {
+            $releaseArgs += '--prerelease'
+          } else {
+            $releaseArgs += '--latest'
+          }
+
+          gh release create @releaseArgs @assets

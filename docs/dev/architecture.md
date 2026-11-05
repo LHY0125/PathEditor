@@ -65,13 +65,13 @@ PathEditor/
 
 ## 模块边界速记
 
-| 层                                    | 职责                                           | 禁止                                                         |
-| ------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
-| `src/core/src/`                       | 业务规则、注册表访问、DB 访问、加解密          | 依赖 Tauri / React                                           |
-| `src/gui/src-tauri/src/commands/`     | `#[tauri::command]` 薄包装、参数转换、错误呈现 | 复制业务规则                                                 |
-| `src/cli/src/`                        | Clap 解析、命令分派、错误文本                  | 复制安全判定（保留名/保护名单/类型/权限/revision 全在 core） |
-| `src/gui/web/src/core/`               | 纯函数、零框架依赖                             | 引入 React / Tauri                                           |
-| `src/gui/web/src/services/backend.ts` | **唯一 IPC 入口** + 运行时形状校验             | 组件/Store 直调 `invoke`                                     |
+| 层                                  | 职责                                           | 禁止                                                         |
+| ----------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| `src/core/src/`                     | 业务规则、注册表访问、DB 访问、加解密          | 依赖 Tauri / React                                           |
+| `src/gui/src-tauri/src/commands/`   | `#[tauri::command]` 薄包装、参数转换、错误呈现 | 复制业务规则                                                 |
+| `src/cli/src/`                      | Clap 解析、命令分派、错误文本                  | 复制安全判定（保留名/保护名单/类型/权限/revision 全在 core） |
+| `src/gui/web/src/core/`             | 纯函数、零框架依赖                             | 引入 React / Tauri                                           |
+| `src/gui/web/src/services/backend/` | **唯一 IPC 入口** + 运行时形状校验             | 组件/Store 直调 `invoke`                                     |
 
 ## 数据流（保存 PATH）
 
@@ -81,7 +81,8 @@ UI 保存 → app store → backend.savePathWithSidecar
       ① 写前备份（path_backup_*.txt）
       ② 乐观并发校验（原始值）
       ③ 顺序写 system → user
-      ④ SendMessageTimeout(WM_SETTINGCHANGE)
+      ④ SendMessageTimeout(WM_SETTINGCHANGE) —— **异步**：广播在独立线程发送，
+         不阻塞保存（单次实测 3–4 秒）；CLI 在 `main` 返回前 `flush_env_broadcasts()` 等待发送完成
       ⑤ DB：提交 current 快照 + 事件；降级：只写注册表，禁用状态不持久化
 ```
 

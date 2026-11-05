@@ -1,4 +1,4 @@
-use crate::domain::error::CoreError;
+use crate::domain::error::{CoreError, ErrorCode};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -52,10 +52,16 @@ fn list_exes(dir: &str) -> Vec<String> {
     exes
 }
 
+/// 单个目录的枚举结果：`(PATH 优先级, 目录, 是否存在, 可执行文件名)`。
+type DirScan = (usize, String, bool, Vec<String>);
+
 /// 单次枚举 PATH 目录，最多使用 8 个扫描线程。
-fn enumerate_paths(paths: &[String]) -> Vec<(usize, String, bool, Vec<String>)> {
+///
+/// 任一工作线程 panic 都返回 `Err`：静默丢弃该分片会让冲突与工具清单
+/// 同时缺一块，而调用方仍以为扫描成功。
+fn enumerate_paths(paths: &[String]) -> Result<Vec<DirScan>, CoreError> {
     if paths.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
 
     let workers = 8usize.min(paths.len());
@@ -79,14 +85,22 @@ fn enumerate_paths(paths: &[String]) -> Vec<(usize, String, bool, Vec<String>)> 
             }));
         }
         for handle in handles {
-            if let Ok(partial) = handle.join() {
-                results.extend(partial);
+            match handle.join() {
+                Ok(partial) => results.extend(partial),
+                Err(_) => {
+                    return Err(CoreError::new(
+                        ErrorCode::Internal,
+                        "scan_paths",
+                        "扫描线程异常终止，结果不完整",
+                    ))
+                }
             }
         }
-    });
+        Ok(())
+    })?;
 
     results.sort_by_key(|result| result.0);
-    results
+    Ok(results)
 }
 
 /// 只枚举一次目录，同时生成冲突和工具清单结果。
@@ -95,11 +109,14 @@ pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, CoreE
     let mut map: HashMap<String, Vec<(usize, String)>> = HashMap::new();
     let mut tools = Vec::new();
 
-    for (priority, dir, exists, exes) in enumerate_paths(&paths) {
+    for (priority, dir, exists, exes) in enumerate_paths(&paths)? {
         for name in &exes {
-            map.entry(name.to_lowercase())
-                .or_default()
-                .push((priority, dir.clone()));
+            let locations = map.entry(name.to_lowercase()).or_default();
+            // 同一目录在 PATH 里出现两次（`split_path` 刻意保留重复项）时，
+            // 每个 exe 都会被当成「两处冲突」而两处 dir 完全相同 —— 纯误报。
+            if !locations.iter().any(|(_, existing)| existing == &dir) {
+                locations.push((priority, dir.clone()));
+            }
         }
 
         let mut filtered = exes;

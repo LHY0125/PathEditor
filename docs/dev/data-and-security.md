@@ -20,7 +20,7 @@
 
 ## 错误处理与安全
 
-- `backend.ts` 对能力对象、快照、禁用状态和 `PathEntry` 做运行时形状校验，不能只依赖 TypeScript 断言。
+- `services/backend/` 对能力对象、快照、禁用状态和 `PathEntry` 做运行时形状校验，不能只依赖 TypeScript 断言。
 - **所有命令都返回结构化 `CoreError`**（注册表、扫描、备份、DB、同步一致）；前端按 `code` 判定（`conflict` / `sync` / `syncFormat` / `crypto` …），**不要匹配 message 文本**。
 - **核心业务只在 core**：启动引导、配置应用、保存编排、安全判定（保留名/保护名单/系统目录/空口令）、快照恢复都不得在 CLI/GUI 复制。外层只做参数转换、错误呈现与 UI 降级。
 - **组合长度是 UX 规则，不是安全校验**：`system + user` 启用路径合计长度超过 `appConfig.path.maxCombinedLength` 时前端只做软提醒（可确认继续）；真正的硬上限是 core 对单 hive 32767 字符的校验。
@@ -28,7 +28,7 @@
 - Tauri CSP 不允许设置为 `null`；不要放松 `src/gui/src-tauri/tauri.conf.json` 的安全配置。
 - 所有 `unsafe` 块必须有 `// SAFETY:` 注释。PATH 写入前检查 null 字节和 32767 字符上限。
 - 所有 `pub fn` 必须有 `///` 文档注释；`pub(crate)` 同样补注释（CONTRIBUTING.md 硬性要求）。
-- 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `backend.ts` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
+- 环境变量输入在 core 侧统一校验；CLI/GUI 不做二次判定，但 `services/backend/` 仍要拒绝来路不明的 `EnvVarMeta`（含 `value` 字段者一律拒绝，白名单构造字段）。
 - `Path` 列入 `RESERVED_NAMES`，`list_all_env_vars` 过滤掉它，Rust 写入口拒绝——**PATH 只能经专用通路编辑**，否则会绕过专用通路与 DB 快照事务。`EnvVarMeta` 契约上不含 `value` 字段；命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
 - GUI 与 CLI 共用同一套 revision 契约（`expected_revision`），前端与 CLI 都**不得**自行实现并发校验。
 - E2E 使用 mock IPC，**不得写真实注册表**。真实 Tauri/注册表闭环测试必须显式授权，并记录备份、操作前后快照、重启结果和回滚结果（样本见 `docs/审核和开发/2026.09.18/`）。

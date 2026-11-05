@@ -141,8 +141,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
         switch (cmd) {
           case 'check_admin': return true;
           case 'get_path_capabilities': return ${JSON.stringify({ ...pathCapabilities, canWriteSystem: true })};
-          case 'load_system_paths': return ['C:\\\\Windows', 'C:\\\\Program Files'];
-          case 'load_user_paths': return ['C:\\\\Users\\\\me\\\\AppData'];
           case 'load_path_snapshot': return {
             system: [
               { path: 'C:\\\\Windows', enabled: true },
@@ -151,11 +149,8 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
             user: [{ path: 'C:\\\\Users\\\\me\\\\AppData', enabled: true }]
           };
           case 'save_path_with_sidecar': return { system: 'applied', user: 'applied', sidecar: 'saved' };
-          case 'backup_registry': return 'C:\\\\backup\\\\path.txt';
-          case 'broadcast_env_change': return undefined;
           case 'validate_path': return true;
           case 'expand_env_vars': return 'C:\\\\Expanded';
-          case 'read_text_file': return '';
           case 'import_file': return [[], []];
           case 'export_path_entries': return '';
           case 'clean_path_entries': return [args?.entries ?? [], []];
@@ -166,8 +161,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'profile_paths': return window.__profilePathsFixture ?? null;
           case 'profile_rename': return true;
           case 'profile_delete_by_name': return true;
-          case 'profile_mark_applied': return true;
-          case 'profile_mark_applied_by_name': return true;
           // 历史
           case 'history_list_events':
             if (window.__historyDegraded) {
@@ -184,7 +177,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'history_get_snapshot': return window.__snapshotFixture ?? null;
           case 'history_get_current': return window.__snapshotFixture ?? null;
           case 'history_restore_snapshot': return { system: 'applied', user: 'applied', sidecar: 'saved' };
-          case 'backup_list': return [];
           // 检索 / 统计 / 对比 / 引用图 / 冲突历史。
           // 降级判定与 history_list_events 同源：DB 不可用时抛 code=database。
           case 'search':
@@ -221,9 +213,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
 
               currentPathItems: 0
             };
-          case 'stats_rebuild': return 1;
-          case 'search_rebuild': return 0;
-          case 'refs_rebuild': return 0;
           case 'compare_snapshots':
             return window.__compareFixture ?? {
               system: { added: [], removed: [], reordered: [], toggled: [] },
@@ -235,16 +224,6 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'refs_dependents': return window.__refsFixture?.dependents ?? [];
           case 'refs_dependencies': return window.__refsFixture?.dependencies ?? [];
           case 'refs_cycles': return window.__refsFixture?.cycles ?? [];
-          case 'scan_history_list': return [];
-          case 'scan_history_diff':
-            return {
-              appeared: [],
-              disappeared: [],
-              persistent: [],
-              lastSeen: [],
-              firstSeen: []
-            };
-          case 'scan_history_record': return 'scan-fixture';
           // 同步中心。降级判定与 search 同源（抛 code=database）。
           case 'sync_status':
             if (window.__m2Degraded) {

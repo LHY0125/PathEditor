@@ -314,6 +314,7 @@ fn apply_outcome_serializes_camel_case() {
         system: HiveOutcome::Applied,
         user: HiveOutcome::Skipped,
         sidecar: SidecarOutcome::Saved,
+        backup: None,
     };
     let v = serde_json::to_value(&outcome).unwrap();
     assert_eq!(v["system"], serde_json::json!("applied"));
@@ -325,6 +326,7 @@ fn apply_outcome_serializes_camel_case() {
         system: HiveOutcome::Skipped,
         user: HiveOutcome::Failed(CoreError::new(ErrorCode::Io, "op", "磁盘已满")),
         sidecar: SidecarOutcome::Pending(CoreError::new(ErrorCode::Io, "op", "磁盘已满")),
+        backup: None,
     };
     let v = serde_json::to_value(&failed).unwrap();
     assert_eq!(v["user"]["failed"]["code"], serde_json::json!("io"));

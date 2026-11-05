@@ -141,13 +141,21 @@ pub(crate) fn read_versioned_file<T: DeserializeOwned>(
     path: &Path,
     label: &str,
 ) -> Result<Versioned<T>, CoreError> {
-    let content = fs::read_to_string(path).map_err(|e| {
-        CoreError::new(
-            ErrorCode::Io,
-            "load_versioned",
-            format!("无法读取 {label}: {e}"),
-        )
-    })?;
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        // 非法 UTF-8 与 JSON 解析失败同属「文件损坏」：必须走隔离，
+        // 否则每次启动都在同一处失败，用户只能手工删文件。
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            return Err(parse_error_quarantined(path, label, e));
+        }
+        Err(e) => {
+            return Err(CoreError::new(
+                ErrorCode::Io,
+                "load_versioned",
+                format!("无法读取 {label}: {e}"),
+            ))
+        }
+    };
     match serde_json::from_str::<Versioned<T>>(&content) {
         Ok(versioned) => Ok(versioned),
         Err(e) => Err(parse_error_quarantined(path, label, e)),

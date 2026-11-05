@@ -95,8 +95,17 @@ jobs:
           $env:PATHEDITOR_MSVC_TEST_MANIFEST = '1'
           cargo test -p patheditor --lib
 
+      # `tsc --noEmit` 在 solution 式 tsconfig（files: [] + references）下检查 0 个文件，
+      # 必须用 `tsc -b` 才会真正构建被引用的工程。
       - name: 前端类型检查
-        run: npx tsc --noEmit
+        run: npx tsc -b
 
-      - name: 前端单测
-        run: npx vitest run
+      - name: 前端 lint
+        run: npm run lint
+
+      - name: 前端格式检查
+        run: npm run format:check
+
+      # 用 test:coverage 而不是 vitest run：覆盖率门槛（80% 行）只有带 --coverage 才生效。
+      - name: 前端单测 + 覆盖率门槛
+        run: npm run test:coverage

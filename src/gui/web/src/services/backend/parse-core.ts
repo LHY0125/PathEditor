@@ -130,6 +130,8 @@ export type HiveOutcome =
 /** sidecar 快照的落盘结果（对应 core 的 `SidecarOutcome`）。 */
 export type SidecarOutcome =
   | 'saved'
+  /** 降级模式：DB 不可用，本次没有快照可落盘（不是失败） */
+  | 'skipped'
   | { pending: { code: ErrorCode; operation: string; message: string } }
   | { failed: { code: ErrorCode; operation: string; message: string } };
 
@@ -138,6 +140,8 @@ export interface ApplyOutcome {
   system: HiveOutcome;
   user: HiveOutcome;
   sidecar: SidecarOutcome;
+  /** 写前备份失败原因；`null` 表示备份成功或本次无需备份。 */
+  backup: string | null;
 }
 
 /** 校验单个 hive 结果（`'applied' | 'skipped' | { failed }`）。 */
@@ -161,7 +165,7 @@ export function parseHiveOutcome(value: unknown, label: string): HiveOutcome {
 
 /** 校验 sidecar 结果（`'saved' | { pending } | { failed }`）。 */
 export function parseSidecarOutcome(value: unknown): SidecarOutcome {
-  if (value === 'saved') return value;
+  if (value === 'saved' || value === 'skipped') return value;
   if (isRecord(value) && 'pending' in value) {
     const p = value.pending;
     if (!isRecord(p) || typeof p.code !== 'string' || typeof p.message !== 'string') {
@@ -194,10 +198,20 @@ export function parseSidecarOutcome(value: unknown): SidecarOutcome {
 /** 运行时校验 `save_path_with_sidecar` 的完整返回形状。 */
 export function parseApplyOutcome(value: unknown): ApplyOutcome {
   if (!isRecord(value)) throw new Error('save_path_with_sidecar 返回了无效的跨层契约');
+  const backup =
+    typeof value.backup === 'string' || value.backup === null
+      ? value.backup
+      : value.backup === undefined
+        ? null
+        : undefined;
+  if (backup === undefined) {
+    throw new Error('save_path_with_sidecar.backup 必须是 string 或 null');
+  }
   return {
     system: parseHiveOutcome(value.system, 'save_path_with_sidecar.system'),
     user: parseHiveOutcome(value.user, 'save_path_with_sidecar.user'),
     sidecar: parseSidecarOutcome(value.sidecar),
+    backup,
   };
 }
 
@@ -425,10 +439,20 @@ export function parseRestoreChange(value: unknown, label: string): RestoreChange
   ) {
     throw new Error(`${label} 返回了无效的 RestoreChange 契约`);
   }
+  const valuePreview =
+    typeof value.valuePreview === 'string' || value.valuePreview === null
+      ? value.valuePreview
+      : value.valuePreview === undefined
+        ? null
+        : undefined;
+  if (valuePreview === undefined) {
+    throw new Error(`${label} 的 valuePreview 必须是 string 或 null`);
+  }
   return {
     hive: value.hive,
     name: value.name,
     kind: value.kind as RestoreChangeKind,
+    valuePreview,
   };
 }
 

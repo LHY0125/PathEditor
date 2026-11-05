@@ -104,8 +104,16 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
     // 失败不清草稿（c2 统一策略）：草稿镜像输入，供重试与关窗确认。
   };
 
+  // 统一的取消出口：按钮、Escape、点遮罩都走这里。
+  // **必须清草稿**：否则敏感变量的明文留在 store 里，`hasDrafts()` 永远为真，
+  // 之后每次关窗都弹「有未保存修改」。
+  const cancel = () => {
+    clearDraftByKey(varKey);
+    onCancel();
+  };
+
   return (
-    <Modal open onClose={onCancel} ariaLabel={t('envVar.editVarTitle')}>
+    <Modal open onClose={cancel} ariaLabel={t('envVar.editVarTitle')}>
       <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold mb-1">{t('envVar.editVarTitle')}</h2>
 
@@ -148,14 +156,7 @@ export function EditEnvVarDialog({ varKey, onCancel, onConfirm }: EditEnvVarDial
         )}
 
         <div className="flex justify-end gap-2 mt-1">
-          <Button
-            onClick={() => {
-              clearDraftByKey(varKey);
-              onCancel();
-            }}
-          >
-            {t('button.cancel')}
-          </Button>
+          <Button onClick={cancel}>{t('button.cancel')}</Button>
           <Button
             variant="primary"
             disabled={submitting || value === null || meta === null}

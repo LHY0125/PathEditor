@@ -80,6 +80,11 @@ pub(crate) fn cmd_list(system: bool, user: bool, json_out: bool) {
 
 pub(crate) fn cmd_add(path: String, system: bool, user: bool) {
     let target = ensure_single_target(system, user);
+    // 空串/纯空白会被 `join_path` 过滤掉：命令打印「已添加」但注册表零变化，
+    // 同时 DB 快照里留下一条幽灵条目。
+    if path.trim().is_empty() {
+        exit_err("路径不能为空");
+    }
     load_and_save(system, |mut list| {
         list.push(core::PathEntry {
             path: path.clone(),
@@ -120,11 +125,9 @@ pub(crate) fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
             index.saturating_sub(steps)
         } else {
             let max = list.len() - 1;
-            if index + steps > max {
-                max
-            } else {
-                index + steps
-            }
+            // `--steps` 是裸 usize：`index + steps` 溢出在 debug 构建会 panic
+            //（exit 101 绕过 0–5 契约），release 会回绕把条目移到顶部。
+            index.saturating_add(steps).min(max)
         };
         let removed = list.remove(index);
         list.insert(end, removed);
@@ -136,10 +139,7 @@ pub(crate) fn cmd_move(index: usize, steps: usize, system: bool, up: bool) {
 }
 
 pub(crate) fn cmd_clean(system: bool, user: bool, dry_run: bool, json_out: bool) {
-    if system && user {
-        exit_err("不能同时指定 --system 和 --user");
-    }
-
+    // `--system` / `--user` 是**筛选器**（与 `list` 同语义）：同给则两者都清。
     let clean_sys = system || !user;
     let clean_usr = user || !system;
 
@@ -158,51 +158,52 @@ fn clean_one(target: &str, dry_run: bool, json_out: bool) {
     } else {
         "用户"
     };
-    let list = if target == "system" {
-        core::platform::registry::load_system_paths().unwrap_or_else(|e| exit_core_error(&e))
+    // 用**完整快照**（含禁用项）而不是只读注册表：`save_path_write` 会把传入
+    // 条目整体作为该 hive 的 current 快照提交，只读启用项会把 DB 里的禁用条目
+    // 一并抹掉（`patheditor disable` 的结果就此丢失）。
+    let snapshot = load_path_snapshot_any().unwrap_or_else(|e| exit_core_error(&e));
+    let entries = if target == "system" {
+        snapshot.system
     } else {
-        core::platform::registry::load_user_paths().unwrap_or_else(|e| exit_core_error(&e))
+        snapshot.user
     };
-    let (kept, removed) = core::platform::registry::clean_paths(list.clone());
+    let (kept, removed) = core::platform::registry::clean_path_entries(entries);
+    let kept_paths: Vec<String> = kept.iter().map(|e| e.path.clone()).collect();
+    let removed_paths: Vec<String> = removed.iter().map(|e| e.path.clone()).collect();
 
     if json_out {
         println!(
             "{}",
-            json!({ "target": target, "kept": kept, "removed": removed, "kept_count": kept.len(), "removed_count": removed.len() })
+            json!({
+                "target": target,
+                "dryRun": dry_run,
+                "kept": kept_paths,
+                "removed": removed_paths,
+                "keptCount": kept_paths.len(),
+                "removedCount": removed_paths.len(),
+            })
         );
     } else if dry_run {
         println!("═══ {label} PATH — 将被移除（{} 条）═══", removed.len());
         for r in &removed {
-            println!("  ✗ {}", r);
+            println!("  ✗ {}", r.path);
         }
         println!("═══ {label} PATH — 将保留（{} 条）═══", kept.len());
         for k in &kept {
-            println!("  ✓ {}", k);
+            println!("  {} {}", if k.enabled { "✓" } else { "✗" }, k.path);
         }
     } else {
-        let kept_count = kept.len();
-        // `kept` 是 `clean_paths` 输出的**启用**路径（`Vec<String>`），
-        // 构造 `PathEntry` 时只能落成 `enabled: true`。这是等价的——输入本就是
-        // 「当前启用路径」，清理不涉及禁用项（禁用项在 DB 当前快照里）。
-        let entries: Vec<core::PathEntry> = kept
-            .iter()
-            .map(|p| core::PathEntry {
-                path: p.clone(),
-                enabled: true,
-            })
-            .collect();
+        let (kept_count, removed_count) = (kept.len(), removed.len());
         // 收口到 `save_path_write` 后同时提交当前快照；
         // 不传 expected（CLI 无并发窗口，见 `save_path_write`）。
-        save_path_write(Some(entries), None);
-        println!(
-            "{label} PATH 清理完成：移除 {} 条，保留 {} 条",
-            removed.len(),
-            kept_count
-        );
-        if !removed.is_empty() {
-            for r in &removed {
-                println!("  已移除: {}", r);
-            }
+        if target == "system" {
+            save_path_write(Some(kept), None);
+        } else {
+            save_path_write(None, Some(kept));
+        }
+        println!("{label} PATH 清理完成：移除 {removed_count} 条，保留 {kept_count} 条");
+        for r in &removed_paths {
+            println!("  已移除: {r}");
         }
     }
 }

@@ -106,6 +106,15 @@ impl Db {
             return Ok(());
         }
         self.with_transaction(|tx| {
+            // **事务内重读**：GUI 与 CLI 可能同时首次迁移/升级。`BEGIN IMMEDIATE`
+            // 已经拿到写锁，此刻读到的值才是真正的起点；沿用事务外的值会让后到者
+            // 按过期版本重跑 DDL（`table ... already exists`），库本身却是好的。
+            let current: u32 = tx
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .map_err(|e| db_err("read_version", e))?;
+            if current >= schema::CURRENT_SCHEMA_VERSION {
+                return Ok(());
+            }
             if current < 1 {
                 tx.execute_batch(schema::DDL_V1)
                     .map_err(|e| db_err("ddl_v1", e))?;
@@ -126,6 +135,11 @@ impl Db {
             if current < 3 {
                 tx.execute_batch(schema::DDL_V3)
                     .map_err(|e| db_err("ddl_v3", e))?;
+            }
+            // v4：冲突保留远端内容 + 查询索引
+            if current < 4 {
+                tx.execute_batch(schema::DDL_V4)
+                    .map_err(|e| db_err("ddl_v4", e))?;
             }
             // 版本号写在**所有分支之后**：v1→v2 的升级路径同样要落版本，
             // 写在 `if current < 1` 内部会让升级后 user_version 仍停在 1，

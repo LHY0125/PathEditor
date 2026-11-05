@@ -208,6 +208,49 @@ pub fn index_snapshot_tx(tx: &Transaction, snapshot_id: i64) -> Result<(), CoreE
     Ok(())
 }
 
+/// 增量索引一条配置（名 / 描述 / 标签），**幂等**。
+///
+/// 与 [`rebuild_index`] 内的 profile 分支同一口径；写入路径（新建、改名、
+/// 同步导入）都在同一事务内调用它。删除走 [`remove_profile_index_tx`]。
+pub fn index_profile_tx(tx: &Transaction, uid: &str) -> Result<(), CoreError> {
+    use rusqlite::OptionalExtension as _;
+
+    let row: Option<(String, String, String)> = tx
+        .query_row(
+            "SELECT name, COALESCE(description,''), COALESCE(tags,'')
+               FROM profiles WHERE uid = ?1 AND deleted_at IS NULL",
+            params![uid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| super::db_err("fts_profile_read", e))?;
+
+    tx.execute("DELETE FROM search_fts WHERE ref_uid = ?1", params![uid])
+        .map_err(|e| super::db_err("fts_profile_clear", e))?;
+
+    if let Some((name, description, tags)) = row {
+        insert_tx(tx, &format!("{name} {description} {tags}"), "profile", uid)?;
+    }
+    Ok(())
+}
+
+/// 删除一条配置的索引行（软删除 / 墓碑）。
+pub fn remove_profile_index_tx(tx: &Transaction, uid: &str) -> Result<(), CoreError> {
+    tx.execute("DELETE FROM search_fts WHERE ref_uid = ?1", params![uid])
+        .map_err(|e| super::db_err("fts_profile_remove", e))?;
+    Ok(())
+}
+
+/// 删除一份快照的全部索引行（`ref_uid` 形如 `<snapshot_uid>#<hive>...`）。
+pub fn remove_snapshot_index_tx(tx: &Transaction, uid: &str) -> Result<(), CoreError> {
+    tx.execute(
+        "DELETE FROM search_fts WHERE ref_uid = ?1 OR ref_uid LIKE ?2",
+        params![uid, format!("{uid}#%")],
+    )
+    .map_err(|e| super::db_err("fts_snapshot_remove", e))?;
+    Ok(())
+}
+
 /// 把用户输入转成 FTS5 的 phrase 查询。
 ///
 /// 整个查询包成一对双引号，内部的双引号按 FTS5 规则翻倍。这样：

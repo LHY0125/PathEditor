@@ -86,12 +86,13 @@ pub(crate) fn sync_import(file: &str) {
         );
     }
     if report.conflicts > 0 {
-        // 有冲突时提示下一步，但**不改退出码**：导入本身成功了，
-        // 冲突是待人工处理的正常结果，不是错误。
+        // `docs/dev/interfaces.md` 的退出码契约：合并冲突 → 4（需要人工介入）。
+        // 旧实现以 0 退出，脚本无法区分「导入干净」与「有冲突待解决」。
         eprintln!(
-            "提示: 有 {} 条冲突待解决，用 `patheditor sync conflicts` 查看",
+            "提示: {} 条冲突待人工解决，请用 `patheditor sync conflicts` 查看并 `sync resolve` 处理",
             report.conflicts
         );
+        std::process::exit(4);
     }
 }
 

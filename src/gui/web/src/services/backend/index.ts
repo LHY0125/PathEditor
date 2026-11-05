@@ -97,11 +97,34 @@ export const backend = {
     });
     return typeof selected === 'string' ? selected : null;
   },
-  importFile: (path: string) => invoke<[PathEntry[], PathEntry[]]>('import_file', { path }),
+  importFile: async (path: string) => {
+    // 外部文件输入：返回形状必须校验，否则坏条目会直接进 store 并在保存时送进 core。
+    const [sys, usr] = (await parseCoreError(invoke<unknown>('import_file', { path }))) as [
+      unknown,
+      unknown,
+    ];
+    if (!Array.isArray(sys) || !Array.isArray(usr)) {
+      throw new Error('import_file 返回了无效的 [PathEntry[], PathEntry[]] 契约');
+    }
+    return [
+      parsePathEntries(sys, 'import_file.system'),
+      parsePathEntries(usr, 'import_file.user'),
+    ] as [PathEntry[], PathEntry[]];
+  },
   exportPathEntries: (sys: PathEntry[], usr: PathEntry[], format: string) =>
     invoke<string>('export_path_entries', { sys, usr, format }),
-  cleanPathEntries: (entries: PathEntry[]) =>
-    invoke<[PathEntry[], PathEntry[]]>('clean_path_entries', { entries }),
+  cleanPathEntries: async (entries: PathEntry[]) => {
+    const [kept, removed] = (await parseCoreError(
+      invoke<unknown>('clean_path_entries', { entries }),
+    )) as [unknown, unknown];
+    if (!Array.isArray(kept) || !Array.isArray(removed)) {
+      throw new Error('clean_path_entries 返回了无效的 [PathEntry[], PathEntry[]] 契约');
+    }
+    return [
+      parsePathEntries(kept, 'clean_path_entries.kept'),
+      parsePathEntries(removed, 'clean_path_entries.removed'),
+    ] as [PathEntry[], PathEntry[]];
+  },
   scanPaths: async (paths: string[], query = '') =>
     parseScanResult(await parseCoreError(invoke<unknown>('scan_paths', { paths, query }))),
   /**

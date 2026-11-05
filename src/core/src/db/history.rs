@@ -255,7 +255,7 @@ pub fn insert_snapshot(db: &mut Db, snap: NewSnapshot) -> Result<String, CoreErr
 /// ——启动不是一次编辑，不该被同步出去。判据用现成的 `EventSource`，不新造机制。
 pub fn insert_snapshot_tx(tx: &Transaction, snap: NewSnapshot) -> Result<String, CoreError> {
     let uid = Uuid::now_v7().to_string();
-    insert_snapshot_with_uid_tx(tx, snap, &uid, true)
+    insert_snapshot_with_uid_tx(tx, snap, &uid, true, None)
 }
 
 /// 按**指定 uid** 插入快照（同步导入用）。
@@ -271,8 +271,10 @@ pub(crate) fn insert_snapshot_with_uid_tx(
     snap: NewSnapshot,
     uid: &str,
     record_change: bool,
+    created_at_ms: Option<i64>,
 ) -> Result<String, CoreError> {
     let now = chrono::Utc::now().timestamp_millis();
+    let created_at = created_at_ms.unwrap_or(now);
     let hash = content_hash(&snap);
     let from_migration = matches!(snap.source, EventSource::Migration) || !record_change;
 
@@ -293,7 +295,7 @@ pub(crate) fn insert_snapshot_with_uid_tx(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?2)",
         params![
             uid,
-            now,
+            created_at,
             source_str(snap.source),
             snap.kind.as_str(),
             hash,
@@ -489,21 +491,19 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
 /// `reveal = false` 时，`sensitive = 1` 的环境变量值被置为 `None`。
 pub fn get_snapshot(db: &Db, uid: &str, reveal: bool) -> Result<SnapshotView, CoreError> {
     let (id, created_at, kind): (i64, i64, String) = db
-        .query_row_with(
+        .query_row_optional(
             "SELECT id, created_at, kind FROM snapshots WHERE uid = ?1 AND deleted_at IS NULL",
             params![uid],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .map_err(|e| {
-            if e.code == ErrorCode::Database {
-                CoreError::new(
-                    ErrorCode::NotFound,
-                    "get_snapshot",
-                    format!("快照不存在: {uid}"),
-                )
-            } else {
-                e
-            }
+        )?
+        // 只有「查不到行」才是 NotFound；SQLITE_BUSY / IO / 损坏必须原样上报，
+        // 否则导出侧会把一次瞬时失败当成「实体已删除」，产出 content=null 的变更。
+        .ok_or_else(|| {
+            CoreError::new(
+                ErrorCode::NotFound,
+                "get_snapshot",
+                format!("快照不存在: {uid}"),
+            )
         })?;
 
     load_snapshot_view(

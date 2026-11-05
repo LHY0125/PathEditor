@@ -129,6 +129,11 @@ pub fn save_profile_tx(
     )
     .map_err(|e| db_err("insert_revision", e))?;
 
+    // 检索索引：配置名/描述/标签，以及该版本快照的 PATH / 变量名。
+    // 不做这一步，新建的配置在首次全量重建之前永远搜不到。
+    crate::db::search::index_profile_tx(tx, &uid)?;
+    crate::db::search::index_snapshot_tx(tx, snapshot_id)?;
+
     // ── 接线 ──
     //
     // 两条变更：配置元数据（整实体）+ 它的首个版本。
@@ -468,6 +473,8 @@ pub fn delete_profile(db: &mut Db, uid: &str) -> Result<bool, CoreError> {
                     new_value: now.to_string(),
                 },
             )?;
+            // 删除也要反映到检索索引，否则搜出来是死引用。
+            crate::db::search::remove_profile_index_tx(tx, uid)?;
         }
         Ok(changed == 1)
     })
@@ -566,6 +573,8 @@ pub fn rename_profile(db: &mut Db, old_name: &str, new_name: &str) -> Result<boo
                     |r| r.get(0),
                 )
                 .map_err(|e| db_err("rename_profile_uid", e))?;
+            // 改名改变索引内容（content = name + desc + tags），必须重写。
+            crate::db::search::index_profile_tx(tx, &uid)?;
             crate::db::sync::change_log::record_change_tx(
                 tx,
                 crate::db::sync::change_log::NewChange {

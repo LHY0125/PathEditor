@@ -240,10 +240,34 @@ pub(crate) fn write_env_backup_to_with_keep(
     Ok(filepath)
 }
 
+/// 是否为本工具生成的备份文件名：`env_backup_YYYYMMDD_HHMMSS_mmm.(json|pebak)`。
+///
+/// 只看前缀 + 后缀会误删用户自建文件（`env_backup_notes.json`），
+/// 而且这类名字按字典序还会把真正的备份挤出保留窗口。
+pub(crate) fn is_env_backup_name(name: &str) -> bool {
+    let Some(stem) = name.strip_prefix("env_backup_") else {
+        return false;
+    };
+    let Some(stem) = stem
+        .strip_suffix(".json")
+        .or_else(|| stem.strip_suffix(".pebak"))
+    else {
+        return false;
+    };
+    let parts: Vec<&str> = stem.split('_').collect();
+    parts.len() == 3
+        && parts[0].len() == 8
+        && parts[0].chars().all(|c| c.is_ascii_digit())
+        && parts[1].len() == 6
+        && parts[1].chars().all(|c| c.is_ascii_digit())
+        && parts[2].len() == 3
+        && parts[2].chars().all(|c| c.is_ascii_digit())
+}
+
 /// 保留策略轮换：只删除**本功能生成**的旧备份，保留最近 `keep` 份。
 ///
 /// 授权范围（用户明确授权的例外）：
-/// 1. 只匹配文件名 `env_backup_*.json`；
+/// 1. 只匹配本工具生成的时间戳文件名（`env_backup_YYYYMMDD_HHMMSS_mmm.*`）；
 /// 2. 只在给定目录内操作（自定义备份目录不参与轮换）；
 /// 3. 只删最旧的、超出 `keep` 之外的文件；
 /// 4. 绝不删除 `.txt` PATH 备份、`.bak`、`.corrupt-*` 及目录中任何其他文件。
@@ -272,11 +296,9 @@ pub(crate) fn rotate_env_backups(dir: &Path, keep: usize) -> Result<Vec<PathBuf>
     })?;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with("env_backup_") {
-            continue;
-        }
-        let lower = name.to_ascii_lowercase();
-        if !lower.ends_with(".json") && !lower.ends_with(".pebak") {
+        // 严格匹配本工具生成的时间戳文件名：`env_backup_notes.json` 这类
+        // 用户自建文件不能被轮换删除，也不能挤占保留窗口。
+        if !is_env_backup_name(&name) {
             continue;
         }
         let path = entry.path();
@@ -459,11 +481,16 @@ pub fn validate_backup_path(path: &str) -> Result<PathBuf, CoreError> {
         .parent()
         .map(|parent| parent == env_backup_dir())
         .unwrap_or(false);
-    if !in_backup_dir && !file_name.starts_with("env_backup_") {
+    // 目录外也允许（从别处拷来的备份），但必须使用**本工具生成的时间戳文件名**：
+    // 旧规则「以 env_backup_ 开头即放行」让 `env_backup_evil.json` 这种
+    // 伪装文件也能通过，配合 `--force` 等于无审查地批量改写环境变量。
+    if !in_backup_dir && !is_env_backup_name(&file_name) {
         return Err(CoreError::new(
             ErrorCode::InvalidValue,
             "restore_env_backup",
-            format!("备份文件必须位于备份目录内或以 env_backup_ 开头: {path}"),
+            format!(
+                "备份文件必须位于备份目录内，或使用本工具生成的 env_backup_YYYYMMDD_HHMMSS_mmm 文件名: {path}"
+            ),
         ));
     }
 

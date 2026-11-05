@@ -273,7 +273,13 @@ pub(crate) fn cmd_env_backups(json_out: bool) {
 ///
 /// # Returns
 /// 无返回值：失败经 `exit_core_error` 终止进程。
-pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out: bool) {
+pub(crate) fn cmd_env_restore(
+    file: String,
+    dry_run: bool,
+    force: bool,
+    strict: bool,
+    json_out: bool,
+) {
     let path =
         core::platform::backup::validate_backup_path(&file).unwrap_or_else(|e| exit_core_error(&e));
 
@@ -336,8 +342,16 @@ pub(crate) fn cmd_env_restore(file: String, dry_run: bool, force: bool, json_out
     } else {
         println!("恢复完成: 成功 {} 个", outcome.applied);
     }
-    // 逐条失败是 best-effort 语义的一部分（不改变退出码），必须可见。
+    // 逐条失败是 best-effort 语义的一部分（默认不改变退出码），必须可见。
     for failure in &outcome.failures {
         eprintln!("警告: {failure}");
+    }
+    // `--strict`：任一条失败即非零退出，让脚本能检出「部分成功」。
+    if strict && !outcome.failures.is_empty() {
+        eprintln!(
+            "错误: {} 条环境变量恢复失败（--strict），以退出码 1 结束",
+            outcome.failures.len()
+        );
+        std::process::exit(1);
     }
 }

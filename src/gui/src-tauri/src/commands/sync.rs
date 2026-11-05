@@ -16,7 +16,7 @@ use tauri::State;
 use super::db_state::{with_db, with_db_mut, DbState};
 
 /// 待导出数与未解决冲突数。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_status(state: State<'_, DbState>) -> Result<SyncStatus, CoreError> {
     with_db(&state, "sync_status", sync::status)
 }
@@ -24,31 +24,35 @@ pub fn sync_status(state: State<'_, DbState>) -> Result<SyncStatus, CoreError> {
 /// 导出同步包。
 ///
 /// `path` 是用户选择的保存路径；`passphrase` 只用于本次加密，不落盘。
-#[tauri::command]
+/// 路径来源与扩展名先经 core 校验（与 `import_file` 同一条约定）。
+#[tauri::command(async)]
 pub fn sync_export(
     passphrase: String,
     path: String,
     state: State<'_, DbState>,
 ) -> Result<ExportReport, CoreError> {
+    let target = path_editor_core::platform::fs::validate_sync_path(&path, true)?;
     with_db_mut(&state, "sync_export", |db| {
-        export_bundle(db, &passphrase, std::path::Path::new(&path))
+        export_bundle(db, &passphrase, &target)
     })
 }
 
 /// 导入同步包。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_import(
     passphrase: String,
     path: String,
     state: State<'_, DbState>,
 ) -> Result<ImportReport, CoreError> {
+    // 导入允许放在任意位置（移动介质很常见），只校验扩展名。
+    let target = path_editor_core::platform::fs::validate_sync_path(&path, false)?;
     with_db_mut(&state, "sync_import", |db| {
-        import_bundle(db, &passphrase, std::path::Path::new(&path))
+        import_bundle(db, &passphrase, &target)
     })
 }
 
 /// 冲突列表。`include_resolved = true` 时含已解决的。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_list_conflicts(
     include_resolved: bool,
     state: State<'_, DbState>,
@@ -59,7 +63,7 @@ pub fn sync_list_conflicts(
 }
 
 /// 解决一条冲突。`resolution` 取 `local` / `remote`。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_resolve_conflict(
     id: i64,
     resolution: String,

@@ -363,6 +363,7 @@ fn restore_flags_are_independent() {
         file,
         dry_run,
         force,
+        strict,
         json,
     }) = cli.command
     else {
@@ -370,6 +371,7 @@ fn restore_flags_are_independent() {
     };
     assert!(dry_run, "--dry-run 必须解析为 true，而不是被静默忽略");
     assert!(force, "--force 必须解析为 true，而不是被静默忽略");
+    assert!(!strict, "未给 --strict 时应为 false");
     assert!(!json, "未给 --json 时应为 false");
     assert_eq!(file, "env_backup_x.json", "位置参数必须落到 file");
 }

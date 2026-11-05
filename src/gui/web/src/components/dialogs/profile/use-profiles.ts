@@ -16,10 +16,17 @@ export function useProfiles(open: boolean, onClose: () => void) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const prevOpen = useRef(false);
+  /** 选中配置的请求代次：慢响应不得覆盖新选中项。 */
+  const loadSeq = useRef(0);
 
   const refreshProfiles = useCallback(async () => {
-    setProfiles(await backend.profileList());
-  }, []);
+    try {
+      setProfiles(await backend.profileList());
+    } catch (error) {
+      // DB 降级时打开对话框不该产生未处理的 rejection，也不该永远空白无提示。
+      useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
+    }
+  }, [t]);
 
   useEffect(() => {
     if (open && !prevOpen.current) void refreshProfiles();
@@ -41,15 +48,30 @@ export function useProfiles(open: boolean, onClose: () => void) {
       });
       setNewName('');
       await refreshProfiles();
+    } catch (error) {
+      useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
     } finally {
       setSaving(false);
     }
-  }, [newName, refreshProfiles]);
+  }, [newName, refreshProfiles, t]);
 
-  const handleLoad = useCallback(async (name: string) => {
-    setSelected(name);
-    setSelectedData(await backend.profilePaths(name));
-  }, []);
+  const handleLoad = useCallback(
+    async (name: string) => {
+      const seq = ++loadSeq.current;
+      setSelected(name);
+      try {
+        const data = await backend.profilePaths(name);
+        // 快速点两个配置时，先发后到的响应会覆盖后选中项的详情。
+        if (seq !== loadSeq.current) return;
+        setSelectedData(data);
+      } catch (error) {
+        if (seq !== loadSeq.current) return;
+        setSelectedData(null);
+        useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
+      }
+    },
+    [t],
+  );
 
   const handleApply = useCallback(async () => {
     if (!selected || !selectedData) return;
@@ -80,6 +102,9 @@ export function useProfiles(open: boolean, onClose: () => void) {
     // 读配置、写注册表、记账全部在 core；这里只负责确认与结果呈现。
     try {
       await backend.profileApply(selected);
+      // 应用会写注册表：主界面必须重新读快照，否则显示旧 PATH，
+      // 且后续保存会带着过期 expected 被 core 判冲突。
+      await useAppStore.getState().loadPaths();
       onClose();
     } catch (error) {
       useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
@@ -93,12 +118,16 @@ export function useProfiles(open: boolean, onClose: () => void) {
       if (!(await backend.confirmDialog(t('profile.deleteConfirm', { name })).catch(() => false))) {
         return;
       }
-      await backend.profileDeleteByName(name);
-      if (selected === name) {
-        setSelected(null);
-        setSelectedData(null);
+      try {
+        await backend.profileDeleteByName(name);
+        if (selected === name) {
+          setSelected(null);
+          setSelectedData(null);
+        }
+        await refreshProfiles();
+      } catch (error) {
+        useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
       }
-      await refreshProfiles();
     },
     [refreshProfiles, selected, t],
   );
@@ -106,11 +135,15 @@ export function useProfiles(open: boolean, onClose: () => void) {
   const handleRename = useCallback(async () => {
     if (!selected || !renameValue.trim()) return;
     const nextName = renameValue.trim();
-    await backend.profileRename(selected, nextName);
-    setRenameOpen(false);
-    setSelected(nextName);
-    await refreshProfiles();
-  }, [refreshProfiles, renameValue, selected]);
+    try {
+      await backend.profileRename(selected, nextName);
+      setRenameOpen(false);
+      setSelected(nextName);
+      await refreshProfiles();
+    } catch (error) {
+      useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
+    }
+  }, [refreshProfiles, renameValue, selected, t]);
 
   return {
     profiles,

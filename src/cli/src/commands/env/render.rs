@@ -226,8 +226,14 @@ pub(crate) fn other_hive_hint(name: &str, current: EnvHive) -> Option<String> {
     };
     let found = metas.iter().any(|m| m.name.eq_ignore_ascii_case(name));
     if found {
+        // 提示必须给出**能成功**的指令：当前已在 system，变量却在 user 时，
+        // 再说「请加 --system」会让用户按提示再失败一次。
+        let guide = match other {
+            EnvHive::System => "请加 --system",
+            EnvHive::User => "请去掉 --system（默认就是用户 hive）",
+        };
         Some(format!(
-            "提示：{name} 存在于{} hive，请加 --system",
+            "提示：{name} 存在于{} hive，{guide}",
             hive_label(other)
         ))
     } else {

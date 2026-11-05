@@ -15,7 +15,7 @@ use super::db_state::DbState;
 /// 同时写注册表与 sidecar（best-effort 多 hive，partial 语义按 hive 分字段）。
 ///
 /// 每个 hive 传 [`PathHiveWrite`]（含 `expected` 用于乐观并发校验）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_path_with_sidecar(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,

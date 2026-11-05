@@ -90,7 +90,7 @@ pub fn current_lamport(db: &Db) -> Result<i64, CoreError> {
 /// 冲突解决时用：用户的选择是一个**更晚的决定**，必须胜过导致冲突的两个值，
 /// 否则第三台设备导入时会按原 lamport 重新判一次，把用户刚做的选择覆盖掉。
 pub fn next_lamport(db: &Db) -> Result<i64, CoreError> {
-    Ok(current_lamport(db)? + 1)
+    Ok(current_lamport(db)?.saturating_add(1))
 }
 
 /// 事务内写入一条变更，返回其 uid。
@@ -114,12 +114,15 @@ pub fn record_change_tx(tx: &Transaction, c: NewChange) -> Result<String, CoreEr
         )
         .map_err(|e| db_err("next_seq", e))?;
     let next_lamport: i64 = tx
-        .query_row(
-            "SELECT COALESCE((SELECT lamport FROM app_state WHERE id = 1), 0) + 1",
+        .query_row::<i64, _, _>(
+            // 不用 SQL 的 `+1`：SQLite 在整数溢出时会转成 REAL，
+            // 随后 `r.get::<i64>` 抛类型错误，把本地记账永久卡死。
+            "SELECT COALESCE((SELECT lamport FROM app_state WHERE id = 1), 0)",
             [],
             |r| r.get(0),
         )
-        .map_err(|e| db_err("next_lamport", e))?;
+        .map_err(|e| db_err("next_lamport", e))?
+        .saturating_add(1);
 
     tx.execute(
         "INSERT INTO changes

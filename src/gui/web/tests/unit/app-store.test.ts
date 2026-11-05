@@ -266,6 +266,35 @@ describe('savePaths', () => {
     expect(mockedInvoke.mock.calls[0][0]).toBe('save_path_with_sidecar');
   });
 
+  it('降级模式（sidecar=skipped）不算失败', async () => {
+    // DB 不可用时 core 返回 Skipped（不是 Failed）：注册表已写入即成功。
+    mockedInvoke.mockResolvedValueOnce({
+      system: 'applied',
+      user: 'skipped',
+      sidecar: 'skipped',
+      backup: null,
+    });
+
+    const result = await useAppStore.getState().savePaths();
+    expect(result).toEqual({ kind: 'success' });
+    expect(useAppStore.getState().statusMessage).toBe('保存成功');
+  });
+
+  it('写前备份失败时保存仍成功，但状态栏必须提示', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      system: 'applied',
+      user: 'applied',
+      sidecar: 'saved',
+      backup: '备份目录不可写',
+    });
+
+    const result = await useAppStore.getState().savePaths();
+    expect(result).toEqual({ kind: 'success' });
+    const message = useAppStore.getState().statusMessage;
+    expect(message).toContain('saved_without_backup');
+    expect(message).toContain('备份目录不可写');
+  });
+
   it('部分失败时报告具体 hive 并保留草稿', async () => {
     // system 成功、user 失败（best-effort 多 hive 的 partial 形态）。
     mockedInvoke.mockResolvedValueOnce({

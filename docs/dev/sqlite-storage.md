@@ -7,7 +7,7 @@
 
 - **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；注册表仍是唯一真相源。DB 打不开时 GUI fail-open：编辑照常、历史/同步/检索降级、禁用状态不可恢复、窗口顶部常驻条幅；**不静默重建空库**。
 - **密钥**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+db_key(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。
-- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 3`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
+- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 4`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
 ## 表
 
@@ -16,6 +16,7 @@
 | v1   | `snapshots` / `path_entries` / `env_values` / `events` / `profiles` / `profile_revisions` / `backups` / `app_state` | 真相或业务状态                                                      |
 | v2   | `scan_runs` / `var_references` / `daily_stats` / `search_fts`                                                       | `scan_runs` 是真实记录；其余是派生表                                |
 | v3   | `changes` / `sync_conflicts`                                                                                        | `changes` 是变更日志（真相，不可重建）；`sync_conflicts` 待人工决定 |
+| v4   | `sync_conflicts.remote_content` + 三个查询索引                                                                      | 冲突需保留远端实体内容，「采纳远端」才能真正落地                    |
 
 **派生表**：`search_fts` / `daily_stats` / `var_references` 可随时重建（不是真相）；`scan_runs` 是真实记录。GUI 启动时按需重建（FTS 仅空时、daily/refs 每次）；**CLI 不重建**（已知限制，改 PATH 后 GUI 派生数据可能陈旧）。
 

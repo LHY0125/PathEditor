@@ -643,6 +643,17 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(useEnvStore.getState().hasDrafts()).toBe(false);
   });
+
+  it('Escape 关闭编辑弹窗同样清草稿（敏感明文不得留在 store）', async () => {
+    await openEditDialog();
+    fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'secret-typing' } });
+    expect(useEnvStore.getState().hasDrafts()).toBe(true);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => expect(useEnvStore.getState().hasDrafts()).toBe(false));
+    expect(useEnvStore.getState().draft.size).toBe(0);
+  });
 });
 
 describe('删除与选中管理', () => {

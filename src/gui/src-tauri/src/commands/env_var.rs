@@ -10,7 +10,7 @@ use path_editor_core::platform::registry::{self, WriteOutcome};
 /// # Returns
 /// - `Ok(EnvVarSnapshot)` — system / user 两个 hive 的变量元数据
 /// - `Err(CoreError)` — 注册表读取失败（code=`Io`/`Parse` 等）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_all_env_vars() -> Result<EnvVarSnapshot, CoreError> {
     registry::list_all_env_vars()
 }
@@ -21,7 +21,7 @@ pub fn list_all_env_vars() -> Result<EnvVarSnapshot, CoreError> {
 /// - `Ok(RevealedValue)` — 变量完整值与读取时的 revision
 /// - `Err(CoreError)` — 名称非法（`InvalidName`）、保留名（`ReservedName`）、
 /// 类型不受支持（`UnsupportedType`）或读取失败（`Io`）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<RevealedValue, CoreError> {
     registry::reveal_env_var(hive, &name)
 }
@@ -33,7 +33,7 @@ pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<RevealedValue, Core
 /// # Returns
 /// - `Ok(WriteOutcome)` — 写入成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 校验失败、修订冲突或类型不受支持
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_env_var(
     hive: EnvHive,
     name: String,
@@ -51,7 +51,7 @@ pub fn update_env_var(
 /// - `Ok(WriteOutcome)` — 创建成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 名称非法、已存在（`NameExists`）、保护名单（`Protected`）
 /// 或类型不受支持
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_env_var(
     hive: EnvHive,
     name: String,
@@ -68,7 +68,7 @@ pub fn create_env_var(
 /// # Returns
 /// - `Ok(WriteOutcome)` — 删除成功并广播环境变更；`backup` 字段说明写前备份结果
 /// - `Err(CoreError)` — 校验失败、修订冲突或类型不受支持
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_env_var(
     hive: EnvHive,
     name: String,

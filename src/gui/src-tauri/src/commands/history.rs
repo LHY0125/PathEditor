@@ -64,7 +64,7 @@ pub fn from_request(req: Option<EventFilterRequest>) -> EventFilter {
 }
 
 /// 列出事件（分页、时间倒序）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn history_list_events(
     filter: Option<EventFilterRequest>,
     state: State<'_, DbState>,
@@ -75,7 +75,7 @@ pub fn history_list_events(
 }
 
 /// 读取快照预览（敏感值按 `reveal` 掩码）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn history_get_snapshot(
     uid: String,
     reveal: Option<bool>,
@@ -87,7 +87,7 @@ pub fn history_get_snapshot(
 }
 
 /// 读取当前快照；无当前快照时返回 `null`。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn history_get_current(state: State<'_, DbState>) -> Result<Option<SnapshotView>, CoreError> {
     with_db(&state, "history_get_current", history::current_snapshot)
 }
@@ -123,7 +123,7 @@ pub fn history_reveal_env_value(
 /// 这样「恢复」本身也可被撤销。
 ///
 /// 返回恢复后的结果；失败时注册表可能部分写入（best-effort 语义由 `ApplyOutcome` 表达）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn history_restore_snapshot(
     uid: String,
     state: State<'_, DbState>,

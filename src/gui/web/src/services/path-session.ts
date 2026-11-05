@@ -168,11 +168,18 @@ export async function savePathSnapshot(request: SaveSnapshotRequest): Promise<Sa
     };
   }
 
-  // 注册表侧全部成功。若 sidecar 异常，结果仍是 success，但状态栏**必须**提示
-  // （不能静默：用户应知道「注册表已生效、快照未落盘，下次自动补写」）。
-  const statusMessage = sidecarProblem
-    ? `${i18n.t('status.saved')} — ${i18n.t('status.disabledStateFailed')}: ${sidecarProblem}`
-    : i18n.t('status.saved');
+  // 注册表侧全部成功。若 sidecar / 备份有异常，结果仍是 success，但状态栏
+  // **必须**提示（不能静默：用户应知道「注册表已生效、快照/备份没落盘」）。
+  const notes: string[] = [];
+  if (sidecarProblem) {
+    notes.push(`${i18n.t('status.disabledStateFailed')}: ${sidecarProblem}`);
+  }
+  if (outcome.backup) {
+    // PATH 是全量覆盖写，备份是唯一回滚材料；失败必须可见。
+    notes.push(`${i18n.t('status.saved_without_backup')}: ${outcome.backup}`);
+  }
+  const statusMessage =
+    notes.length > 0 ? `${i18n.t('status.saved')} — ${notes.join('; ')}` : i18n.t('status.saved');
 
   return {
     result: { kind: 'success' },
@@ -192,9 +199,9 @@ function hiveFailure(outcome: ApplyOutcome['system']): string | null {
   return typeof outcome === 'object' && 'failed' in outcome ? outcome.failed.message : null;
 }
 
-/** sidecar 异常文案（`saved` 时返回 `null`）。 */
+/** sidecar 异常文案（`saved` / `skipped` 时返回 `null`）。 */
 function sidecarMessage(outcome: ApplyOutcome['sidecar']): string | null {
-  if (outcome === 'saved') return null;
+  if (outcome === 'saved' || outcome === 'skipped') return null;
   if ('pending' in outcome) return outcome.pending.message;
   return outcome.failed.message;
 }

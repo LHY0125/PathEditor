@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isCoreError } from '@/core/error';
 import { useTranslation } from 'react-i18next';
 import { backend, type CompareResult, type PathDiff } from '@/services/backend';
 import { Modal } from '@/components/ui/Modal';
@@ -17,15 +18,6 @@ interface Props {
   leftUid: string;
   rightUid: string;
   onClose: () => void;
-}
-
-function isCoreError(err: unknown): err is { code: string; message: string } {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    typeof (err as { message?: unknown }).message === 'string'
-  );
 }
 
 /** 单侧差异块。 */

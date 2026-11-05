@@ -12,6 +12,7 @@ mod path;
 mod restore;
 
 pub use config::{env_backup_dir, get_appdata_dir};
+pub(crate) use env::is_env_backup_name;
 pub use env::*;
 pub use path::*;
 pub use restore::*;

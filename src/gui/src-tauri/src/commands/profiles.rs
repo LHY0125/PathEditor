@@ -12,7 +12,7 @@ use serde::Deserialize;
 use tauri::State;
 
 /// 列出配置方案。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreError> {
     with_db(&state, "profile_list", profiles::list_profiles)
 }
@@ -21,7 +21,7 @@ pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreE
 ///
 /// 与 CLI 的 `profile apply` 共用 `core::app::service::apply_profile`：
 /// 「读配置 → 保存 → 记账」只有一份实现。记账失败只告警，不影响保存结果。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_apply(name: String, state: State<'_, DbState>) -> Result<ApplyOutcome, CoreError> {
     with_db_mut(&state, "profile_apply", |db| {
         service::apply_profile(db, &name, EventSource::Gui)
@@ -51,7 +51,7 @@ pub struct ProfileSaveRequest {
 }
 
 /// 保存配置方案（PATH 条目 + 元数据，单事务）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_save(
     request: ProfileSaveRequest,
     state: State<'_, DbState>,
@@ -78,7 +78,7 @@ pub fn profile_save(
 /// 读取配置的 PATH 条目（UI 预览与应用用）。
 ///
 /// 返回 `null` 表示配置不存在或没有 revision。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_paths(
     name: String,
     state: State<'_, DbState>,
@@ -89,7 +89,7 @@ pub fn profile_paths(
 }
 
 /// 重命名配置（UI 用名称标识）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_rename(
     old_name: String,
     new_name: String,
@@ -103,7 +103,7 @@ pub fn profile_rename(
 /// 按**名称**删除配置（软删除）。
 ///
 /// 与 `profile_delete`（按 uid）并存：UI 用名称，测试与未来同步用 uid。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn profile_delete_by_name(name: String, state: State<'_, DbState>) -> Result<bool, CoreError> {
     with_db_mut(&state, "profile_delete_by_name", |db| {
         profiles::delete_profile_by_name(db, &name)

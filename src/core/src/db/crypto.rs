@@ -58,10 +58,14 @@ fn key_path(home: &Path) -> PathBuf {
 /// `home` 显式传入（见 [`config_dir`] 的说明），测试用 `tempfile::TempDir`。
 pub fn load_or_create_key(home: &Path) -> Result<KeyMaterial, CoreError> {
     let path = key_path(home);
-    if let Some(k) = read_key(&path)? {
-        return Ok(k);
+    // **读也必须在互斥量内**：`create_new` 成功后还要 `write_all` + `sync_all`，
+    // 这个窗口里文件已存在但内容是 0/半截。锁外的读者会读到它，DPAPI 解密失败，
+    // 整个进程 fail-closed（GUI 降级、CLI exit 5），直到下次重启才自愈。
+    let _guard = InitGuard::acquire()?;
+    match read_key(&path)? {
+        Some(k) => Ok(k),
+        None => create_key_locked(&path),
     }
-    create_key(&path)
 }
 
 /// 读取并解密密钥文件；文件不存在返回 `Ok(None)`。
@@ -80,18 +84,13 @@ fn read_key(path: &Path) -> Result<Option<KeyMaterial>, CoreError> {
     }
 }
 
-/// 原子创建密钥文件；竞争失败时读取胜出者的密钥。
-fn create_key(path: &Path) -> Result<KeyMaterial, CoreError> {
+/// 原子创建密钥文件；**调用方必须持有 [`InitGuard`]**。
+///
+/// 竞争失败（`AlreadyExists`）时读取胜出者的密钥：这只会发生在旧版本进程
+/// 同时存在时（旧版本在锁外创建），保留该分支作为兼容兜底。
+fn create_key_locked(path: &Path) -> Result<KeyMaterial, CoreError> {
     use std::fs;
     use std::io::Write;
-
-    // 命名互斥量串行化首次创建，把「读-判-写」压成临界区。
-    let _guard = InitGuard::acquire()?;
-
-    // 临界区内复查：另一进程可能已在我们拿锁之前写好了。
-    if let Some(k) = read_key(path)? {
-        return Ok(k);
-    }
 
     let mut material = KeyMaterial {
         db_key: [0u8; 32],
@@ -108,6 +107,12 @@ fn create_key(path: &Path) -> Result<KeyMaterial, CoreError> {
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| io_err("create_key_dir", e))?;
+        // 目录加固是纵深防御：文件侧已经 `D:P` 独立加固，这里失败只告警，
+        // 不阻断密钥创建（否则用户自建的 `.patheditor` 权限会卡死应用）。
+        #[cfg(windows)]
+        if let Err(e) = super::dacl::set_dir_dacl(parent) {
+            log::warn!("密钥目录 DACL 加固失败（不影响密钥创建）: {}", e.message);
+        }
     }
     // create_new(true)：多进程竞争时只有一个成功，其余读取已写文件。
     match fs::OpenOptions::new()

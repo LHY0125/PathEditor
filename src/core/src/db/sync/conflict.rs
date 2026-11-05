@@ -36,10 +36,14 @@ pub struct SyncConflictView {
 
 /// 写一条冲突。**已存在同 (entityType, entityUid, field, remoteDevice) 的
 /// 未解决记录时不再重复写**——重复导入同一个包不该堆出一列相同的冲突。
+///
+/// `remote_content` 是「采纳远端」的落点：导入的冲突分支不写实体，远端内容
+/// 必须在那一刻留下，否则用户选择 `remote` 后无从应用（旧实现只记 new_value）。
 pub(crate) fn record_conflict_tx(
     tx: &rusqlite::Transaction,
     local: &ChangeRow,
     remote: &ChangeRow,
+    remote_content: Option<&serde_json::Value>,
 ) -> Result<(), CoreError> {
     let dup: Option<i64> = tx
         .query_row(
@@ -61,11 +65,22 @@ pub(crate) fn record_conflict_tx(
         return Ok(());
     }
 
+    let content_json = remote_content
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| {
+            CoreError::new(
+                ErrorCode::SyncFormat,
+                "record_conflict",
+                format!("冲突内容序列化失败: {e}"),
+            )
+        })?;
+
     tx.execute(
         "INSERT INTO sync_conflicts
            (entity_type, entity_uid, field, local_value, remote_value,
-            remote_device, created_at, resolved_at, resolution)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL)",
+            remote_device, created_at, resolved_at, resolution, remote_content)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, ?8)",
         params![
             remote.entity_type,
             remote.entity_uid,
@@ -73,7 +88,8 @@ pub(crate) fn record_conflict_tx(
             local.new_value,
             remote.new_value,
             remote.device_id,
-            chrono::Utc::now().timestamp_millis()
+            chrono::Utc::now().timestamp_millis(),
+            content_json
         ],
     )
     .map_err(|e| db_err("insert_conflict", e))?;
@@ -167,12 +183,17 @@ struct ConflictTarget {
     local_value: Option<String>,
     remote_value: Option<String>,
     resolved_at: Option<i64>,
+    /// 产生冲突的远端设备（profile 同名改名的后缀来源）。
+    remote_device: String,
+    /// 导入时留下的远端实体内容（JSON）；旧库记录为 `None`。
+    remote_content: Option<String>,
 }
 
 impl ConflictTarget {
     fn load(tx: &rusqlite::Transaction, id: i64) -> Result<Option<Self>, CoreError> {
         tx.query_row(
-            "SELECT entity_type, entity_uid, field, local_value, remote_value, resolved_at
+            "SELECT entity_type, entity_uid, field, local_value, remote_value,
+                    resolved_at, remote_device, remote_content
                FROM sync_conflicts WHERE id = ?1",
             params![id],
             |r| {
@@ -183,6 +204,8 @@ impl ConflictTarget {
                     local_value: r.get(3)?,
                     remote_value: r.get(4)?,
                     resolved_at: r.get(5)?,
+                    remote_device: r.get(6)?,
+                    remote_content: r.get(7)?,
                 })
             },
         )
@@ -223,6 +246,33 @@ pub fn resolve_conflict(db: &mut Db, id: i64, resolution: Resolution) -> Result<
             ],
         )
         .map_err(|e| db_err("resolve_conflict", e))?;
+
+        // **选择必须真的落地**：只追加一条 change 不改变任何实体，
+        // 下次导出会拿「本地仍存活的实体」覆盖刚记录的 new_value，
+        // 第三台设备也永远看不到用户选的远端内容。
+        if resolution == Resolution::Remote {
+            if target.field.as_deref() == Some("deleted_at") {
+                super::import::apply_tombstone_tx(tx, &target.entity_type, &target.entity_uid)?;
+            } else if let Some(raw) = &target.remote_content {
+                let content: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
+                    CoreError::new(
+                        ErrorCode::SyncFormat,
+                        "resolve_conflict",
+                        format!("冲突 {id} 的远端内容无法解析: {e}"),
+                    )
+                })?;
+                super::import::apply_entity_tx(
+                    tx,
+                    &target.entity_type,
+                    &target.entity_uid,
+                    &content,
+                    &target.remote_device,
+                )?;
+            } else {
+                // 旧版本记录的冲突没有内容：无法应用，只能记录解决结果。
+                log::warn!("冲突 {id} 没有远端内容（旧版本记录），仅记录解决结果");
+            }
+        }
 
         // 追加的 change 用 `record_change_tx`，但它的 lamport 由该函数自增分配。
         // 这里需要「当前 + 1」的语义恰好等价——`record_change_tx` 内部就是

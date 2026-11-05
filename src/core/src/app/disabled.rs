@@ -170,13 +170,20 @@ pub fn load_pending_path_snapshot_at(path: &Path) -> Result<Option<PathSnapshot>
         return Ok(None);
     }
 
-    let content = fs::read_to_string(path).map_err(|e| {
-        CoreError::new(
-            ErrorCode::Io,
-            "load_pending_path_snapshot",
-            format!("无法读取待补写快照: {e}"),
-        )
-    })?;
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        // 非法 UTF-8 同样属于损坏文件：与 JSON 解析失败走同一条隔离路径。
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            return Err(parse_error_quarantined(path, "待补写快照", e));
+        }
+        Err(e) => {
+            return Err(CoreError::new(
+                ErrorCode::Io,
+                "load_pending_path_snapshot",
+                format!("无法读取待补写快照: {e}"),
+            ))
+        }
+    };
     if content.trim().is_empty() {
         return Ok(None);
     }

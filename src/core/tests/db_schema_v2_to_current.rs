@@ -1,4 +1,4 @@
-//! v2 → v3 升级路径的回归守卫。
+//! v2 → 当前版本 升级路径的回归守卫。
 //!
 //! 首版把 `PRAGMA user_version` 写在 `if current < 1` 内部，
 //! 导致 v1→v2 执行了 DDL 但不更新版本号。 必须避免同样的错误。
@@ -42,11 +42,36 @@ fn upgrading_a_v2_database_bumps_version_and_preserves_data() {
     assert_eq!(db.schema_version().unwrap(), 2, "前置：确实是 v2 库");
 
     db.migrate_to_current().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 3, "升级后版本必须落盘");
+    assert_eq!(
+        db.schema_version().unwrap(),
+        schema::CURRENT_SCHEMA_VERSION,
+        "升级后版本必须落盘"
+    );
 
     for t in ["changes", "sync_conflicts"] {
         assert!(db.table_exists(t).unwrap(), "升级路径缺表: {t}");
     }
+
+    // v4：冲突保留远端内容 + 三个查询索引
+    let remote_content: i64 = db
+        .query_row_with(
+            "SELECT count(*) FROM pragma_table_info('sync_conflicts') WHERE name = 'remote_content'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        remote_content, 1,
+        "v4 必须给 sync_conflicts 加 remote_content"
+    );
+    let indexes: i64 = db
+        .query_row_with(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_backups_file_path', 'idx_refs_from', 'idx_refs_to')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexes, 3, "v4 必须补齐三个查询索引");
     db.migrate_to_current().expect("二次迁移必须幂等");
 
     // v2 数据必须还在

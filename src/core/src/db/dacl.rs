@@ -91,9 +91,39 @@ fn current_user_sid_string() -> Result<Vec<u16>, CoreError> {
 
 /// 设置密钥文件的 DACL：**仅当前用户 + SYSTEM**。
 ///
-/// 失败时调用方**必须删除半成品文件**（本函数不删除，由 `create_key` 负责，
-/// 因为它知道文件路径的完整生命周期）。
+/// 失败时调用方**必须删除半成品文件**（本函数不删除，由 `create_key_locked`
+/// 负责，因为它知道文件路径的完整生命周期）。
 pub fn set_key_dacl(path: &Path) -> Result<(), CoreError> {
+    // `D:P` 禁用继承；`GA` = 完全访问。
+    apply_explicit_dacl(
+        path,
+        "D:P(A;;GA;;;SY)(A;;GA;;;{})",
+        "set_key_dacl",
+        "密钥文件",
+    )
+}
+
+/// 加固密钥所在目录：仅当前用户 + SYSTEM，继承同样禁用。
+///
+/// 文件侧已经用 `D:P` 独立加固，目录这层是纵深防御（让「目录被改成宽权限」
+/// 的路径也收口）。失败只告警——文件本身不依赖目录 ACL。
+pub fn set_dir_dacl(path: &Path) -> Result<(), CoreError> {
+    // `OICI`：新建的子对象/容器继承同一组 ACE。
+    apply_explicit_dacl(
+        path,
+        "D:P(A;OICI;GA;;;SY)(A;OICI;GA;;;{})",
+        "set_dir_dacl",
+        "密钥目录",
+    )
+}
+
+/// 用 SDDL 设置对象 DACL（文件与目录共用）。
+fn apply_explicit_dacl(
+    path: &Path,
+    sddl_template: &str,
+    operation: &'static str,
+    label: &str,
+) -> Result<(), CoreError> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
     use windows_sys::Win32::Security::{
@@ -101,10 +131,9 @@ pub fn set_key_dacl(path: &Path) -> Result<(), CoreError> {
     };
 
     let sid = current_user_sid_string()?;
-    // SDDL：D: = DACL 段；每个 (A;;GA;;;principal) 是一条允许-完全访问 ACE。
-    // SY = SYSTEM。用显式 SID 而非 OW（Owner Rights），因为文件属主在创建后
+    // SY = SYSTEM；用显式 SID 而非 OW（Owner Rights），因为文件属主在创建后
     // 可能被改；显式绑定当前用户才符合「仅此用户 + SYSTEM」。
-    let sddl = format!("D:(A;;GA;;;SY)(A;;GA;;;{})", String::from_utf16_lossy(&sid));
+    let sddl = sddl_template.replace("{}", &String::from_utf16_lossy(&sid));
     let sddl_w: Vec<u16> = sddl.encode_utf16().chain(std::iter::once(0)).collect();
     let path_w: Vec<u16> = path
         .to_string_lossy()
@@ -140,8 +169,8 @@ pub fn set_key_dacl(path: &Path) -> Result<(), CoreError> {
     if ok == 0 {
         return Err(CoreError::new(
             ErrorCode::Crypto,
-            "set_key_dacl",
-            format!("设置密钥文件 DACL 失败: {os_err}"),
+            operation,
+            format!("设置{label} DACL 失败: {os_err}"),
         ));
     }
     Ok(())
@@ -220,9 +249,27 @@ pub fn key_dacl_is_restricted(path: &Path) -> Result<bool, CoreError> {
     }
     let dacl = String::from_utf16_lossy(&dacl_sddl).to_uppercase();
 
-    // 任一「广泛主体」出现即判为过宽。
-    const BROAD_PRINCIPALS: &[&str] = &[";;;WD)", ";;;BU)", ";;;AU)", ";;;BG)", ";;;PS)"];
-    Ok(!BROAD_PRINCIPALS.iter().any(|p| dacl.contains(p)))
+    // **白名单**：每一条 ACE 的主体必须是 SYSTEM 或当前用户。
+    //
+    // 旧实现是黑名单（`;;;WD)` / `;;;BU)` …），既漏掉具名 SID，也漏掉
+    // `BA`（Builtin Administrators）——它无法证明「只有这两个主体有访问权」。
+    // ACE 形如 `(A;;FA;;;SY)` / `(A;OICI;FA;;;S-1-5-21-…)`，主体总在 `;;;` 之后。
+    let sid = String::from_utf16_lossy(&current_user_sid_string()?).to_uppercase();
+    let allowed = ["SY", sid.as_str()];
+    let mut rest = dacl.as_str();
+    let mut principals = 0usize;
+    while let Some(pos) = rest.find(";;;") {
+        let tail = &rest[pos + 3..];
+        let end = tail.find(')').unwrap_or(tail.len());
+        let principal = &tail[..end];
+        if !allowed.contains(&principal) {
+            return Ok(false);
+        }
+        principals += 1;
+        rest = &tail[end..];
+    }
+    // 空 DACL = 拒绝所有人（含当前用户），是坏文件而不是「受限」。
+    Ok(principals > 0)
 }
 
 /// 把 `GetLastError` 包装为结构化错误。

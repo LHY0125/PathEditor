@@ -2,7 +2,7 @@ use crate::domain::error::{CoreError, ErrorCode};
 use crate::domain::path_entry::PathEntry;
 use std::path::Path;
 use winreg::enums::*;
-use winreg::types::ToRegValue;
+use winreg::types::{FromRegValue, ToRegValue};
 use winreg::{RegKey, RegValue};
 
 pub(crate) const SYS_REG_PATH: &str =
@@ -38,11 +38,30 @@ pub(crate) fn load_paths(
             )
         })?;
 
-    let value: String = env_key.get_value(PATH_VALUE).map_err(|e| {
+    let raw = env_key.get_raw_value(PATH_VALUE).map_err(|e| {
         CoreError::new(
             registry_error_code(&e),
             "load_paths",
             format!("无法读取{} PATH: {}", label, e),
+        )
+    })?;
+    // **类型白名单**：`get_value::<String>` 接受 `REG_SZ/REG_EXPAND_SZ/REG_MULTI_SZ`，
+    // 对后者把内嵌 NUL 换成换行、对未配对代理项做有损替换；随后写回时
+    // `select_path_value_type` 又会把 `REG_MULTI_SZ` 改成 `REG_EXPAND_SZ` ——
+    // 一次「读-改-写」就静默改变了注册表值结构与字节。
+    // 与 env 通路同口径：不支持的类型显式拒绝，不做有损转换。
+    if !matches!(raw.vtype, REG_SZ | REG_EXPAND_SZ) {
+        return Err(CoreError::new(
+            ErrorCode::UnsupportedType,
+            "load_paths",
+            format!("{} PATH 的注册表类型不受支持: {:?}", label, raw.vtype),
+        ));
+    }
+    let value = String::from_reg_value(&raw).map_err(|e| {
+        CoreError::new(
+            ErrorCode::Parse,
+            "load_paths",
+            format!("无法解码{} PATH: {}", label, e),
         )
     })?;
 
@@ -165,6 +184,15 @@ fn validate_and_join_paths(paths: &[String], label: &str) -> Result<String, Core
             ErrorCode::InvalidValue,
             "validate_paths",
             format!("{} PATH 包含非法字符（null 字节）: {}", label, bad),
+        ));
+    }
+    // 分号是条目分隔符：一条含 `;` 的输入保存后会变成两条，而导入通路
+    // （`fs::sanitize_entries`）本来就拒绝它。两条通路必须同一口径。
+    if let Some(bad) = paths.iter().find(|p| p.contains(';')) {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "validate_paths",
+            format!("{} PATH 条目不能包含分号（会拆成两条）: {}", label, bad),
         ));
     }
     let value = join_path(paths);

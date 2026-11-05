@@ -7,13 +7,26 @@ pub(crate) fn cmd_import(file: String, target: String) {
         core::platform::fs::import_paths(&file, &content).unwrap_or_else(|e| exit_core_error(&e));
     match target.as_str() {
         "system" => {
+            // 单 hive 导入时该侧为空 = 把整个 PATH 写成空串。TXT 源文件永远
+            // 只产生用户侧条目，这个守卫不是理论问题。
+            if sys_entries.is_empty() {
+                crate::runtime::exit_err(
+                    "源文件的系统 PATH 段为空，已中止：继续会把系统 PATH 清空",
+                );
+            }
             save_path_write(Some(sys_entries), None);
             println!("已导入到系统 PATH");
         }
         "user" => {
+            if usr_entries.is_empty() {
+                crate::runtime::exit_err(
+                    "源文件的用户 PATH 段为空，已中止：继续会把用户 PATH 清空",
+                );
+            }
             save_path_write(None, Some(usr_entries));
             println!("已导入到用户 PATH");
         }
+        // clap 的 `value_parser` 已限定为 system/user/both，这里只剩 both。
         _ => {
             // 双 hive：一次调用同时提交（core 内顺序 system → user）。
             // 不再取 expected（CLI 无并发窗口，见 `save_path_write`）。

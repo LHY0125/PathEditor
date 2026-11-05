@@ -11,23 +11,26 @@ export function MergePreview() {
   const { t } = useTranslation();
 
   const allPaths = useMemo(() => {
-    const seen = new Set<string>();
+    const index = new Map<string, number>();
     const merged: (PathEntry & { source: string; displayIndex: number })[] = [];
 
-    for (const entry of sysPaths) {
+    const push = (entry: PathEntry, source: string) => {
       const lower = entry.path.toLowerCase();
-      if (!seen.has(lower)) {
-        seen.add(lower);
-        merged.push({ ...entry, source: t('merge.system'), displayIndex: merged.length });
+      const at = index.get(lower);
+      if (at !== undefined) {
+        // 同名条目出现在两侧时，生效状态取**并集**：任一侧启用，最终 PATH
+        // 就包含它。保留系统侧 `enabled` 会让「系统禁用 + 用户启用」显示成禁用。
+        if (entry.enabled && !merged[at].enabled) {
+          merged[at] = { ...merged[at], enabled: true };
+        }
+        return;
       }
-    }
-    for (const entry of userPaths) {
-      const lower = entry.path.toLowerCase();
-      if (!seen.has(lower)) {
-        seen.add(lower);
-        merged.push({ ...entry, source: t('merge.user'), displayIndex: merged.length });
-      }
-    }
+      index.set(lower, merged.length);
+      merged.push({ ...entry, source, displayIndex: merged.length });
+    };
+
+    for (const entry of sysPaths) push(entry, t('merge.system'));
+    for (const entry of userPaths) push(entry, t('merge.user'));
 
     if (!searchQuery) return merged;
     const q = searchQuery.toLowerCase();

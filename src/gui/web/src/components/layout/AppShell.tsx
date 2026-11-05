@@ -4,6 +4,7 @@ import { useThemeStore } from '@/store/theme-store';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { TargetType } from '@/core/undo-redo';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
 import { DegradedBanner } from './DegradedBanner';
@@ -76,6 +77,49 @@ export function AppShell() {
     return findMetaByKey(envSnapshot, selectedVarKey);
   }, [selectedVarKey, envSnapshot]);
 
+  // 原生拖放：Tauri 2 在 Windows 上拦截文件拖放，DOM 的 `drop` 收不到事件，
+  // `file.path` 也只在 Tauri v1 存在。必须用 `onDragDropEvent` 取原生路径。
+  // 下面的 DOM handler 仅保留给浏览器 / E2E（mock IPC）环境。
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        unlisten = await getCurrentWindow().onDragDropEvent((event) => {
+          if (event.payload.type !== 'drop') return;
+          const tab = useAppStore.getState().activeTab;
+          if (tab !== 'system' && tab !== 'user') return;
+          const target = tab === 'user' ? TargetType.USER : TargetType.SYSTEM;
+          for (const droppedPath of event.payload.paths) {
+            // PATH 条目必须是目录；含 `%VAR%` 的路径由 core 判为未知并放行。
+            void backend
+              .validatePath(droppedPath)
+              .then((isDir) => {
+                if (isDir) useAppStore.getState().addPath(droppedPath, target);
+              })
+              .catch(() => {});
+          }
+        });
+        if (disposed) unlisten();
+      } catch {
+        // 非 Tauri 运行环境（测试 / 浏览器预览）：没有原生拖放事件
+      }
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // `<html lang>` 必须跟随语言切换：读屏按它选发音。
+  const syncHtmlLang = () => {
+    const current = i18n.resolvedLanguage ?? i18n.language;
+    document.documentElement.lang = current.startsWith('zh') ? 'zh-CN' : 'en';
+  };
+  useEffect(() => {
+    syncHtmlLang();
+  }, []);
+
   // 进入「全部变量」时刷新列表与 revision；工具栏「刷新」共用同一入口。
   // 悬空选中无需在此清理：selectedVar 由快照派生，快照刷新后自动失效。
   useEffect(() => {
@@ -91,7 +135,6 @@ export function AppShell() {
     let unlisten: (() => void) | undefined;
     void (async () => {
       try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const handler = await getCurrentWindow().onCloseRequested((event) => {
           const pending = useAppStore.getState().isModified || useEnvStore.getState().hasDrafts();
           if (!pending) return; // 无待保存内容：不拦截，包装层自动 destroy
@@ -249,6 +292,7 @@ export function AppShell() {
               // 检测器会缓存 'en-US' 这类区域变体，与 'zh-CN' 比较会得出错误结论。
               const current = i18n.resolvedLanguage ?? i18n.language;
               i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
+              syncHtmlLang();
             }}
             onProfiles={() => setProfilesOpen(true)}
             onAnalyze={() => setAnalyzeOpen(true)}

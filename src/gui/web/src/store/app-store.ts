@@ -206,6 +206,17 @@ export const useAppStore = create<AppState>((set, get) => {
       const list = target === TargetType.SYSTEM ? state.sysPaths : state.userPaths;
       const [kept, removed] = await backend.cleanPathEntries(list);
 
+      // 期间用户继续编辑：这次结果基于旧列表，直接覆盖会吞掉并发改动。
+      const current = get();
+      const latest = target === TargetType.SYSTEM ? current.sysPaths : current.userPaths;
+      if (!arraysEqual(latest, list)) {
+        set({
+          statusIsError: true,
+          statusMessage: i18n.t('status.cleanChanged'),
+        });
+        return [];
+      }
+
       if (removed.length > 0) {
         state.undoRedo.push({
           type: OperationType.CLEAN,
@@ -370,10 +381,14 @@ export const useAppStore = create<AppState>((set, get) => {
         capabilities: state.pathCapabilities,
         force,
       });
+      // **await 之后必须重新取状态**：保存链路包含备份、两次注册表写与 DB 提交，
+      // 期间用户可能继续编辑。用 await 前的快照判断 isModified，会把并发改动
+      // 标成「已保存」，关窗确认随之失效（静默丢改动）。
+      const current = get();
       set({
         isModified: !(
-          arraysEqual(state.sysPaths, outcome.savedSys) &&
-          arraysEqual(state.userPaths, outcome.savedUser)
+          arraysEqual(current.sysPaths, outcome.savedSys) &&
+          arraysEqual(current.userPaths, outcome.savedUser)
         ),
         isSaving: false,
         statusIsError: outcome.result.kind === 'failure' || outcome.result.kind === 'partial',

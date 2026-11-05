@@ -96,13 +96,23 @@ export function PathTable({ tabId }: PathTableProps) {
     initialRect: { width: 800, height: 600 },
   });
 
-  // 搜索定位：滚动到目标逻辑索引后立刻清空请求，避免后续滚动被反复拉回。
+  // 搜索定位：滚动到目标逻辑索引后清空请求，避免后续滚动被反复拉回。
   useEffect(() => {
     if (scrollToIndex === null) return;
     const row = filtered.findIndex((r) => r.index === scrollToIndex);
-    if (row >= 0) rowVirtualizer.scrollToIndex(row, { align: 'center' });
+    if (row >= 0) {
+      rowVirtualizer.scrollToIndex(row, { align: 'center' });
+      useAppStore.getState().setScrollToIndex(null);
+      return;
+    }
+    // 目标被搜索框过滤掉：先清空过滤再定位（保留请求，等下一次渲染）。
+    if (searchQuery) {
+      useAppStore.getState().setSearchQuery('');
+      return;
+    }
+    // 列表里确实没有这条：丢弃请求，别让它永远挂着。
     useAppStore.getState().setScrollToIndex(null);
-  }, [scrollToIndex, filtered, rowVirtualizer]);
+  }, [scrollToIndex, filtered, rowVirtualizer, searchQuery]);
 
   return (
     <div ref={parentRef} className="flex-1 overflow-auto relative" data-testid="path-table">
@@ -144,7 +154,30 @@ export function PathTable({ tabId }: PathTableProps) {
               key={virtualRow.key}
               data-testid="path-row"
               data-path={path}
+              data-real-index={index}
               data-state={rowState}
+              role="row"
+              aria-selected={isSelected}
+              // roving tabindex：选中行可 Tab 进入，其余行用方向键移动
+              tabIndex={isSelected ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (isActive) setSelectedIndices([index]);
+                  return;
+                }
+                const delta = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+                if (delta === 0) return;
+                const targetRow = filtered[rowIdx + delta];
+                if (!targetRow) return;
+                e.preventDefault();
+                if (isActive) setSelectedIndices([targetRow.index]);
+                requestAnimationFrame(() => {
+                  parentRef.current
+                    ?.querySelector<HTMLElement>(`[data-real-index="${targetRow.index}"]`)
+                    ?.focus();
+                });
+              }}
               // 交替底色按逻辑索引决定 —— 虚拟滚动只渲染可视窗口，
               // :nth-child(odd) 的奇偶取决于「当前渲染了哪些节点」，滚动时会跳变闪烁。
               data-odd={rowIdx % 2 === 1}
@@ -161,6 +194,7 @@ export function PathTable({ tabId }: PathTableProps) {
                 <input
                   type="checkbox"
                   data-testid="path-enabled"
+                  aria-label={t('table.toggleEnabled', { path })}
                   checked={enabled}
                   disabled={!canWrite}
                   onChange={() => {

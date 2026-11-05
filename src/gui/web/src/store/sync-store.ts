@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isCoreError } from '@/core/error';
 import i18n from '@/i18n';
 import {
   backend,
@@ -26,15 +27,6 @@ import {
  */
 
 /** 把 rejection 转成可读文案；`parseCoreError` 抛的是普通对象，不是 Error 实例。 */
-function isCoreError(err: unknown): err is { code: string; message: string } {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    typeof (err as { message?: unknown }).message === 'string'
-  );
-}
-
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
     if (err.code === 'database') return i18n.t('sync.errorDegraded');

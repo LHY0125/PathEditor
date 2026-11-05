@@ -21,7 +21,7 @@ pub(crate) fn maintenance_prune(dry_run: bool) {
         prune(&mut db, now).unwrap_or_else(|e| exit_core_error(&e))
     };
     println!(
-        "{}changes {} 条，冲突 {} 条",
+        "{}{} 条，冲突 {} 条",
         if dry_run {
             "（dry-run）将删除 "
         } else {
@@ -43,7 +43,20 @@ pub(crate) fn maintenance_cleanup_legacy(dry_run: bool, yes: bool) {
     let dir = core::platform::backup::env_backup_dir();
 
     if !dry_run && !yes {
-        eprintln!("错误: 这会删除明文备份。先运行 --dry-run 查看计划，确认后加 --yes。");
+        // 文档承诺「未给 --yes 时只打印计划并以 1 退出」：这里真的打印计划，
+        // 而不是只丢一句错误让用户再跑一次 --dry-run。
+        let plan = scan_legacy_env_backups(&dir).unwrap_or_else(|e| exit_core_error(&e));
+        println!(
+            "═══ 将转换后删除的明文备份（{} 个）═══",
+            plan.converted.len()
+        );
+        for (json, _) in &plan.converted {
+            println!("  {}", json.display());
+        }
+        for (path, why) in &plan.skipped {
+            println!("  跳过 {}: {why}", path.display());
+        }
+        eprintln!("错误: 这会删除明文备份。确认后加 --yes 重新执行。");
         std::process::exit(1);
     }
 

@@ -51,6 +51,20 @@ pub struct RestoreChange {
     pub name: String,
     /// 差异类型
     pub kind: RestoreChangeKind,
+    /// 将写入的值摘要（净化控制字符、截断；敏感变量恒为 `None`）。
+    ///
+    /// 没有它，预览只剩变量名：用户无法核对「这个备份会写什么」，
+    /// 一份伪装成备份的外部文件就能在无审查下改写任意变量。
+    #[serde(default)]
+    pub value_preview: Option<String>,
+}
+
+/// 备份值摘要：敏感变量不返回明文（与 `env list` 同口径）。
+fn preview_value(var: &EnvBackupVar) -> Option<String> {
+    if crate::domain::env_var::is_sensitive(&var.name) {
+        return None;
+    }
+    crate::domain::env_var::sanitize_preview(&var.value)
 }
 
 /// 恢复差异预览（供 CLI `--dry-run` 与 GUI 确认弹窗消费）。
@@ -268,6 +282,7 @@ pub(crate) fn diff_one_hive(
                 hive,
                 name: var.name.clone(),
                 kind: RestoreChangeKind::Added,
+                value_preview: preview_value(var),
             }),
             // revision 相同 → 值相同，无变化，不进差异
             Some((_, current_revision)) if current_revision == &var.revision => {}
@@ -276,6 +291,7 @@ pub(crate) fn diff_one_hive(
                 hive,
                 name: var.name.clone(),
                 kind: RestoreChangeKind::Conflict,
+                value_preview: preview_value(var),
             }),
         }
     }
@@ -289,6 +305,8 @@ pub(crate) fn diff_one_hive(
             hive,
             name: original_name.clone(),
             kind: RestoreChangeKind::Removed,
+            // 删除没有「将写入的值」
+            value_preview: None,
         });
     }
 

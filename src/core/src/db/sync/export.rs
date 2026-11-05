@@ -143,8 +143,13 @@ pub fn export_bundle(
     }
     // ① 收集
     let pending = pending_export(db)?;
-    let change_count = u32::try_from(pending.len())
-        .map_err(|_| CoreError::new(ErrorCode::Sync, "export", "待导出变更过多"))?;
+    let change_count = u32::try_from(pending.len()).map_err(|_| {
+        CoreError::new(
+            ErrorCode::SyncFormat,
+            "export",
+            "待导出变更过多（超出同步包格式上限）",
+        )
+    })?;
 
     // ② 构建 payload + header
     //
@@ -158,7 +163,7 @@ pub fn export_bundle(
     let payload = BundlePayload { changes };
     let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
         CoreError::new(
-            ErrorCode::Sync,
+            ErrorCode::Internal,
             "export",
             format!("payload 序列化失败: {e}"),
         )

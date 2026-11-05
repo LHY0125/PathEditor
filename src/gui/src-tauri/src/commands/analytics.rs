@@ -27,7 +27,7 @@ use super::db_state::{with_db, DbState};
 ///
 /// 查询串由 core 侧做 FTS5 转义（见 `db::search::escape_query`），
 /// 调用方直接传原始用户输入即可。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn search(
     query: String,
     limit: Option<u32>,
@@ -39,7 +39,7 @@ pub fn search(
 }
 
 /// 统计面板数据（`days` 天的时间序列 + 当前状态 + 聚合榜）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stats_dashboard(
     days: Option<u32>,
     state: State<'_, DbState>,
@@ -54,7 +54,7 @@ pub fn stats_dashboard(
 /// 返回 `{ system: PathDiff, user: PathDiff, env_* }`——**双 hive 分开**。
 /// env 三字段恒为空：**本版不支持环境变量对比**，UI 必须显式说明，
 /// 不能让用户误以为「环境变量没有变化」。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn compare_snapshots(
     left_uid: String,
     right_uid: String,

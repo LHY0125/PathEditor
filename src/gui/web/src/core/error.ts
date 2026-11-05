@@ -1,4 +1,17 @@
 /**
+ * 是否是结构化 `CoreError`（`parseCoreError` 抛出的是普通对象，不是 `Error` 实例）。
+ *
+ * **唯一实现**：7 个 store/组件各自复制过一份形状判断，任一处改动都会让
+ * `String(err)` 退化成 `"[object Object]"` 的旧 bug 复发。
+ */
+export function isCoreError(error: unknown): error is { code: string; message: string } {
+  if (typeof error !== 'object' || error === null) return false;
+  if (!('code' in error) || typeof error.code !== 'string') return false;
+  if (!('message' in error) || typeof error.message !== 'string') return false;
+  return true;
+}
+
+/**
  * 从 IPC rejection 中取用户可读文案。
  *
  * `parseCoreError` 抛出的是普通对象 `{code, message}`，不是 `Error` 实例；
@@ -6,9 +19,8 @@
  * 避免每个调用点各写一份形状判断。
  */
 export function errorMessage(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message: unknown }).message;
-    if (typeof message === 'string' && message.trim().length > 0) return message;
+  if (isCoreError(error)) {
+    return error.message.trim().length > 0 ? error.message : String(error);
   }
   return error instanceof Error ? error.message : String(error);
 }

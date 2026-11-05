@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isCoreError } from '@/core/error';
 import i18n from '@/i18n';
 import { backend, type SearchHit } from '@/services/backend';
 
@@ -14,15 +15,6 @@ import { backend, type SearchHit } from '@/services/backend';
  */
 
 /** 把 rejection 转成可读文案；`parseCoreError` 抛的是普通对象，不是 Error 实例。 */
-function isCoreError(err: unknown): err is { code: string; message: string } {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    typeof (err as { message?: unknown }).message === 'string'
-  );
-}
-
 function errorMessage(err: unknown): string {
   if (isCoreError(err)) {
     if (err.code === 'database') {
@@ -50,6 +42,9 @@ interface SearchState {
   reset: () => void;
 }
 
+/** 搜索请求代次：过期响应不得把 loading 永久留在 true。 */
+let searchSeq = 0;
+
 export const useSearchStore = create<SearchState>((set, get) => ({
   query: '',
   submitted: '',
@@ -66,14 +61,21 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       set({ hits: [], submitted: '', loading: false, error: null });
       return;
     }
+    const seq = ++searchSeq;
     set({ loading: true, error: null });
     try {
       const hits = await backend.search(q, 50);
-      // 竞态守卫：若期间用户又改了查询并重新提交，丢弃这次的结果
-      if (get().query.trim() !== q) return;
+      // 竞态守卫：期间用户又提交了新查询，丢弃这次的结果。
+      if (seq !== searchSeq) return;
+      // 查询已改但还没重新提交：结果不属于当前输入，丢弃并**必须清 loading**
+      //（否则按钮会永久停在「搜索中」）。
+      if (get().query.trim() !== q) {
+        set({ loading: false });
+        return;
+      }
       set({ hits, submitted: q, loading: false });
     } catch (e) {
-      if (get().query.trim() !== q) return;
+      if (seq !== searchSeq) return;
       set({ loading: false, error: errorMessage(e) });
     }
   },

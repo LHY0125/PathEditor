@@ -15,6 +15,8 @@
     "sync": "Sync"
   },
   "envBackup": {
+    "writePreview": "Variables to write (with value preview)",
+    "sensitiveValue": "(sensitive)",
     "title": "Environment Variable Backup & Restore",
     "create": "Back up now",
     "created": "Backup created: {{path}}",
@@ -94,13 +96,15 @@
   "table": {
     "path": "Path",
     "noResults": "No matching paths",
-    "empty": "No paths"
+    "empty": "No paths",
+    "toggleEnabled": "Enable/disable {{path}}"
   },
   "button": {
     "new": "New",
     "edit": "Edit",
     "browse": "Browse...",
     "delete": "Delete",
+    "refs": "References",
     "moveUp": "Up",
     "moveDown": "Down",
     "clean": "Clean",
@@ -176,7 +180,8 @@
     "disabledStateFailed": "Registry saved, but disabled-state persistence failed",
     "saveFailure": "Save failed: {{details}}",
     "saveSystemFailed": "System PATH: {{error}}",
-    "saveUserFailed": "User PATH: {{error}}"
+    "saveUserFailed": "User PATH: {{error}}",
+    "cleanChanged": "The list changed while cleaning; please run clean again"
   },
   "dialog": {
     "newPath": "New Path",

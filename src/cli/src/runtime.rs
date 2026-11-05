@@ -115,6 +115,9 @@ pub(crate) fn save_path_write(
 
     match outcome.sidecar {
         SidecarOutcome::Saved => {}
+        // 降级模式（DB 不可用）：注册表已写入，本次没有快照可落盘。
+        // 这是受支持的状态，不是失败 —— 不得 exit 非零。
+        SidecarOutcome::Skipped => {}
         SidecarOutcome::Pending(e) => exit_err(&sidecar_failure_message(&e.message, true)),
         SidecarOutcome::Failed(e) => exit_err(&format!(
             "{}\n（待补写状态记录失败，请手工核对）",

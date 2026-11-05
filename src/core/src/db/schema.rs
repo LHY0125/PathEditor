@@ -4,7 +4,7 @@
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
 /// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 /// v1 全量 DDL。
 ///
@@ -205,6 +205,22 @@ CREATE TABLE sync_conflicts (
   resolution    TEXT
 );
 CREATE INDEX idx_sync_conflicts_unresolved ON sync_conflicts(resolved_at);
+"#;
+
+/// v4 增量 DDL：同步冲突保留远端实体内容 + 查询索引补齐。
+///
+/// `remote_content` 是「采纳远端」能真正生效的前提：导入时冲突分支没有写实体，
+/// 远端内容必须在那一刻留下，否则用户选择 `remote` 后无从应用（旧实现只记
+/// `new_value` 字符串，实体保持原样）。列可空：旧库里的历史冲突没有内容，
+/// 解决时只能退化为「只记变更」。
+///
+/// 三个索引对应实际查询：`backups.file_path`（索引去重）、
+/// `var_references` 的两个方向（引用图）。
+pub const DDL_V4: &str = r#"
+ALTER TABLE sync_conflicts ADD COLUMN remote_content TEXT;
+CREATE INDEX idx_backups_file_path ON backups(file_path);
+CREATE INDEX idx_refs_from ON var_references(from_name);
+CREATE INDEX idx_refs_to ON var_references(to_name);
 "#;
 
 /// 建库时写入 `app_state` 单行。

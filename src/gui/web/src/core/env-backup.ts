@@ -13,6 +13,13 @@ export interface RestoreChange {
   hive: EnvHive;
   name: string;
   kind: RestoreChangeKind;
+  /**
+   * 将写入的值摘要（敏感变量恒为 `null`）。
+   *
+   * 预览只给变量名时，用户无法核对「这个备份会写什么」——一份伪装成备份的
+   * 外部文件就能在无审查下改写任意变量。
+   */
+  valuePreview?: string | null;
 }
 
 /**
@@ -58,6 +65,13 @@ export interface BackupSummary {
   hasConflicts: boolean;
   /** 将被删除的变量名（`hive:name`）——删除最不可逆，确认弹窗必须单独高亮 */
   removedNames: string[];
+  /**
+   * 将被写入的变量（新增 / 冲突覆盖），带值摘要。
+   *
+   * 冲突项的 `valuePreview` 可能为 `null`（敏感变量），界面显示 `(敏感)`；
+   * 没有这份清单，用户只能看到计数，无法核对「这个备份到底会写什么」。
+   */
+  writes?: { label: string; preview: string | null }[];
   text: string;
 }
 
@@ -112,6 +126,12 @@ export function summarizePreview(preview: RestorePreview, labels: SummaryLabels)
     removedNames: preview.changes
       .filter((c) => c.kind === 'removed')
       .map((c) => `${c.hive}:${c.name}`),
+    writes: preview.changes
+      .filter((c) => c.kind === 'added' || c.kind === 'conflict')
+      .map((c) => ({
+        label: `${c.hive}:${c.name}`,
+        preview: c.valuePreview ?? null,
+      })),
     text,
   };
 }

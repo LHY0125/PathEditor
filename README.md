@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.95-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-737%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-750%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -111,7 +111,7 @@ PATH 之外的所有环境变量统一管理；敏感值默认打码，需先「
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v6.1.1 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，并新增 **SQLCipher 加密数据库**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
+v6.2.0 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，并新增 **SQLCipher 加密数据库**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
 
 ## 架构
 
@@ -132,7 +132,7 @@ graph TB
     end
 
     subgraph IPC["Tauri IPC 桥接"]
-        invoke[services/backend.ts<br/>统一 IPC 边界 + 运行时形状校验]
+        invoke[services/backend/<br/>统一 IPC 边界 + 运行时形状校验]
     end
 
     subgraph 后端["Rust core 库"]
@@ -279,7 +279,7 @@ scoop install lhy/patheditor-cli
 或从源码安装：
 
 ```bash
-cargo install --path cli
+cargo install --path src/cli
 ```
 
 ```bash
@@ -530,7 +530,7 @@ scoop install lhy/patheditor-cli
 **方式二：从源码安装**
 
 ```bash
-cargo install --path cli
+cargo install --path src/cli
 ```
 
 > **要求**：Windows 10+（自带 WebView2），管理员权限才能编辑系统 PATH。
@@ -570,8 +570,8 @@ npx tauri build
 | 数据库    | SQLCipher（rusqlite + bundled OpenSSL）   |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (37 files / 413) + Playwright (54) |
-| Rust 测试 | cargo test (324 passed / 2 ignored)       |
+| 前端测试  | Vitest (39 files / 420) + Playwright (54) |
+| Rust 测试 | cargo test (330 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 

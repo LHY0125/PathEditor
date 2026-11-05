@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { backend } from '@/services/backend';
+import { Button } from '@/components/ui/Button';
 import { useHistoryStore } from '@/store/history-store';
 import { CompareDialog } from './CompareDialog';
 import { SnapshotDetail } from './SnapshotDetail';
@@ -59,10 +60,15 @@ export function HistoryPanel() {
   const handleUndo = async () => {
     const confirmed = await backend.confirmDialog(t('history.undoConfirm')).catch(() => false);
     if (!confirmed) return;
-    const undone = await undoLast().catch(() => null);
-    if (!undone) {
-      // 没有可撤销的记录：给出明确反馈而不是静默无反应
-      useHistoryStore.setState({ error: t('history.undoNothing') });
+    try {
+      const undone = await undoLast();
+      if (!undone) {
+        // 没有可撤销的记录：给出明确反馈而不是静默无反应
+        useHistoryStore.setState({ error: t('history.undoNothing') });
+      }
+    } catch {
+      // `restore` 已把真实错误（permissionDenied / database …）写进 store，
+      // 这里不能再覆盖成「没有可撤销记录」，否则用户会按错误提示排查。
     }
   };
 
@@ -129,23 +135,17 @@ export function HistoryPanel() {
             <option value="system">{t('history.hiveSystem')}</option>
             <option value="user">{t('history.hiveUser')}</option>
           </select>
-          <button
-            type="button"
-            className="toolbar-btn"
+          <Button
+            variant="ghost"
             onClick={() => void handleUndo()}
             disabled={restoring || events.length === 0}
             title={t('history.undoHint')}
           >
             {t('history.undoLast')}
-          </button>
-          <button
-            type="button"
-            className="toolbar-btn"
-            onClick={() => void load()}
-            disabled={loading}
-          >
+          </Button>
+          <Button variant="ghost" onClick={() => void load()} disabled={loading}>
             {t('history.refresh')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -280,14 +280,14 @@ export function HistoryPanel() {
           })}
           {events.length < total && (
             <li className="p-2">
-              <button
-                type="button"
-                className="toolbar-btn w-full"
+              <Button
+                variant="ghost"
+                className="w-full"
                 disabled={loading}
                 onClick={() => void loadMore()}
               >
                 {loading ? t('history.loading') : t('history.loadMore')}
-              </button>
+              </Button>
             </li>
           )}
         </ul>
@@ -306,14 +306,14 @@ export function HistoryPanel() {
             <>
               <SnapshotDetail snapshot={detail} />
               <div className="border-t px-3 py-2" style={{ borderColor: 'var(--app-border)' }}>
-                <button
-                  type="button"
-                  className="toolbar-btn w-full"
+                <Button
+                  variant="ghost"
+                  className="w-full"
                   disabled={restoring}
                   onClick={() => void handleRestore(detail.uid)}
                 >
                   {restoring ? t('history.restoring') : t('history.restore')}
-                </button>
+                </Button>
                 <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('history.restoreHint')}
                 </p>

@@ -126,6 +126,11 @@ pub enum HiveOutcome {
 pub enum SidecarOutcome {
     /// 快照已成功落盘
     Saved,
+    /// 未尝试持久化：DB 不可用，处于降级模式（注册表已写入）
+    ///
+    /// 与 `Failed` 的区别：降级是**受支持**的状态，没有「待补写记录失败」，
+    /// 调用方不得据此判失败。
+    Skipped,
     /// 快照未落盘，已记录待补写状态；携带快照保存的原始错误
     Pending(CoreError),
     /// 快照未落盘且待补写状态记录失败；携带快照保存的原始错误
@@ -145,6 +150,26 @@ pub struct ApplyOutcome {
     pub user: HiveOutcome,
     /// 快照的落盘结果
     pub sidecar: SidecarOutcome,
+    /// 写前备份失败的原因；`None` 表示备份成功或本次无需备份。
+    ///
+    /// 备份失败**不阻断写入**，但必须让调用方看得见：PATH 是全量覆盖写，
+    /// 唯一的回滚材料就是那份备份；CLI 没有 logger，`log::warn!` 会被丢弃。
+    pub backup: Option<String>,
+}
+
+/// 把 `ApplyOutcome` 中任一 hive 的失败抬成 `Err`。
+///
+/// 只给「调用方只认 `Result`」的编排用（配置应用、历史恢复）：它们不看
+/// `ApplyOutcome` 内部，若任由 `Failed` 装在 `Ok` 里，CLI 会打印「已写入注册表」
+/// 并 exit 0，GUI 会静默关窗。GUI 的保存链路有自己的逐 hive 呈现，不走这里。
+pub(crate) fn fail_on_hive_error(outcome: &ApplyOutcome) -> Result<(), CoreError> {
+    if let HiveOutcome::Failed(e) = &outcome.system {
+        return Err(e.clone());
+    }
+    if let HiveOutcome::Failed(e) = &outcome.user {
+        return Err(e.clone());
+    }
+    Ok(())
 }
 
 /// 构造带操作上下文的 `CoreError`（自由文本错误的统一收口）。
@@ -249,11 +274,9 @@ pub fn save_path_registry_only(
     let applied = matches!(outcome.system, HiveOutcome::Applied)
         || matches!(outcome.user, HiveOutcome::Applied);
     if applied {
-        outcome.sidecar = SidecarOutcome::Failed(CoreError::new(
-            ErrorCode::Database,
-            "save_path",
-            "数据库不可用，当前 PATH 快照未保存",
-        ));
+        // 降级模式：DB 不可用时没有「快照未落盘」这回事，也没有 pending 可写。
+        // 用 `Skipped` 而不是 `Failed`，否则 CLI 会把一次成功的编辑报成 exit 1。
+        outcome.sidecar = SidecarOutcome::Skipped;
     }
 
     if let Err(e) = history.record(HistoryEvent {
@@ -319,10 +342,12 @@ pub(crate) fn save_path_registry_io(
     // 走默认备份目录，从而沿用 `rotate_path_backups` 的默认目录限定（自定义目录不参与轮换，可能混有用户自己的文件）。
     //
     // 备份失败**不阻断**写入（与 env 侧 `WriteOutcome.backup` 同语义）：
-    // 只记警告并继续，写入结果照常返回。
+    // 但要把原因放进返回值 —— PATH 是全量覆盖写，CLI 没有 logger。
+    let mut backup_failure: Option<String> = None;
     if sys_will_write || usr_will_write {
         if let Err(e) = io.backup() {
             log::warn!("PATH 写前备份失败（写入将继续）: {}", e.message);
+            backup_failure = Some(e.message);
         }
     }
 
@@ -356,6 +381,7 @@ pub(crate) fn save_path_registry_io(
         system: sys_outcome,
         user: usr_outcome,
         sidecar,
+        backup: backup_failure,
     })
 }
 
@@ -605,6 +631,7 @@ pub fn retry_pending_path_state_db_at(
             system: HiveOutcome::Skipped,
             user: HiveOutcome::Skipped,
             sidecar: SidecarOutcome::Saved,
+            backup: None,
         });
     };
 
@@ -634,6 +661,7 @@ pub fn retry_pending_path_state_db_at(
         system: HiveOutcome::Skipped,
         user: HiveOutcome::Skipped,
         sidecar: SidecarOutcome::Saved,
+        backup: None,
     })
 }
 

@@ -33,7 +33,7 @@
 
 ### v6 新增的 DB 命令
 
-全部经 `backend.ts` 运行时形状校验：
+全部经 `services/backend/` 运行时形状校验：
 
 - 历史：`history_list_events` / `history_get_snapshot` / `history_get_current` / `history_reveal_env_value` / `history_restore_snapshot`
 - 配置：`profile_list` / `profile_save` / `profile_paths` / `profile_rename` / `profile_delete_by_name` / `profile_mark_applied` / `profile_mark_applied_by_name`
@@ -68,18 +68,18 @@ patheditor env add       <NAME> [<VALUE>] [--kind string|expand] [--system] [--d
 patheditor env remove    <NAME> (--revision <R>|--force) [--dry-run] [--json]
 patheditor env backup    [--json]
 patheditor env backups   [--json]
-patheditor env restore   <FILE> [--dry-run] [--force] [--json]
+patheditor env restore   <FILE> [--dry-run] [--force] [--strict] [--json]
 patheditor sync          {export <FILE>|import <FILE>|status|conflicts [--all]|resolve <ID> --take local|remote}
 patheditor maintenance   {prune [--dry-run]|cleanup-legacy-backups [--dry-run] [--yes]}
 ```
 
-`sync export/import` 的口令用 `rpassword` 隐藏输入，不落盘、不进 shell 历史；同步只改 DB，不写注册表。退出码：合并冲突 → 4，包格式/口令/篡改 → 1，密钥/DPAPI → 5。`maintenance cleanup-legacy-backups` 未给 `--yes` 时只打印计划并以 1 退出；`prune` 是保留策略，不需要 `--yes`。
+`sync export/import` 的口令用 `rpassword` 隐藏输入，不落盘、不进 shell 历史；同步只改 DB，不写注册表。退出码：`import` 记录到待人工解决的合并冲突 → **4**；包格式/口令/篡改 → 1；密钥/DPAPI → 5。`maintenance cleanup-legacy-backups` 未给 `--yes` 时打印计划并以 1 退出；`prune` 是保留策略，不需要 `--yes`。
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
 
 `env` 子命令默认操作用户 hive，加 `--system` 操作系统 hive；`Path` 不在通用通路内。`set`/`remove` 必须显式给出 `--revision` 或 `--force`（互斥，缺一报错）；`--force` 跳过 revision 校验直接覆盖（最后写入者胜，仍受保护名单/类型/权限约束），不会因并发冲突产生退出码 3；退出码 3 仅在 `--revision` 不匹配时出现，其余错误为 1。`get` 是 CLI 侧唯一明文出口，stdout 只打印裸值 + 换行（管道友好）；`env add` 的 `--kind` 默认 `string`，可选 `string`（`REG_SZ`）/ `expand`（`REG_EXPAND_SZ`）；敏感值建议用 `--stdin` 或 `--value-file` 传入，避免明文进入 shell 历史与进程列表。`set`/`add`/`remove` 支持 `--dry-run` 只预览变更、不写注册表、不产生备份、不广播；预览**不要求** `--revision`/`--force`，且不含保护名单/类型判定（`writable` 如实标记，真正的拒绝留给执行阶段）。预览**不新开明文出口**：命中 `is_sensitive` 的变量不回传明文（`oldValue` 为 `null`、文本显示 `(敏感)`），非敏感值经 `sanitize_preview` 剔除控制字符（含 ESC，防 ANSI 注入）。`--json` 需与 `--dry-run` 同用（clap `requires`，单独用退出码 2），输出统一结构 `{operation, hive, name, oldValue, newValue, kind, writable, sensitive}`。
 
-`env restore` 默认模式在备份中有变量被外部改动（revision 不匹配）时整批中止且**注册表零改动**（退出码 3）；`--force` 跳过 revision 校验直接覆盖，但**不豁免**保护名单与类型判定，也不会因并发冲突产生退出码 3。`--dry-run` 只打印差异、不写注册表。**逐条失败不改变退出码**（仍是 0）——恢复是 best-effort，单变量失败只进 `failures` 并以 stderr 警告呈现，脚本无法从退出码检出部分失败。
+`env restore` 默认模式在备份中有变量被外部改动（revision 不匹配）时整批中止且**注册表零改动**（退出码 3）；`--force` 跳过 revision 校验直接覆盖，但**不豁免**保护名单与类型判定，也不会因并发冲突产生退出码 3。`--dry-run` 只打印差异、不写注册表。默认语义是 best-effort：**逐条失败不改变退出码**（仍是 0），单变量失败只进 `failures` 并以 stderr 警告呈现；需要脚本检出部分失败时加 `--strict`（任一条失败即退出码 1）。预览的每条差异带 `valuePreview`（敏感变量恒为 `null`），便于核对将写入的内容。
 
 ### 退出码总表
 
@@ -89,5 +89,5 @@ patheditor maintenance   {prune [--dry-run]|cleanup-legacy-backups [--dry-run] [
 | 1   | 一般错误；同步包格式/口令/篡改（`SyncFormat`）也归入此码          |
 | 2   | clap 参数解析失败                                                 |
 | 3   | revision 冲突（仅 `env set` / `env remove` 使用 `--revision` 时） |
-| 4   | 同步合并冲突（`ErrorCode::Sync`，需人工解决）                     |
+| 4   | 同步合并冲突（`sync import` 记录了待人工解决的冲突）              |
 | 5   | 密钥 / DPAPI（`ErrorCode::Crypto`）                               |

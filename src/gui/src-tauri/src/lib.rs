@@ -42,6 +42,13 @@ fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_c
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 单实例：双开会重复跑启动序列（基线快照、备份索引、派生表重建），
+    // 并让两个进程并发写同一个 SQLCipher 库与注册表。
+    if !path_editor_core::platform::system::acquire_single_instance("Local\\PathEditor.Gui") {
+        // 此时 logger 尚未初始化；直接退出即可（第二个实例不做任何事）。
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

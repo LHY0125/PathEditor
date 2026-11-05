@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isCoreError } from '@/core/error';
 import { useTranslation } from 'react-i18next';
 import { backend, type Dashboard } from '@/services/backend';
 import { Button } from '@/components/ui/Button';
@@ -13,15 +14,6 @@ import { Button } from '@/components/ui/Button';
  * **不引入图表库**：用 CSS 宽度画横向条形。依赖里没有任何图表库，
  * 为几条柱状图引入一个是过度设计（YAGNI），且与「不引入新依赖」的约束冲突。
  */
-
-function isCoreError(err: unknown): err is { code: string; message: string } {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    typeof (err as { message?: unknown }).message === 'string'
-  );
-}
 
 function errorMessage(err: unknown, t: (key: string) => string): string {
   if (isCoreError(err)) {

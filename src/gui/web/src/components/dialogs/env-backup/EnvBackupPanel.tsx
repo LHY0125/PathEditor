@@ -110,6 +110,22 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
                 <Count label={t('envBackup.removedLabel')} value={preview.removed} />
                 <Count label={t('envBackup.conflictsLabel')} value={preview.conflicts} />
               </div>
+              {(summary?.writes ?? []).length > 0 && (
+                <div
+                  data-testid="backup-write-preview"
+                  className="rounded border p-2 text-xs"
+                  style={{ borderColor: 'var(--app-border)' }}
+                >
+                  <p className="font-semibold">{t('envBackup.writePreview')}</p>
+                  <ul className="font-mono mt-1">
+                    {(summary?.writes ?? []).map((w) => (
+                      <li key={w.label}>
+                        • {w.label} = {w.preview ?? t('envBackup.sensitiveValue')}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {preview.removed > 0 && (
                 <div
                   data-testid="backup-removed-names"

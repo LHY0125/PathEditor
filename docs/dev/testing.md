@@ -29,13 +29,13 @@ npm run verify        # Prettier → ESLint → build → coverage → cargo fmt
 npm run verify:all    # verify + Playwright E2E
 ```
 
-- 覆盖率门槛为 **80% 行覆盖**。
+- 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}`（`services/` 与 `components/` 不在门槛内）。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v6.2.0）**：Rust **327 passed / 0 failed / 2 ignored**；前端 **37 files / 413 passed**；E2E **54 passed**。
+- **当前基线（v6.2.0）**：Rust **330 passed / 0 failed / 2 ignored**；前端 **39 files / 420 passed**；E2E **54 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
-  - Rust 为 2026-10-29 本机实测（GNU 工具链）：`cargo test --workspace` → 327 passed / 2 ignored
-    （较 v6.1.1 增 3 条，为 CLI help 回归测试）；前端与 E2E 沿用 2026-10-24 实测：
-    `npx vitest run` → 37 files / 413 passed；`npm run test:e2e` → 54 passed。
+  - Rust 为 2026-11-05 本机实测（GNU 工具链）：`cargo test --workspace` → 330 passed / 2 ignored
+    （较 v6.1.1 增 6 条：3 条 CLI help + 冲突远端应用 / 配置 FTS / 广播非阻塞）；前端为同日实测：
+    `npx vitest run` → 39 files / 420 passed；E2E 沿用 2026-10-24 实测（本轮未跑）→ 54 passed。
 
 ## CI
 
@@ -47,8 +47,9 @@ npm run verify:all    # verify + Playwright E2E
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace --exclude patheditor`（core / cli）
 4. `PATHEDITOR_MSVC_TEST_MANIFEST=1 cargo test -p patheditor --lib`（GUI lib）
-5. `npx tsc --noEmit`
-6. `npx vitest run`
+5. `npx tsc -b`
+6. `npm run lint` / `npm run format:check`
+7. `npm run test:coverage`（覆盖率门槛只有带 `--coverage` 才生效）
 
 要点：
 
@@ -80,7 +81,7 @@ npm run verify:all    # verify + Playwright E2E
      Git for Windows 自带的 perl 是 cygwin 版、能过检查：
      `$env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe"`
   2. 补齐该 perl 被裁剪掉的模块（缺 `Locale::Maketext::Simple` 等，`IPC::Cmd` 因此加载失败）。
-     仓库已把需要的模块树放在 `probes/v6-sqlcipher/perl5lib/`：
+     `probes/v6-sqlcipher/perl5lib/` 被 `.gitignore` 排除，需自行生成（例如 `cpanm --local-lib=probes/v6-sqlcipher/perl5lib Locale::Maketext::Simple Pod::*`）：
      `$env:PERL5LIB = "$PWD\probes\v6-sqlcipher\perl5lib"`
   3. 给 `make` 的 recipe 提供 `sh` / `cp` / `rm`：
      `$env:PATH += ";$(scoop prefix git)\usr\bin"`

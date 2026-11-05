@@ -102,8 +102,9 @@ fn main() {
                 file,
                 dry_run,
                 force,
+                strict,
                 json,
-            } => commands::env::cmd_env_restore(file, dry_run, force, json),
+            } => commands::env::cmd_env_restore(file, dry_run, force, strict, json),
         },
         Command::Profile(cmd) => match cmd {
             ProfileCmd::List { json } => profile_list(json),
@@ -127,6 +128,11 @@ fn main() {
             }
         },
     }
+
+    // 广播是异步的（见 `platform::system::broadcast_env_change` 的性能注释）。
+    // CLI 是短命进程：这里必须等待在途通知发完，否则「命令成功」不再意味着
+    // Explorer 收到了环境变更。GUI 常驻进程不需要这一步。
+    path_editor_core::platform::system::flush_env_broadcasts();
 }
 
 #[cfg(test)]

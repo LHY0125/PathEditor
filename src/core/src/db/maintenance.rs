@@ -35,7 +35,22 @@ pub struct PruneReport {
 /// `applied_at > 0` 排除「从未落地」的行；`exported_at IS NOT NULL` 排除待导出队列。
 /// 任务本身产生的本地变更在 `record_change_tx` 里就把 `applied_at` 写成当时时间，
 /// 因此本地导出过的变更同样会到期清理。
-const CHANGES_PREDICATE: &str = "exported_at IS NOT NULL AND applied_at > 0 AND applied_at < ?1";
+///
+/// **额外两条保护**（否则保留策略会破坏合并语义）：
+/// - 每个 `(entity_type, entity_uid)` 保留 lamport 最新的那一行 —— 它是 LWW 的
+///   本地基线，删掉后导入旧包会走 `None => TakeRemote`，把已删除/旧版本实体复活；
+/// - 保留**全部墓碑**（`field = 'deleted_at'`）——“删除”这个意图不能随保留期消失。
+const CHANGES_PREDICATE: &str = "exported_at IS NOT NULL
+   AND applied_at > 0
+   AND applied_at < ?1
+   AND (field IS NULL OR field <> 'deleted_at')
+   AND EXISTS (
+     SELECT 1 FROM changes d
+      WHERE d.entity_type = changes.entity_type
+        AND d.entity_uid = changes.entity_uid
+        AND (d.lamport > changes.lamport
+             OR (d.lamport = changes.lamport AND d.id > changes.id))
+   )";
 
 /// `sync_conflicts` 的删除谓词：只删**已解决**且到期的。
 const CONFLICTS_PREDICATE: &str = "resolved_at IS NOT NULL AND resolved_at < ?1";
@@ -214,20 +229,8 @@ fn is_legacy_env_backup(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    let Some(stem) = name
-        .strip_prefix("env_backup_")
-        .and_then(|s| s.strip_suffix(".json"))
-    else {
-        return false;
-    };
-    let parts: Vec<&str> = stem.split('_').collect();
-    parts.len() == 3
-        && parts[0].len() == 8
-        && parts[0].chars().all(|c| c.is_ascii_digit())
-        && parts[1].len() == 6
-        && parts[1].chars().all(|c| c.is_ascii_digit())
-        && parts[2].len() == 3
-        && parts[2].chars().all(|c| c.is_ascii_digit())
+    // 与轮换共用同一套时间戳规则，避免两处判断漂移。
+    name.ends_with(".json") && crate::platform::backup::is_env_backup_name(name)
 }
 
 /// 不做损坏隔离的遗留备份解析。

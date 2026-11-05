@@ -64,6 +64,7 @@ pub fn apply_profile_io(
                 system: HiveOutcome::Skipped,
                 user: HiveOutcome::Skipped,
                 sidecar: SidecarOutcome::Saved,
+                backup: None,
             }
         }
     };
@@ -72,5 +73,8 @@ pub fn apply_profile_io(
         log::warn!("配置应用计数更新失败（保存已成功）: {}", e.message);
     }
 
+    // 调用方只按 `Result` 判成败（CLI 打印「已写入注册表」、GUI 关闭弹窗），
+    // 逐 hive 的 `Failed` 必须在这里抬成 Err，否则注册表没改也报成功。
+    super::fail_on_hive_error(&outcome)?;
     Ok(outcome)
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isCoreError } from '@/core/error';
 import { useTranslation } from 'react-i18next';
 import { backend, type RefEdge } from '@/services/backend';
 import { Modal } from '@/components/ui/Modal';
@@ -19,15 +20,6 @@ interface Props {
   /** 变量名（大写比较键由 Rust 侧处理） */
   name: string;
   onClose: () => void;
-}
-
-function isCoreError(err: unknown): err is { code: string; message: string } {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as { code?: unknown }).code === 'string' &&
-    typeof (err as { message?: unknown }).message === 'string'
-  );
 }
 
 function describeError(e: unknown, fallback: string, t: (key: string) => string): string {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { backend, type ConflictEntry, type ToolGroup } from '@/services/backend';
+import { errorMessage } from '@/core/error';
 
 function getEnabledPaths(): string[] {
   const { sysPaths, userPaths } = useAppStore.getState();
@@ -33,7 +34,7 @@ export function useAnalyzeData(open: boolean) {
         setConflicts(result.conflicts);
         setToolGroups(result.tools);
       })
-      .catch((scanError) => setError(String(scanError)))
+      .catch((scanError) => setError(errorMessage(scanError)))
       .finally(() => setLoading(false));
   }, [open]);
 

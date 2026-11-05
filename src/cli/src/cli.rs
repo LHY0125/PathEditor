@@ -116,11 +116,11 @@ pub(crate) enum Command {
         /// 只清理用户 PATH。与 --system 同给则两者都清
         #[arg(short, long)]
         user: bool,
-        /// 只预览将删除的条目，不写注册表
+        /// 只预览将删除的条目，不写注册表（`--json` 必须与它同用）
         #[arg(long)]
         dry_run: bool,
-        /// 以 JSON 输出
-        #[arg(long)]
+        /// 以 JSON 输出清理计划（需与 --dry-run 同用）
+        #[arg(long, requires = "dry_run")]
         json: bool,
     },
     /// 启用指定位置的路径
@@ -149,14 +149,14 @@ pub(crate) enum Command {
     Import {
         /// 源文件路径
         file: String,
-        /// 导入到哪个 hive：system / user / both
-        #[arg(long, default_value = "both")]
+        /// 导入到哪个 hive；单 hive 导入时该侧为空会中止（避免清空整条 PATH）
+        #[arg(long, default_value = "both", value_parser = ["system", "user", "both"])]
         target: String,
     },
     /// 导出 PATH 为文件
     Export {
         /// 导出格式：json / csv / txt
-        #[arg(long, default_value = "json")]
+        #[arg(long, default_value = "json", value_parser = ["json", "csv", "txt"])]
         format: String,
         /// 输出文件路径；省略则写到 stdout
         #[arg(short, long)]
@@ -281,21 +281,36 @@ load 只预览，apply 才写注册表。配置保存在 DB 中，DB 不可用�
 pub(crate) enum ProfileCmd {
     /// 列出所有配置
     List {
+        /// 以 JSON 输出
         #[arg(long)]
         json: bool,
     },
     /// 保存当前 PATH 为配置
-    Save { name: String },
+    Save {
+        /// 配置名（与已有未删除配置重名会被拒绝）
+        name: String,
+    },
     /// 加载配置（预览）
-    Load { name: String },
+    Load {
+        /// 配置名
+        name: String,
+    },
     /// 应用配置（写入注册表）
-    Apply { name: String },
+    Apply {
+        /// 配置名
+        name: String,
+    },
     /// 删除配置
-    Delete { name: String },
+    Delete {
+        /// 配置名
+        name: String,
+    },
     /// 重命名配置
     Rename {
+        /// 原配置名
         #[arg(long)]
         old: String,
+        /// 新配置名（与已有未删除配置重名会被拒绝）
         #[arg(long)]
         new: String,
     },
@@ -336,7 +351,7 @@ get 是 CLI 侧唯一的明文出口：stdout 只打印裸值 + 换行（管道�
 pub(crate) enum EnvCmd {
     /// 列出环境变量元数据（敏感变量不含明文，非敏感变量给出可能截断的 preview）
     List {
-        /// 只看系统 hive（HKLM）。与 --user 同给则两者都看
+        /// 只看系统 hive（HKLM）。与 --user 互斥
         #[arg(short, long)]
         system: bool,
         /// 只看用户 hive（HKCU）。与 --system 互斥
@@ -435,11 +450,13 @@ pub(crate) enum EnvCmd {
     },
     /// 立即创建一份环境变量备份
     Backup {
+        /// 以 JSON 输出备份文件路径
         #[arg(long)]
         json: bool,
     },
     /// 列出已有的环境变量备份（按时间倒序）
     Backups {
+        /// 以 JSON 输出备份列表
         #[arg(long)]
         json: bool,
     },
@@ -453,7 +470,11 @@ pub(crate) enum EnvCmd {
         /// 跳过 revision 校验直接覆盖（不豁免保护名单与类型判定）
         #[arg(long)]
         force: bool,
+        /// 任一变量写入失败即以非零退出（默认是 best-effort，逐条失败仍 exit 0）
         #[arg(long)]
+        strict: bool,
+        /// 以 JSON 输出差异摘要（需与 --dry-run 同用）
+        #[arg(long, requires = "dry_run")]
         json: bool,
     },
 }

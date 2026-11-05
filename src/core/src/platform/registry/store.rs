@@ -77,7 +77,10 @@ impl WinregHive {
 }
 
 /// 该 hive 对当前用户是否可写。
-fn hive_writable(hive: EnvHive) -> bool {
+///
+/// **唯一实现**：`capabilities` / `env_edit` 都调用这里；三处各写一份时，
+/// 「UI 说可写、写入却拒绝」会在某次改动后静默出现。
+pub(crate) fn hive_writable(hive: EnvHive) -> bool {
     match hive {
         EnvHive::System => crate::platform::system::check_admin(),
         EnvHive::User => crate::platform::registry::can_write_user(),

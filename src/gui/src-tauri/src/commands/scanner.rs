@@ -1,7 +1,7 @@
 use path_editor_core::platform::scanner;
 use path_editor_core::CoreError;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scan_paths(paths: Vec<String>, query: String) -> Result<scanner::ScanResult, CoreError> {
     scanner::scan_paths(paths, query)
 }

@@ -31,7 +31,7 @@ pub fn restore_snapshot_io(
 ) -> Result<ApplyOutcome, CoreError> {
     // 恢复的是 PATH（不含 env 值），因此读取时不需要 reveal。
     let view = history::get_snapshot(db, uid, false)?;
-    save_path_with_db_io(
+    let outcome = save_path_with_db_io(
         io,
         db,
         source,
@@ -44,5 +44,9 @@ pub fn restore_snapshot_io(
             expected: None,
         }),
         pending_path,
-    )
+    )?;
+    // 调用方只按 `Result` 判成败（GUI 的「恢复快照」成功后直接清空详情），
+    // 逐 hive 失败必须在这里抬成 Err，否则「恢复」在注册表没改时也报成功。
+    super::fail_on_hive_error(&outcome)?;
+    Ok(outcome)
 }

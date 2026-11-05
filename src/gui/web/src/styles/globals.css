@@ -8,6 +8,8 @@
 :root {
   /* 背景与表面 */
   --app-bg: #fafafa;
+  /* 窗口底色渐变：浅色主题不使用渐变，用纯色兜底 */
+  --app-window-gradient: var(--app-bg);
   --app-surface: #ffffff;
   /* 预留：浮起表面；Wave 4.1 起由对话框 .modal-surface 使用 */
   --app-surface-raised: #ffffff;
@@ -66,6 +68,7 @@
 
 :root.dark {
   --app-bg: #0d0d12;
+  --app-window-gradient: linear-gradient(160deg, #15151d, #0d0d12);
   --app-surface: rgb(255 255 255 / 4%);
   --app-surface-raised: rgb(30 30 40 / 92%);
   --app-border: rgb(255 255 255 / 9%);
@@ -136,7 +139,7 @@ body {
 }
 
 :root.dark body {
-  background: linear-gradient(160deg, #15151d, #0d0d12);
+  background: var(--app-window-gradient);
 }
 
 /* 滚动条 */

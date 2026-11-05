@@ -120,6 +120,12 @@ struct InboundPayload {
     changes: Vec<InboundChange>,
 }
 
+/// 同步包体积上限。超过即拒绝：`open()` 之前就要把整个文件读进内存，
+/// 不设上限时一个超大文件足以让进程 OOM（`.pebak` 早已有 1 MiB 上限）。
+const MAX_BUNDLE_BYTES: u64 = 64 * 1024 * 1024;
+/// 单个包允许的变更条数上限（与体积上限互补：小而多的条目同样能撑爆内存）。
+const MAX_BUNDLE_CHANGES: usize = 100_000;
+
 /// 导入同步包。成功返回统计，失败**整体回滚**。
 pub fn import_bundle(
     db: &mut Db,
@@ -135,6 +141,26 @@ pub fn import_bundle(
         ));
     }
     // ① 读文件 + 解密验证（失败时不产生任何写入）
+    let size = std::fs::metadata(path)
+        .map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "import",
+                format!("读取同步包元数据失败: {}", e.kind()),
+            )
+        })?
+        .len();
+    if size > MAX_BUNDLE_BYTES {
+        return Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import",
+            format!(
+                "同步包过大（{} MiB，上限 {} MiB）",
+                size / (1024 * 1024),
+                MAX_BUNDLE_BYTES / (1024 * 1024)
+            ),
+        ));
+    }
     let bytes = std::fs::read(path).map_err(|e| {
         CoreError::new(
             ErrorCode::Io,
@@ -158,6 +184,17 @@ pub fn import_bundle(
             ),
         ));
     }
+    if payload.changes.len() > MAX_BUNDLE_CHANGES {
+        return Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import",
+            format!(
+                "同步包条目过多（{}，上限 {}）",
+                payload.changes.len(),
+                MAX_BUNDLE_CHANGES
+            ),
+        ));
+    }
 
     // ③ 实体类型白名单：未知类型说明对端版本更新，静默忽略会丢掉用户的配置
     for c in &payload.changes {
@@ -171,7 +208,17 @@ pub fn import_bundle(
     }
 
     let header_device = header.device_id.clone();
-    let base_lamport = header.base_lamport;
+    // header 在明文里（只受 AEAD 保护），持有口令的对端可以把 `baseLamport`
+    // 顶到 `i64::MAX`；沿用后本地 `+1` 会溢出（SQLite 转 REAL → 类型错误），
+    // 此后本地记账永久失败。钳制到一半，留出足够的单调增长空间。
+    let base_lamport = header.base_lamport.clamp(0, i64::MAX / 2);
+    if base_lamport != header.base_lamport {
+        log::warn!(
+            "同步包的 baseLamport {} 超出合理范围，已钳制为 {}",
+            header.base_lamport,
+            base_lamport
+        );
+    }
 
     // ④ 依赖排序：`sort_by_key` 是稳定排序，同类型内部维持包内原有顺序。
     //
@@ -242,10 +289,12 @@ pub fn import_bundle(
                         tx,
                         local.as_ref().expect("Conflict 必有本地"),
                         &remote_as_row,
+                        c.content.as_ref(),
                     )?;
                     report.conflicts += 1;
                     // 冲突时不写实体，也不写变更行：用户做出选择后由
-                    // `resolve_conflict` 追加一条 lamport 更高的变更。
+                    // `resolve_conflict` 追加一条 lamport 更高的变更，
+                    // 并按这里留下的 `remote_content` 应用远端实体。
                     continue;
                 }
                 MergeDecision::KeepLocal => {
@@ -404,7 +453,7 @@ fn latest_for_entity_tx(
 /// **不重复记账**：`record_remote_change_tx` 由调用方负责，这里只写实体本身。
 ///
 /// 返回 `true` 表示这条内容因同名而**自动改名**（目前只有 `profile` 会产生）。
-fn apply_entity_tx(
+pub(crate) fn apply_entity_tx(
     tx: &rusqlite::Transaction,
     entity_type: &str,
     entity_uid: &str,
@@ -413,14 +462,48 @@ fn apply_entity_tx(
 ) -> Result<bool, CoreError> {
     match entity_type {
         "snapshot" => {
-            let snap = snapshot_from_content(content, entity_uid)?;
-            crate::db::history::insert_snapshot_with_uid_tx(tx, snap, entity_uid, false)?;
+            use rusqlite::OptionalExtension as _;
+            // 幂等：同一 uid 已经存在时不再 INSERT（`snapshots.uid` 是 UNIQUE）。
+            // 触发场景：保留策略把 `changes` 清掉后重放同一个包——变更行不在了，
+            // 但实体还在。旧实现直接撞 UNIQUE 让整包以 `Database` 回滚。
+            let existing: Option<i64> = tx
+                .query_row(
+                    "SELECT id FROM snapshots WHERE uid = ?1",
+                    [entity_uid],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|e| crate::db::db_err("find_snapshot", e))?;
+            let id = match existing {
+                Some(id) => id,
+                None => {
+                    let snap = snapshot_from_content(content, entity_uid)?;
+                    // 远端快照的时间戳是事实：丢掉它会把历史时间线与统计日
+                    // 改写成「导入当天」（profile 侧一直保留远端时间戳）。
+                    let created_at = content.get("createdAt").and_then(|v| v.as_i64());
+                    crate::db::history::insert_snapshot_with_uid_tx(
+                        tx, snap, entity_uid, false, created_at,
+                    )?;
+                    tx.query_row(
+                        "SELECT id FROM snapshots WHERE uid = ?1",
+                        [entity_uid],
+                        |r| r.get(0),
+                    )
+                    .map_err(|e| crate::db::db_err("find_snapshot", e))?
+                }
+            };
+            // 导入的快照同样要进检索索引；否则「同步过来就搜不到」。
+            crate::db::search::index_snapshot_tx(tx, id)?;
             Ok(false)
         }
         // 配置：保留远端 uid，`snapshotUid` 解析成本地快照主键。
         // `device_id` 只用于同名改名的后缀。
         "profile" => {
-            crate::db::profiles::import_profile_content_tx(tx, entity_uid, content, device_id)
+            let renamed =
+                crate::db::profiles::import_profile_content_tx(tx, entity_uid, content, device_id)?;
+            // 配置写入后同步更新索引（新建/改名/改描述都会变）。
+            crate::db::search::index_profile_tx(tx, entity_uid)?;
+            Ok(renamed)
         }
         // 内容随父实体：变更本身已落 `changes`，这里不单独写实体。
         "profile_revision" | "path_entry" | "env_value" => Ok(false),
@@ -444,7 +527,7 @@ fn apply_entity_tx(
 /// 「什么也没发生」，比报错更难排查。
 ///
 /// `WHERE ... AND deleted_at IS NULL` 让重复墓碑成为幂等的 no-op。
-fn apply_tombstone_tx(
+pub(crate) fn apply_tombstone_tx(
     tx: &rusqlite::Transaction,
     entity_type: &str,
     entity_uid: &str,
@@ -469,6 +552,12 @@ fn apply_tombstone_tx(
     };
     tx.execute(sql, rusqlite::params![now, entity_uid])
         .map_err(|e| crate::db::db_err("apply_tombstone", e))?;
+    // 删除同样要反映到检索索引，否则搜出来是死引用。
+    match entity_type {
+        "profile" => crate::db::search::remove_profile_index_tx(tx, entity_uid)?,
+        "snapshot" => crate::db::search::remove_snapshot_index_tx(tx, entity_uid)?,
+        _ => {}
+    }
     Ok(())
 }
 

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEnvStore } from '@/store/env-store';
 import { displayValue, envVarKey, filterEnvVars } from '@/core/env-var';
 import { Button } from '@/components/ui/Button';
+import { RefGraphDialog } from '@/components/env/RefGraphDialog';
 import type { EnvVarMeta } from '@/core/env-var';
 
 interface EnvVarTableProps {
@@ -40,6 +41,8 @@ export function EnvVarTable({
   const hide = useEnvStore((s) => s.hide);
   const scrollToKey = useEnvStore((s) => s.scrollToKey);
   const parentRef = useRef<HTMLDivElement>(null);
+  /** 打开引用图的变量名；`null` 表示对话框关闭。 */
+  const [refsName, setRefsName] = useState<string | null>(null);
 
   // Path 由 Rust 侧过滤；此处防御性再滤一次，避免契约被破坏时泄漏到 UI。
   // 大小写不敏感比较：Windows 注册表变量名不区分大小写。
@@ -61,7 +64,11 @@ export function EnvVarTable({
   useEffect(() => {
     if (scrollToKey === null) return;
     const index = rows.findIndex((meta) => envVarKey(meta) === scrollToKey);
-    if (index >= 0) virtualizer.scrollToIndex(index, { align: 'center' });
+    if (index < 0) {
+      // 首次挂载时快照还没到（rows 为空）：保留请求，等 rows 更新后重试。
+      return;
+    }
+    virtualizer.scrollToIndex(index, { align: 'center' });
     useEnvStore.getState().setScrollToKey(null);
   }, [scrollToKey, rows, virtualizer]);
 
@@ -116,6 +123,34 @@ export function EnvVarTable({
                 data-env-var-key={key}
                 data-index={rowIdx}
                 onClick={() => onSelect?.(meta)}
+                role="row"
+                aria-selected={isSelected}
+                // roving tabindex：选中行可 Tab 进入，其余行由方向键移动
+                tabIndex={isSelected ? 0 : -1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect?.(meta);
+                    return;
+                  }
+                  const next =
+                    e.key === 'ArrowDown'
+                      ? rows[rowIdx + 1]
+                      : e.key === 'ArrowUp'
+                        ? rows[rowIdx - 1]
+                        : null;
+                  if (!next) return;
+                  e.preventDefault();
+                  onSelect?.(next);
+                  // 选中态更新后把焦点移到目标行（虚拟列表里目标通常已渲染）
+                  requestAnimationFrame(() => {
+                    parentRef.current
+                      ?.querySelector<HTMLElement>(
+                        `[data-index="${rowIdx + (e.key === 'ArrowDown' ? 1 : -1)}"]`,
+                      )
+                      ?.focus();
+                  });
+                }}
                 // 交替底色按逻辑索引，选中态由 .is-selected 覆盖
                 data-odd={rowIdx % 2 === 1}
                 className={`path-row${isSelected ? ' is-selected' : ''}`}
@@ -157,6 +192,18 @@ export function EnvVarTable({
                   <Button
                     size="sm"
                     variant="ghost"
+                    aria-label={`${t('button.refs')} ${meta.name}`}
+                    title={t('refs.title', { name: meta.name })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRefsName(meta.name);
+                    }}
+                  >
+                    {t('button.refs')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     disabled={!meta.canEdit || (meta.sensitive && revealedValue === null)}
                     title={editHint(meta, revealedValue === null, t)}
                     aria-label={`${t('button.edit')} ${meta.name}`}
@@ -186,6 +233,7 @@ export function EnvVarTable({
           })}
         </div>
       </div>
+      {refsName !== null && <RefGraphDialog name={refsName} onClose={() => setRefsName(null)} />}
     </div>
   );
 }
