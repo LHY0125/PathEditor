@@ -44,8 +44,11 @@ fn key_is_created_once_and_persists_across_reloads() {
     // 计划把这个断言放在 db_key_lifecycle 里；但它不触碰 SQLCipher，
     // 因此与「一文件一测试」的 SQLCipher 约束无关，可以同文件。
     let key_path = dir.path().join("keys").join("db.key.dpapi");
+    // 失败时把实际 SDDL 打出来：CI runner 的令牌/临时目录 ACL 与开发机不同，
+    // 只有「哪个主体多出来了」才能判断是实现问题还是环境差异。
+    let sddl = path_editor_core::db::dacl::key_dacl_sddl(&key_path).unwrap();
     assert!(
         path_editor_core::db::dacl::key_dacl_is_restricted(&key_path).unwrap(),
-        "密钥文件 DACL 必须仅授权当前用户与 SYSTEM"
+        "密钥文件 DACL 必须仅授权当前用户与 SYSTEM，实际 SDDL: {sddl}"
     );
 }

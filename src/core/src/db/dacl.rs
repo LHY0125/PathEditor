@@ -181,6 +181,35 @@ fn apply_explicit_dacl(
 /// 返回 `Ok(true)` 表示权限受限；`Ok(false)` 表示存在非预期主体。
 /// **只读不写**。
 pub fn key_dacl_is_restricted(path: &Path) -> Result<bool, CoreError> {
+    let dacl = key_dacl_sddl(path)?;
+    let sid = String::from_utf16_lossy(&current_user_sid_string()?).to_uppercase();
+    let allowed = ["SY", sid.as_str()];
+    let mut rest = dacl.as_str();
+    let mut principals = 0usize;
+    while let Some(pos) = rest.find(";;;") {
+        let tail = &rest[pos + 3..];
+        let end = tail.find(')').unwrap_or(tail.len());
+        let principal = &tail[..end];
+        if !allowed.contains(&principal) {
+            return Ok(false);
+        }
+        principals += 1;
+        rest = &tail[end..];
+    }
+    // 空 DACL = 拒绝所有人（含当前用户），是坏文件而不是「受限」。
+    Ok(principals > 0)
+}
+
+/// 读取密钥文件 DACL 的 SDDL 文本（诊断用）。
+///
+/// 与 [`key_dacl_is_restricted`] 共用同一次 `GetNamedSecurityInfoW` 读法；
+/// 只在断言失败时打印，便于在 CI 上直接看到「哪个主体多出来了」。
+#[doc(hidden)]
+pub fn key_dacl_sddl(path: &Path) -> Result<String, CoreError> {
+    key_dacl_sddl_impl(path)
+}
+
+fn key_dacl_sddl_impl(path: &Path) -> Result<String, CoreError> {
     use windows_sys::Win32::Security::Authorization::{
         ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW, SE_FILE_OBJECT,
     };
@@ -247,29 +276,7 @@ pub fn key_dacl_is_restricted(path: &Path) -> Result<bool, CoreError> {
             sddl_ptr as windows_sys::Win32::Foundation::HLOCAL,
         );
     }
-    let dacl = String::from_utf16_lossy(&dacl_sddl).to_uppercase();
-
-    // **白名单**：每一条 ACE 的主体必须是 SYSTEM 或当前用户。
-    //
-    // 旧实现是黑名单（`;;;WD)` / `;;;BU)` …），既漏掉具名 SID，也漏掉
-    // `BA`（Builtin Administrators）——它无法证明「只有这两个主体有访问权」。
-    // ACE 形如 `(A;;FA;;;SY)` / `(A;OICI;FA;;;S-1-5-21-…)`，主体总在 `;;;` 之后。
-    let sid = String::from_utf16_lossy(&current_user_sid_string()?).to_uppercase();
-    let allowed = ["SY", sid.as_str()];
-    let mut rest = dacl.as_str();
-    let mut principals = 0usize;
-    while let Some(pos) = rest.find(";;;") {
-        let tail = &rest[pos + 3..];
-        let end = tail.find(')').unwrap_or(tail.len());
-        let principal = &tail[..end];
-        if !allowed.contains(&principal) {
-            return Ok(false);
-        }
-        principals += 1;
-        rest = &tail[end..];
-    }
-    // 空 DACL = 拒绝所有人（含当前用户），是坏文件而不是「受限」。
-    Ok(principals > 0)
+    Ok(String::from_utf16_lossy(&dacl_sddl))
 }
 
 /// 把 `GetLastError` 包装为结构化错误。
