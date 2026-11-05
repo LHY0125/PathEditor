@@ -54,7 +54,7 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 ### 本地构建环境（Windows + GNU）
 
 首次 `cargo check` / `cargo test` 前，先在**当前会话**设好这三行，否则 `openssl-sys` 会在 OpenSSL
-`Configure` 阶段中止。本机 2026-11-06 已按此跑通（`cargo test --workspace` 332 passed，clippy 与 fmt 全绿）。
+`Configure` 阶段中止。本机 2026-11-06 已按此跑通（`cargo test --workspace` 335 passed，clippy 与 fmt 全绿）。
 
 ```powershell
 $env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe" # 原生 Windows perl 产不出 POSIX 路径，会被拒
@@ -155,7 +155,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v6.2.0，2026-11-06 本机实测）：Rust **332 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 基线（v6.2.0，2026-11-06 本机实测）：Rust **335 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 

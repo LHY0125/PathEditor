@@ -175,9 +175,16 @@ fn join_path(paths: &[String]) -> String {
         .join(";")
 }
 
-/// 验证路径列表并拼接为分号分隔字符串
-/// - 检查 null 字节
-/// - 检查 UTF-16 总长度不超过 32767
+/// 校验并拼接 PATH 条目（分号分隔）。
+///
+/// 检查项：null 字节、分号（会拆成两条）、UTF-16 总长度不超过 32767。
+/// **空列表是合法的**：清空 PATH 是用户可显式请求的操作（GUI 全删后保存、
+/// `patheditor path clean` 清空全部条目、应用空配置），拒绝它会直接封掉功能。
+///
+/// 审查报告 P0-1 要求「core 层拒绝显式写入空 PATH」，这里刻意不采纳：真正危险的是
+/// **静默**清空，而唯一的静默入口是 `import --target` 拿空列表覆盖另一侧 ——
+/// 那个守卫放在 CLI 的导入入口（`commands/import_export.rs`），粒度正确。
+/// 若在此处加空列表拒绝，`clean` 与 GUI 清空会一起坏掉。
 fn validate_and_join_paths(paths: &[String], label: &str) -> Result<String, CoreError> {
     if let Some(bad) = paths.iter().find(|p| p.contains('\0')) {
         return Err(CoreError::new(

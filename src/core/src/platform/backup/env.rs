@@ -443,8 +443,14 @@ pub fn list_env_backups() -> Result<Vec<EnvBackupInfo>, CoreError> {
 
 /// 校验用户给定的备份文件路径。
 ///
-/// 规则：扩展名必须为 `.json`；必须位于默认备份目录之内，**或**文件名以
-/// `env_backup_` 开头；文件必须存在且不超过 1 MiB。
+/// 规则：扩展名必须为 `.json` 或 `.pebak`；必须在默认备份目录之内，**或**文件名
+/// 以 `env_backup_` 开头；文件必须存在且不超过 1 MiB。
+///
+/// **为什么目录外也放行**：换机器/换目录恢复（把备份拷到 U 盘再拿回来）是主要
+/// 使用场景，强行限定「必须在备份目录内」会让这个场景直接失效。审查报告 P2-62
+/// 建议的「必须在备份目录内」因此只采纳了一半：目录外文件必须使用本工具生成的
+/// 命名（`<prefix>env_backup_YYYYMMDD_HHMMSS_mmm.<ext>`，见
+/// [`is_env_backup_name`]），随手重命名的 `env_backup_evil.json` 仍被拒绝。
 ///
 /// # Returns
 /// - `Ok(PathBuf)` — 校验通过的路径，**原样返回**（不做 canonicalize / 绝对化）：

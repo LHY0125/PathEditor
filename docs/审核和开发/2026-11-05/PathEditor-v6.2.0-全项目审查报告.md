@@ -49,10 +49,10 @@
 > 本地 GNU 构建需要三条环境变量（`OPENSSL_SRC_PERL` / `PERL5LIB` / `PATH` 追加 Git 的 `usr/bin`），
 > 而 `perl5lib` 目录被 `.gitignore` 排除（P2-28）——新克隆按文档设置会失败。
 
-**现况（2026-11-06 整改后实测）**：Rust **332 passed / 0 failed / 2 ignored**（较审查时 +5：新增
-逐 hive 失败传播、FTS 自愈 2 条集成用例，另 3 条为前一轮的冲突远端应用 / 配置 FTS / 广播非阻塞）；
-前端 **40 files / 425 passed**；覆盖率行 87.61%；`cargo audit` 0 告警；README 徽章 757
-（332 + 425）。审查当天的数字仅作对照。
+**现况（2026-11-06 整改后实测）**：Rust **335 passed / 0 failed / 2 ignored**（较审查时 +8：新增逐 hive 失败传播、FTS 自愈、
+拖放权限、PATH 备份告警、扫描合并等用例）；
+前端 **40 files / 425 passed**；覆盖率行 87.61%；`cargo audit` 0 告警；README 徽章 760
+（335 + 425）。审查当天的数字仅作对照。
 
 ---
 
@@ -557,7 +557,7 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 | 新增 `broadcast_env_change_does_not_block_caller` | —      | 通过（阈值 500ms；改回同步即失败） |
 
 质量门：`cargo fmt --check` 通过、`cargo clippy --workspace --all-targets -D warnings` 通过。
-**注意**：本文写成时 41 个 IPC 命令全部同步占用 UI 线程（当轮 P1 结论）；整改中已把 32 个重型命令
+**注意**：本文写成时 41 个 IPC 命令全部同步占用 UI 线程（当轮 P1 结论）；整改中已把 31 个重型命令
 改为 `#[tauri::command(async)]`（见 §11；实测 31 个，全量 41 个），`validate_path` / `expand_env_vars` 等纯计算命令保持同步。
 
 ---
@@ -654,7 +654,7 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 | P2-5  | 已修复   | `import --target` 加 `value_parser`                                                                                                          |
 | P2-6  | 已修复   | `cleanup-legacy-backups` 缺 `--yes` 打印计划后 exit 1                                                                                        |
 | P2-7  | 已修复   | 文案去掉 `changes`                                                                                                                           |
-| P2-8  | 已修复   | 扫描读侧全失败即报错，单侧失败告警                                                                                                           |
+| P2-8  | 已修复   | `merge_scan_paths` 按**错误数**判定两侧都失败（`paths.is_empty()` 会把单侧失败误报成双侧）；新增 2 条用例                                    |
 | P2-9  | 已修复   | `SidecarOutcome::Skipped`，降级不再 exit 1                                                                                                   |
 | P2-10 | 已修复   | 跨 hive 提示按方向给指令                                                                                                                     |
 | P2-11 | 本轮补修 | `entity_content` 序列化失败改 `Internal`；退出码文档改为「包结构 1 / 口令或篡改 5」                                                          |
@@ -666,7 +666,7 @@ const undoRedo = useAppStore((s) => s.undoRedo); // 可变对象，引用不变
 | P2-17 | 已修复   | 扫描按 `(name, dir)` 去重，线程 panic 上抛                                                                                                   |
 | P2-18 | 本轮补修 | `capabilities::detect` 改用 `store::hive_writable`，写权限只剩一处判定                                                                       |
 | P2-19 | 已修复   | 非法 UTF-8 走隔离                                                                                                                            |
-| P2-20 | 已修复   | `ApplyOutcome.backup` 字段贯通到 GUI                                                                                                         |
+| P2-20 | 已修复   | `ApplyOutcome.backup` 贯通到 GUI；CLI 补 `warn_if_path_backup_failed`（含探针用例）                                                          |
 | P2-21 | 已修复   | `persist::read_versioned_file` 同 P2-19                                                                                                      |
 | P2-22 | 已修复   | 迁移在 `BEGIN IMMEDIATE` 后重读 `user_version`                                                                                               |
 | P2-23 | 本轮补修 | `scan_history::load_conflicts` 改用 `query_row_optional`，瞬时错误不再降级成 NotFound                                                        |

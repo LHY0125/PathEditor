@@ -19,6 +19,16 @@ pub(crate) fn exit_core_error(err: &core::CoreError) -> ! {
 /// 备份失败时在 stderr 提示，**不改变退出码**。
 ///
 /// CLI 未初始化 logger，core 的 `log::warn!` 在此被丢弃 —— 必须经返回值显式打印。
+/// PATH 写前备份失败时在 stderr 提示，**不改变退出码**（写入已完成）。
+///
+/// 与 [`warn_if_backup_failed`] 并列而不是复用它：PATH 通路的 `ApplyOutcome.backup`
+/// 是 `Option<String>`（失败原因），env 通路是完整的 `BackupOutcome` 枚举。
+pub(crate) fn warn_if_path_backup_failed(backup: &Option<String>) {
+    if let Some(reason) = backup {
+        eprintln!("警告: PATH 写前备份失败（写入已完成）: {reason}");
+    }
+}
+
 pub(crate) fn warn_if_backup_failed(outcome: &core::platform::backup::BackupOutcome) {
     if let core::platform::backup::BackupOutcome::Failed(reason) = outcome {
         eprintln!("警告: 环境变量写前备份失败（写入已完成）: {reason}");
@@ -105,6 +115,10 @@ pub(crate) fn save_path_write(
         ),
     }
     .unwrap_or_else(|e| exit_core_error(&e));
+
+    // PATH 是全量覆盖写，备份是唯一回滚材料；失败必须可见，但不能因此改退出码
+    // （写入本身已成功，与 env 写通路的 `warn_if_backup_failed` 同一口径）。
+    warn_if_path_backup_failed(&outcome.backup);
 
     // 逐 hive 报告失败（best-effort 多 hive：一个失败不掩盖另一个的成功）。
     for (label, hive_outcome) in [("系统", &outcome.system), ("用户", &outcome.user)] {
@@ -359,5 +373,64 @@ mod tests {
                 "{mode} stdout 亦不得有警告: {stdout}"
             );
         }
+    }
+    /// PATH 写前备份失败同样必须可见（`ApplyOutcome.backup` 是 `Option<String>`）。
+    ///
+    /// 与 env 通路的探针同构：子进程调用一次被测函数，父进程断言真实 stderr。
+    /// 可证伪性：删掉 `warn_if_path_backup_failed` 的 `if let` → 情形 1 失败；
+    /// 无条件打印 → 情形 2 失败；`eprintln!` 改 `println!` → 情形 1 与 3 同时失败。
+    #[test]
+    fn warn_if_path_backup_failed_writes_warning_to_stderr() {
+        const PATH_PROBE_ENV: &str = "PATHEDITOR_PATH_BACKUP_PROBE";
+        const PATH_PROBE_TEST: &str =
+            "runtime::tests::warn_if_path_backup_failed_writes_warning_to_stderr";
+
+        if let Ok(mode) = std::env::var(PATH_PROBE_ENV) {
+            let backup = match mode.as_str() {
+                "failed" => Some("磁盘已满".to_string()),
+                "ok" => None,
+                other => panic!("未知探针模式: {other}"),
+            };
+            warn_if_path_backup_failed(&backup);
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("取当前测试可执行文件路径失败");
+        let run = |mode: &str| {
+            let out = std::process::Command::new(&exe)
+                .args(["--exact", PATH_PROBE_TEST, "--nocapture"])
+                .env(PATH_PROBE_ENV, mode)
+                .output()
+                .expect("启动探针子进程失败");
+            assert!(
+                out.status.success(),
+                "探针子进程必须成功退出（模式 {mode}）"
+            );
+            (
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )
+        };
+
+        let (stdout, stderr) = run("failed");
+        assert!(
+            stderr.contains("警告: PATH 写前备份失败"),
+            "备份失败必须在 stderr 告警: {stderr}"
+        );
+        assert!(
+            stderr.contains("写入已完成"),
+            "必须点明写入已完成: {stderr}"
+        );
+        assert!(stderr.contains("磁盘已满"), "必须透传原因: {stderr}");
+        assert!(
+            !stdout.contains("警告"),
+            "警告必须走 stderr 而非 stdout: {stdout}"
+        );
+
+        let (stdout, stderr) = run("ok");
+        assert!(
+            !stderr.contains("警告") && !stdout.contains("警告"),
+            "无备份失败时不得输出警告: {stderr}"
+        );
     }
 }
