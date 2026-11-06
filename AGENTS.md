@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **6.2.1**）。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **6.2.2**）。
 
 v6 起数据层是一个 **SQLCipher 加密数据库（sidecar）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
 
@@ -155,7 +155,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v6.2.1，2026-11-06 本机实测）：Rust **336 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 基线（v6.2.2，2026-11-06 本机实测）：Rust **336 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 

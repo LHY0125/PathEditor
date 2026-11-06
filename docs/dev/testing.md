@@ -31,7 +31,7 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}`（`services/` 与 `components/` 不在门槛内）。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v6.2.1）**：Rust **336 passed / 0 failed / 2 ignored**；前端 **40 files / 425 passed**；E2E **54 passed**。
+- **当前基线（v6.2.2）**：Rust **336 passed / 0 failed / 2 ignored**；前端 **40 files / 425 passed**；E2E **54 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
   - Rust 为 2026-11-06 本机实测（GNU 工具链）：`cargo test --workspace` → 336 passed / 2 ignored
     （较 v6.1.1 增 6 条：3 条 CLI help + 冲突远端应用 / 配置 FTS / 广播非阻塞）；前端为同日实测：

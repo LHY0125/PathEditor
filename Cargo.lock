@@ -2596,7 +2596,7 @@ dependencies = [
 
 [[package]]
 name = "path-editor-core"
-version = "6.2.1"
+version = "6.2.2"
 dependencies = [
  "argon2",
  "blake3",
@@ -2616,7 +2616,7 @@ dependencies = [
 
 [[package]]
 name = "patheditor"
-version = "6.2.1"
+version = "6.2.2"
 dependencies = [
  "log",
  "path-editor-core",
@@ -2629,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "patheditor-cli"
-version = "6.2.1"
+version = "6.2.2"
 dependencies = [
  "chrono",
  "clap",
