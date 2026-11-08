@@ -236,8 +236,13 @@ export function parsePathCapabilities(value: unknown): PathCapabilities {
 const ENV_VALUE_KINDS: readonly EnvValueKind[] = ['string', 'expandString', 'unsupported'];
 const ENV_HIVES: readonly EnvHive[] = ['system', 'user'];
 
-/** 合法 ErrorCode 字符串白名单（与 Rust `ErrorCode` serde camelCase 一致）。 */
-const ERROR_CODES: readonly ErrorCode[] = [
+/**
+ * 稳定错误码清单，必须与 Rust `ErrorCode` 逐项一致。
+ *
+ * 契约由 `ipc-contract.test.ts` 对共享 fixture
+ * （`tests/fixtures/error-codes.json`）断言；新增变体时两端都要改。
+ */
+export const ERROR_CODES: readonly ErrorCode[] = [
   'conflict',
   'reservedName',
   'protected',

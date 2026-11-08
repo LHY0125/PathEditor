@@ -1,0 +1,21 @@
+//! 建库、schema 迁移与启动引导。
+
+mod common;
+
+#[path = "suites/schema/bootstrap_initialize.rs"]
+mod bootstrap_initialize;
+
+#[path = "suites/schema/db_schema_current.rs"]
+mod db_schema_current;
+
+#[path = "suites/schema/db_schema_open.rs"]
+mod db_schema_open;
+
+#[path = "suites/schema/db_schema_v1_to_v2.rs"]
+mod db_schema_v1_to_v2;
+
+#[path = "suites/schema/db_schema_v2.rs"]
+mod db_schema_v2;
+
+#[path = "suites/schema/db_schema_v2_to_current.rs"]
+mod db_schema_v2_to_current;

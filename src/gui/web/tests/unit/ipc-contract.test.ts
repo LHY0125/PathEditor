@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, it, expect } from 'vitest';
+import errorCodesFixture from '../../tests/fixtures/error-codes.json';
+import { ERROR_CODES } from '../../src/services/backend/parse-core';
 
 /**
  * IPC 契约差集：`invoke_handler!` 注册的命令与 `backend/` 实际调用的命令必须一一对应。
@@ -143,6 +145,11 @@ describe('IPC 契约', () => {
       { 只注册未调用: deadCommands, 只调用未注册: missingCommands },
       'IPC 差集必须为空；新增命令时同步 lib.rs 与 backend/',
     ).toEqual({ 只注册未调用: [], 只调用未注册: [] });
+  });
+
+  it('ErrorCode 清单与 Rust 共享 fixture 一致', () => {
+    // 两侧对同一份 JSON 断言：任一端增删变体而漏改另一端都会红。
+    expect([...ERROR_CODES]).toEqual(errorCodesFixture);
   });
 
   it('backend 的每个方法都有业务调用者', () => {

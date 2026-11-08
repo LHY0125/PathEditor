@@ -1,0 +1,19 @@
+[
+  "conflict",
+  "reservedName",
+  "protected",
+  "unsupportedType",
+  "permissionDenied",
+  "notFound",
+  "nameExists",
+  "invalidName",
+  "invalidValue",
+  "io",
+  "parse",
+  "database",
+  "crypto",
+  "sync",
+  "syncFormat",
+  "migration",
+  "internal"
+]

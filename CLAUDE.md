@@ -47,7 +47,7 @@ npm run verify:all                  # verify + Playwright E2E
 npx vitest run src/gui/web/tests/unit/<file>.test.ts   # 单个前端测试文件
 npx vitest run -t "<test name>"                   # 按测试名过滤
 cargo test -p <crate> <test_name>                 # 单个 Rust 测试
-cargo test -p path-editor-core --test <file>      # core 集成测试（包名是连字符，不是下划线）
+cargo test -p path-editor-core --test <group>     # core 集成测试分组：history/search/schema/backup/sync/contracts
 cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins）
 ```
 
@@ -55,7 +55,7 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 
 `rusqlite` 只用 `bundled`（SQLite C 源码由 `cc` 编译，FTS5/JSON1 默认开启），**不再需要 OpenSSL、
 perl、PERL5LIB 或 NASM**。直接 `cargo check` / `cargo test` 即可；本机 2026-11-08 实测
-`cargo test --workspace` 336 passed / 2 ignored，clippy 与 fmt 全绿。
+`cargo test --workspace` 337 passed / 2 ignored，clippy 与 fmt 全绿。
 
 - `probes/v6-sqlcipher/` 仅作历史探针证据保留，不参与构建。
 
@@ -147,7 +147,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v7.0.0，2026-11-08 本机实测）：Rust **336 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 基线（v7.0.0，2026-11-08 本机实测）：Rust **337 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 426**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - 「一文件一测试」已随 SQLCipher 退场取消（存量文件不合并）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 

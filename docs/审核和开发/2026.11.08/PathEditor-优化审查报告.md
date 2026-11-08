@@ -96,7 +96,22 @@ db.migrate_to_current().unwrap();
 | 第 3 批 | P1-2 `import_bundle` 拆分、P2-2 参数结构体          | 需要 `db_sync_*` 回归  |
 | 第 4 批 | P1-3 `app-store` 拆分                               | 前端，需 E2E/单测护栏  |
 
-## 七、未覆盖与局限
+## 七、整改状态（2026-11-08 第一批）
+
+| 项                                 | 状态                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1-1 覆盖率纳入 `services/backend` | **完成**：`vitest.config.ts` 的 `include` 已加入；实测行覆盖 81.33%，门槛 80 通过                                                                                                                                                                                                                                           |
+| P1-2 `import_bundle` 拆分          | **部分**：拆出 `read_bundle_file` / `open_bundle`（234 → 约 165 行）；事务内逐条应用待下一批                                                                                                                                                                                                                                |
+| P1-5 ErrorCode 契约 fixture        | **完成**：`tests/fixtures/error-codes.json`，Rust `error_codes_match_shared_fixture` 与 TS `ipc-contract.test.ts` 双端断言                                                                                                                                                                                                  |
+| P2-1 死代码                        | **完成**：删 `flatten_vars`、`_assert_header_type`；`KIND_PATH` 实为在用（原 `allow(dead_code)` 已过期），去掉 allow 保留常量                                                                                                                                                                                               |
+| P2-3 依赖去重                      | **部分**：`dirs 5 → 6` 已消重；`getrandom` 本仓升 0.3，0.2 仍由 `chacha20poly1305`/`argon2` 传递引入，需大版本升级才能消                                                                                                                                                                                                    |
+| P2-6 文档数字单源                  | **完成**：`scripts/check-consistency.mjs` + `npm run check:consistency`，已接入 `verify` 与 CI                                                                                                                                                                                                                              |
+| P1-3 `app-store` 拆分              | **完成**：改为 zustand 切片——`store/slices/path-slice.ts`（数据/撤销/存取）、`store/slices/ui-slice.ts`（tab/搜索/选择/权限/状态栏）、`store/app-store.types.ts`；`app-store.ts` 仅负责组合与 `initialize`。对外仍只有一个 `useAppStore`，65 处调用点零改动                                                                 |
+| P1-4 测试合并 / `tests/common`     | **完成**：56 个独立测试二进制合并为 6 个聚合 root（`history` / `search` / `schema` / `backup` / `sync` / `contracts`），用例文件移至 `tests/suites/<group>/`；新增 `tests/common/mod.rs::new_db`。断言零改动，测试总数仍为 337 passed / 2 ignored；`cargo test --workspace` 的 target 数 62 → 12，本机全量耗时约 135s → 50s |
+| P2-2 参数结构体（4 处）            | **完成**：`env set` / `env add` → `SetArgs` / `AddArgs`；`build_change_preview` → `ChangePreviewInput`；`record_remote_change_tx` → `RemoteChange`；顺带把 `bundle::split` 的五元组返回改为 `SplitBundle`，4 个 `too_many_arguments` 与 1 个 `type_complexity` 全部移除                                                     |
+| P2-5 `fs.rs` 拆包                  | **完成**：`platform/fs/{mod,io,formats}.rs`——`io.rs` 负责文本读取/原子写入/目录黑名单/写文件，`formats.rs` 负责 JSON/CSV/TXT 解析与序列化，`mod.rs` 保留 `import_paths` / `export_path_entries` 与测试；对外路径仍为 `platform::fs::*`                                                                                      |
+
+## 八、未覆盖与局限
 
 - 本轮未做运行时剖析（内存/启动耗时/DB 查询计划），性能项只基于静态观察。
 - 未检查 `pub` API 的外部消费面（无 `cargo public-api`），死代码判断以 `allow(dead_code)` 与实际引用为准。

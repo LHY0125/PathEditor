@@ -14,7 +14,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'cobertura'],
-      include: ['src/gui/web/src/core/**', 'src/gui/web/src/store/**', 'src/gui/web/src/hooks/**'],
+      include: [
+        'src/gui/web/src/core/**',
+        'src/gui/web/src/store/**',
+        'src/gui/web/src/hooks/**',
+        'src/gui/web/src/services/backend/**',
+      ],
       exclude: ['src/gui/web/src/main.tsx', 'src/gui/web/src/vite-env.d.ts'],
       thresholds: {
         lines: 80,

@@ -119,6 +119,50 @@ impl std::fmt::Display for CoreError {
 mod tests {
     use super::*;
 
+    /// 枚举的完整清单。**新增变体必须同步这里与共享 fixture**，
+    /// 两端的契约测试会分别对齐同一份 JSON。
+    const ALL: [ErrorCode; 17] = [
+        ErrorCode::Conflict,
+        ErrorCode::ReservedName,
+        ErrorCode::Protected,
+        ErrorCode::UnsupportedType,
+        ErrorCode::PermissionDenied,
+        ErrorCode::NotFound,
+        ErrorCode::NameExists,
+        ErrorCode::InvalidName,
+        ErrorCode::InvalidValue,
+        ErrorCode::Io,
+        ErrorCode::Parse,
+        ErrorCode::Database,
+        ErrorCode::Crypto,
+        ErrorCode::Sync,
+        ErrorCode::SyncFormat,
+        ErrorCode::Migration,
+        ErrorCode::Internal,
+    ];
+
+    /// 跨语言契约：TS 端的 `ERROR_CODES` 与本枚举必须逐项一致（含顺序）。
+    ///
+    /// fixture 由 TS 测试与 Rust 测试共同断言——只改一端会让另一端失败。
+    #[test]
+    fn error_codes_match_shared_fixture() {
+        let fixture: Vec<String> = serde_json::from_str(include_str!(
+            "../../../../src/gui/web/tests/fixtures/error-codes.json"
+        ))
+        .expect("fixture 必须是字符串数组");
+        let actual: Vec<String> = ALL
+            .iter()
+            .map(|code| {
+                serde_json::to_value(code)
+                    .expect("ErrorCode 必须可序列化")
+                    .as_str()
+                    .expect("ErrorCode 序列化后必须是字符串")
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(actual, fixture, "Rust ErrorCode 与共享 fixture 不一致");
+    }
+
     #[test]
     fn conflict_maps_to_exit_code_3() {
         let e = CoreError::new(ErrorCode::Conflict, "update_env_var", "冲突");

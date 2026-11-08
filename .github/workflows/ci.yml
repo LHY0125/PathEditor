@@ -49,6 +49,9 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      - name: 一致性检查
+        run: node scripts/check-consistency.mjs
+
       - name: cargo fmt
         run: cargo fmt --all -- --check
 

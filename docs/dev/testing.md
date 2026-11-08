@@ -10,8 +10,10 @@
   - 按名字过滤：`npx vitest run -t "<name>"`
 - **E2E**：Playwright，测试放在 `src/gui/web/e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程（mock IPC），不等同于真实 Tauri 集成验证。
 - **Rust**：测试放在模块内或 workspace test target，运行 `cargo test --workspace`。
+  - core 集成测试按领域分组：`src/core/tests/{history,search,schema,backup,sync,contracts}.rs` 是 6 个聚合 root，用例文件在 `tests/suites/<group>/`，由 root 用 `#[path]` 挂载。**新增用例放进对应组**，不要新增顶层 target。
   - 单个测试：`cargo test -p <crate> <test_name>`
-  - core 集成测试：`cargo test -p path-editor-core --test <file>`（包名是连字符，不是下划线）
+  - 单组集成测试：`cargo test -p path-editor-core --test history`（包名是连字符，不是下划线）
+  - 共用建库夹具：`tests/common/mod.rs` 的 `new_db(name) -> (TempDir, Db)`
   - CLI 单测：`cargo test -p patheditor-cli --bins <test_name>`（bin-only crate，`--lib` 会报 `no library targets found`）
 
 ## 一文件一测试（已取消）
@@ -30,13 +32,13 @@ npm run verify        # Prettier → ESLint → build → coverage → cargo fmt
 npm run verify:all    # verify + Playwright E2E
 ```
 
-- 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}`（`services/` 与 `components/` 不在门槛内）。
+- 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}` 与 `services/backend/`（`components/` 不在门槛内）。`services/backend/` 是 IPC 形状校验的安全边界，纳入门槛以免新增命令漏测。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v7.0.0）**：Rust **336 passed / 0 failed / 2 ignored**；前端 **40 files / 425 passed**；E2E **54 passed**。
+- **当前基线（v7.0.0）**：Rust **337 passed / 0 failed / 2 ignored**；前端 **40 files / 426 passed**；E2E **54 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
   - Rust 为 2026-11-08 本机实测（GNU 工具链，去掉 SQLCipher 后同一套用例）：
-    `cargo test --workspace` → 336 passed / 2 ignored；前端为 2026-11-06 实测且本轮未改前端代码：
-    `npx vitest run` → 40 files / 425 passed；E2E 沿用 2026-10-24 实测（本轮未跑）→ 54 passed。
+    `cargo test --workspace` → 337 passed / 2 ignored；前端为同日实测：
+    `npx vitest run` → 40 files / 426 passed；E2E 沿用 2026-10-24 实测（本轮未跑）→ 54 passed。
 
 ## CI
 
@@ -44,13 +46,14 @@ npm run verify:all    # verify + Playwright E2E
 
 在 `push main` / `pull_request` / `workflow_dispatch` 时触发，`windows-latest` + **MSVC**：
 
-1. `cargo fmt --all -- --check`
-2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `cargo test --workspace --exclude patheditor`（core / cli）
-4. `PATHEDITOR_MSVC_TEST_MANIFEST=1 cargo test -p patheditor --lib`（GUI lib）
-5. `npx tsc -b`
-6. `npm run lint` / `npm run format:check`
-7. `npm run test:coverage`（覆盖率门槛只有带 `--coverage` 才生效）
+1. `node scripts/check-consistency.mjs`（版本号 / schema 版本 / 测试基线 / 指令文件一致性）
+2. `cargo fmt --all -- --check`
+3. `cargo clippy --workspace --all-targets -- -D warnings`
+4. `cargo test --workspace --exclude patheditor`（core / cli）
+5. `PATHEDITOR_MSVC_TEST_MANIFEST=1 cargo test -p patheditor --lib`（GUI lib）
+6. `npx tsc -b`
+7. `npm run lint` / `npm run format:check`
+8. `npm run test:coverage`（覆盖率门槛只有带 `--coverage` 才生效）
 
 另有独立的 `audit` job（`ubuntu-latest`）：`rustsec/audit-check` 跑 `cargo audit`，
 放行项与理由集中在 `.cargo/audit.toml`——只允许「经核实不可达」的告警（未启用特性的可选依赖、
