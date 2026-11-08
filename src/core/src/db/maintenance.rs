@@ -12,13 +12,50 @@ use std::path::{Path, PathBuf};
 
 use super::{db_err, Db};
 use crate::db::crypto::KeyMaterial;
-use crate::domain::error::CoreError;
+use crate::domain::error::{CoreError, ErrorCode};
+use crate::platform::backup::config::{config_file_path, read_backup_keep};
 use crate::platform::backup::EnvBackupPayload;
 
 /// 已导出 `changes` 的保留期：90 天。
 pub const CHANGES_RETENTION_MS: i64 = 90 * 24 * 60 * 60 * 1000;
 /// 已解决 `sync_conflicts` 的保留期：30 天。
 pub const CONFLICTS_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// 快照默认保留天数（`config.ini: snapshot_keep_days`）。
+///
+/// 取 365 天而不是更短：快照是「恢复」的唯一来源，删掉即不可再生；
+/// 需要更短保留期的用户显式配置即可。
+pub const SNAPSHOT_KEEP_DAYS_DEFAULT: usize = 365;
+/// 快照默认保留条数上限（`config.ini: snapshot_keep_max`）。
+pub const SNAPSHOT_KEEP_MAX_DEFAULT: usize = 500;
+/// 事件默认保留天数（`config.ini: event_keep_days`）。
+pub const EVENT_KEEP_DAYS_DEFAULT: usize = 730;
+
+/// 读取快照保留天数（非法值回落默认，与备份保留份数同口径）。
+pub fn snapshot_keep_days() -> usize {
+    read_backup_keep(
+        &config_file_path(),
+        "snapshot_keep_days",
+        SNAPSHOT_KEEP_DAYS_DEFAULT,
+    )
+}
+
+/// 读取快照保留条数上限。
+pub fn snapshot_keep_max() -> usize {
+    read_backup_keep(
+        &config_file_path(),
+        "snapshot_keep_max",
+        SNAPSHOT_KEEP_MAX_DEFAULT,
+    )
+}
+
+/// 读取事件保留天数。
+pub fn event_keep_days() -> usize {
+    read_backup_keep(
+        &config_file_path(),
+        "event_keep_days",
+        EVENT_KEEP_DAYS_DEFAULT,
+    )
+}
 
 /// 清理结果。
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -28,6 +65,226 @@ pub struct PruneReport {
     pub changes_deleted: u32,
     /// 删除的 sync_conflicts 行数
     pub conflicts_deleted: u32,
+    /// 删除的 events 行数（到期事件）
+    pub events_deleted: u32,
+    /// 删除的 snapshots 行数（到期或超出条数上限的未保护快照）
+    pub snapshots_deleted: u32,
+}
+
+/// 快照删除的**保护谓词**：命中任一条件的快照永不删。
+///
+/// - `pinned = 1`：用户显式固定；
+/// - 当前快照：`app_state.current_snapshot_id` 指向它，删了基线就断了；
+/// - 被 `profile_revisions` 引用：删快照会让版本记录悬空（外键会直接拦下）；
+/// - 被 `backups` 引用：备份索引仍指向它，删了就无法从备份恢复。
+///
+/// 已在回收站的快照不重复统计。
+const SNAPSHOT_PROTECTED: &str = "s.deleted_at IS NULL
+   AND s.pinned = 0
+   AND s.id <> COALESCE((SELECT current_snapshot_id FROM app_state WHERE id = 1), -1)
+   AND NOT EXISTS (SELECT 1 FROM profile_revisions pr WHERE pr.snapshot_id = s.id)
+   AND NOT EXISTS (SELECT 1 FROM backups b WHERE b.snapshot_id = s.id)";
+
+/// 按保留期选出候选快照 id（按创建时间升序）。
+const SNAPSHOT_EXPIRED_SQL: &str = "SELECT s.id FROM snapshots s
+  WHERE {protected}
+    AND s.created_at < ?1
+  ORDER BY s.created_at ASC, s.id ASC";
+
+/// 按条数上限选出候选快照 id：保留最新 `keep_max` 条，其余先删。
+const SNAPSHOT_OVERFLOW_SQL: &str = "SELECT s.id FROM snapshots s
+  WHERE {protected}
+  ORDER BY s.created_at DESC, s.id DESC
+  LIMIT -1 OFFSET ?1";
+
+fn expired_sql() -> String {
+    SNAPSHOT_EXPIRED_SQL.replace("{protected}", SNAPSHOT_PROTECTED)
+}
+
+fn overflow_sql() -> String {
+    SNAPSHOT_OVERFLOW_SQL.replace("{protected}", SNAPSHOT_PROTECTED)
+}
+
+/// 删除给定快照 id，并先把 `events.snapshot_id` 置空。
+///
+/// **为什么置空而不是连事件一起删**：事件是审计记录，保留期由
+/// `event_keep_days` 单独决定；快照被清理后事件仍然有审计价值，只是不再能跳转预览。
+fn delete_snapshots_tx(tx: &rusqlite::Transaction<'_>, ids: &[i64]) -> Result<u32, CoreError> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let mut deleted = 0u32;
+    for id in ids {
+        tx.execute(
+            "UPDATE events SET snapshot_id = NULL WHERE snapshot_id = ?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| db_err("prune_events_unlink", e))?;
+        deleted += tx
+            .execute("DELETE FROM snapshots WHERE id = ?1", rusqlite::params![id])
+            .map_err(|e| db_err("prune_snapshots", e))? as u32;
+    }
+    Ok(deleted)
+}
+
+/// 执行清理，返回删除行数。
+///
+/// **绝不删除 `exported_at IS NULL`**：那是待导出队列，删了就永久丢变更。
+///
+/// 快照清理有两条独立规则（都受 [`SNAPSHOT_PROTECTED`] 保护）：
+/// 超过 `snapshot_keep_days` 天的，以及总数超过 `snapshot_keep_max` 条后最旧的。
+/// 事件按 `event_keep_days` 单独删除；被删快照的事件只在 `snapshot_id` 上解链。
+pub fn prune(db: &mut Db, now_ms: i64) -> Result<PruneReport, CoreError> {
+    let snapshot_cutoff = now_ms - (snapshot_keep_days() as i64) * 24 * 60 * 60 * 1000;
+    let event_cutoff = now_ms - (event_keep_days() as i64) * 24 * 60 * 60 * 1000;
+
+    db.with_transaction(|tx| {
+        let changes_deleted = tx
+            .execute(
+                &format!("DELETE FROM changes WHERE {CHANGES_PREDICATE}"),
+                rusqlite::params![now_ms - CHANGES_RETENTION_MS],
+            )
+            .map_err(|e| db_err("prune_changes", e))?;
+        let conflicts_deleted = tx
+            .execute(
+                &format!("DELETE FROM sync_conflicts WHERE {CONFLICTS_PREDICATE}"),
+                rusqlite::params![now_ms - CONFLICTS_RETENTION_MS],
+            )
+            .map_err(|e| db_err("prune_conflicts", e))?;
+        let events_deleted = tx
+            .execute(
+                "DELETE FROM events WHERE created_at < ?1",
+                rusqlite::params![event_cutoff],
+            )
+            .map_err(|e| db_err("prune_events", e))?;
+
+        let mut candidate_ids: Vec<i64> = {
+            let mut stmt = tx
+                .prepare(&expired_sql())
+                .map_err(|e| db_err("prune_snapshot_plan", e))?;
+            let ids = stmt
+                .query_map(rusqlite::params![snapshot_cutoff], |r| r.get(0))
+                .map_err(|e| db_err("prune_snapshot_plan", e))?
+                .collect::<Result<Vec<i64>, _>>()
+                .map_err(|e| db_err("prune_snapshot_plan", e))?;
+            ids
+        };
+        {
+            let mut stmt = tx
+                .prepare(&overflow_sql())
+                .map_err(|e| db_err("prune_snapshot_overflow", e))?;
+            let overflow = stmt
+                .query_map(rusqlite::params![snapshot_keep_max() as i64], |r| r.get(0))
+                .map_err(|e| db_err("prune_snapshot_overflow", e))?
+                .collect::<Result<Vec<i64>, _>>()
+                .map_err(|e| db_err("prune_snapshot_overflow", e))?;
+            candidate_ids.extend(overflow);
+        }
+        candidate_ids.sort_unstable();
+        candidate_ids.dedup();
+        let snapshots_deleted = delete_snapshots_tx(tx, &candidate_ids)?;
+
+        Ok(PruneReport {
+            changes_deleted: changes_deleted as u32,
+            conflicts_deleted: conflicts_deleted as u32,
+            events_deleted: events_deleted as u32,
+            snapshots_deleted,
+        })
+    })
+}
+
+/// dry-run：只统计将被删除的行数，**不写库**。
+pub fn prune_plan(db: &Db, now_ms: i64) -> Result<PruneReport, CoreError> {
+    let snapshot_cutoff = now_ms - (snapshot_keep_days() as i64) * 24 * 60 * 60 * 1000;
+    let event_cutoff = now_ms - (event_keep_days() as i64) * 24 * 60 * 60 * 1000;
+    let changes_deleted: i64 = db.query_row_with(
+        &format!("SELECT COUNT(*) FROM changes WHERE {CHANGES_PREDICATE}"),
+        rusqlite::params![now_ms - CHANGES_RETENTION_MS],
+        |r| r.get(0),
+    )?;
+    let conflicts_deleted: i64 = db.query_row_with(
+        &format!("SELECT COUNT(*) FROM sync_conflicts WHERE {CONFLICTS_PREDICATE}"),
+        rusqlite::params![now_ms - CONFLICTS_RETENTION_MS],
+        |r| r.get(0),
+    )?;
+    let events_deleted: i64 = db.query_row_with(
+        "SELECT COUNT(*) FROM events WHERE created_at < ?1",
+        rusqlite::params![event_cutoff],
+        |r| r.get(0),
+    )?;
+    // 到期与超限可能有交集：用 UNION 去重后计数，dry-run 才与实际删除数一致。
+    // 两个分支各自使用 ?1 / ?2（不能用同一编号，否则绑定两个值会报参数数量不符）。
+    let union_sql = format!(
+        "SELECT COUNT(*) FROM (
+           SELECT s.id FROM snapshots s
+            WHERE {protected} AND s.created_at < ?1
+           UNION
+           SELECT id FROM (
+             SELECT s.id FROM snapshots s
+              WHERE {protected}
+              ORDER BY s.created_at DESC, s.id DESC
+              LIMIT -1 OFFSET ?2
+           )
+         )",
+        protected = SNAPSHOT_PROTECTED
+    );
+    let snapshots_deleted: i64 = db.query_row_with(
+        &union_sql,
+        rusqlite::params![snapshot_cutoff, snapshot_keep_max() as i64],
+        |r| r.get(0),
+    )?;
+    Ok(PruneReport {
+        changes_deleted: changes_deleted as u32,
+        conflicts_deleted: conflicts_deleted as u32,
+        events_deleted: events_deleted as u32,
+        snapshots_deleted: snapshots_deleted as u32,
+    })
+}
+
+/// 以当前时间执行清理（GUI 启动序列用）。
+///
+/// 时间源收在 core：GUI crate 没有直接依赖 `chrono`，也不该为一次清理新增依赖。
+pub fn prune_now(db: &mut Db) -> Result<PruneReport, CoreError> {
+    prune(db, chrono::Utc::now().timestamp_millis())
+}
+
+/// 维护元数据文件名（与 `config.ini` 同目录）。
+const MAINTENANCE_META_FILE: &str = "maintenance.json";
+
+/// 写入「最近一次保留策略清理」时间。
+///
+/// 独立元数据文件而不是 `app_state` 新列：避免为一行时间戳升 schema。
+pub fn record_prune_time(dir: &Path, at_ms: i64) -> Result<(), CoreError> {
+    std::fs::create_dir_all(dir).map_err(|e| io_err("record_prune", e))?;
+    let path = dir.join(MAINTENANCE_META_FILE);
+    let tmp = path.with_extension("json.tmp");
+    let body = serde_json::json!({ "lastPruneAt": at_ms });
+    std::fs::write(&tmp, body.to_string()).map_err(|e| io_err("record_prune", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| io_err("record_prune", e))
+}
+
+/// 读取最近一次清理时间；文件不存在或内容非法时返回 `None`。
+pub fn last_prune_time(dir: &Path) -> Option<i64> {
+    let content = std::fs::read_to_string(dir.join(MAINTENANCE_META_FILE)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    value.get("lastPruneAt")?.as_i64()
+}
+
+/// 默认数据目录下的清理时间记录。
+pub fn record_prune_time_default(at_ms: i64) -> Result<(), CoreError> {
+    record_prune_time(&crate::db::crypto::data_home(), at_ms)
+}
+
+fn io_err(operation: &'static str, e: std::io::Error) -> CoreError {
+    CoreError::new(ErrorCode::Io, operation, e.to_string())
+}
+
+/// 压缩数据库：先 `wal_checkpoint(TRUNCATE)`，再 `VACUUM`。
+///
+/// `VACUUM` 不能在事务内执行，因此这里用 `execute_batch` 直接下发。
+/// 大库会短暂锁库，调用方应在维护命令里显式触发，不放进启动路径。
+pub fn vacuum(db: &Db) -> Result<(), CoreError> {
+    db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
 }
 
 /// `changes` 的删除谓词。
@@ -54,55 +311,6 @@ const CHANGES_PREDICATE: &str = "exported_at IS NOT NULL
 
 /// `sync_conflicts` 的删除谓词：只删**已解决**且到期的。
 const CONFLICTS_PREDICATE: &str = "resolved_at IS NOT NULL AND resolved_at < ?1";
-
-/// 执行清理，返回删除行数。
-///
-/// **绝不删除 `exported_at IS NULL`**：那是待导出队列，删了就永久丢变更。
-pub fn prune(db: &mut Db, now_ms: i64) -> Result<PruneReport, CoreError> {
-    db.with_transaction(|tx| {
-        let changes_deleted = tx
-            .execute(
-                &format!("DELETE FROM changes WHERE {CHANGES_PREDICATE}"),
-                rusqlite::params![now_ms - CHANGES_RETENTION_MS],
-            )
-            .map_err(|e| db_err("prune_changes", e))?;
-        let conflicts_deleted = tx
-            .execute(
-                &format!("DELETE FROM sync_conflicts WHERE {CONFLICTS_PREDICATE}"),
-                rusqlite::params![now_ms - CONFLICTS_RETENTION_MS],
-            )
-            .map_err(|e| db_err("prune_conflicts", e))?;
-        Ok(PruneReport {
-            changes_deleted: changes_deleted as u32,
-            conflicts_deleted: conflicts_deleted as u32,
-        })
-    })
-}
-
-/// dry-run：只统计将被删除的行数，**不写库**。
-pub fn prune_plan(db: &Db, now_ms: i64) -> Result<PruneReport, CoreError> {
-    let changes_deleted: i64 = db.query_row_with(
-        &format!("SELECT COUNT(*) FROM changes WHERE {CHANGES_PREDICATE}"),
-        rusqlite::params![now_ms - CHANGES_RETENTION_MS],
-        |r| r.get(0),
-    )?;
-    let conflicts_deleted: i64 = db.query_row_with(
-        &format!("SELECT COUNT(*) FROM sync_conflicts WHERE {CONFLICTS_PREDICATE}"),
-        rusqlite::params![now_ms - CONFLICTS_RETENTION_MS],
-        |r| r.get(0),
-    )?;
-    Ok(PruneReport {
-        changes_deleted: changes_deleted as u32,
-        conflicts_deleted: conflicts_deleted as u32,
-    })
-}
-
-/// 以当前时间执行清理（GUI 启动序列用）。
-///
-/// 时间源收在 core：GUI crate 没有直接依赖 `chrono`，也不该为一次清理新增依赖。
-pub fn prune_now(db: &mut Db) -> Result<PruneReport, CoreError> {
-    prune(db, chrono::Utc::now().timestamp_millis())
-}
 
 /// 遗留明文备份清理结果。
 #[derive(Debug, Default)]

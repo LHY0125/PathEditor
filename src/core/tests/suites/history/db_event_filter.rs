@@ -174,3 +174,52 @@ fn event_filter_supports_all_five_dimensions() {
         "total 必须是筛选后的全量计数，不受 limit 影响"
     );
 }
+
+#[test]
+fn export_events_csv_and_json_respect_filter() {
+    use path_editor_core::db::audit_export::export_events;
+    use path_editor_core::db::history_sink::record_reveal;
+
+    let (_dir, mut db) = crate::common::new_db("export.db");
+    record_reveal(
+        &mut db,
+        EventSource::Gui,
+        EnvHive::User,
+        "A",
+        EventResult::Success,
+    )
+    .unwrap();
+    record_reveal(
+        &mut db,
+        EventSource::Cli,
+        EnvHive::System,
+        "B",
+        EventResult::Failure,
+    )
+    .unwrap();
+
+    let csv = export_events(&db, &EventFilter::default(), "csv").unwrap();
+    assert!(csv.starts_with("uid,createdAt,"), "CSV 必须有表头");
+    assert_eq!(csv.lines().count(), 3, "表头 + 两条事件");
+    assert!(csv.contains("revealEnv"));
+
+    // 筛选与列表共用 WHERE：hive=system 只应剩一条
+    let filtered = export_events(
+        &db,
+        &EventFilter {
+            hive: Some("system".into()),
+            ..Default::default()
+        },
+        "csv",
+    )
+    .unwrap();
+    assert_eq!(filtered.lines().count(), 2, "表头 + 一条事件");
+
+    let json = export_events(&db, &EventFilter::default(), "json").unwrap();
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value.as_array().unwrap().len(), 2);
+    assert!(json.contains("\"action\": \"revealEnv\""));
+
+    // 未知格式必须明确拒绝
+    assert!(export_events(&db, &EventFilter::default(), "xml").is_err());
+}

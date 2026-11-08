@@ -10,6 +10,14 @@ import type { EnvHive, EnvValueKind } from '@/core/env-var';
 export type { PathCapabilities } from '@/core/path-capabilities';
 export type { ConflictEntry, ConflictLocation, ScanResult, ToolGroup } from './parse-core';
 
+/** 备份索引 ↔ 磁盘对账结果（只含计数；明细保留在 Rust 侧）。 */
+export interface BackupReconcile {
+  /** 索引里存在、磁盘上已不存在的条数 */
+  missing: number;
+  /** 目录里像备份、但索引中没有的文件数 */
+  orphans: number;
+}
+
 export interface ProfileMeta {
   name: string;
   created: string;
@@ -41,12 +49,15 @@ import {
   parseRestoreOutcome,
   parseRestorePreview,
   parseScanResult,
+  parseScanRunDiff,
+  parseScanRuns,
   parseWriteOutcome,
 } from './parse-core';
 import type { PathEntryWrite } from './parse-core';
 import type { EventFilter, ProfileView } from './parse-data';
 import {
   parseCompareResult,
+  parseDbHealth,
   parseCycleList,
   parseDashboard,
   parseEventPage,
@@ -127,6 +138,12 @@ export const backend = {
   },
   scanPaths: async (paths: string[], query = '') =>
     parseScanResult(await parseCoreError(invoke<unknown>('scan_paths', { paths, query }))),
+  /** 最近的扫描历史（按时间倒序）。 */
+  scanHistory: async (limit = 20) =>
+    parseScanRuns(await parseCoreError(invoke<unknown>('scan_history_list', { limit }))),
+  /** 比较两次扫描：`a` 上次、`b` 本次。 */
+  scanDiff: async (a: string, b: string) =>
+    parseScanRunDiff(await parseCoreError(invoke<unknown>('scan_history_diff', { a, b }))),
   /**
    * 配置方案统一走 DB。
    */
@@ -219,12 +236,67 @@ export const backend = {
     parseRestoreOutcome(
       await parseCoreError(invoke<unknown>('restore_env_backup', { file, force })),
     ),
+  /** 对账备份索引与磁盘目录：返回缺失条数与未入索引文件数。 */
+  backupReconcile: async (): Promise<BackupReconcile> => {
+    const raw = await parseCoreError(invoke<unknown>('backup_reconcile'));
+    if (!isRecord(raw) || !Array.isArray(raw.missing) || !Array.isArray(raw.orphans)) {
+      throw new Error('backup_reconcile 返回了无效契约');
+    }
+    return { missing: raw.missing.length, orphans: raw.orphans.length };
+  },
+  /** 把「文件已丢失」的索引行标记为已删除，返回处理条数。 */
+  backupPurgeMissing: async (): Promise<number> => {
+    const raw = await parseCoreError(invoke<unknown>('backup_purge_missing'));
+    if (typeof raw !== 'number') throw new Error('backup_purge_missing 返回了非数字');
+    return raw;
+  },
 
   // ── 历史 ────────────
 
   /** 列出历史事件（分页，服务端固定时间倒序）。 */
   historyListEvents: async (filter?: EventFilter) =>
     parseEventPage(await parseCoreError(invoke<unknown>('history_list_events', { filter }))),
+  /** 导出当前筛选下的事件（CSV / JSON 字符串）。 */
+  historyExportEvents: async (
+    filter: EventFilter | undefined,
+    format: 'csv' | 'json',
+  ): Promise<string> => {
+    const content = await parseCoreError(
+      invoke<unknown>('history_export_events', { filter, format }),
+    );
+    if (typeof content !== 'string') {
+      throw new Error('history_export_events 返回了非字符串');
+    }
+    return content;
+  },
+  /** 数据库健康状态（只读）。 */
+  dbHealth: async () => parseDbHealth(await parseCoreError(invoke<unknown>('db_health'))),
+  /** 设置快照备注（null 清空）。 */
+  historySetNote: async (uid: string, note: string | null): Promise<void> => {
+    await parseCoreError(invoke<unknown>('history_set_note', { uid, note }));
+  },
+  /** 固定或取消固定快照。 */
+  historySetPinned: async (uid: string, pinned: boolean): Promise<void> => {
+    await parseCoreError(invoke<unknown>('history_set_pinned', { uid, pinned }));
+  },
+  /** 列出固定快照（元数据）。 */
+  historyListPinned: async (): Promise<
+    { uid: string; createdAt: number; note: string | null }[]
+  > => {
+    const raw = await parseCoreError(invoke<unknown>('history_list_pinned'));
+    if (!Array.isArray(raw)) throw new Error('history_list_pinned 必须返回数组');
+    return raw.map((item) => {
+      if (
+        !isRecord(item) ||
+        typeof item.uid !== 'string' ||
+        typeof item.createdAt !== 'number' ||
+        (item.note !== null && typeof item.note !== 'string')
+      ) {
+        throw new Error('history_list_pinned 返回了无效条目');
+      }
+      return { uid: item.uid, createdAt: item.createdAt, note: item.note };
+    });
+  },
   /**
    * 读取快照预览。
    *

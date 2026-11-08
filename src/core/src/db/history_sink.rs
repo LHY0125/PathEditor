@@ -5,7 +5,7 @@
 use super::history::{action_str, result_str, source_str};
 use super::Db;
 use crate::domain::error::{CoreError, ErrorCode};
-use crate::domain::history::{HistoryEvent, HistorySink};
+use crate::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
 use rusqlite::{params, OptionalExtension};
 use std::cell::RefCell;
 use uuid::Uuid;
@@ -105,4 +105,28 @@ impl HistorySink for DbHistory<'_> {
             Ok(())
         })
     }
+}
+
+/// 记录一次「查看明文」审计事件。
+///
+/// **只落变量名与结果，不落值**。调用方应按 best-effort 处理：审计写入失败
+/// 不应让 reveal 本身失败（返回值由调用方决定是否只记日志）。
+pub fn record_reveal(
+    db: &mut Db,
+    source: EventSource,
+    hive: crate::domain::env_var::EnvHive,
+    name: &str,
+    result: EventResult,
+) -> Result<(), CoreError> {
+    DbHistory::new(db).record(HistoryEvent {
+        source,
+        action: EventAction::RevealEnv,
+        hive: Some(hive),
+        target: Some(name.to_string()),
+        changed_fields: Vec::new(),
+        before_revision: None,
+        after_revision: None,
+        result,
+        snapshot_uid: None,
+    })
 }

@@ -21,6 +21,9 @@
     "create": "Back up now",
     "created": "Backup created: {{path}}",
     "creating": "Backing up...",
+    "reconcile": "Check index",
+    "reconcileResult": "Missing {{missing}} · unindexed {{orphans}}",
+    "purgeMissing": "Mark missing as deleted",
     "empty": "No backup files yet",
     "loading": "Loading backup list...",
     "selectHint": "Select a backup to preview the diff",
@@ -64,6 +67,8 @@
     "search": "Search variable name",
     "newVar": "New Variable",
     "refresh": "Refresh",
+    "exportCsv": "Export CSV",
+    "exportHint": "Export the current filter to CSV",
     "show": "Show",
     "hide": "Hide",
     "all": "All",
@@ -200,6 +205,15 @@
     "title": "PATH Analysis",
     "conflicts": "Conflicts",
     "tools": "Tools",
+
+    "history": "Scan history",
+    "historyHint": "Select two scans to compare (first selected is the earlier one)",
+    "historyEmpty": "No scan history yet",
+    "compareRuns": "Compare ({{count}}/2)",
+    "appeared": "Appeared",
+    "disappeared": "Disappeared",
+    "persistent": "Persistent",
+    "refreshHistory": "Refresh",
     "scanning": "Scanning...",
     "noConflicts": "No executable conflicts found",
     "noTools": "No matching executables found",
@@ -229,6 +243,12 @@
   "history": {
     "title": "History",
     "refresh": "Refresh",
+
+    "pinnedSnapshots": "Pinned snapshots",
+    "notePlaceholder": "Snapshot note…",
+    "saveNote": "Save note",
+    "pin": "Pin snapshot",
+    "unpin": "Unpin",
     "loading": "Loading…",
     "empty": "No history yet",
     "pickOne": "Select a record to preview its snapshot",
@@ -250,6 +270,7 @@
     "degradedDetail": "The history database could not be opened; running in degraded mode",
     "degradedHint": "Environment variable editing is unaffected; restart to retry",
     "action": {
+      "drift": "Registry drift",
       "save": "Save PATH",
       "apply": "Apply profile",
       "restore": "Restore snapshot",
@@ -258,7 +279,8 @@
       "envAdd": "Create variable",
       "envRemove": "Delete variable",
       "undo": "Undo",
-      "redo": "Redo"
+      "redo": "Redo",
+      "revealEnv": "View plaintext"
     },
     "source": {
       "gui": "GUI",
@@ -307,6 +329,13 @@
     "openFailed": "Cannot locate this item in the current view (it may come from a historical snapshot)"
   },
   "stats": {
+    "healthTitle": "Database health",
+    "healthSchema": "Schema",
+    "healthOk": "Integrity OK",
+    "healthBad": "Integrity error",
+    "healthSize": "Size",
+    "healthLastPrune": "Last cleanup",
+    "healthNever": "never recorded",
     "loading": "Loading…",
     "currentTitle": "Current state",
     "currentPathItems": "Current PATH entries",
@@ -317,6 +346,8 @@
     "eventsCount": "{{count}} operations",
     "topTargets": "Most changed variables",
     "profileApplies": "Profile applies",
+    "conflictTop": "Most frequent conflicts",
+    "scanSummary": "{{runs}} scans · {{rate}}% with conflicts",
     "errorDegraded": "Stats unavailable (degraded mode)",
     "errorLoadFailed": "Failed to load statistics",
     "retry": "Retry"
@@ -331,6 +362,13 @@
     "enabled": "enabled",
     "disabled": "disabled",
     "envNotAvailable": "Environment variable comparison is not supported in this version",
+    "envVars": "Environment variables",
+    "noEnvChange": "No environment variable changes",
+    "envChange": {
+      "added": "added",
+      "removed": "removed",
+      "modified": "modified"
+    },
     "selectForCompare": "Select this snapshot for comparison",
     "open": "Compare selected ({{count}}/2)",
     "clearSelection": "Clear selection",

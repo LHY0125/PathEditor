@@ -12,6 +12,24 @@ describe('parseEventPage', () => {
     ).toThrow(/action/);
   });
 
+  it('接受 revealEnv 动作（敏感值查看审计）', () => {
+    const page = parseEventPage({
+      items: [
+        {
+          uid: 'a',
+          createdAt: 1,
+          source: 'cli',
+          action: 'revealEnv',
+          hive: 'user',
+          target: 'MY_TOKEN',
+          result: 'success',
+        },
+      ],
+      total: 1,
+    });
+    expect(page.items[0].action).toBe('revealEnv');
+  });
+
   it('拒绝 result 非法的项', () => {
     expect(() =>
       parseEventPage({
@@ -100,5 +118,58 @@ describe('parseSnapshotView', () => {
         'x',
       ),
     ).toThrow(/值/);
+  });
+});
+
+describe('parseSnapshotView 备注与固定', () => {
+  const base = {
+    uid: 's1',
+    createdAt: 1,
+    kind: 'current',
+    system: [],
+    user: [],
+    env: [],
+  };
+
+  it('缺省按未固定、无备注处理（兼容旧契约）', () => {
+    const view = parseSnapshotView(base, 'x');
+    expect(view.note).toBeNull();
+    expect(view.pinned).toBe(false);
+  });
+
+  it('透传备注与固定标记', () => {
+    const view = parseSnapshotView({ ...base, note: '装驱动前', pinned: true }, 'x');
+    expect(view.note).toBe('装驱动前');
+    expect(view.pinned).toBe(true);
+  });
+
+  it('拒绝非布尔 pinned', () => {
+    expect(() => parseSnapshotView({ ...base, pinned: 'yes' }, 'x')).toThrow(/pinned/);
+  });
+
+  it('拒绝非字符串 note', () => {
+    expect(() => parseSnapshotView({ ...base, note: 42 }, 'x')).toThrow(/note/);
+  });
+});
+
+describe('parseEventPage drift 动作', () => {
+  it('接受 drift（注册表漂移事件）', () => {
+    const page = parseEventPage({
+      items: [
+        {
+          uid: 'd1',
+          createdAt: 1,
+          source: 'gui',
+          action: 'drift',
+          hive: null,
+          target: 'system',
+          result: 'partial',
+          snapshotUid: 'snap-1',
+        },
+      ],
+      total: 1,
+    });
+    expect(page.items[0].action).toBe('drift');
+    expect(page.items[0].result).toBe('partial');
   });
 });

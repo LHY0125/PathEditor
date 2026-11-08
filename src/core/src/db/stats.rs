@@ -6,6 +6,7 @@
 use super::Db;
 use crate::domain::error::CoreError;
 use rusqlite::params;
+use std::collections::HashMap;
 
 /// 单日聚合点。
 #[derive(Debug, Clone, serde::Serialize)]
@@ -43,6 +44,12 @@ pub struct Dashboard {
     pub current_avg_len: f64,
     /// **当前**快照的 PATH 条目数
     pub current_path_items: i64,
+    /// 统计窗口内参与聚合的扫描次数（最多 200 次）
+    pub scan_runs: i64,
+    /// 其中有冲突的扫描占比（0–1）；无扫描时为 0
+    pub conflict_rate: f64,
+    /// 最常出现的冲突（最多 10 个）
+    pub top_conflicts: Vec<TargetCount>,
 }
 
 /// 变量被修改的次数。
@@ -215,11 +222,50 @@ pub fn dashboard(db: &Db, days: u32) -> Result<Dashboard, CoreError> {
         )
         .map_err(|e| CoreError::new(e.code, "dashboard_current", e.message))?;
 
+    // 冲突 Top：扫描记录只存 JSON，SQL 无法直接聚合；取最近 200 次在 Rust 侧统计。
+    let mut freq: HashMap<String, i64> = HashMap::new();
+    let mut scan_runs = 0i64;
+    let mut runs_with_conflicts = 0i64;
+    let mut stmt = db.prepare(
+        "SELECT conflicts_json FROM scan_runs
+          ORDER BY created_at DESC, id DESC LIMIT 200",
+    )?;
+    let scan_rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| super::db_err("dashboard_scans", e))?;
+    for row in scan_rows {
+        let raw = row.map_err(|e| super::db_err("dashboard_scans", e))?;
+        scan_runs += 1;
+        let Ok(names) = serde_json::from_str::<Vec<String>>(&raw) else {
+            continue;
+        };
+        if !names.is_empty() {
+            runs_with_conflicts += 1;
+        }
+        for name in names {
+            *freq.entry(name).or_insert(0) += 1;
+        }
+    }
+    let mut top_conflicts: Vec<TargetCount> = freq
+        .into_iter()
+        .map(|(target, count)| TargetCount { target, count })
+        .collect();
+    top_conflicts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.target.cmp(&b.target)));
+    top_conflicts.truncate(10);
+    let conflict_rate = if scan_runs == 0 {
+        0.0
+    } else {
+        runs_with_conflicts as f64 / scan_runs as f64
+    };
+
     Ok(Dashboard {
         days: rows,
         top_targets,
         profile_applies,
         current_avg_len,
         current_path_items,
+        scan_runs,
+        conflict_rate,
+        top_conflicts,
     })
 }

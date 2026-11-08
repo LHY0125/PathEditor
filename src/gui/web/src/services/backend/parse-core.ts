@@ -110,6 +110,85 @@ export function parseScanResult(value: unknown): ScanResult {
   return { conflicts: parsedConflicts, tools: parsedTools };
 }
 
+/** 一次扫描的摘要（对应 core 的 `ScanRunView`）。 */
+export interface ScanRunView {
+  uid: string;
+  createdAt: number;
+  conflicts: string[];
+  toolCount: number;
+}
+
+/** 某个冲突在历史中的首次/最近出现（对应 core 的 `FirstSeen` / `LastSeen`）。 */
+export interface ScanSeenEntry {
+  conflict: string;
+  runUid: string;
+  seenAt: number;
+}
+
+/** 两次扫描的差异（对应 core 的 `ScanRunDiff`）。 */
+export interface ScanRunDiff {
+  appeared: string[];
+  disappeared: string[];
+  persistent: string[];
+  lastSeen: ScanSeenEntry[];
+  firstSeen: ScanSeenEntry[];
+}
+
+function parseStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(`${label} 必须是字符串数组`);
+  }
+  return value as string[];
+}
+
+function parseSeenEntries(value: unknown, label: string): ScanSeenEntry[] {
+  if (!Array.isArray(value)) throw new Error(`${label} 必须是数组`);
+  return value.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.conflict !== 'string' ||
+      typeof entry.runUid !== 'string' ||
+      typeof entry.seenAt !== 'number'
+    ) {
+      throw new Error(`${label} 返回了无效的条目契约`);
+    }
+    return { conflict: entry.conflict, runUid: entry.runUid, seenAt: entry.seenAt };
+  });
+}
+
+/** 校验 `scan_history_list` 的返回值。 */
+export function parseScanRuns(value: unknown): ScanRunView[] {
+  if (!Array.isArray(value)) throw new Error('scan_history_list 必须返回数组');
+  return value.map((run) => {
+    if (
+      !isRecord(run) ||
+      typeof run.uid !== 'string' ||
+      typeof run.createdAt !== 'number' ||
+      typeof run.toolCount !== 'number'
+    ) {
+      throw new Error('scan_history_list 返回了无效的 ScanRunView 契约');
+    }
+    return {
+      uid: run.uid,
+      createdAt: run.createdAt,
+      conflicts: parseStringArray(run.conflicts, 'scan_history_list.conflicts'),
+      toolCount: run.toolCount,
+    };
+  });
+}
+
+/** 校验 `scan_history_diff` 的返回值。 */
+export function parseScanRunDiff(value: unknown): ScanRunDiff {
+  if (!isRecord(value)) throw new Error('scan_history_diff 返回了无效契约');
+  return {
+    appeared: parseStringArray(value.appeared, 'scan_history_diff.appeared'),
+    disappeared: parseStringArray(value.disappeared, 'scan_history_diff.disappeared'),
+    persistent: parseStringArray(value.persistent, 'scan_history_diff.persistent'),
+    lastSeen: parseSeenEntries(value.lastSeen, 'scan_history_diff.lastSeen'),
+    firstSeen: parseSeenEntries(value.firstSeen, 'scan_history_diff.firstSeen'),
+  };
+}
+
 /**
  * 单个 hive 的写入请求（对应 core 的 `PathHiveWrite`）。
  *

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { isCoreError } from '@/core/error';
 import { useTranslation } from 'react-i18next';
-import { backend, type Dashboard } from '@/services/backend';
+import { backend, type Dashboard, type DbHealth } from '@/services/backend';
 import { Button } from '@/components/ui/Button';
 
 /**
@@ -29,6 +29,7 @@ export function StatsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  const [health, setHealth] = useState<DbHealth | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +51,22 @@ export function StatsPanel() {
       cancelled = true;
     };
   }, [reloadKey, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void backend
+      .dbHealth()
+      .then((h) => {
+        if (!cancelled) setHealth(h);
+      })
+      .catch(() => {
+        // 健康信息是附加信息：取不到不影响统计主视图
+        if (!cancelled) setHealth(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   if (loading) {
     return (
@@ -108,6 +125,49 @@ export function StatsPanel() {
         </p>
       </section>
 
+      {/* ── 数据库健康（#7）：自检入口，异常时用警告色突出 ── */}
+      {health !== null && (
+        <section className="mb-4">
+          <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+            {t('stats.healthTitle')}
+          </h4>
+          <div className="flex flex-wrap gap-4 text-xs">
+            <div>
+              <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.healthSchema')}</span>
+              <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
+                v{health.schemaVersion}
+              </span>
+            </div>
+            <div style={{ color: health.integrityOk ? 'var(--app-success)' : 'var(--app-danger)' }}>
+              {health.integrityOk
+                ? t('stats.healthOk')
+                : `${t('stats.healthBad')}: ${health.integrity}`}
+            </div>
+            <div>
+              <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.healthSize')}</span>
+              <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
+                {((health.fileBytes + health.walBytes) / (1024 * 1024)).toFixed(2)} MiB
+              </span>
+            </div>
+            <div>
+              <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.healthLastPrune')}</span>
+              <span className="ml-1" style={{ color: 'var(--app-fg)' }}>
+                {health.lastPruneAt === null
+                  ? t('stats.healthNever')
+                  : new Date(health.lastPruneAt).toLocaleString()}
+              </span>
+            </div>
+          </div>
+          <p
+            className="mt-1 truncate text-xs"
+            style={{ color: 'var(--app-fg-muted)' }}
+            title={health.path}
+          >
+            {health.path}
+          </p>
+        </section>
+      )}
+
       {/* ── 历史序列 ── */}
       <section className="mb-4">
         <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
@@ -156,6 +216,33 @@ export function StatsPanel() {
               <li key={tgt.target} className="flex justify-between">
                 <span style={{ color: 'var(--app-fg)' }}>{tgt.target}</span>
                 <span style={{ color: 'var(--app-fg-muted)' }}>{tgt.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* ── 冲突 Top（来自最近 200 次扫描） ── */}
+      <section className="mb-4">
+        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+          {t('stats.conflictTop')}
+        </h4>
+        <p className="mb-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+          {t('stats.scanSummary', {
+            runs: data.scanRuns,
+            rate: Math.round(data.conflictRate * 100),
+          })}
+        </p>
+        {data.topConflicts.length === 0 ? (
+          <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+            {t('stats.noData')}
+          </p>
+        ) : (
+          <ul className="space-y-0.5 text-xs">
+            {data.topConflicts.map((item) => (
+              <li key={item.target} className="flex justify-between">
+                <span style={{ color: 'var(--app-fg)' }}>{item.target}</span>
+                <span style={{ color: 'var(--app-fg-muted)' }}>{item.count}</span>
               </li>
             ))}
           </ul>

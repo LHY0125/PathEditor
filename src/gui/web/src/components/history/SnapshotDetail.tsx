@@ -13,7 +13,9 @@
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import { backend, type SnapshotView } from '@/services/backend';
+import { useHistoryStore } from '@/store/history-store';
 
 interface Props {
   snapshot: SnapshotView;
@@ -45,6 +47,48 @@ export function SnapshotDetail({ snapshot }: Props) {
     setErrors({});
     setPending(null);
   }
+
+  // 备注与固定标记：随快照切换重置（与 reveal 的清理同一口径）
+  const [note, setNote] = useState(snapshot.note ?? '');
+  const [pinned, setPinned] = useState(snapshot.pinned);
+  const [noteErr, setNoteErr] = useState<string | null>(null);
+
+  if (revealedFor !== snapshot.uid) {
+    setNote(snapshot.note ?? '');
+    setPinned(snapshot.pinned);
+    setNoteErr(null);
+  }
+
+  /** 把保存成功的字段同步回 store，固定条与重新打开的详情才看得到最新值。 */
+  const syncDetail = (patch: { note?: string | null; pinned?: boolean }) => {
+    const state = useHistoryStore.getState();
+    if (state.detail?.uid !== snapshot.uid) return;
+    useHistoryStore.setState({ detail: { ...state.detail, ...patch } });
+  };
+
+  const saveNote = async () => {
+    const next = note.trim() === '' ? null : note.trim();
+    try {
+      await backend.historySetNote(snapshot.uid, next);
+      setNote(next ?? '');
+      setNoteErr(null);
+      syncDetail({ note: next });
+    } catch (err) {
+      setNoteErr(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const togglePin = async () => {
+    const next = !pinned;
+    try {
+      await backend.historySetPinned(snapshot.uid, next);
+      setPinned(next);
+      setNoteErr(null);
+      syncDetail({ pinned: next });
+    } catch (err) {
+      setNoteErr(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const pathSection = (label: string, entries: SnapshotView['system']) => (
     <section className="mb-3">
@@ -105,6 +149,28 @@ export function SnapshotDetail({ snapshot }: Props) {
         <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
           {new Date(snapshot.createdAt).toLocaleString()} · {snapshot.kind}
         </p>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          className="field-input text-xs"
+          value={note}
+          maxLength={500}
+          placeholder={t('history.notePlaceholder')}
+          onChange={(e) => setNote(e.target.value)}
+          aria-label={t('history.notePlaceholder')}
+        />
+        <Button variant="ghost" onClick={() => void saveNote()}>
+          {t('history.saveNote')}
+        </Button>
+        <Button variant="ghost" onClick={() => void togglePin()}>
+          {pinned ? t('history.unpin') : t('history.pin')}
+        </Button>
+        {noteErr && (
+          <span className="text-xs" style={{ color: 'var(--app-danger)' }}>
+            {noteErr}
+          </span>
+        )}
       </div>
 
       {pathSection(t('history.systemPath'), snapshot.system)}

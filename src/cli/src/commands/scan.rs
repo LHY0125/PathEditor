@@ -54,6 +54,7 @@ pub(crate) fn cmd_conflicts(json_out: bool) {
     let paths = load_scan_paths();
     let conflicts =
         core::platform::scanner::scan_conflicts(paths).unwrap_or_else(|e| exit_core_error(&e));
+    record_scan(&conflicts, &[]);
     if json_out {
         print_json(&conflicts);
     } else if conflicts.is_empty() {
@@ -82,6 +83,8 @@ pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
     let paths = load_scan_paths();
     let groups = core::platform::scanner::scan_tools(paths, query.unwrap_or_default())
         .unwrap_or_else(|e| exit_core_error(&e));
+    let dirs: Vec<String> = groups.iter().map(|g| g.dir.clone()).collect();
+    record_scan(&[], &dirs);
     if json_out {
         print_json(&groups);
     } else {
@@ -95,6 +98,74 @@ pub(crate) fn cmd_scan(query: Option<String>, json_out: bool) {
                 println!("  {}", exe);
             }
         }
+    }
+}
+
+/// best-effort 记录一次扫描；DB 不可用时静默跳过，失败只告警。
+fn record_scan(conflicts: &[core::platform::scanner::ConflictEntry], tool_dirs: &[String]) {
+    let Some(mut db) = crate::runtime::open_db_silent() else {
+        return;
+    };
+    let names: Vec<String> = conflicts.iter().map(|c| c.name.clone()).collect();
+    if let Err(e) = core::db::scan_history::record_run(&mut db, &names, tool_dirs) {
+        eprintln!("警告: 扫描历史未写入: {}", e.message);
+    }
+}
+
+/// `scan-history [--limit N] [--json]`
+pub(crate) fn cmd_scan_history(limit: u32, json_out: bool) {
+    let Some(db) = crate::runtime::open_db_silent() else {
+        crate::runtime::exit_err("扫描历史需要历史库；请先运行一次 GUI 建立数据库");
+    };
+    let runs =
+        core::db::scan_history::list_runs(&db, limit).unwrap_or_else(|e| exit_core_error(&e));
+    if json_out {
+        print_json(&runs);
+        return;
+    }
+    if runs.is_empty() {
+        println!("还没有扫描历史。");
+        return;
+    }
+    println!("═══ 最近 {} 次扫描 ═══", runs.len());
+    for run in &runs {
+        println!(
+            "{}  冲突 {} 个 / 工具目录 {} 个",
+            run.uid,
+            run.conflicts.len(),
+            run.tool_count
+        );
+        if !run.conflicts.is_empty() {
+            println!("  {}", run.conflicts.join(", "));
+        }
+    }
+}
+
+/// `scan-diff <A> <B> [--json]`：A 是上次、B 是本次。
+pub(crate) fn cmd_scan_diff(a: String, b: String, json_out: bool) {
+    let Some(db) = crate::runtime::open_db_silent() else {
+        crate::runtime::exit_err("扫描历史需要历史库；请先运行一次 GUI 建立数据库");
+    };
+    let diff =
+        core::db::scan_history::diff_runs(&db, &a, &b).unwrap_or_else(|e| exit_core_error(&e));
+    if json_out {
+        print_json(&diff);
+        return;
+    }
+    println!(
+        "新出现 {} 个，消失 {} 个，持续 {} 个",
+        diff.appeared.len(),
+        diff.disappeared.len(),
+        diff.persistent.len()
+    );
+    for name in &diff.appeared {
+        println!("  + {name}");
+    }
+    for name in &diff.disappeared {
+        println!("  - {name}");
+    }
+    for name in &diff.persistent {
+        println!("  = {name}");
     }
 }
 

@@ -1,6 +1,9 @@
+use super::db_state::{with_db, with_db_mut, DbState};
+use path_editor_core::db::backup_index;
 use path_editor_core::domain::error::CoreError;
 use path_editor_core::platform::backup;
 use path_editor_core::platform::backup::{EnvBackupInfo, RestoreOutcome, RestorePreview};
+use tauri::State;
 
 /// 立即创建一份环境变量备份，返回备份文件路径。
 ///
@@ -58,4 +61,22 @@ pub fn preview_env_backup(file: String) -> Result<RestorePreview, CoreError> {
 pub fn restore_env_backup(file: String, force: bool) -> Result<RestoreOutcome, CoreError> {
     let path = backup::validate_backup_path(&file)?;
     backup::restore_env_backup_from(&path, force)
+}
+
+/// 对账备份索引与磁盘目录（只读，不删除任何文件）。
+#[tauri::command(async)]
+pub fn backup_reconcile(
+    state: State<'_, DbState>,
+) -> Result<backup_index::BackupReconcile, CoreError> {
+    with_db(&state, "backup_reconcile", |db| {
+        backup_index::reconcile_backups(db, &backup::env_backup_dir())
+    })
+}
+
+/// 把「文件已丢失」的索引行标记为已删除，返回处理条数（只改索引，不删文件）。
+#[tauri::command(async)]
+pub fn backup_purge_missing(state: State<'_, DbState>) -> Result<u32, CoreError> {
+    with_db_mut(&state, "backup_purge_missing", |db| {
+        Ok(backup_index::purge_missing(db, &backup::env_backup_dir())? as u32)
+    })
 }

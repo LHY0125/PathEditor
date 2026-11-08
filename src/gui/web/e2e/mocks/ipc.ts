@@ -213,6 +213,29 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
 
               currentPathItems: 0
             };
+          case 'db_health':
+            if (window.__m2Degraded) {
+              throw {
+                code: 'database',
+                operation: 'db_health',
+                hive: null,
+                name: null,
+                retryable: false,
+                message: '历史库不可用，当前处于降级模式'
+              };
+            }
+            return window.__healthFixture ?? {
+              path: 'C:/mock/.patheditor/patheditor.db',
+              fileBytes: 1048576,
+              walBytes: 0,
+              shmBytes: 32768,
+              schemaVersion: 5,
+              expectedSchemaVersion: 5,
+              integrity: 'ok',
+              integrityOk: true,
+              tableRows: [],
+              lastPruneAt: null
+            };
           case 'compare_snapshots':
             return window.__compareFixture ?? {
               system: { added: [], removed: [], reordered: [], toggled: [] },

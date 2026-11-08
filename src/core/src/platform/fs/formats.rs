@@ -157,7 +157,7 @@ pub(super) fn import_txt(content: &str) -> Result<(Vec<PathEntry>, Vec<PathEntry
     Ok((vec![], entries))
 }
 
-pub(super) fn escape_csv_field(field: &str) -> String {
+pub(crate) fn escape_csv_field(field: &str) -> String {
     if field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r') {
         format!("\"{}\"", field.replace('"', "\"\""))
     } else {

@@ -37,6 +37,10 @@ fn bootstrap_creates_baseline_once_and_skips_unchanged_derived_tables() {
         backup_dir: Some(dir.path().join("backups")),
         pending_path: Some(dir.path().join("pending.json")),
         derived_watermark: Some(dir.path().join("derived.watermark")),
+        // 不读真实注册表：本用例只验证引导幂等性
+        detect_drift: false,
+        // 清理时间元数据写到临时目录，不碰真实 ~/.patheditor
+        maintenance_meta_dir: Some(dir.path().join("meta")),
     };
 
     let first = bootstrap::initialize(&mut db, EventSource::Gui, &options).unwrap();

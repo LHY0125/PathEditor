@@ -7,6 +7,7 @@ use crate::domain::path_entry::PathEntry;
 mod formats;
 mod io;
 
+pub(crate) use formats::escape_csv_field as csv_escape;
 pub(crate) use io::ensure_not_system_dir;
 pub use io::{
     atomic_write, read_text_file, read_text_file_scoped, validate_sync_path, write_export_file,

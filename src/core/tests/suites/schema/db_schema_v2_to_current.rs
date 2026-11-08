@@ -65,6 +65,25 @@ fn upgrading_a_v2_database_bumps_version_and_preserves_data() {
         )
         .unwrap();
     assert_eq!(indexes, 3, "v4 必须补齐三个查询索引");
+
+    // v5：快照固定标记（保留策略保护位）
+    let pinned_col: i64 = db
+        .query_row_with(
+            "SELECT count(*) FROM pragma_table_info('snapshots') WHERE name = 'pinned'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(pinned_col, 1, "v5 必须给 snapshots 加 pinned");
+    let v5_default: i64 = db
+        .query_row_with(
+            "SELECT pinned FROM snapshots WHERE uid = 'v2-snap'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(v5_default, 0, "存量快照必须默认未固定");
+
     db.migrate_to_current().expect("二次迁移必须幂等");
 
     // v2 数据必须还在

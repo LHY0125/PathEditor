@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-763%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-801%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -315,6 +315,7 @@ patheditor sync resolve <ID> --take local|remote
 
 # 维护任务（保留策略 / 遗留明文备份）
 patheditor maintenance prune                    [--dry-run]
+patheditor maintenance vacuum
 patheditor maintenance cleanup-legacy-backups   [--dry-run] [--yes]
 ```
 
@@ -453,13 +454,18 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 > **降级回落**：若密钥文件不可用（拿不到 DPAPI 密钥），备份会回落到明文 `.json` 并**在 stderr 打印警告**——
 > 这是为了让备份功能在密钥故障时依然可用，但意味着此时磁盘上会新增明文敏感文件。
 >
-> **环境变量的 N 路对比尚未提供**（本版本未纳入范围），环境变量对比面板会显式说明这一点。
+> 环境变量对比已随 v7 提供：对比结果包含新增/删除/修改的变量名与变化类型，**不含变量值**。
 
 ### 维护任务（v6 M4）
 
-- **保留策略**：GUI 每次启动自动清理「已导出超过 90 天」的 `changes` 与「已解决超过 30 天」的
-  `sync_conflicts`；**待导出队列（`exported_at IS NULL`）永不删除**。CLI：
-  `patheditor maintenance prune [--dry-run]`。
+- **保留策略**：GUI 每次启动自动清理「已导出超过 90 天」的 `changes`、「已解决超过 30 天」的
+  `sync_conflicts`、到期/超限的未保护快照与到期事件；**待导出队列（`exported_at IS NULL`）永不删除**，
+  固定快照与被当前快照/配置版本/备份索引引用的快照同样受保护。CLI：
+  `patheditor maintenance prune [--dry-run]`、`patheditor maintenance vacuum`。
+- **迁移前备份与健康检查**：schema 升级前自动生成 `.pre-v{n}.bak`（保留 3 份）；
+  `patheditor maintenance health [--json]` 输出完整性、schema、表行数与体积，统计页也有健康卡片。
+- **注册表漂移检测**：启动时发现注册表被本工具之外修改，会在历史里记一条 `drift` 事件
+  （同一外部状态只记一次，不自动建快照）。
 - **遗留明文备份清理**：把 `env_backup_*.json` 先转成 DPAPI 加密的 `.pebak` 并**回读校验**，
   成功后才删除明文；任一失败保留原文件。必须显式 `--yes`。
 
@@ -570,8 +576,8 @@ npx tauri build
 | 数据库    | SQLite（rusqlite bundled + FTS5）         |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (40 files / 426) + Playwright (54) |
-| Rust 测试 | cargo test (337 passed / 2 ignored)       |
+| 前端测试  | Vitest (41 files / 448) + Playwright (55) |
+| Rust 测试 | cargo test (353 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 

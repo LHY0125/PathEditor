@@ -17,5 +17,11 @@ mod db_schema_v1_to_v2;
 #[path = "suites/schema/db_schema_v2.rs"]
 mod db_schema_v2;
 
+#[path = "suites/schema/db_health.rs"]
+mod db_health;
+
+#[path = "suites/schema/db_migration_backup.rs"]
+mod db_migration_backup;
+
 #[path = "suites/schema/db_schema_v2_to_current.rs"]
 mod db_schema_v2_to_current;

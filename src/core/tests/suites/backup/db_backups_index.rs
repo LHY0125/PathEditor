@@ -89,3 +89,49 @@ fn pebak_backup_is_indexed_without_decrypting() {
         "salt 不同时 payload_hash 校验应失败（防止跨安装误读索引）"
     );
 }
+
+#[test]
+fn reconcile_reports_missing_and_orphans() {
+    use path_editor_core::db::backup_index::{purge_missing, reconcile_backups};
+
+    let dir = TempDir::new().unwrap();
+    let (_tmp, mut db) = crate::common::new_db("recon.db");
+
+    let present = dir.path().join("env_backup_present.pebak");
+    std::fs::write(&present, b"x").unwrap();
+    let missing = dir.path().join("env_backup_missing.pebak");
+    let orphan = dir.path().join("env_backup_orphan.pebak");
+    std::fs::write(&orphan, b"y").unwrap();
+
+    for (uid, path) in [("u1", &present), ("u2", &missing)] {
+        db.with_transaction(|tx| {
+            tx.execute(
+                "INSERT INTO backups (uid, kind, created_at, content_hash, size_bytes, file_path)
+                 VALUES (?1, 'env', 1, 'h', 0, ?2)",
+                rusqlite::params![uid, path.to_string_lossy()],
+            )
+            .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    let report = reconcile_backups(&db, dir.path()).unwrap();
+    assert_eq!(report.missing.len(), 1, "只有 missing 文件应被报出");
+    assert!(report.missing[0]
+        .file_path
+        .ends_with("env_backup_missing.pebak"));
+    assert_eq!(report.orphans.len(), 1, "目录里未入索引的文件应被报出");
+    assert!(report.orphans[0].ends_with("env_backup_orphan.pebak"));
+
+    // 只标记缺失行，不删磁盘文件
+    assert_eq!(purge_missing(&mut db, dir.path()).unwrap(), 1);
+    let listed = list_backups(&db).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].file_path.ends_with("env_backup_present.pebak"));
+    assert!(!missing.exists(), "缺失文件本就不存在");
+    assert!(orphan.exists());
+
+    // 幂等：再清一次没有可标记的行
+    assert_eq!(purge_missing(&mut db, dir.path()).unwrap(), 0);
+}

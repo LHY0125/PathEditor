@@ -2593,6 +2593,7 @@ dependencies = [
  "rpassword",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

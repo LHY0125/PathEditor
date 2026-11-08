@@ -122,10 +122,36 @@ export function CompareDialog({ leftUid, rightUid, onClose }: Props) {
             <DiffSection title={t('history.systemPath')} diff={result.system} />
             <DiffSection title={t('history.userPath')} diff={result.user} />
 
-            {/* 环境变量对比未实现，必须显式说明而不是留白 */}
-            <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
-              {t('compare.envNotAvailable')}
-            </p>
+            {/* 环境变量对比：按 hive + 变量名展示，敏感值不出现 */}
+            {(result.envDetails ?? []).length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+                {t('compare.noEnvChange')}
+              </p>
+            ) : (
+              <section className="mb-4">
+                <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+                  {t('compare.envVars')}
+                </h4>
+                <ul className="space-y-0.5 text-xs">
+                  {(result.envDetails ?? []).map((item) => (
+                    <li
+                      key={`${item.hive}-${item.name}-${item.change}`}
+                      style={{
+                        color:
+                          item.change === 'added'
+                            ? 'var(--app-success)'
+                            : item.change === 'removed'
+                              ? 'var(--app-danger)'
+                              : 'var(--app-warning-text)',
+                      }}
+                    >
+                      {item.hive === 'system' ? t('history.hiveSystem') : t('history.hiveUser')} ·{' '}
+                      {item.name} · {t(`compare.envChange.${item.change}`)}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </>
         )}
 

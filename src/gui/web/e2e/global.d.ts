@@ -16,6 +16,19 @@ interface Window {
     }>;
     total: number;
   };
+  /** 数据库健康 fixture（统计页健康卡片）。 */
+  __healthFixture?: {
+    path: string;
+    fileBytes: number;
+    walBytes: number;
+    shmBytes: number;
+    schemaVersion: number;
+    expectedSchemaVersion: number;
+    integrity: string;
+    integrityOk: boolean;
+    tableRows: Array<{ name: string; rows: number }>;
+    lastPruneAt: number | null;
+  };
   /** `null` 表示没有可展开的快照。 */
   __snapshotFixture?: {
     uid: string;

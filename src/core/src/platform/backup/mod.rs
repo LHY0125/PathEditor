@@ -6,7 +6,7 @@
 //! - [`path`]：PATH 备份与轮换
 //! - [`restore`]：环境变量备份的预览与恢复
 
-mod config;
+pub(crate) mod config;
 mod env;
 mod path;
 mod restore;

@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { ConflictsTab } from './analyze/ConflictsTab';
+import { ScanHistoryTab } from './analyze/ScanHistoryTab';
 import { ToolsTab } from './analyze/ToolsTab';
 import { useAnalyzeData } from './analyze/use-analyze-data';
 
-type TabType = 'conflicts' | 'tools';
+type TabType = 'conflicts' | 'tools' | 'history';
 
 interface Props {
   open: boolean;
@@ -27,7 +28,7 @@ export function AnalyzeDialog({ open, onClose }: Props) {
         >
           <h2 className="text-base font-semibold">{t('analyze.title')}</h2>
           <div className="flex gap-1" role="tablist" aria-label={t('analyze.title')}>
-            {(['conflicts', 'tools'] as TabType[]).map((tabId) => (
+            {(['conflicts', 'tools', 'history'] as TabType[]).map((tabId) => (
               <button
                 key={tabId}
                 type="button"
@@ -39,7 +40,11 @@ export function AnalyzeDialog({ open, onClose }: Props) {
                 className="tab-pill text-xs"
                 onClick={() => setTab(tabId)}
               >
-                {tabId === 'conflicts' ? t('analyze.conflicts') : t('analyze.tools')}
+                {tabId === 'conflicts'
+                  ? t('analyze.conflicts')
+                  : tabId === 'tools'
+                    ? t('analyze.tools')
+                    : t('analyze.history')}
               </button>
             ))}
           </div>
@@ -51,7 +56,9 @@ export function AnalyzeDialog({ open, onClose }: Props) {
           aria-labelledby={`analyze-tab-${tab}`}
           className="flex-1 overflow-auto p-3"
         >
-          {loading ? (
+          {tab === 'history' ? (
+            <ScanHistoryTab />
+          ) : loading ? (
             <div
               className="flex items-center justify-center py-12 text-xs"
               style={{ color: 'var(--app-fg-muted)' }}

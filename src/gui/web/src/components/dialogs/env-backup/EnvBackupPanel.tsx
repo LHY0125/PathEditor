@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { backend } from '@/services/backend';
+import { errorMessage } from '@/core/error';
 import { formatSize } from '@/core/env-backup';
 import { Button } from '@/components/ui/Button';
 import type { EnvBackupController } from './use-env-backup';
@@ -21,6 +24,37 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
   const { backups, busy, creating, selected, summary, preview, outcome, createdPath, error } =
     controller;
 
+  const [reconcile, setReconcile] = useState<{ missing: number; orphans: number } | null>(null);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [reconciling, setReconciling] = useState(false);
+
+  /** 对账：只读，不改索引也不删文件。 */
+  const checkReconcile = async () => {
+    setReconciling(true);
+    setReconcileError(null);
+    try {
+      setReconcile(await backend.backupReconcile());
+    } catch (err) {
+      setReconcileError(errorMessage(err));
+    } finally {
+      setReconciling(false);
+    }
+  };
+
+  /** 清理缺失索引：只把索引行标记为已删除，不碰磁盘文件。 */
+  const purgeMissing = async () => {
+    setReconciling(true);
+    setReconcileError(null);
+    try {
+      await backend.backupPurgeMissing();
+      setReconcile(await backend.backupReconcile());
+    } catch (err) {
+      setReconcileError(errorMessage(err));
+    } finally {
+      setReconciling(false);
+    }
+  };
+
   return (
     <div
       className="flex flex-col gap-3"
@@ -38,6 +72,26 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
           {t('envBackup.created', { path: createdPath })}
         </p>
       )}
+
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Button variant="ghost" disabled={reconciling} onClick={() => void checkReconcile()}>
+          {t('envBackup.reconcile')}
+        </Button>
+        {reconcile && (
+          <span style={{ color: 'var(--app-fg-muted)' }}>
+            {t('envBackup.reconcileResult', {
+              missing: reconcile.missing,
+              orphans: reconcile.orphans,
+            })}
+          </span>
+        )}
+        {reconcile && reconcile.missing > 0 && (
+          <Button variant="ghost" disabled={reconciling} onClick={() => void purgeMissing()}>
+            {t('envBackup.purgeMissing')}
+          </Button>
+        )}
+        {reconcileError && <span style={{ color: 'var(--app-error)' }}>{reconcileError}</span>}
+      </div>
 
       <div className="flex gap-3 overflow-hidden" style={{ minHeight: 260 }}>
         {/* 左：备份文件列表（Rust 侧已按时间倒序，前端不再排序） */}

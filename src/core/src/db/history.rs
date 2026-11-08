@@ -70,6 +70,8 @@ pub(crate) fn action_str(a: EventAction) -> &'static str {
         EventAction::EnvRemove => "envRemove",
         EventAction::Undo => "undo",
         EventAction::Redo => "redo",
+        EventAction::RevealEnv => "revealEnv",
+        EventAction::Drift => "drift",
     }
 }
 
@@ -84,6 +86,8 @@ pub(crate) fn action_from_str(s: &str) -> EventAction {
         "envRemove" => EventAction::EnvRemove,
         "undo" => EventAction::Undo,
         "redo" => EventAction::Redo,
+        "revealEnv" => EventAction::RevealEnv,
+        "drift" => EventAction::Drift,
         _ => EventAction::Save,
     }
 }
@@ -161,6 +165,22 @@ pub struct SnapshotView {
     pub user: Vec<PathEntry>,
     /// 环境变量（敏感值按 `reveal` 参数掩码）
     pub env: Vec<EnvValueRow>,
+    /// 用户备注（v5 起使用 `snapshots.note`）
+    pub note: Option<String>,
+    /// 是否固定（固定项不会被保留策略删除）
+    pub pinned: bool,
+}
+
+/// 固定快照的元数据（不含 PATH/环境变量，供列表与 CLI 使用）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedSnapshot {
+    /// 快照 uid
+    pub uid: String,
+    /// 创建时间（Unix 毫秒）
+    pub created_at: i64,
+    /// 用户备注
+    pub note: Option<String>,
 }
 
 /// 事件列表筛选条件。默认 `limit = 50`、`offset = 0`。
@@ -406,6 +426,17 @@ fn content_hash(snap: &NewSnapshot) -> String {
     h.finalize().to_hex().to_string()
 }
 
+/// 事件筛选的 WHERE 子句（`?1..?7`：action/source/hive/target/result/from/to）。
+///
+/// 列表与导出必须共用同一份条件，否则「列表筛选」与「导出筛选」会悄悄不一致。
+pub(crate) const EVENT_WHERE: &str = "WHERE (?1 IS NULL OR e.action = ?1)
+           AND (?2 IS NULL OR e.source = ?2)
+           AND (?3 IS NULL OR e.hive = ?3)
+           AND (?4 IS NULL OR e.target = ?4)
+           AND (?5 IS NULL OR e.result = ?5)
+           AND (?6 IS NULL OR e.created_at >= ?6)
+           AND (?7 IS NULL OR e.created_at <= ?7)";
+
 /// 分页查询事件，按 `created_at DESC, id DESC` 排序（服务端固定排序）。
 ///
 /// `total` 是**独立的 count 查询**，不能等于本页条数。
@@ -415,14 +446,7 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
 
     // WHERE 条件在两处必须完全一致，否则 total 与实际可分页内容不符。
     // 必须带 `e.` 前缀：`snapshots` 也有 `source` 列，JOIN 后裸列名是歧义的。
-    // 新增 hive / target / result / 时间范围四个维度。
-    const WHERE: &str = "WHERE (?1 IS NULL OR e.action = ?1)
-           AND (?2 IS NULL OR e.source = ?2)
-           AND (?3 IS NULL OR e.hive = ?3)
-           AND (?4 IS NULL OR e.target = ?4)
-           AND (?5 IS NULL OR e.result = ?5)
-           AND (?6 IS NULL OR e.created_at >= ?6)
-           AND (?7 IS NULL OR e.created_at <= ?7)";
+    const WHERE: &str = EVENT_WHERE;
 
     // 参数顺序必须与 WHERE 里的 ?1..?7 一一对应
     let filter_params = params![
@@ -490,11 +514,12 @@ pub fn list_events(db: &Db, filter: &EventFilter) -> Result<EventPage, CoreError
 ///
 /// `reveal = false` 时，`sensitive = 1` 的环境变量值被置为 `None`。
 pub fn get_snapshot(db: &Db, uid: &str, reveal: bool) -> Result<SnapshotView, CoreError> {
-    let (id, created_at, kind): (i64, i64, String) = db
+    let (id, created_at, kind, note, pinned): (i64, i64, String, Option<String>, i64) = db
         .query_row_optional(
-            "SELECT id, created_at, kind FROM snapshots WHERE uid = ?1 AND deleted_at IS NULL",
+            "SELECT id, created_at, kind, note, pinned
+               FROM snapshots WHERE uid = ?1 AND deleted_at IS NULL",
             params![uid],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )?
         // 只有「查不到行」才是 NotFound；SQLITE_BUSY / IO / 损坏必须原样上报，
         // 否则导出侧会把一次瞬时失败当成「实体已删除」，产出 content=null 的变更。
@@ -508,10 +533,14 @@ pub fn get_snapshot(db: &Db, uid: &str, reveal: bool) -> Result<SnapshotView, Co
 
     load_snapshot_view(
         db,
-        id,
-        uid,
-        created_at,
-        SnapshotKind::from_str(&kind),
+        SnapshotMeta {
+            id,
+            uid: uid.to_string(),
+            created_at,
+            kind: SnapshotKind::from_str(&kind),
+            note,
+            pinned: pinned != 0,
+        },
         reveal,
     )
 }
@@ -548,23 +577,102 @@ pub fn current_snapshot(db: &Db) -> Result<Option<SnapshotView>, CoreError> {
     let Some((id, uid)) = row else {
         return Ok(None);
     };
-    // created_at / kind 从同一行取，避免二次查询带来的不一致窗口
-    let (created_at, kind): (i64, String) = db
+    // created_at / kind / note / pinned 从同一行取，避免二次查询带来的不一致窗口
+    let (created_at, kind, note, pinned): (i64, String, Option<String>, i64) = db
         .query_row_with(
-            "SELECT created_at, kind FROM snapshots WHERE id = ?1",
+            "SELECT created_at, kind, note, pinned FROM snapshots WHERE id = ?1",
             params![id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|e| CoreError::new(e.code, "current_snapshot", e.message))?;
     load_snapshot_view(
         db,
-        id,
-        &uid,
-        created_at,
-        SnapshotKind::from_str(&kind),
+        SnapshotMeta {
+            id,
+            uid,
+            created_at,
+            kind: SnapshotKind::from_str(&kind),
+            note,
+            pinned: pinned != 0,
+        },
         false,
     )
     .map(Some)
+}
+
+/// 设置快照备注。传入 `None` 或全空白时清空；最长 500 字符。
+pub fn set_snapshot_note(db: &mut Db, uid: &str, note: Option<&str>) -> Result<(), CoreError> {
+    let normalized = note.map(str::trim).filter(|text| !text.is_empty());
+    if let Some(text) = normalized {
+        if text.chars().count() > 500 {
+            return Err(CoreError::new(
+                ErrorCode::InvalidValue,
+                "set_snapshot_note",
+                "备注最长 500 字符",
+            ));
+        }
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    db.with_transaction(|tx| {
+        let changed = tx
+            .execute(
+                "UPDATE snapshots SET note = ?1, updated_at = ?2
+                  WHERE uid = ?3 AND deleted_at IS NULL",
+                params![normalized, now, uid],
+            )
+            .map_err(|e| db_err("set_snapshot_note", e))?;
+        if changed == 0 {
+            return Err(CoreError::new(
+                ErrorCode::NotFound,
+                "set_snapshot_note",
+                format!("快照不存在: {uid}"),
+            ));
+        }
+        Ok(())
+    })
+}
+
+/// 固定/取消固定快照。固定项不会被保留策略删除。
+pub fn set_snapshot_pinned(db: &mut Db, uid: &str, pinned: bool) -> Result<(), CoreError> {
+    let now = chrono::Utc::now().timestamp_millis();
+    db.with_transaction(|tx| {
+        let changed = tx
+            .execute(
+                "UPDATE snapshots SET pinned = ?1, updated_at = ?2
+                  WHERE uid = ?3 AND deleted_at IS NULL",
+                params![i64::from(pinned), now, uid],
+            )
+            .map_err(|e| db_err("set_snapshot_pinned", e))?;
+        if changed == 0 {
+            return Err(CoreError::new(
+                ErrorCode::NotFound,
+                "set_snapshot_pinned",
+                format!("快照不存在: {uid}"),
+            ));
+        }
+        Ok(())
+    })
+}
+
+/// 列出全部固定快照（按创建时间倒序）。
+pub fn list_pinned(db: &Db) -> Result<Vec<PinnedSnapshot>, CoreError> {
+    let mut stmt = db.prepare(
+        "SELECT uid, created_at, note FROM snapshots
+          WHERE pinned = 1 AND deleted_at IS NULL
+          ORDER BY created_at DESC, id DESC",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(PinnedSnapshot {
+                uid: r.get(0)?,
+                created_at: r.get(1)?,
+                note: r.get(2)?,
+            })
+        })
+        .map_err(|e| db_err("list_pinned", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| db_err("list_pinned", e))?;
+    Ok(rows)
 }
 
 /// 把 `app_state.current_snapshot_id` 指向给定 uid（含 `version` CAS）。
@@ -649,14 +757,29 @@ pub fn reveal_env_value(db: &Db, uid: &str, hive: &str, name: &str) -> Result<St
 }
 
 /// 组装快照视图（PATH 条目 + 环境变量）。
-fn load_snapshot_view(
-    db: &Db,
+/// 快照的标量元数据（视图装载的输入，避免长参数列表）。
+struct SnapshotMeta {
     id: i64,
-    uid: &str,
+    uid: String,
     created_at: i64,
     kind: SnapshotKind,
+    note: Option<String>,
+    pinned: bool,
+}
+
+fn load_snapshot_view(
+    db: &Db,
+    meta: SnapshotMeta,
     reveal: bool,
 ) -> Result<SnapshotView, CoreError> {
+    let SnapshotMeta {
+        id,
+        uid,
+        created_at,
+        kind,
+        note,
+        pinned,
+    } = meta;
     let mut stmt = db.prepare(
         "SELECT hive, path, enabled FROM path_entries
          WHERE snapshot_id = ?1 ORDER BY hive, position",
@@ -715,5 +838,7 @@ fn load_snapshot_view(
         system,
         user,
         env,
+        note,
+        pinned,
     })
 }

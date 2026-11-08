@@ -8,6 +8,9 @@ mod db_app_state;
 #[path = "suites/history/db_current_snapshot_read.rs"]
 mod db_current_snapshot_read;
 
+#[path = "suites/history/db_drift.rs"]
+mod db_drift;
+
 #[path = "suites/history/db_event_filter.rs"]
 mod db_event_filter;
 
@@ -52,6 +55,9 @@ mod db_compare_toggle;
 
 #[path = "suites/history/db_compare_user_only.rs"]
 mod db_compare_user_only;
+
+#[path = "suites/history/db_retention.rs"]
+mod db_retention;
 
 #[path = "suites/history/db_reveal_value.rs"]
 mod db_reveal_value;

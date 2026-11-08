@@ -4,6 +4,7 @@
 //! revision 校验全部由 `path_editor_core` 判定，这里只透传错误文本。
 
 pub mod env;
+pub mod history;
 pub mod import_export;
 pub mod maintenance;
 pub mod path;

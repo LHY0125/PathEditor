@@ -78,29 +78,104 @@ pub struct CompareResult {
     pub system: PathDiff,
     /// 用户 PATH 的差异
     pub user: PathDiff,
-    /// 环境变量对比尚未实现，字段恒为空。
-    ///
-    /// UI 必须显式显示「本版本不支持环境变量对比」，不能留白让用户以为
-    /// 「环境变量没有变化」。
+    /// 环境变量新增（仅变量名；同一名字在不同 hive 可能出现两次）
     pub env_added: Vec<String>,
-    /// 同上
+    /// 环境变量删除（仅变量名）
     pub env_removed: Vec<String>,
-    /// 同上
+    /// 环境变量修改（仅变量名）
     pub env_modified: Vec<String>,
+    /// 带 hive 的明细；UI 用它区分 system/user，避免同名变量混淆。
+    pub env_details: Vec<EnvNameChange>,
+}
+
+/// 一条环境变量差异（不含值）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvNameChange {
+    /// `system` / `user`
+    pub hive: String,
+    /// 变量名
+    pub name: String,
+    /// `added` / `removed` / `modified`
+    pub change: String,
 }
 
 /// 比较两个快照（按 uid）。
+///
+/// 敏感值在两侧都以 `None` 出现（`reveal=false`）；`modified` 因此按
+/// `revision` 判定——它覆盖类型与值，且不含明文。
 pub fn compare(db: &Db, left_uid: &str, right_uid: &str) -> Result<CompareResult, CoreError> {
-    // 双 hive 都对比；环境变量对比涉及掩码语义，尚未实现（三个 env 字段恒为空）
     let left = history::get_snapshot(db, left_uid, false)?;
     let right = history::get_snapshot(db, right_uid, false)?;
+    let (env_added, env_removed, env_modified, env_details) = compare_env(&left.env, &right.env);
     Ok(CompareResult {
         system: compare_paths(&left.system, &right.system),
         user: compare_paths(&left.user, &right.user),
-        env_added: Vec::new(),
-        env_removed: Vec::new(),
-        env_modified: Vec::new(),
+        env_added,
+        env_removed,
+        env_modified,
+        env_details,
     })
+}
+
+/// 纯函数：比较两个快照的环境变量。
+///
+/// 键是 `(hive, 小写变量名)`；`modified` 以 `revision` 为准（覆盖类型与值），
+/// 因此敏感变量在掩码状态下也能被正确判定。
+fn compare_env(
+    left: &[super::history::EnvValueRow],
+    right: &[super::history::EnvValueRow],
+) -> (Vec<String>, Vec<String>, Vec<String>, Vec<EnvNameChange>) {
+    use std::collections::HashMap;
+
+    let key = |row: &super::history::EnvValueRow| (row.hive.clone(), row.name.to_lowercase());
+    let left_map: HashMap<(String, String), &super::history::EnvValueRow> =
+        left.iter().map(|row| (key(row), row)).collect();
+    let right_map: HashMap<(String, String), &super::history::EnvValueRow> =
+        right.iter().map(|row| (key(row), row)).collect();
+
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    let mut modified = Vec::new();
+    let mut details = Vec::new();
+
+    for (k, row) in &right_map {
+        match left_map.get(k) {
+            None => {
+                added.push(row.name.clone());
+                details.push(EnvNameChange {
+                    hive: row.hive.clone(),
+                    name: row.name.clone(),
+                    change: "added".into(),
+                });
+            }
+            Some(old) if old.revision != row.revision => {
+                modified.push(row.name.clone());
+                details.push(EnvNameChange {
+                    hive: row.hive.clone(),
+                    name: row.name.clone(),
+                    change: "modified".into(),
+                });
+            }
+            Some(_) => {}
+        }
+    }
+    for (k, row) in &left_map {
+        if !right_map.contains_key(k) {
+            removed.push(row.name.clone());
+            details.push(EnvNameChange {
+                hive: row.hive.clone(),
+                name: row.name.clone(),
+                change: "removed".into(),
+            });
+        }
+    }
+
+    added.sort();
+    removed.sort();
+    modified.sort();
+    details.sort_by(|a, b| (&a.hive, &a.name, &a.change).cmp(&(&b.hive, &b.name, &b.change)));
+    (added, removed, modified, details)
 }
 
 /// 纯函数：对比单侧 PATH。

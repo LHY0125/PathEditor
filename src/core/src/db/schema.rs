@@ -4,7 +4,7 @@
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
 /// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 /// v1 全量 DDL。
 ///
@@ -221,6 +221,13 @@ ALTER TABLE sync_conflicts ADD COLUMN remote_content TEXT;
 CREATE INDEX idx_backups_file_path ON backups(file_path);
 CREATE INDEX idx_refs_from ON var_references(from_name);
 CREATE INDEX idx_refs_to ON var_references(to_name);
+"#;
+
+/// v5：快照可标记为「固定」（保留策略不删）。
+pub const DDL_V5: &str = r#"
+ALTER TABLE snapshots ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_snapshots_pinned ON snapshots(pinned)
+  WHERE pinned = 1;
 "#;
 
 /// 建库时写入 `app_state` 单行。

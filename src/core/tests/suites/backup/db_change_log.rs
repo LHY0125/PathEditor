@@ -62,3 +62,38 @@ fn change_log_records_assigns_seq_and_marks_exported() {
     assert_eq!(again, 1, "已导出的不应被再次计入");
     assert!(pending_export(&db).unwrap().is_empty());
 }
+
+#[test]
+fn export_changes_csv_and_json_include_pending_rows() {
+    use path_editor_core::db::audit_export::export_changes;
+
+    let (_dir, mut db) = crate::common::new_db("export_changes.db");
+    db.with_transaction(|tx| {
+        record_change_tx(
+            tx,
+            NewChange {
+                entity_type: "profile".into(),
+                entity_uid: "p1".into(),
+                field: Some("name".into()),
+                old_value: "\"a\"".into(),
+                new_value: "\"b\"".into(),
+            },
+        )
+    })
+    .unwrap();
+
+    // exported_only=false：待导出队列也要出现
+    let csv = export_changes(&db, false, "csv").unwrap();
+    assert!(csv.starts_with("uid,deviceId,"));
+    assert_eq!(csv.lines().count(), 2, "表头 + 一条变更");
+    assert!(csv.contains("profile"));
+
+    // exported_only=true：尚未导出 → 只有表头
+    let exported = export_changes(&db, true, "csv").unwrap();
+    assert_eq!(exported.lines().count(), 1, "只有表头");
+
+    let json = export_changes(&db, false, "json").unwrap();
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value.as_array().unwrap().len(), 1);
+    assert!(json.contains("\"entityType\": \"profile\""));
+}

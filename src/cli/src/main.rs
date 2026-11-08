@@ -15,7 +15,7 @@ use commands::path::{
 use commands::profile::{
     profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
 };
-use commands::scan::{cmd_check_admin, cmd_conflicts, cmd_scan};
+use commands::scan::{cmd_check_admin, cmd_conflicts, cmd_scan, cmd_scan_diff, cmd_scan_history};
 
 fn main() {
     let cli = Cli::parse();
@@ -59,6 +59,13 @@ fn main() {
         Command::Backup => cmd_backup(),
         Command::Conflicts { json } => cmd_conflicts(json),
         Command::Scan { query, json } => cmd_scan(query, json),
+        Command::ScanHistory { limit, json } => cmd_scan_history(limit, json),
+        Command::ScanDiff { a, b, json } => cmd_scan_diff(a, b, json),
+        Command::HistoryNote { uid, text, json } => {
+            commands::history::history_note(uid, text, json)
+        }
+        Command::HistoryPin { uid, off, json } => commands::history::history_pin(uid, off, json),
+        Command::HistoryPinned { json } => commands::history::history_pinned(json),
         Command::CheckAdmin { json } => cmd_check_admin(json),
         Command::Env(cmd) => match cmd {
             EnvCmd::List { system, user, json } => commands::env::cmd_env_list(system, user, json),
@@ -138,9 +145,25 @@ fn main() {
         },
         Command::Maintenance(cmd) => match cmd {
             MaintenanceCmd::Prune { dry_run } => commands::maintenance::maintenance_prune(dry_run),
+            MaintenanceCmd::Vacuum => commands::maintenance::maintenance_vacuum(),
+            MaintenanceCmd::Health { json } => commands::maintenance::maintenance_health(json),
             MaintenanceCmd::CleanupLegacyBackups { dry_run, yes } => {
                 commands::maintenance::maintenance_cleanup_legacy(dry_run, yes)
             }
+            MaintenanceCmd::ReconcileBackups {
+                json,
+                purge_missing,
+            } => commands::maintenance::maintenance_reconcile_backups(json, purge_missing),
+            MaintenanceCmd::Export {
+                events,
+                changes,
+                format,
+                out,
+                since,
+                until,
+            } => commands::maintenance::maintenance_export(
+                events, changes, &format, out, since, until,
+            ),
         },
     }
 
@@ -148,6 +171,10 @@ fn main() {
     // CLI 是短命进程：这里必须等待在途通知发完，否则「命令成功」不再意味着
     // Explorer 收到了环境变更。GUI 常驻进程不需要这一步。
     path_editor_core::platform::system::flush_env_broadcasts();
+
+    // 派生表（daily_stats / var_references）原本只在 GUI 启动时重建；
+    // CLI 写完就退出，下一次 GUI 启动前统计与引用图会陈旧。这里按水位补一次。
+    runtime::refresh_derived_if_stale();
 }
 
 #[cfg(test)]

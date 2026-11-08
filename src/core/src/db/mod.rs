@@ -13,12 +13,14 @@
 //! **数据库文件本身不加密**：`~/.patheditor/patheditor.db` 是标准 SQLite。
 //! 需要加密的只剩 `.pebak` 备份（DPAPI）与同步 bundle（Argon2id + AEAD）。
 
+pub mod audit_export;
 pub mod backup_index;
 pub mod compare;
 pub mod crypto;
 #[cfg(windows)]
 pub mod dacl;
 pub mod derived;
+pub mod health;
 pub mod history;
 pub mod history_sink;
 pub mod maintenance;
@@ -35,11 +37,14 @@ pub mod dpapi;
 
 use crate::domain::error::{CoreError, ErrorCode};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// 数据库句柄。由 GUI / CLI 启动时创建并显式传入服务层，**不使用全局单例**。
 pub struct Db {
     conn: Connection,
+    /// 打开时的文件路径（迁移前备份与健康面板需要）。
+    path: PathBuf,
 }
 
 impl Db {
@@ -68,7 +73,15 @@ impl Db {
              PRAGMA busy_timeout = 5000;",
         )
         .map_err(|e| db_err("pragma", e))?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// 数据库文件路径。
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// 只读版本号。
@@ -96,6 +109,9 @@ impl Db {
         if current == schema::CURRENT_SCHEMA_VERSION {
             return Ok(());
         }
+        // 迁移前留一份可回退副本：事务只防「迁移中途失败」，
+        // 防不了「迁移逻辑错误但成功提交」。备份失败则中止迁移（宁可不开机也不裸迁）。
+        self.backup_before_migration(current)?;
         self.with_transaction(|tx| {
             // **事务内重读**：GUI 与 CLI 可能同时首次迁移/升级。`BEGIN IMMEDIATE`
             // 已经拿到写锁，此刻读到的值才是真正的起点；沿用事务外的值会让后到者
@@ -132,6 +148,11 @@ impl Db {
                 tx.execute_batch(schema::DDL_V4)
                     .map_err(|e| db_err("ddl_v4", e))?;
             }
+            // v5：快照固定标记（保留策略的保护位）
+            if current < 5 {
+                tx.execute_batch(schema::DDL_V5)
+                    .map_err(|e| db_err("ddl_v5", e))?;
+            }
             // 版本号写在**所有分支之后**：v1→v2 的升级路径同样要落版本，
             // 写在 `if current < 1` 内部会让升级后 user_version 仍停在 1，
             // 下次启动重复执行 DDL_V2（表已存在 → 报错）。
@@ -145,6 +166,82 @@ impl Db {
             .map_err(|e| db_err("set_version", e))?;
             Ok(())
         })
+    }
+
+    /// 迁移前把当前库复制为 `<文件名>.pre-v{旧版本}.bak`，最多保留 3 份。
+    ///
+    /// 用 SQLite Online Backup API 而不是文件复制：WAL 模式下直接拷主文件
+    /// 可能拿到不含最新事务的半成品。
+    fn backup_before_migration(&self, from_version: u32) -> Result<(), CoreError> {
+        if from_version == 0 {
+            // 全新库没有需要保护的数据
+            return Ok(());
+        }
+        let file_name = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| {
+                CoreError::new(
+                    ErrorCode::Migration,
+                    "pre_migration_backup",
+                    "数据库路径无文件名",
+                )
+            })?;
+        let dest = self
+            .path
+            .with_file_name(format!("{file_name}.pre-v{from_version}.bak"));
+        let tmp = dest.with_extension("bak.tmp");
+        if tmp.exists() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        {
+            let mut dest_conn = Connection::open(&tmp).map_err(|e| db_err("backup_open", e))?;
+            let backup = rusqlite::backup::Backup::new(&self.conn, &mut dest_conn)
+                .map_err(|e| db_err("backup_init", e))?;
+            backup
+                .run_to_completion(64, Duration::from_millis(10), None)
+                .map_err(|e| db_err("backup_copy", e))?;
+        }
+        std::fs::rename(&tmp, &dest).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Migration,
+                "pre_migration_backup",
+                format!("写迁移备份失败: {e}"),
+            )
+        })?;
+        self.rotate_migration_backups(file_name);
+        Ok(())
+    }
+
+    /// 只保留最近的 3 份迁移前备份；删除失败只告警，不影响迁移。
+    fn rotate_migration_backups(&self, file_name: &str) {
+        let Some(dir) = self.path.parent() else {
+            return;
+        };
+        let prefix = format!("{file_name}.pre-v");
+        let mut backups: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with(&prefix) || !name.ends_with(".bak") {
+                    return None;
+                }
+                let modified = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                Some((modified, entry.path()))
+            })
+            .collect();
+        backups.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+        for (_, path) in backups.into_iter().skip(3) {
+            if let Err(e) = std::fs::remove_file(&path) {
+                log::warn!("删除旧迁移备份失败 {}: {e}", path.display());
+            }
+        }
     }
 
     /// 表是否存在（测试/诊断用）。
@@ -208,6 +305,13 @@ impl Db {
             .query_row(sql, params, f)
             .optional()
             .map_err(|e| db_err("query_row", e))
+    }
+
+    /// 直接执行一段 SQL（`VACUUM` / `wal_checkpoint` 等不能在事务内跑的语句用）。
+    pub fn execute_batch(&self, sql: &str) -> Result<(), CoreError> {
+        self.conn
+            .execute_batch(sql)
+            .map_err(|e| db_err("execute_batch", e))
     }
 
     /// 预处理语句（只读列表查询用）。

@@ -21,6 +21,9 @@
     "create": "立即备份",
     "created": "备份已创建：{{path}}",
     "creating": "正在备份...",
+    "reconcile": "检查索引",
+    "reconcileResult": "缺失 {{missing}} 条 · 未入索引 {{orphans}} 个",
+    "purgeMissing": "标记缺失为已删除",
     "empty": "暂无备份文件",
     "loading": "正在读取备份列表...",
     "selectHint": "选择一个备份以预览差异",
@@ -64,6 +67,8 @@
     "search": "搜索变量名",
     "newVar": "新建变量",
     "refresh": "刷新",
+    "exportCsv": "导出 CSV",
+    "exportHint": "把当前筛选结果导出为 CSV",
     "show": "显示",
     "hide": "隐藏",
     "all": "全部",
@@ -200,6 +205,15 @@
     "title": "PATH 分析",
     "conflicts": "冲突检测",
     "tools": "工具清单",
+
+    "history": "扫描历史",
+    "historyHint": "选择两次扫描进行对比（先选的作为上次）",
+    "historyEmpty": "还没有扫描历史",
+    "compareRuns": "对比（{{count}}/2）",
+    "appeared": "新出现",
+    "disappeared": "已消失",
+    "persistent": "持续存在",
+    "refreshHistory": "刷新",
     "scanning": "正在扫描...",
     "noConflicts": "未发现可执行文件冲突",
     "noTools": "未找到匹配的可执行文件",
@@ -229,6 +243,12 @@
   "history": {
     "title": "历史记录",
     "refresh": "刷新",
+
+    "pinnedSnapshots": "固定快照",
+    "notePlaceholder": "快照备注…",
+    "saveNote": "保存备注",
+    "pin": "固定快照",
+    "unpin": "取消固定",
     "loading": "加载中…",
     "empty": "还没有历史记录",
     "pickOne": "选择一条记录查看快照",
@@ -250,6 +270,7 @@
     "degradedDetail": "历史库无法打开，当前处于降级模式",
     "degradedHint": "环境变量编辑不受影响；重启后可重试",
     "action": {
+      "drift": "注册表漂移",
       "save": "保存 PATH",
       "apply": "应用配置",
       "restore": "恢复快照",
@@ -258,7 +279,8 @@
       "envAdd": "新增变量",
       "envRemove": "删除变量",
       "undo": "撤销",
-      "redo": "重做"
+      "redo": "重做",
+      "revealEnv": "查看明文"
     },
     "source": {
       "gui": "图形界面",
@@ -307,6 +329,13 @@
     "openFailed": "无法定位到当前位置（可能来自历史快照）"
   },
   "stats": {
+    "healthTitle": "数据库健康",
+    "healthSchema": "schema",
+    "healthOk": "完整性正常",
+    "healthBad": "完整性异常",
+    "healthSize": "体积",
+    "healthLastPrune": "最近清理",
+    "healthNever": "无记录",
     "loading": "加载中…",
     "currentTitle": "当前状态",
     "currentPathItems": "当前 PATH 条目",
@@ -317,6 +346,8 @@
     "eventsCount": "{{count}} 次操作",
     "topTargets": "最常改变的变量",
     "profileApplies": "配置应用次数",
+    "conflictTop": "最常出现的冲突",
+    "scanSummary": "扫描 {{runs}} 次 · {{rate}}% 有冲突",
     "errorDegraded": "统计不可用（降级模式）",
     "errorLoadFailed": "统计加载失败",
     "retry": "重试"
@@ -331,6 +362,13 @@
     "enabled": "启用",
     "disabled": "禁用",
     "envNotAvailable": "本版本不支持环境变量对比",
+    "envVars": "环境变量",
+    "noEnvChange": "环境变量无变化",
+    "envChange": {
+      "added": "新增",
+      "removed": "删除",
+      "modified": "修改"
+    },
     "selectForCompare": "选择此快照用于对比",
     "open": "对比选中项（{{count}}/2）",
     "clearSelection": "清除选择",

@@ -14,7 +14,9 @@ export type EventAction =
   | 'envAdd'
   | 'envRemove'
   | 'undo'
-  | 'redo';
+  | 'redo'
+  | 'revealEnv'
+  | 'drift';
 
 /** 事件结果（对应 core 的 `EventResult`）。 */
 export type EventResult = 'success' | 'partial' | 'failure';
@@ -76,6 +78,71 @@ export interface SnapshotView {
   system: PathEntry[];
   user: PathEntry[];
   env: HistoryEnvValue[];
+  note: string | null;
+  pinned: boolean;
+}
+
+/** 数据库健康快照（对应 core 的 `DbHealth`）。 */
+export interface DbHealth {
+  path: string;
+  fileBytes: number;
+  walBytes: number;
+  shmBytes: number;
+  schemaVersion: number;
+  expectedSchemaVersion: number;
+  integrity: string;
+  integrityOk: boolean;
+  tableRows: { name: string; rows: number }[];
+  lastPruneAt: number | null;
+}
+
+/** 校验 `DbHealth`。 */
+export function parseDbHealth(value: unknown): DbHealth {
+  if (!isRecord(value)) throw new Error('db_health 返回了无效契约');
+  const {
+    path,
+    fileBytes,
+    walBytes,
+    shmBytes,
+    schemaVersion,
+    expectedSchemaVersion,
+    integrity,
+    integrityOk,
+    tableRows,
+    lastPruneAt,
+  } = value;
+  if (
+    typeof path !== 'string' ||
+    typeof fileBytes !== 'number' ||
+    typeof walBytes !== 'number' ||
+    typeof shmBytes !== 'number' ||
+    typeof schemaVersion !== 'number' ||
+    typeof expectedSchemaVersion !== 'number' ||
+    typeof integrity !== 'string' ||
+    typeof integrityOk !== 'boolean' ||
+    !Array.isArray(tableRows) ||
+    (lastPruneAt !== null && typeof lastPruneAt !== 'number')
+  ) {
+    throw new Error('db_health 字段形状无效');
+  }
+  const rows = tableRows.map((row) => {
+    if (!isRecord(row) || typeof row.name !== 'string' || typeof row.rows !== 'number') {
+      throw new Error('db_health 的 tableRows 条目形状无效');
+    }
+    return { name: row.name, rows: row.rows };
+  });
+  return {
+    path,
+    fileBytes,
+    walBytes,
+    shmBytes,
+    schemaVersion,
+    expectedSchemaVersion,
+    integrity,
+    integrityOk,
+    tableRows: rows,
+    lastPruneAt,
+  };
 }
 
 /** 配置方案视图（对应 core 的 `ProfileView`）。 */
@@ -102,6 +169,8 @@ const EVENT_ACTIONS: readonly EventAction[] = [
   'envRemove',
   'undo',
   'redo',
+  'revealEnv',
+  'drift',
 ];
 const EVENT_RESULTS: readonly EventResult[] = ['success', 'partial', 'failure'];
 
@@ -173,6 +242,15 @@ export function parseSnapshotView(value: unknown, label = 'history'): SnapshotVi
       restorable: raw.restorable,
     };
   });
+  // note/pinned 是 v5 后加字段：缺省按空备注/未固定处理（兼容旧契约）
+  const note = value.note === undefined ? null : value.note;
+  if (note !== null && typeof note !== 'string') {
+    throw new Error(`${label} 的 note 必须是字符串或 null`);
+  }
+  const pinned = value.pinned === undefined ? false : value.pinned;
+  if (typeof pinned !== 'boolean') {
+    throw new Error(`${label} 的 pinned 必须是布尔值`);
+  }
   return {
     uid,
     createdAt,
@@ -180,6 +258,8 @@ export function parseSnapshotView(value: unknown, label = 'history'): SnapshotVi
     system: parsePathEntries(value.system, `${label}.system`),
     user: parsePathEntries(value.user, `${label}.user`),
     env,
+    note,
+    pinned,
   };
 }
 
@@ -279,6 +359,9 @@ export interface Dashboard {
   profileApplies: ProfileApply[];
   currentAvgLen: number;
   currentPathItems: number;
+  scanRuns: number;
+  conflictRate: number;
+  topConflicts: TargetCount[];
 }
 
 /** 顺序变化的一条。 */
@@ -306,15 +389,22 @@ export interface PathDiff {
 /**
  * 对比结果（system 与 user **分开**）。
  *
- * `env_*` 三字段当前实现**恒为空数组**——UI 必须显示
- * 「本版本不支持环境变量对比」，而不是让用户以为「env 没变化」。
+ * `envAdded/envRemoved/envModified` 只含变量名；`envDetails` 带 hive，
+ * 用于区分同名变量。敏感值不参与对比结果。
  */
+export interface EnvNameChange {
+  hive: string;
+  name: string;
+  change: 'added' | 'removed' | 'modified';
+}
+
 export interface CompareResult {
   system: PathDiff;
   user: PathDiff;
   envAdded: string[];
   envRemoved: string[];
   envModified: string[];
+  envDetails: EnvNameChange[];
 }
 
 /** 一条引用边。 */
@@ -403,12 +493,31 @@ export function parseDashboard(value: unknown, label = 'stats_dashboard'): Dashb
   if (typeof value.currentAvgLen !== 'number' || typeof value.currentPathItems !== 'number') {
     throw new Error(`${label} 的 current* 字段必须是数字`);
   }
+  // 冲突统计是后加字段：缺省按零值处理（兼容旧契约）
+  const scanRuns = value.scanRuns === undefined ? 0 : value.scanRuns;
+  const conflictRate = value.conflictRate === undefined ? 0 : value.conflictRate;
+  if (typeof scanRuns !== 'number' || typeof conflictRate !== 'number') {
+    throw new Error(`${label} 的冲突统计字段必须是数字`);
+  }
+  const topConflictsRaw = value.topConflicts === undefined ? [] : value.topConflicts;
+  if (!Array.isArray(topConflictsRaw)) {
+    throw new Error(`${label} 的 topConflicts 必须是数组`);
+  }
+  const topConflicts = topConflictsRaw.map((raw) => {
+    if (!isRecord(raw) || typeof raw.target !== 'string' || typeof raw.count !== 'number') {
+      throw new Error(`${label} 的 topConflicts 条目形状无效`);
+    }
+    return { target: raw.target, count: raw.count };
+  });
   return {
     days,
     topTargets,
     profileApplies,
     currentAvgLen: value.currentAvgLen,
     currentPathItems: value.currentPathItems,
+    scanRuns,
+    conflictRate,
+    topConflicts,
   };
 }
 
@@ -467,13 +576,34 @@ export function parseCompareResult(value: unknown, label = 'compare_snapshots'):
   if (!isStringArray(envAdded)) throw new Error(`${label}.envAdded 必须是字符串数组`);
   if (!isStringArray(envRemoved)) throw new Error(`${label}.envRemoved 必须是字符串数组`);
   if (!isStringArray(envModified)) throw new Error(`${label}.envModified 必须是字符串数组`);
+  // envDetails 是后加的字段：缺省按空数组处理（兼容旧契约），
+  // 出现了就必须是完整形状。
+  const envDetails =
+    value.envDetails === undefined ? [] : parseEnvNameChanges(value.envDetails, label);
   return {
     system: parsePathDiff(value.system, `${label}.system`),
     user: parsePathDiff(value.user, `${label}.user`),
     envAdded,
     envRemoved,
     envModified,
+    envDetails,
   };
+}
+
+/** 校验 `EnvNameChange[]`。 */
+function parseEnvNameChanges(value: unknown, label: string): EnvNameChange[] {
+  if (!Array.isArray(value)) throw new Error(`${label}.envDetails 必须是数组`);
+  return value.map((item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.hive !== 'string' ||
+      typeof item.name !== 'string' ||
+      (item.change !== 'added' && item.change !== 'removed' && item.change !== 'modified')
+    ) {
+      throw new Error(`${label}.envDetails 返回了无效条目`);
+    }
+    return { hive: item.hive, name: item.name, change: item.change };
+  });
 }
 
 /** 校验 `RefEdge[]`。 */

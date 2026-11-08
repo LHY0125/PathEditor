@@ -9,6 +9,7 @@
   - 单个文件：`npx vitest run src/gui/web/tests/unit/<file>.test.ts`
   - 按名字过滤：`npx vitest run -t "<name>"`
 - **E2E**：Playwright，测试放在 `src/gui/web/e2e/tests/*.spec.ts`，运行 `npm run test:e2e`。它验证前端流程（mock IPC），不等同于真实 Tauri 集成验证。
+  `playwright.config.ts` 的 `webServer.cwd` **必须显式指向仓库根**（本文件不在仓库根，默认 cwd 会找不到根 `package.json`）。
 - **Rust**：测试放在模块内或 workspace test target，运行 `cargo test --workspace`。
   - core 集成测试按领域分组：`src/core/tests/{history,search,schema,backup,sync,contracts}.rs` 是 6 个聚合 root，用例文件在 `tests/suites/<group>/`，由 root 用 `#[path]` 挂载。**新增用例放进对应组**，不要新增顶层 target。
   - 单个测试：`cargo test -p <crate> <test_name>`
@@ -34,11 +35,12 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}` 与 `services/backend/`（`components/` 不在门槛内）。`services/backend/` 是 IPC 形状校验的安全边界，纳入门槛以免新增命令漏测。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v7.0.0）**：Rust **337 passed / 0 failed / 2 ignored**；前端 **40 files / 426 passed**；E2E **54 passed**。
+- **当前基线（v7.0.0）**：Rust **353 passed / 0 failed / 2 ignored**；前端 **41 files / 448 passed**（行覆盖率 **80.36%**）；E2E **55 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
   - Rust 为 2026-11-08 本机实测（GNU 工具链，去掉 SQLCipher 后同一套用例）：
-    `cargo test --workspace` → 337 passed / 2 ignored；前端为同日实测：
-    `npx vitest run` → 40 files / 426 passed；E2E 沿用 2026-10-24 实测（本轮未跑）→ 54 passed。
+    `cargo test --workspace` → 353 passed / 2 ignored；前端为同日实测：
+    `npx vitest run` → 41 files / 448 passed，行覆盖率 80.36%；E2E 为同日实测：
+    `npm run test:e2e` → 55 passed（Playwright 1.60）。
 
 ## CI
 

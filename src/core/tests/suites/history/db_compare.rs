@@ -59,3 +59,50 @@ fn compare_reports_both_hives_added_removed_and_reorder() {
         "自比对必须两侧都无差异"
     );
 }
+
+#[test]
+fn compare_reports_env_changes_without_values() {
+    use path_editor_core::db::history::EnvValueRow;
+
+    let (_dir, mut db) = crate::common::new_db("cenv.db");
+
+    let row = |hive: &str, name: &str, revision: &str| EnvValueRow {
+        hive: hive.into(),
+        name: name.into(),
+        kind: "String".into(),
+        value: Some("secret-value".into()),
+        revision: revision.into(),
+        sensitive: false,
+        restorable: true,
+    };
+    let mk = |env: Vec<EnvValueRow>| NewSnapshot {
+        kind: SnapshotKind::History,
+        source: EventSource::Gui,
+        system: vec![],
+        user: vec![],
+        env,
+        parent_uid: None,
+    };
+
+    let a = insert_snapshot(
+        &mut db,
+        mk(vec![row("user", "KEEP", "r1"), row("user", "GONE", "r1")]),
+    )
+    .unwrap();
+    let b = insert_snapshot(
+        &mut db,
+        mk(vec![row("user", "KEEP", "r2"), row("user", "NEW", "r1")]),
+    )
+    .unwrap();
+
+    let result = compare(&db, &a, &b).unwrap();
+    assert_eq!(result.env_added, vec!["NEW"]);
+    assert_eq!(result.env_removed, vec!["GONE"]);
+    assert_eq!(result.env_modified, vec!["KEEP"]);
+    assert_eq!(result.env_details.len(), 3);
+    assert!(result.env_details.iter().all(|item| item.hive == "user"));
+
+    // 对比结果不得泄露值
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(!json.contains("secret-value"), "对比结果不得包含变量值");
+}

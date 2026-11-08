@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { backend } from '@/services/backend';
+import { errorMessage } from '@/core/error';
 import { Button } from '@/components/ui/Button';
 import { useHistoryStore } from '@/store/history-store';
 import { CompareDialog } from './CompareDialog';
@@ -34,6 +35,26 @@ export function HistoryPanel() {
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
   const undoLast = useHistoryStore((s) => s.undoLast);
+  const openSnapshot = useHistoryStore((s) => s.openSnapshot);
+  // 固定快照：详情里切换固定后（detail.pinned 变化）自动刷新这一行
+  const [pinned, setPinned] = useState<{ uid: string; createdAt: number; note: string | null }[]>(
+    [],
+  );
+  useEffect(() => {
+    let alive = true;
+    backend
+      .historyListPinned()
+      .then((list) => {
+        if (alive) setPinned(list);
+      })
+      .catch(() => {
+        // DB 降级时固定列表为空即可，不覆盖主错误条幅
+        if (alive) setPinned([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [detail?.uid, detail?.pinned]);
 
   // 多选两个事件做对比（存的是 snapshotUid，不是事件 uid——
   // 对比的对象是快照，而事件只是「哪两个快照可比」的入口）
@@ -72,6 +93,22 @@ export function HistoryPanel() {
     }
   };
 
+  /** 导出当前筛选下的事件为 CSV（走 Blob 下载，与 PATH 导出一致）。 */
+  const handleExport = async () => {
+    try {
+      const content = await backend.historyExportEvents(filter, 'csv');
+      const blob = new Blob([content], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'patheditor_history.csv';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      useHistoryStore.setState({ error: errorMessage(error) });
+    }
+  };
+
   const handleRestore = async (uid: string) => {
     const confirmed = await backend.confirmDialog(t('history.restoreConfirm')).catch(() => false);
     if (!confirmed) return;
@@ -82,6 +119,23 @@ export function HistoryPanel() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {pinned.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+            {t('history.pinnedSnapshots')}
+          </span>
+          {pinned.map((item) => (
+            <Button
+              key={item.uid}
+              variant="ghost"
+              onClick={() => void openSnapshot(item.uid)}
+              title={formatTime(item.createdAt)}
+            >
+              {item.note ?? formatTime(item.createdAt)}
+            </Button>
+          ))}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--app-fg)' }}>
@@ -110,6 +164,8 @@ export function HistoryPanel() {
             <option value="envRemove">{t('history.action.envRemove')}</option>
             <option value="undo">{t('history.action.undo')}</option>
             <option value="redo">{t('history.action.redo')}</option>
+            <option value="revealEnv">{t('history.action.revealEnv')}</option>
+            <option value="drift">{t('history.action.drift')}</option>
           </select>
           <select
             className="field-input"
@@ -142,6 +198,14 @@ export function HistoryPanel() {
             title={t('history.undoHint')}
           >
             {t('history.undoLast')}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => void handleExport()}
+            disabled={events.length === 0}
+            title={t('history.exportHint')}
+          >
+            {t('history.exportCsv')}
           </Button>
           <Button variant="ghost" onClick={() => void load()} disabled={loading}>
             {t('history.refresh')}

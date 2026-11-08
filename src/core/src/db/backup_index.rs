@@ -481,3 +481,87 @@ fn hex32(bytes: &[u8; 32]) -> String {
     }
     s
 }
+
+/// 备份索引与磁盘的对账结果。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupReconcile {
+    /// 索引里有、磁盘上已不存在的行（`deleted_at IS NULL`）
+    pub missing: Vec<BackupView>,
+    /// 目录里像备份、但索引中没有的文件路径
+    pub orphans: Vec<String>,
+}
+
+/// 对账：索引 ↔ 备份目录。
+///
+/// 只做**读**与 `exists()` 判断；不删除任何文件，也不修改索引。
+/// 目录不存在时视为「没有孤儿」，缺失项照常返回。
+pub fn reconcile_backups(db: &Db, dir: &Path) -> Result<BackupReconcile, CoreError> {
+    use std::collections::HashSet;
+
+    let indexed = list_backups(db)?;
+    let missing: Vec<BackupView> = indexed
+        .iter()
+        .filter(|b| !Path::new(&b.file_path).exists())
+        .cloned()
+        .collect();
+
+    let indexed_names: HashSet<String> = indexed
+        .iter()
+        .filter_map(|b| {
+            Path::new(&b.file_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .collect();
+
+    let mut orphans = Vec::new();
+    if dir.is_dir() {
+        let entries = std::fs::read_dir(dir).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "reconcile_backups",
+                format!("枚举备份目录失败: {e}"),
+            )
+        })?;
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.starts_with("env_backup_") && !name.starts_with("path_backup_") {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            if !indexed_names.contains(&name) {
+                orphans.push(entry.path().to_string_lossy().into_owned());
+            }
+        }
+    }
+    orphans.sort();
+
+    Ok(BackupReconcile { missing, orphans })
+}
+
+/// 把「文件已不存在」的索引行标记为 `deleted_at=now`，返回处理条数。
+///
+/// **只改索引，不删磁盘文件**；重复调用幂等（已标记的行不再出现在
+/// `list_backups` 里）。
+pub fn purge_missing(db: &mut Db, dir: &Path) -> Result<usize, CoreError> {
+    let missing = reconcile_backups(db, dir)?.missing;
+    if missing.is_empty() {
+        return Ok(0);
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    db.with_transaction(|tx| {
+        for row in &missing {
+            tx.execute(
+                "UPDATE backups SET deleted_at = ?1 WHERE uid = ?2 AND deleted_at IS NULL",
+                rusqlite::params![now, row.uid],
+            )
+            .map_err(|e| db_err("purge_missing", e))?;
+        }
+        Ok(())
+    })?;
+    Ok(missing.len())
+}

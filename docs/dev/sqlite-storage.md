@@ -9,7 +9,7 @@
 - **遗留加密库**：旧版加密库的文件头不是 `SQLite format 3`，`Db::open` **直接拒绝**并给出删除指引；不做任何自动转换。
 - **本机盐**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+reserved(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。前 32 字节是旧版 `db_key` 的遗留位置，现只作保留位；**保持 49 字节与文件名不变**，否则磁盘上既有 `.pebak` 的 `payload_hash` 会全部失配。
 - **数据目录**：`PATHEDITOR_DATA_DIR` 仅供 CLI 子进程测试把库重定向到临时目录；生产不设置。
-- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 4`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
+- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 5`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
 ## 表
 
@@ -47,6 +47,16 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 ## 保留策略
 
 已导出的 `changes` 保留 90 天、已解决的 `sync_conflicts` 保留 30 天；GUI 每次启动执行一次，CLI `maintenance prune`。**绝不删除 `exported_at IS NULL` 的待导出队列**。
+
+快照按 `snapshot_keep_days`（默认 365 天）与 `snapshot_keep_max`（默认 500 条）清理，事件按 `event_keep_days`（默认 730 天）清理，键写在 `~/.patheditor/config.ini`。以下快照**永不删除**：`pinned = 1`、`app_state.current_snapshot_id` 指向的、被 `profile_revisions` 引用的、被 `backups` 引用的。被删快照只把 `events.snapshot_id` 置 NULL，审计事件保留。`maintenance vacuum` 先清理再 `wal_checkpoint(TRUNCATE)` + `VACUUM`。
+
+## 迁移前备份与健康检查
+
+- `migrate_to_current` 在真正迁移前用 SQLite Online Backup API 复制一份
+  `<数据库文件名>.pre-v{旧版本}.bak`（同目录，最多保留 3 份）；备份失败则中止迁移。
+- `db_health` / `maintenance health` 输出 schema、`integrity_check(1)`、9 张关键表行数、
+  主库/WAL/SHM 体积与最近清理时间。
+- 最近清理时间写在 `<数据目录>/maintenance.json` 的 `lastPruneAt`，不占用 schema 列。
 
 ## 旧明文
 

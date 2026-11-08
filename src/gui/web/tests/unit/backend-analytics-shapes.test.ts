@@ -3,7 +3,10 @@ import {
   parseCompareResult,
   parseCycleList,
   parseDashboard,
+  parseDbHealth,
   parseRefEdges,
+  parseScanRunDiff,
+  parseScanRuns,
   parseSearchHits,
 } from '@/services/backend';
 
@@ -87,6 +90,30 @@ describe('parseDashboard', () => {
       }),
     ).toThrow(/days 条目形状无效/);
   });
+
+  it('缺冲突统计字段时按零值兼容', () => {
+    const d = parseDashboard(valid);
+    expect(d.scanRuns).toBe(0);
+    expect(d.conflictRate).toBe(0);
+    expect(d.topConflicts).toEqual([]);
+  });
+
+  it('解析冲突统计与 topConflicts', () => {
+    const d = parseDashboard({
+      ...valid,
+      scanRuns: 4,
+      conflictRate: 0.25,
+      topConflicts: [{ target: 'a.exe', count: 2 }],
+    });
+    expect(d.scanRuns).toBe(4);
+    expect(d.topConflicts[0].target).toBe('a.exe');
+  });
+
+  it('拒绝非法的 topConflicts 条目', () => {
+    expect(() => parseDashboard({ ...valid, topConflicts: [{ target: 1 }] })).toThrow(
+      /topConflicts/,
+    );
+  });
 });
 
 describe('parseCompareResult', () => {
@@ -133,6 +160,27 @@ describe('parseCompareResult', () => {
       /envAdded 必须是字符串数组/,
     );
   });
+
+  it('缺 envDetails 时按空数组兼容', () => {
+    expect(parseCompareResult(valid).envDetails).toEqual([]);
+  });
+
+  it('解析 envDetails 的 hive/name/change', () => {
+    const r = parseCompareResult({
+      ...valid,
+      envDetails: [{ hive: 'user', name: 'JAVA_HOME', change: 'modified' }],
+    });
+    expect(r.envDetails).toEqual([{ hive: 'user', name: 'JAVA_HOME', change: 'modified' }]);
+  });
+
+  it('拒绝非法的 change 取值', () => {
+    expect(() =>
+      parseCompareResult({
+        ...valid,
+        envDetails: [{ hive: 'user', name: 'X', change: 'bogus' }],
+      }),
+    ).toThrow(/envDetails/);
+  });
 });
 
 describe('parseRefEdges', () => {
@@ -161,5 +209,75 @@ describe('parseCycleList', () => {
 
   it('拒绝元素不是字符串数组', () => {
     expect(() => parseCycleList([['A', 1]])).toThrow(/每个环必须是字符串数组/);
+  });
+});
+
+describe('parseScanRuns', () => {
+  it('接受合法扫描列表', () => {
+    const runs = parseScanRuns([{ uid: 'r1', createdAt: 1, conflicts: ['a.exe'], toolCount: 3 }]);
+    expect(runs[0].conflicts).toEqual(['a.exe']);
+  });
+
+  it('拒绝缺 uid 的条目', () => {
+    expect(() => parseScanRuns([{ createdAt: 1, conflicts: [], toolCount: 0 }])).toThrow(
+      /ScanRunView/,
+    );
+  });
+
+  it('拒绝 conflicts 非字符串数组', () => {
+    expect(() =>
+      parseScanRuns([{ uid: 'r1', createdAt: 1, conflicts: [1], toolCount: 0 }]),
+    ).toThrow(/字符串数组/);
+  });
+});
+
+describe('parseScanRunDiff', () => {
+  it('接受合法差异', () => {
+    const diff = parseScanRunDiff({
+      appeared: ['a.exe'],
+      disappeared: [],
+      persistent: ['b.exe'],
+      lastSeen: [{ conflict: 'a.exe', runUid: 'r2', seenAt: 2 }],
+      firstSeen: [{ conflict: 'a.exe', runUid: 'r2', seenAt: 2 }],
+    });
+    expect(diff.appeared).toEqual(['a.exe']);
+    expect(diff.lastSeen[0].runUid).toBe('r2');
+  });
+
+  it('拒绝缺 appeared 的响应', () => {
+    expect(() =>
+      parseScanRunDiff({ disappeared: [], persistent: [], lastSeen: [], firstSeen: [] }),
+    ).toThrow(/appeared/);
+  });
+});
+
+describe('parseDbHealth', () => {
+  const base = {
+    path: 'C:/Users/x/.patheditor/patheditor.db',
+    fileBytes: 1024,
+    walBytes: 0,
+    shmBytes: 0,
+    schemaVersion: 5,
+    expectedSchemaVersion: 5,
+    integrity: 'ok',
+    integrityOk: true,
+    tableRows: [{ name: 'snapshots', rows: 3 }],
+    lastPruneAt: null,
+  };
+
+  it('接受最小健康契约', () => {
+    const h = parseDbHealth(base);
+    expect(h.integrityOk).toBe(true);
+    expect(h.tableRows[0].name).toBe('snapshots');
+  });
+
+  it('拒绝 tableRows 形状错误的响应', () => {
+    expect(() => parseDbHealth({ ...base, tableRows: [{ name: 1, rows: 2 }] })).toThrow(
+      /tableRows/,
+    );
+  });
+
+  it('拒绝 lastPruneAt 既非数字也非 null', () => {
+    expect(() => parseDbHealth({ ...base, lastPruneAt: 'yesterday' })).toThrow(/形状/);
   });
 });

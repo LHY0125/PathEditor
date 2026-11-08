@@ -34,6 +34,31 @@ fn env(
 }
 
 #[test]
+fn reveal_audit_records_action_without_value() {
+    let (_dir, mut db) = crate::common::new_db("audit.db");
+
+    path_editor_core::db::history_sink::record_reveal(
+        &mut db,
+        EventSource::Gui,
+        path_editor_core::EnvHive::User,
+        "MY_TOKEN",
+        path_editor_core::domain::history::EventResult::Success,
+    )
+    .unwrap();
+
+    let (action, target, changed): (String, String, String) = db
+        .query_row_with(
+            "SELECT action, target, changed_fields FROM events",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(action, "revealEnv");
+    assert_eq!(target, "MY_TOKEN");
+    assert_eq!(changed, "[]", "审计事件只记动作，不得携带值");
+}
+
+#[test]
 fn reveal_returns_plaintext_only_when_explicitly_requested() {
     let (_dir, mut db) = crate::common::new_db("rv.db");
 

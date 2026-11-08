@@ -7,8 +7,11 @@
 
 use super::db_state::{with_db, with_db_mut, DbState};
 use path_editor_core::app::service::{self, ApplyOutcome};
+use path_editor_core::db::health::{self as db_health, DbHealth};
 use path_editor_core::db::history::{self, EventFilter, EventPage, SnapshotView};
-use path_editor_core::domain::history::EventSource;
+use path_editor_core::db::history_sink;
+use path_editor_core::domain::env_var::EnvHive;
+use path_editor_core::domain::history::{EventResult, EventSource};
 use path_editor_core::CoreError;
 use serde::Deserialize;
 use tauri::State;
@@ -92,6 +95,57 @@ pub fn history_get_current(state: State<'_, DbState>) -> Result<Option<SnapshotV
     with_db(&state, "history_get_current", history::current_snapshot)
 }
 
+/// 导出当前筛选下的事件为 CSV / JSON 字符串。
+#[tauri::command(async)]
+pub fn history_export_events(
+    filter: Option<EventFilterRequest>,
+    format: String,
+    state: State<'_, DbState>,
+) -> Result<String, CoreError> {
+    let filter = from_request(filter);
+    with_db(&state, "history_export_events", |db| {
+        path_editor_core::db::audit_export::export_events(db, &filter, &format)
+    })
+}
+
+/// 读取数据库健康状态（只读）。
+#[tauri::command(async)]
+pub fn db_health(state: State<'_, DbState>) -> Result<DbHealth, CoreError> {
+    with_db(&state, "db_health", db_health::health)
+}
+
+/// 设置快照备注（`note = null` 清空）。
+#[tauri::command(async)]
+pub fn history_set_note(
+    uid: String,
+    note: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<(), CoreError> {
+    with_db_mut(&state, "history_set_note", |db| {
+        history::set_snapshot_note(db, &uid, note.as_deref())
+    })
+}
+
+/// 固定或取消固定快照。
+#[tauri::command(async)]
+pub fn history_set_pinned(
+    uid: String,
+    pinned: bool,
+    state: State<'_, DbState>,
+) -> Result<(), CoreError> {
+    with_db_mut(&state, "history_set_pinned", |db| {
+        history::set_snapshot_pinned(db, &uid, pinned)
+    })
+}
+
+/// 列出固定快照（不含 PATH/变量内容）。
+#[tauri::command(async)]
+pub fn history_list_pinned(
+    state: State<'_, DbState>,
+) -> Result<Vec<history::PinnedSnapshot>, CoreError> {
+    with_db(&state, "history_list_pinned", history::list_pinned)
+}
+
 /// 显式 reveal 一个历史快照里的环境变量值。
 ///
 /// **独立命令**：与 `history_get_snapshot` 分离，让「掩码」成为默认，
@@ -109,8 +163,22 @@ pub fn history_reveal_env_value(
     name: String,
     state: State<'_, DbState>,
 ) -> Result<String, CoreError> {
-    with_db(&state, "history_reveal_env_value", |db| {
-        history::reveal_env_value(db, &uid, &hive, &name)
+    with_db_mut(&state, "history_reveal_env_value", |db| {
+        let outcome = history::reveal_env_value(db, &uid, &hive, &name);
+        let result = if outcome.is_ok() {
+            EventResult::Success
+        } else {
+            EventResult::Failure
+        };
+        let hive = match hive.as_str() {
+            "system" => Some(EnvHive::System),
+            "user" => Some(EnvHive::User),
+            _ => None,
+        };
+        if let Some(hive) = hive {
+            let _ = history_sink::record_reveal(db, EventSource::Gui, hive, &name, result);
+        }
+        outcome
     })
 }
 

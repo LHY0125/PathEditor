@@ -1,6 +1,10 @@
+use crate::commands::db_state::{with_db_mut, DbState};
+use path_editor_core::db::history_sink;
 use path_editor_core::domain::env_var::{EnvHive, EnvValueKind, EnvVarSnapshot, RevealedValue};
 use path_editor_core::domain::error::CoreError;
+use path_editor_core::domain::history::{EventResult, EventSource};
 use path_editor_core::platform::registry::{self, WriteOutcome};
+use tauri::State;
 
 /// 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）。
 ///
@@ -22,8 +26,22 @@ pub fn list_all_env_vars() -> Result<EnvVarSnapshot, CoreError> {
 /// - `Err(CoreError)` — 名称非法（`InvalidName`）、保留名（`ReservedName`）、
 /// 类型不受支持（`UnsupportedType`）或读取失败（`Io`）
 #[tauri::command(async)]
-pub fn reveal_env_var(hive: EnvHive, name: String) -> Result<RevealedValue, CoreError> {
-    registry::reveal_env_var(hive, &name)
+pub fn reveal_env_var(
+    hive: EnvHive,
+    name: String,
+    state: State<'_, DbState>,
+) -> Result<RevealedValue, CoreError> {
+    let outcome = registry::reveal_env_var(hive, &name);
+    let result = if outcome.is_ok() {
+        EventResult::Success
+    } else {
+        EventResult::Failure
+    };
+    // best-effort：审计写入失败不改变 reveal 结果。
+    let _ = with_db_mut(&state, "reveal_env_audit", |db| {
+        history_sink::record_reveal(db, EventSource::Gui, hive, &name, result)
+    });
+    outcome
 }
 
 /// 写入已有变量；类型从注册表读取，revision 不匹配则拒绝（code=`Conflict`）。

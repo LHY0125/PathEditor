@@ -40,6 +40,8 @@ interface HistoryState {
   /** 追加下一页；`events.length >= total` 时为空操作。 */
   loadMore: () => Promise<void>;
   selectEvent: (event: EventView) => Promise<void>;
+  /** 直接打开一条快照（固定快照入口，与事件选择共用同一套竞态守卫） */
+  openSnapshot: (uid: string) => Promise<void>;
   clearDetail: () => void;
   restore: (uid: string) => Promise<void>;
   /** 跨会话撤销：恢复最近一次可撤销操作前的快照 */
@@ -114,14 +116,20 @@ export const useHistoryStore = create<HistoryState>((set) => ({
    * **恒用 `reveal = false`**：历史面板默认掩码，明文只能经显式操作获取。
    */
   selectEvent: async (event: EventView) => {
-    const seq = ++detailSeq;
     if (!event.snapshotUid) {
+      // 递增序号使在途请求作废，避免旧响应回填详情
+      detailSeq += 1;
       set({ detail: null, detailLoading: false });
       return;
     }
+    await useHistoryStore.getState().openSnapshot(event.snapshotUid);
+  },
+
+  openSnapshot: async (uid: string) => {
+    const seq = ++detailSeq;
     set({ detailLoading: true });
     try {
-      const detail = await backend.historyGetSnapshot(event.snapshotUid, false);
+      const detail = await backend.historyGetSnapshot(uid, false);
       // 快速点两条事件时，先发后到的响应会覆盖后选中项的详情。
       if (seq !== detailSeq) return;
       set({ detail, detailLoading: false });

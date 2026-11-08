@@ -83,3 +83,27 @@ test('无数据时显示「暂无数据」而不是空白', async ({ page }) => 
   // 空态必须是明确的文案，不是一块空白区域
   await expect(page.getByText('暂无数据').first()).toBeVisible();
 });
+
+test('数据库健康卡片显示 schema 与完整性', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__healthFixture = {
+      path: 'C:/mock/.patheditor/patheditor.db',
+      fileBytes: 2 * 1024 * 1024,
+      walBytes: 1024 * 1024,
+      shmBytes: 32768,
+      schemaVersion: 5,
+      expectedSchemaVersion: 5,
+      integrity: 'ok',
+      integrityOk: true,
+      tableRows: [{ name: 'snapshots', rows: 3 }],
+      lastPruneAt: 1700000000000,
+    };
+  });
+  await page.reload();
+  await openStatsTab(page);
+
+  await expect(page.getByText('数据库健康')).toBeVisible();
+  await expect(page.getByText('完整性正常')).toBeVisible();
+  await expect(page.getByText('v5', { exact: true })).toBeVisible();
+  await expect(page.getByText('3.00 MiB')).toBeVisible();
+});

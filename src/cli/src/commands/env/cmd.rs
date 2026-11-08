@@ -28,11 +28,18 @@ pub(crate) fn cmd_env_list(system: bool, user: bool, json_out: bool) {
 }
 
 /// `env get` —— 读取单个变量的明文。这是 CLI 侧唯一的明文出口。
+///
+/// 成功与失败都尽力写一条 `revealEnv` 审计事件（只含变量名与结果，不含值）；
+/// DB 不可用或写入失败不影响读取本身。
 pub(crate) fn cmd_env_get(name: String, system: bool) {
     let hive = select_hive(system, false);
     match core::platform::registry::reveal_env_var(hive, &name) {
-        Ok(revealed) => print!("{}", format_get_output(&revealed.value)),
+        Ok(revealed) => {
+            audit_reveal(hive, &name, core::domain::history::EventResult::Success);
+            print!("{}", format_get_output(&revealed.value))
+        }
         Err(e) => {
+            audit_reveal(hive, &name, core::domain::history::EventResult::Failure);
             let msg = e.message.clone();
             // 仅只读路径提供「变量存在于另一 hive」的提示，帮助用户加 --system。
             // 写操作不做此兜底 —— 见设计文档「hive 选择」。
@@ -41,6 +48,22 @@ pub(crate) fn cmd_env_get(name: String, system: bool) {
             }
             exit_core_error(&e)
         }
+    }
+}
+
+/// best-effort 写审计事件；失败只告警，不改变 reveal 的结果。
+fn audit_reveal(hive: core::EnvHive, name: &str, result: core::domain::history::EventResult) {
+    let Some(mut db) = crate::runtime::open_db_silent() else {
+        return;
+    };
+    if let Err(e) = core::db::history_sink::record_reveal(
+        &mut db,
+        core::domain::history::EventSource::Cli,
+        hive,
+        name,
+        result,
+    ) {
+        eprintln!("警告: 审计事件未写入: {}", e.message);
     }
 }
 

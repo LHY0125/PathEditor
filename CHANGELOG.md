@@ -12,6 +12,22 @@
 - 移除 `rusqlite` 的 `bundled-sqlcipher-vendored-openssl`：不再需要 OpenSSL、perl、NASM，
   本地 GNU 构建不再需要三条环境变量。
 
+### Added
+
+- 备份索引对账：`maintenance reconcile-backups` 与备份面板「检查索引 / 标记缺失」（只标记 `deleted_at`，不删文件）。
+- 扫描历史：`conflicts` / `scan` 落 `scan_runs`；新增 `scan-history` / `scan-diff`，分析对话框增加「扫描历史」页签。
+- 变量对比：`CompareResult` 增加 `envAdded/envRemoved/envModified` 与 `envDetails`（仅名称与变化类型，不含值）。
+- 统计扩展：`Dashboard` 增加扫描次数、冲突率与最近 200 次扫描的冲突 Top。
+- 快照备注与固定（schema v5）：`snapshots.pinned`；IPC/CLI（`history-note`、`history-pin`、`history-pinned`）与快照预览 UI。
+- 保留策略扩展：快照按 `snapshot_keep_days` / `snapshot_keep_max`、事件按 `event_keep_days` 清理；
+  固定、当前、配置版本与备份索引引用的快照受保护；被删快照的审计事件只解链 `snapshot_id`。
+- `maintenance vacuum`：`wal_checkpoint(TRUNCATE)` + `VACUUM`。
+- 数据库健康检查：`maintenance health [--json]`、IPC `db_health`、统计页健康卡片
+  （schema/完整性/表行数/体积/最近清理时间）。
+- 迁移前自动备份：schema 升级前生成 `.pre-v{n}.bak`（SQLite Online Backup API，保留 3 份）。
+- 注册表漂移检测：GUI 启动时比较实时注册表与 `current_snapshot`，差异写入 `drift` 事件
+  （`result=partial`，同一外部状态只记一次，不自动建快照）。
+
 ### Changed
 
 - `db::Db::open_encrypted` → `db::Db::open`；`db::crypto::KeyMaterial` 只保留 `hash_salt`，
@@ -19,6 +35,7 @@
 - 密钥文件的 DACL 校验从 `open_default` 移到 `load_or_create_key  `（数据库不再读密钥，
   但盐被替换会导致既有备份无法校验）。
 - 新增 `PATHEDITOR_DATA_DIR`：只用于把 CLI 子进程测试的数据库重定向到临时目录。
+- 修复 Playwright `webServer.cwd`：显式指向仓库根后 `npm run test:e2e` 恢复可运行（55 passed，含健康卡片用例）。
 - 「一文件一测试」约束随 SQLCipher 退场取消；存量测试文件不合并。
 
 ### Unchanged

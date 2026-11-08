@@ -1,6 +1,6 @@
 use path_editor_core::db::history::{
-    current_snapshot, get_snapshot, insert_snapshot, list_events, EnvValueRow, EventFilter,
-    NewSnapshot, SnapshotKind,
+    current_snapshot, get_snapshot, insert_snapshot, list_events, list_pinned, set_snapshot_note,
+    set_snapshot_pinned, EnvValueRow, EventFilter, NewSnapshot, SnapshotKind,
 };
 use path_editor_core::db::Db;
 use path_editor_core::domain::history::EventSource;
@@ -85,5 +85,65 @@ fn snapshot_roundtrip_and_masking() {
 
     // 不存在的 uid → NotFound
     let err = get_snapshot(&db, "no-such-uid", false).unwrap_err();
+    assert_eq!(err.code, path_editor_core::ErrorCode::NotFound);
+}
+
+#[test]
+fn snapshot_note_and_pin_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    let mut db = Db::open(&dir.path().join("note.db")).unwrap();
+    db.migrate_to_current().unwrap();
+
+    let uid = insert_snapshot(
+        &mut db,
+        NewSnapshot {
+            kind: SnapshotKind::History,
+            source: EventSource::Cli,
+            system: Vec::new(),
+            user: vec![PathEntry {
+                path: "C:\\Tools".into(),
+                enabled: true,
+            }],
+            env: Vec::new(),
+            parent_uid: None,
+        },
+    )
+    .unwrap();
+
+    // 默认：无备注、未固定
+    let view = get_snapshot(&db, &uid, false).unwrap();
+    assert!(view.note.is_none());
+    assert!(!view.pinned);
+    assert!(list_pinned(&db).unwrap().is_empty());
+
+    // 备注两端空白被裁剪
+    set_snapshot_note(&mut db, &uid, Some("  装驱动前  ")).unwrap();
+    let view = get_snapshot(&db, &uid, false).unwrap();
+    assert_eq!(view.note.as_deref(), Some("装驱动前"));
+
+    // 固定后出现在固定列表
+    set_snapshot_pinned(&mut db, &uid, true).unwrap();
+    let pinned = list_pinned(&db).unwrap();
+    assert_eq!(pinned.len(), 1);
+    assert_eq!(pinned[0].uid, uid);
+    assert!(get_snapshot(&db, &uid, false).unwrap().pinned);
+
+    // 超长备注被拒绝（500 字符上限，按字符而非字节）
+    let too_long = "备".repeat(501);
+    let err = set_snapshot_note(&mut db, &uid, Some(&too_long)).unwrap_err();
+    assert_eq!(err.code, path_editor_core::ErrorCode::InvalidValue);
+
+    // 全空白 = 清空
+    set_snapshot_note(&mut db, &uid, Some("   ")).unwrap();
+    assert!(get_snapshot(&db, &uid, false).unwrap().note.is_none());
+
+    // 取消固定
+    set_snapshot_pinned(&mut db, &uid, false).unwrap();
+    assert!(list_pinned(&db).unwrap().is_empty());
+
+    // 不存在的 uid → NotFound（两种写操作一致）
+    let err = set_snapshot_note(&mut db, "missing", Some("x")).unwrap_err();
+    assert_eq!(err.code, path_editor_core::ErrorCode::NotFound);
+    let err = set_snapshot_pinned(&mut db, "missing", true).unwrap_err();
     assert_eq!(err.code, path_editor_core::ErrorCode::NotFound);
 }

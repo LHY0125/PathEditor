@@ -98,3 +98,22 @@ fn daily_stats_aggregates_events_and_is_rebuildable() {
     rebuild_daily(&mut db).unwrap();
     assert_eq!(dashboard(&db, 7).unwrap().days.len(), 1);
 }
+
+#[test]
+fn dashboard_reports_scan_conflict_stats() {
+    use path_editor_core::db::scan_history::record_run;
+
+    let (_dir, mut db) = crate::common::new_db("scanstats.db");
+    record_run(&mut db, &["a.exe".into(), "b.exe".into()], &[]).unwrap();
+    record_run(&mut db, &["a.exe".into()], &[]).unwrap();
+    record_run(&mut db, &[], &[]).unwrap();
+
+    let data = dashboard(&db, 7).unwrap();
+    assert_eq!(data.scan_runs, 3, "应统计窗口内全部扫描");
+    assert!(
+        (data.conflict_rate - 2.0 / 3.0).abs() < 1e-9,
+        "两次扫描有冲突，占比应为 2/3"
+    );
+    assert_eq!(data.top_conflicts[0].target, "a.exe");
+    assert_eq!(data.top_conflicts[0].count, 2);
+}

@@ -179,6 +179,52 @@ pub(crate) enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// 查看扫描历史（最近 N 次）
+    ScanHistory {
+        /// 最多返回多少条（1–200）
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 比较两次扫描的冲突差异
+    ScanDiff {
+        /// 上次扫描 uid
+        a: String,
+        /// 本次扫描 uid
+        b: String,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 设置快照备注（省略 TEXT 即清空）
+    HistoryNote {
+        /// 快照 uid
+        uid: String,
+        /// 备注文本；省略表示清空
+        text: Option<String>,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 固定/取消固定快照
+    HistoryPin {
+        /// 快照 uid
+        uid: String,
+        /// 取消固定
+        #[arg(long)]
+        off: bool,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出固定快照
+    HistoryPinned {
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
     /// 检查管理员权限
     CheckAdmin {
         /// 以 JSON 输出
@@ -208,14 +254,22 @@ pub(crate) enum Command {
   patheditor maintenance cleanup-legacy-backups --dry-run
   patheditor maintenance cleanup-legacy-backups --yes
 
-保留策略: 已导出的 changes 90 天、已解决的 sync_conflicts 30 天。
+保留策略: 已导出的 changes 90 天、已解决的 sync_conflicts 30 天；快照 365 天/500 条，事件 730 天（可被 config.ini 覆盖）。
 待导出队列永不删除。cleanup-legacy-backups 未给 --yes 时只打印计划并以 1 退出。")]
 pub(crate) enum MaintenanceCmd {
-    /// 清理过期的变更与冲突（已导出 90 天 / 已解决 30 天）
+    /// 按保留策略清理变更、冲突、事件与快照（支持 --dry-run）
     Prune {
         /// 只统计，不删除
         #[arg(long)]
         dry_run: bool,
+    },
+    /// 清理过期数据并压缩数据库（VACUUM，可能短暂锁库）
+    Vacuum,
+    /// 输出数据库健康状态（schema/完整性/行数/体积/最近清理）
+    Health {
+        /// JSON 输出
+        #[arg(long)]
+        json: bool,
     },
     /// 把遗留 env_backup_*.json 转为 .pebak 后删除（必须先 --yes）
     CleanupLegacyBackups {
@@ -225,6 +279,36 @@ pub(crate) enum MaintenanceCmd {
         /// 确认执行（不加就只打印提示并以 1 退出）
         #[arg(long)]
         yes: bool,
+    },
+    /// 对账备份索引与磁盘目录（只标记缺失行，不删文件）
+    ReconcileBackups {
+        /// JSON 输出
+        #[arg(long)]
+        json: bool,
+        /// 顺便把「文件已丢失」的索引行标记为已删除
+        #[arg(long)]
+        purge_missing: bool,
+    },
+    /// 导出审计数据（events / changes）为 CSV 或 JSON
+    Export {
+        /// 导出事件（与 --changes 二选一）
+        #[arg(long)]
+        events: bool,
+        /// 导出变更日志（与 --events 二选一）
+        #[arg(long)]
+        changes: bool,
+        /// 输出格式：csv 或 json
+        #[arg(long, default_value = "csv")]
+        format: String,
+        /// 输出文件；省略时打印到 stdout
+        #[arg(long)]
+        out: Option<String>,
+        /// 起始日期（含，YYYY-MM-DD；仅对 --events 生效）
+        #[arg(long)]
+        since: Option<String>,
+        /// 结束日期（含，YYYY-MM-DD；仅对 --events 生效）
+        #[arg(long)]
+        until: Option<String>,
     },
 }
 

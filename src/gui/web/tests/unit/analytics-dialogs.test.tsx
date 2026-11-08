@@ -53,6 +53,7 @@ describe('CompareDialog', () => {
       envAdded: [],
       envRemoved: [],
       envModified: [],
+      envDetails: [],
     });
     const { CompareDialog } = await import('@/components/history/CompareDialog');
     render(<CompareDialog leftUid="a" rightUid="b" onClose={() => {}} />);
@@ -72,6 +73,7 @@ describe('CompareDialog', () => {
       envAdded: [],
       envRemoved: [],
       envModified: [],
+      envDetails: [],
     });
     const { CompareDialog } = await import('@/components/history/CompareDialog');
     render(<CompareDialog leftUid="a" rightUid="b" onClose={() => {}} />);
@@ -79,21 +81,30 @@ describe('CompareDialog', () => {
     await waitFor(() => expect(screen.getByText(/C:\\SAME/)).toBeTruthy());
     // 核心断言：system 侧因为 toggled 非空，**不得**显示「无变化」；
     // user 侧全空，应显示一次。若实现漏了 toggled，这里会得到两次「无变化」。
-    expect(screen.queryAllByText(/无变化/)).toHaveLength(1);
+    // 用精确文本匹配：环境变量区也会出现「环境变量无变化」，正则 /无变化/
+    // 会把它算进来；这里只统计 PATH 区块的「无变化」。
+    expect(screen.queryAllByText('无变化')).toHaveLength(1);
   });
 
-  it('env 对比显式说明本版本不支持', async () => {
+  it('env 对比显示变量名与变化类型', async () => {
     compareMock.mockResolvedValue({
       system: emptyDiff,
       user: emptyDiff,
-      envAdded: [],
+      envAdded: ['NEW_VAR'],
       envRemoved: [],
-      envModified: [],
+      envModified: ['JAVA_HOME'],
+      envDetails: [
+        { hive: 'user', name: 'NEW_VAR', change: 'added' },
+        { hive: 'user', name: 'JAVA_HOME', change: 'modified' },
+      ],
     });
     const { CompareDialog } = await import('@/components/history/CompareDialog');
     render(<CompareDialog leftUid="a" rightUid="b" onClose={() => {}} />);
 
-    await waitFor(() => expect(screen.getByText(/本版本不支持环境变量对比/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/JAVA_HOME/)).toBeTruthy());
+    expect(screen.getByText(/NEW_VAR/)).toBeTruthy();
+    // 不展示任何变量值（本契约只返回名称）
+    expect(screen.queryByText(/secret/)).toBeNull();
   });
 });
 

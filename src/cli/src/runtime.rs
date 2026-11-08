@@ -72,6 +72,47 @@ fn open_db_optional() -> Option<core::db::Db> {
     }
 }
 
+/// 审计等 best-effort 用途的静默打开：DB 不存在、打不开或迁移失败都返回 `None`。
+///
+/// 与 [`open_db_optional`] 的区别：不向 stderr 打任何警告——读命令不应因为
+/// 副作用性质的操作产生噪声。
+pub(crate) fn open_db_silent() -> Option<core::db::Db> {
+    let mut db = core::db::open_existing().ok().flatten()?;
+    db.migrate_to_current().ok()?;
+    Some(db)
+}
+
+/// 派生表水位文件路径（与 GUI bootstrap 的默认值一致）。
+fn derived_watermark_path() -> std::path::PathBuf {
+    core::db::crypto::data_home().join("derived.watermark")
+}
+
+/// 命令结束后按水位刷新派生表。
+///
+/// CLI 是短命进程：写完就退出，下一次 GUI 启动前统计与引用图会陈旧。
+/// DB 不存在、打不开或水位未变时都是**静默空操作**；刷新失败只告警，
+/// 不影响命令结果（派生表可随时重建）。
+pub(crate) fn refresh_derived_if_stale() {
+    let Ok(Some(mut db)) = core::db::open_existing() else {
+        return;
+    };
+    if db.migrate_to_current().is_err() {
+        return;
+    }
+    match refresh_derived_at(&mut db, &derived_watermark_path()) {
+        Ok(_) => {}
+        Err(e) => eprintln!("警告: 派生表刷新失败（可稍后重建）: {}", e.message),
+    }
+}
+
+/// [`refresh_derived_if_stale`] 的可测试内核；返回是否真的重建。
+fn refresh_derived_at(
+    db: &mut core::db::Db,
+    watermark: &std::path::Path,
+) -> Result<bool, core::CoreError> {
+    Ok(core::db::derived::rebuild_if_stale(db, watermark)?.is_some())
+}
+
 /// 读取完整 PATH 快照：DB 可用时读 `current_snapshot`，否则只读注册表。
 pub(crate) fn load_path_snapshot_any() -> Result<core::PathSnapshot, core::CoreError> {
     let db = open_db_optional();
@@ -431,6 +472,43 @@ mod tests {
         assert!(
             !stderr.contains("警告") && !stdout.contains("警告"),
             "无备份失败时不得输出警告: {stderr}"
+        );
+    }
+
+    /// 派生表刷新：水位变化才重建，水位未变是空操作。
+    ///
+    /// 覆盖 CLI 的收尾钩子；用显式水位路径，不碰真实 `~/.patheditor`。
+    #[test]
+    fn derived_refresh_rebuilds_only_when_watermark_changes() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut db = core::db::Db::open(&dir.path().join("d.db")).unwrap();
+        db.migrate_to_current().unwrap();
+        let watermark = dir.path().join("derived.watermark");
+
+        assert!(
+            refresh_derived_at(&mut db, &watermark).unwrap(),
+            "水位文件不存在时必须重建一次"
+        );
+        assert!(
+            !refresh_derived_at(&mut db, &watermark).unwrap(),
+            "水位未变不得重复重建"
+        );
+
+        db.with_transaction(|tx| {
+            tx.execute(
+                "INSERT INTO events (uid, created_at, source, action, result, device_id)
+                 VALUES ('e1', 1, 'cli', 'save', 'success', 'local')",
+                [],
+            )
+            .map_err(|e| {
+                core::CoreError::new(core::ErrorCode::Database, "insert_event", e.to_string())
+            })?;
+            Ok(())
+        })
+        .unwrap();
+        assert!(
+            refresh_derived_at(&mut db, &watermark).unwrap(),
+            "新增事件后必须重建"
         );
     }
 }
