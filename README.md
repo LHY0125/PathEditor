@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-761%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-763%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -570,8 +570,8 @@ npx tauri build
 | 数据库    | SQLite（rusqlite bundled + FTS5）         |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (40 files / 425) + Playwright (54) |
-| Rust 测试 | cargo test (336 passed / 2 ignored)       |
+| 前端测试  | Vitest (40 files / 426) + Playwright (54) |
+| Rust 测试 | cargo test (337 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 
@@ -592,7 +592,7 @@ src/                          # 全部源码
 │   │   ├── scanner.rs        # 冲突检测、工具清单
 │   │   ├── capabilities.rs   # 按 hive 探测 PathCapabilities
 │   │   ├── persist.rs        # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
-│   │   └── fs.rs             # 文件读写、导入导出解析
+│   │   └── fs/              # 文件读写（io）与导入导出解析（formats）
 │   ├── db/                   # 数据层（SQLite，不加密）
 │   │   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
 │   │   ├── history.rs / history_sink.rs / profiles.rs / backup_index.rs

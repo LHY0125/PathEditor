@@ -22,8 +22,10 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::db::history::{EnvValueRow, NewSnapshot, SnapshotKind};
-use crate::db::sync::bundle::open;
-use crate::db::sync::change_log::{change_exists_tx, record_remote_change_tx, ChangeRow};
+use crate::db::sync::bundle::{open, BundleHeader};
+use crate::db::sync::change_log::{
+    change_exists_tx, record_remote_change_tx, ChangeRow, RemoteChange,
+};
 use crate::db::sync::conflict::record_conflict_tx;
 use crate::db::sync::merge::{resolve, MergeDecision};
 use crate::db::Db;
@@ -126,21 +128,8 @@ const MAX_BUNDLE_BYTES: u64 = 64 * 1024 * 1024;
 /// 单个包允许的变更条数上限（与体积上限互补：小而多的条目同样能撑爆内存）。
 const MAX_BUNDLE_CHANGES: usize = 100_000;
 
-/// 导入同步包。成功返回统计，失败**整体回滚**。
-pub fn import_bundle(
-    db: &mut Db,
-    passphrase: &str,
-    path: &Path,
-) -> Result<ImportReport, CoreError> {
-    // 空口令等于不加密：在此拒绝，GUI/CLI 不得各写一份。
-    if passphrase.is_empty() {
-        return Err(CoreError::new(
-            ErrorCode::InvalidValue,
-            "import_bundle",
-            "同步口令不能为空",
-        ));
-    }
-    // ① 读文件 + 解密验证（失败时不产生任何写入）
+/// 读取同步包文件，并在**读入内存之前**拒绝超限文件。
+fn read_bundle_file(path: &Path) -> Result<Vec<u8>, CoreError> {
     let size = std::fs::metadata(path)
         .map_err(|e| {
             CoreError::new(
@@ -161,16 +150,26 @@ pub fn import_bundle(
             ),
         ));
     }
-    let bytes = std::fs::read(path).map_err(|e| {
+    std::fs::read(path).map_err(|e| {
         CoreError::new(
             ErrorCode::Io,
             "import",
             format!("读取同步包失败: {}", e.kind()),
         )
-    })?;
-    let (header, payload_bytes) = open(passphrase, &bytes)?;
+    })
+}
 
+/// 已解密并通过静态校验的同步包。
+struct OpenedBundle {
+    header: BundleHeader,
+    payload: InboundPayload,
+    base_lamport: i64,
+}
+
+/// 解密同步包，并完成 header ↔ payload 交叉校验、条数上限、实体白名单与时钟钳制。
+fn open_bundle(passphrase: &str, bytes: &[u8]) -> Result<OpenedBundle, CoreError> {
     // ② header 与 payload 交叉校验：自述条数与实际不符说明包被拼接/截断过
+    let (header, payload_bytes) = open(passphrase, bytes)?;
     let payload: InboundPayload = serde_json::from_slice(&payload_bytes)
         .map_err(|_| CoreError::new(ErrorCode::SyncFormat, "import", "同步包 payload 无法解析"))?;
     if payload.changes.len() != header.change_count as usize {
@@ -207,7 +206,6 @@ pub fn import_bundle(
         }
     }
 
-    let header_device = header.device_id.clone();
     // header 在明文里（只受 AEAD 保护），持有口令的对端可以把 `baseLamport`
     // 顶到 `i64::MAX`；沿用后本地 `+1` 会溢出（SQLite 转 REAL → 类型错误），
     // 此后本地记账永久失败。钳制到一半，留出足够的单调增长空间。
@@ -219,6 +217,37 @@ pub fn import_bundle(
             base_lamport
         );
     }
+
+    Ok(OpenedBundle {
+        header,
+        payload,
+        base_lamport,
+    })
+}
+
+/// 导入同步包。成功返回统计，失败**整体回滚**。
+pub fn import_bundle(
+    db: &mut Db,
+    passphrase: &str,
+    path: &Path,
+) -> Result<ImportReport, CoreError> {
+    // 空口令等于不加密：在此拒绝，GUI/CLI 不得各写一份。
+    if passphrase.is_empty() {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "import_bundle",
+            "同步口令不能为空",
+        ));
+    }
+    // ① 读文件 + 解密验证（失败时不产生任何写入）
+    let bytes = read_bundle_file(path)?;
+    let OpenedBundle {
+        header,
+        payload,
+        base_lamport,
+    } = open_bundle(passphrase, &bytes)?;
+
+    let header_device = header.device_id.clone();
 
     // ④ 依赖排序：`sort_by_key` 是稳定排序，同类型内部维持包内原有顺序。
     //
@@ -330,15 +359,17 @@ pub fn import_bundle(
 
             record_remote_change_tx(
                 tx,
-                &c.uid,
-                &c.device_id,
-                c.seq,
-                c.lamport,
-                &c.entity_type,
-                &c.entity_uid,
-                c.field.as_deref(),
-                c.old_value.as_deref(),
-                c.new_value.as_deref(),
+                RemoteChange {
+                    uid: &c.uid,
+                    device_id: &c.device_id,
+                    seq: c.seq,
+                    lamport: c.lamport,
+                    entity_type: &c.entity_type,
+                    entity_uid: &c.entity_uid,
+                    field: c.field.as_deref(),
+                    old_value: c.old_value.as_deref(),
+                    new_value: c.new_value.as_deref(),
+                },
             )?;
             report.applied += 1;
         }

@@ -73,9 +73,17 @@ fn main() {
                 dry_run,
                 json,
                 system,
-            } => commands::env::cmd_env_set(
-                name, value, stdin, value_file, revision, force, dry_run, json, system,
-            ),
+            } => commands::env::cmd_env_set(commands::env::SetArgs {
+                name,
+                value,
+                stdin,
+                value_file,
+                revision,
+                force,
+                dry_run,
+                json_out: json,
+                system,
+            }),
             EnvCmd::Add {
                 name,
                 value,
@@ -85,9 +93,16 @@ fn main() {
                 dry_run,
                 json,
                 system,
-            } => commands::env::cmd_env_add(
-                name, value, stdin, value_file, kind, dry_run, json, system,
-            ),
+            } => commands::env::cmd_env_add(commands::env::AddArgs {
+                name,
+                value,
+                stdin,
+                value_file,
+                kind,
+                dry_run,
+                json_out: json,
+                system,
+            }),
             EnvCmd::Remove {
                 name,
                 revision,

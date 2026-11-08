@@ -1120,16 +1120,16 @@ fn env_restore_rejects_missing_file_with_exit_code_1() {
 /// 字段名错一个就会破坏脚本消费，故逐字段断言，而非只断言「是合法 JSON」。
 #[test]
 fn change_preview_json_has_stable_contract() {
-    let v = build_change_preview(
-        "set",
-        EnvHive::User,
-        "JAVA_HOME",
-        Some("C:\\jdk-17".into()),
-        Some("C:\\jdk-21".into()),
-        Some("string".into()),
-        true,
-        false,
-    );
+    let v = build_change_preview(ChangePreviewInput {
+        operation: "set",
+        hive: EnvHive::User,
+        name: "JAVA_HOME".into(),
+        old_value: Some("C:\\jdk-17".into()),
+        new_value: Some("C:\\jdk-21".into()),
+        kind: Some("string".into()),
+        writable: true,
+        sensitive: false,
+    });
     assert_eq!(v["operation"], "set");
     assert_eq!(v["hive"], "user");
     assert_eq!(v["name"], "JAVA_HOME");
@@ -1143,44 +1143,44 @@ fn change_preview_json_has_stable_contract() {
 /// `add` 的 oldValue 为 null、`remove` 的 newValue 为 null（字段表契约）。
 #[test]
 fn change_preview_nulls_are_correct_per_operation() {
-    let add = build_change_preview(
-        "add",
-        EnvHive::User,
-        "X",
-        None,
-        Some("v".into()),
-        Some("string".into()),
-        true,
-        false,
-    );
+    let add = build_change_preview(ChangePreviewInput {
+        operation: "add",
+        hive: EnvHive::User,
+        name: "X".into(),
+        old_value: None,
+        new_value: Some("v".into()),
+        kind: Some("string".into()),
+        writable: true,
+        sensitive: false,
+    });
     assert!(add["oldValue"].is_null(), "add 的 oldValue 必须为 null");
 
-    let rm = build_change_preview(
-        "remove",
-        EnvHive::User,
-        "X",
-        Some("v".into()),
-        None,
-        None,
-        true,
-        false,
-    );
+    let rm = build_change_preview(ChangePreviewInput {
+        operation: "remove",
+        hive: EnvHive::User,
+        name: "X".into(),
+        old_value: Some("v".into()),
+        new_value: None,
+        kind: None,
+        writable: true,
+        sensitive: false,
+    });
     assert!(rm["newValue"].is_null(), "remove 的 newValue 必须为 null");
 }
 
 /// 文本预览必须点明「未写入任何内容」，且带 hive 标签。
 #[test]
 fn change_preview_text_mentions_no_write() {
-    let v = build_change_preview(
-        "set",
-        EnvHive::System,
-        "JAVA_HOME",
-        Some("a".into()),
-        Some("b".into()),
-        Some("string".into()),
-        false,
-        false,
-    );
+    let v = build_change_preview(ChangePreviewInput {
+        operation: "set",
+        hive: EnvHive::System,
+        name: "JAVA_HOME".into(),
+        old_value: Some("a".into()),
+        new_value: Some("b".into()),
+        kind: Some("string".into()),
+        writable: false,
+        sensitive: false,
+    });
     let text = render_change_preview_text(&v);
     assert!(text.contains("未写入任何内容"), "必须点明未写入: {text}");
     assert!(text.contains("系统"), "必须带 hive 标签: {text}");
@@ -1217,16 +1217,16 @@ fn mask_new_value_sanitizes_control_chars() {
 /// 安全：敏感变量在文本预览里显示 `(敏感)` 而非明文占位 `-`。
 #[test]
 fn sensitive_preview_text_shows_mask_marker() {
-    let v = build_change_preview(
-        "set",
-        EnvHive::User,
-        "MY_API_TOKEN",
-        None,
-        None,
-        Some("string".into()),
-        true,
-        true,
-    );
+    let v = build_change_preview(ChangePreviewInput {
+        operation: "set",
+        hive: EnvHive::User,
+        name: "MY_API_TOKEN".into(),
+        old_value: None,
+        new_value: None,
+        kind: Some("string".into()),
+        writable: true,
+        sensitive: true,
+    });
     let text = render_change_preview_text(&v);
     assert!(text.contains("(敏感)"), "敏感变量应显示 (敏感): {text}");
     assert!(!text.contains("sk-"), "不得泄漏明文: {text}");

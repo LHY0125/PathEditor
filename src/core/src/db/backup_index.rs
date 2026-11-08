@@ -22,7 +22,7 @@
 use super::crypto::KeyMaterial;
 use super::{db_err, Db};
 use crate::domain::error::{CoreError, ErrorCode};
-use crate::platform::backup::{EnvBackupPayload, EnvBackupVar};
+use crate::platform::backup::EnvBackupPayload;
 use rusqlite::{params, OptionalExtension};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -38,8 +38,7 @@ const FORMAT_VERSION: u8 = 1;
 
 /// 备份种类：环境变量。
 const KIND_ENV: u8 = 0;
-/// 备份种类：PATH。
-#[allow(dead_code)]
+/// 备份种类：PATH（头部字段保留，当前只写 env）。
 const KIND_PATH: u8 = 1;
 
 /// `.pebak` 文件头（明文部分）。
@@ -481,17 +480,4 @@ fn hex32(bytes: &[u8; 32]) -> String {
         let _ = write!(s, "{b:02x}");
     }
     s
-}
-
-/// 把明文载荷的变量按 hive 展开（供迁移复用）。
-#[allow(dead_code)]
-fn flatten_vars(payload: &EnvBackupPayload) -> Vec<(&'static str, &EnvBackupVar)> {
-    let mut out = Vec::new();
-    for v in &payload.hives.system {
-        out.push(("system", v));
-    }
-    for v in &payload.hives.user {
-        out.push(("user", v));
-    }
-    out
 }

@@ -223,6 +223,21 @@ pub(crate) fn change_exists_tx(tx: &Transaction, uid: &str) -> Result<bool, Core
     Ok(id.is_some())
 }
 
+/// 一条远端变更的写入参数。
+///
+/// 全部字段**沿用远端事实**，不要在调用侧重新分配 `uid` / `seq` / `lamport`。
+pub struct RemoteChange<'a> {
+    pub uid: &'a str,
+    pub device_id: &'a str,
+    pub seq: i64,
+    pub lamport: i64,
+    pub entity_type: &'a str,
+    pub entity_uid: &'a str,
+    pub field: Option<&'a str>,
+    pub old_value: Option<&'a str>,
+    pub new_value: Option<&'a str>,
+}
+
 /// 事务内写入一条**远端**变更（导入用）。
 ///
 /// 与 [`record_change_tx`] 的区别：
@@ -230,19 +245,21 @@ pub(crate) fn change_exists_tx(tx: &Transaction, uid: &str) -> Result<bool, Core
 /// - `seq` / `lamport` / `device_id` 全部**沿用远端值**（不重新分配）——
 ///   它们是远端设备的事实，改写会破坏跨设备的 LWW 比较；
 /// - 不推进本地 `app_state.lamport`（由导入方在整包结束时统一 `max` 提升）。
-#[allow(clippy::too_many_arguments)]
 pub fn record_remote_change_tx(
     tx: &Transaction,
-    uid: &str,
-    device_id: &str,
-    seq: i64,
-    lamport: i64,
-    entity_type: &str,
-    entity_uid: &str,
-    field: Option<&str>,
-    old_value: Option<&str>,
-    new_value: Option<&str>,
+    change: RemoteChange<'_>,
 ) -> Result<(), CoreError> {
+    let RemoteChange {
+        uid,
+        device_id,
+        seq,
+        lamport,
+        entity_type,
+        entity_uid,
+        field,
+        old_value,
+        new_value,
+    } = change;
     let now = chrono::Utc::now().timestamp_millis();
     tx.execute(
         "INSERT INTO changes

@@ -31,6 +31,18 @@ pub(crate) fn render_name(meta: &EnvVarMeta) -> String {
     }
 }
 
+/// dry-run 变更摘要的输入。
+pub(crate) struct ChangePreviewInput {
+    pub operation: &'static str,
+    pub hive: EnvHive,
+    pub name: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub kind: Option<String>,
+    pub writable: bool,
+    pub sensitive: bool,
+}
+
 /// 构造 dry-run 的变更摘要（统一 JSON 契约）。
 ///
 /// 字段固定为 `operation / hive / name / oldValue / newValue / kind / writable / sensitive`；
@@ -40,23 +52,23 @@ pub(crate) fn render_name(meta: &EnvVarMeta) -> String {
 /// **安全（安全审查修正）**：`old` / `new` 必须已在 core 侧经敏感打码与控制字符净化 ——
 /// 本函数不做判定也不做净化，只透传（CLI 零判定）。调用方对 `add` 的新值需经
 /// [`mask_new_value`] 处理后再传入。`sensitive` 用于让消费者区分「敏感打码」与「空值」。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn build_change_preview(
-    op: &str,
-    hive: EnvHive,
-    name: &str,
-    old: Option<String>,
-    new: Option<String>,
-    kind: Option<String>,
-    writable: bool,
-    sensitive: bool,
-) -> serde_json::Value {
+pub(crate) fn build_change_preview(input: ChangePreviewInput) -> serde_json::Value {
+    let ChangePreviewInput {
+        operation,
+        hive,
+        name,
+        old_value,
+        new_value,
+        kind,
+        writable,
+        sensitive,
+    } = input;
     serde_json::json!({
-        "operation": op,
+        "operation": operation,
         "hive": match hive { EnvHive::System => "system", EnvHive::User => "user" },
         "name": name,
-        "oldValue": old,
-        "newValue": new,
+        "oldValue": old_value,
+        "newValue": new_value,
         "kind": kind,
         "writable": writable,
         "sensitive": sensitive,

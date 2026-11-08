@@ -225,7 +225,7 @@ fn parse_material(plain: &[u8]) -> Result<KeyMaterial, CoreError> {
 /// `getrandom` 是显式依赖（不是「依赖传递依赖的 API」）；失败代表 OS 熵源
 /// 不可用，属于不可恢复的环境错误。
 fn rand_fill(buf: &mut [u8]) -> Result<(), CoreError> {
-    getrandom::getrandom(buf).map_err(|e| {
+    getrandom::fill(buf).map_err(|e| {
         CoreError::new(
             ErrorCode::Crypto,
             "rand_fill",

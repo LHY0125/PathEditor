@@ -16,7 +16,7 @@ PathEditor/
 │   │   │   └── history.rs       # HistorySink 端口 + EventSource
 │   │   ├── platform/            # 外部世界适配
 │   │   │   ├── persist.rs       # 版本化文件信封、轮换、损坏隔离
-│   │   │   ├── fs.rs            # 受限文件读取、导入导出
+│   │   │   ├── fs/              # io/ 文件读写与目录黑名单；formats/ 导入导出解析
 │   │   │   ├── system.rs        # 权限、变量展开、环境广播
 │   │   │   ├── scanner.rs       # scan_paths 单次枚举、冲突与工具清单
 │   │   │   ├── capabilities.rs  # 按 hive 探测 PathCapabilities

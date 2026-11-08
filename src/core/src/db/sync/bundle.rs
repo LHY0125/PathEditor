@@ -125,12 +125,18 @@ pub fn seal(passphrase: &str, header: &BundleHeader, payload: &[u8]) -> Result<V
 /// 是同一件事——「这个包我打不开」。区分它们会泄露信息（例如「口令对了但
 /// 密文坏了」暗示口令正确）。
 pub fn open(passphrase: &str, bytes: &[u8]) -> Result<(BundleHeader, Vec<u8>), CoreError> {
-    let (header, prefix, salt, nonce_bytes, ciphertext) = split(bytes)?;
+    let SplitBundle {
+        header,
+        prefix,
+        salt,
+        nonce,
+        ciphertext,
+    } = split(bytes)?;
     let key = derive_key(passphrase, &salt)?;
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
     let plaintext = cipher
         .decrypt(
-            Nonce::from_slice(&nonce_bytes),
+            Nonce::from_slice(&nonce),
             Payload {
                 msg: &ciphertext,
                 aad: &prefix,
@@ -140,20 +146,20 @@ pub fn open(passphrase: &str, bytes: &[u8]) -> Result<(BundleHeader, Vec<u8>), C
     Ok((header, plaintext))
 }
 
-/// 切分包结构，返回 `(header, aad 前缀, salt, nonce, ciphertext)`。
-#[allow(clippy::type_complexity)]
-fn split(
-    bytes: &[u8],
-) -> Result<
-    (
-        BundleHeader,
-        Vec<u8>,
-        [u8; SALT_LEN],
-        [u8; NONCE_LEN],
-        Vec<u8>,
-    ),
-    CoreError,
-> {
+/// 切分后的包结构。
+///
+/// 用结构体而非五元组：`header` 与四个二进制段语义不同，元组在调用侧
+/// 只能靠位置记忆，改一处顺序就会静默错位。
+struct SplitBundle {
+    header: BundleHeader,
+    prefix: Vec<u8>,
+    salt: [u8; SALT_LEN],
+    nonce: [u8; NONCE_LEN],
+    ciphertext: Vec<u8>,
+}
+
+/// 切分包结构。
+fn split(bytes: &[u8]) -> Result<SplitBundle, CoreError> {
     let bad = |why: &str| CoreError::new(ErrorCode::SyncFormat, "open", why.to_string());
 
     // 固定头：magic(8) + version(4) + header_len(4)
@@ -191,7 +197,7 @@ fn split(
         .try_into()
         .expect("已校验长度");
     let nonce_start = salt_start + SALT_LEN;
-    let nonce_bytes: [u8; NONCE_LEN] = bytes[nonce_start..nonce_start + NONCE_LEN]
+    let nonce: [u8; NONCE_LEN] = bytes[nonce_start..nonce_start + NONCE_LEN]
         .try_into()
         .expect("已校验长度");
     let cipher_start = nonce_start + NONCE_LEN;
@@ -200,7 +206,13 @@ fn split(
     let prefix = bytes[..cipher_start].to_vec();
     let ciphertext = bytes[cipher_start..].to_vec();
 
-    Ok((header, prefix, salt, nonce_bytes, ciphertext))
+    Ok(SplitBundle {
+        header,
+        prefix,
+        salt,
+        nonce,
+        ciphertext,
+    })
 }
 
 /// 用 OS 熵源取 N 字节。
@@ -209,7 +221,7 @@ fn split(
 /// 少一个传递依赖就少一处供应链面。
 fn random_bytes<const N: usize>() -> Result<[u8; N], CoreError> {
     let mut buf = [0u8; N];
-    getrandom::getrandom(&mut buf)
+    getrandom::fill(&mut buf)
         .map_err(|_| CoreError::new(ErrorCode::Crypto, "random", "无法获取系统随机数"))?;
     Ok(buf)
 }

@@ -44,6 +44,31 @@ pub(crate) fn cmd_env_get(name: String, system: bool) {
     }
 }
 
+/// `env set` 的参数集合。
+pub(crate) struct SetArgs {
+    pub name: String,
+    pub value: Option<String>,
+    pub stdin: bool,
+    pub value_file: Option<String>,
+    pub revision: Option<String>,
+    pub force: bool,
+    pub dry_run: bool,
+    pub json_out: bool,
+    pub system: bool,
+}
+
+/// `env add` 的参数集合。
+pub(crate) struct AddArgs {
+    pub name: String,
+    pub value: Option<String>,
+    pub stdin: bool,
+    pub value_file: Option<String>,
+    pub kind: String,
+    pub dry_run: bool,
+    pub json_out: bool,
+    pub system: bool,
+}
+
 /// `env set` —— 修改已有变量的值。类型跟随注册表现状，不可更改。
 ///
 /// `--revision` 走 CAS（冲突退出码 3）；`--force` 走真正的覆盖写
@@ -51,18 +76,18 @@ pub(crate) fn cmd_env_get(name: String, system: bool) {
 ///
 /// `--dry-run` 只预览、不写注册表，且**不要求** `--revision`/`--force`
 /// 。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cmd_env_set(
-    name: String,
-    value: Option<String>,
-    stdin: bool,
-    value_file: Option<String>,
-    revision: Option<String>,
-    force: bool,
-    dry_run: bool,
-    json_out: bool,
-    system: bool,
-) {
+pub(crate) fn cmd_env_set(args: SetArgs) {
+    let SetArgs {
+        name,
+        value,
+        stdin,
+        value_file,
+        revision,
+        force,
+        dry_run,
+        json_out,
+        system,
+    } = args;
     let hive = select_hive(system, false);
     let src = resolve_value(value, stdin, value_file, true);
     let new_value = read_value(&src);
@@ -72,16 +97,16 @@ pub(crate) fn cmd_env_set(
         let preview = core::platform::registry::preview_env_change(hive, &name)
             .unwrap_or_else(|e| exit_core_error(&e));
         // 安全：旧值已由 core 打码/净化；新值来自命令行，须同样经 mask_new_value 处理。
-        let json = build_change_preview(
-            "set",
+        let json = build_change_preview(ChangePreviewInput {
+            operation: "set",
             hive,
-            &name,
-            preview.old_value,
-            mask_new_value(&name, new_value),
-            Some(preview.kind),
-            preview.writable,
-            preview.sensitive,
-        );
+            name: name.clone(),
+            old_value: preview.old_value,
+            new_value: mask_new_value(&name, new_value),
+            kind: Some(preview.kind),
+            writable: preview.writable,
+            sensitive: preview.sensitive,
+        });
         emit_preview(&json, json_out);
         return;
     }
@@ -106,17 +131,17 @@ pub(crate) fn cmd_env_set(
 ///
 /// `--dry-run` 只预览、不写注册表；`kind` 来自 `--kind`（非注册表读取），
 /// `writable` 经 core 判定。
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cmd_env_add(
-    name: String,
-    value: Option<String>,
-    stdin: bool,
-    value_file: Option<String>,
-    kind: String,
-    dry_run: bool,
-    json_out: bool,
-    system: bool,
-) {
+pub(crate) fn cmd_env_add(args: AddArgs) {
+    let AddArgs {
+        name,
+        value,
+        stdin,
+        value_file,
+        kind,
+        dry_run,
+        json_out,
+        system,
+    } = args;
     let hive = select_hive(system, false);
     let src = resolve_value(value, stdin, value_file, true);
     let new_value = read_value(&src);
@@ -125,16 +150,16 @@ pub(crate) fn cmd_env_add(
         // 同名已存在时**照常展示**（不在预览层拒绝），执行时才由 core 拒 NameExists（验收标准 9）。
         // 安全：新值来自命令行，经 mask_new_value 打码/净化（敏感名不预览明文）。
         let sensitive = core::domain::env_var::is_sensitive(&name);
-        let json = build_change_preview(
-            "add",
+        let json = build_change_preview(ChangePreviewInput {
+            operation: "add",
             hive,
-            &name,
-            None,
-            mask_new_value(&name, new_value),
-            Some(kind_label(parse_kind(&kind)).to_string()),
-            core::platform::registry::env_hive_writable(hive),
+            name: name.clone(),
+            old_value: None,
+            new_value: mask_new_value(&name, new_value),
+            kind: Some(kind_label(parse_kind(&kind)).to_string()),
+            writable: core::platform::registry::env_hive_writable(hive),
             sensitive,
-        );
+        });
         emit_preview(&json, json_out);
         return;
     }
@@ -165,16 +190,16 @@ pub(crate) fn cmd_env_remove(
         // 预览是只读的；变量不存在时 core 返回 NotFound，照常报错（验收标准 8）。
         let preview = core::platform::registry::preview_env_change(hive, &name)
             .unwrap_or_else(|e| exit_core_error(&e));
-        let json = build_change_preview(
-            "remove",
+        let json = build_change_preview(ChangePreviewInput {
+            operation: "remove",
             hive,
-            &name,
-            preview.old_value,
-            None,
-            None,
-            preview.writable,
-            preview.sensitive,
-        );
+            name: name.clone(),
+            old_value: preview.old_value,
+            new_value: None,
+            kind: None,
+            writable: preview.writable,
+            sensitive: preview.sensitive,
+        });
         emit_preview(&json, json_out);
         return;
     }
