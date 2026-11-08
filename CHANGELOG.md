@@ -1,5 +1,30 @@
 # Changelog
 
+## 7.0.0 (2026-11-08)
+
+### Breaking
+
+- **数据库不再加密**：`~/.patheditor/patheditor.db` 从 SQLCipher 改为标准 SQLite。
+  v6 及更早版本的加密库**无法读取**，升级前请删除（或重命名）该文件及同目录的
+  `patheditor.db-wal` / `patheditor.db-shm`。删除后历史、同步队列、检索与统计从空库重建；
+  PATH 编辑与注册表不受影响。
+- 回退到 6.x 不可行：6.x 会对明文库执行 `PRAGMA key` 并失败。
+- 移除 `rusqlite` 的 `bundled-sqlcipher-vendored-openssl`：不再需要 OpenSSL、perl、NASM，
+  本地 GNU 构建不再需要三条环境变量。
+
+### Changed
+
+- `db::Db::open_encrypted` → `db::Db::open`；`db::crypto::KeyMaterial` 只保留 `hash_salt`，
+  `key_hex` 删除。密钥文件路径与 49 字节格式不变，既有 `.pebak` 与备份索引继续有效。
+- 密钥文件的 DACL 校验从 `open_default` 移到 `load_or_create_key  `（数据库不再读密钥，
+  但盐被替换会导致既有备份无法校验）。
+- 新增 `PATHEDITOR_DATA_DIR`：只用于把 CLI 子进程测试的数据库重定向到临时目录。
+- 「一文件一测试」约束随 SQLCipher 退场取消；存量测试文件不合并。
+
+### Unchanged
+
+- `.pebak` 备份仍是 DPAPI 加密；同步 bundle 仍是 Argon2id + ChaCha20-Poly1305。
+
 ## 6.2.2 (2026-11-06)
 
 > 6.2.1 的发布产物早于以下修复（tag 推送后才发现 CI 变红）；6.2.2 是同一轮整改的补发，功能上与 6.2.1 无差异。
@@ -392,7 +417,7 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 
 ### 修复
 
-- **`env get` 泄漏 Win32 原生错误串（#34）**：读取不存在的变量时，此前返回 `读取用户环境变量 X 失败: 无法读取环境变量 X: 系统找不到指定的文件。 (os error 2)`（变量名重复、暴露原生串）。现改为 `用户环境变量 X 不存在`，错误码 `NotFound`，退出码 1。根因修复在 `reg_store`：新增 `get_raw_kind` 按 `io::ErrorKind` 分类错误，使 `NotFound` 的结构信息能到达上层——此前 `get_raw` 把 `io::Error` 降级为 `String`，结构信息在中途丢失，上层无从判定。
+- **`env get` 泄漏 Win32 原生错误串（#34#34）**：读取不存在的变量时，此前返回 `读取用户环境变量 X 失败: 无法读取环境变量 X: 系统找不到指定的文件。 (os error 2)`（变量名重复、暴露原生串）。现改为 `用户环境变量 X 不存在`，错误码 `NotFound`，退出码 1。根因修复在 `reg_store`：新增 `get_raw_kind` 按 `io::ErrorKind` 分类错误，使 `NotFound` 的结构信息能到达上层——此前 `get_raw` 把 `io::Error` 降级为 `String`，结构信息在中途丢失，上层无从判定。
 - 其它错误（类型不支持 / IO / 解码失败）的 message 与错误码**逐字节不变**。
 - **`--dry-run` 预览的敏感值保护（安全审查修正）**：预览输出会进终端、shell 历史、CI 日志，不应成为第二个明文出口。现 `preview_env_change` 对命中 `is_sensitive` 的变量**不回传明文**（`oldValue` 置 `null`、文本显示 `(敏感)`），`env add` 的新值同样经 `mask_new_value` 打码。
 - **展示路径的控制字符净化（安全审查修正）**：`sanitize_preview` 的剔除范围从 `\r`/`\n`/`\0` 扩展到**全部 C0 控制字符与 DEL**，覆盖 `\x1b`（ESC）——防止注册表值中的 ANSI 转义序列在 `env list` / `--dry-run` 输出时注入终端（清屏、改标题等）。
@@ -402,7 +427,7 @@ M3 只落 `snapshot`；M4 把配置（`profile` / `profile_revision`）真正接
 - `--json` 必须与 `--dry-run` 同用：单独使用由 clap 拒绝，退出码 **2**（参数用法错误），而非静默忽略。
 - `--dry-run` 是纯读操作：不写注册表、不产生备份文件、不广播环境变更。预览展示的是「预览时刻」的状态（TOCTOU），**不保证**执行时不变。
 - `path_backup_*.txt` 含两个 hive 的完整 PATH **明文**（可能含用户名、内网地址），保留策略是主要缓解措施。
-- **#38 经核实不成立**（省略 VALUE 本就立即报错、不阻塞），本版只补 help 文案并关闭该 issue，无代码改动。`#32`（批量往返）需跨命令 session 状态，属架构变动，不在本版。
+- **#38#38 经核实不成立**（省略 VALUE 本就立即报错、不阻塞），本版只补 help 文案并关闭该 issue，无代码改动。`#32`（批量往返）需跨命令 session 状态，属架构变动，不在本版。
 
 ## 5.1.4 (2026-09-23)
 

@@ -1,7 +1,5 @@
 //! 同一包重复导入：配置与 revision 不得重复，第二次全部走幂等跳过。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;
 use path_editor_core::db::Db;
@@ -10,8 +8,7 @@ use tempfile::TempDir;
 #[test]
 fn reimporting_the_same_bundle_does_not_duplicate_profiles_or_revisions() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("idem.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("idem.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let changes = r#"[

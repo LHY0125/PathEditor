@@ -3,8 +3,6 @@
 //! 包虽然用口令加密，但发送端可能是更新版本、有 bug 的版本，或被分享口令的
 //! 另一台机器——名称属于**跨信任边界的外部输入**，且会持久化并被 UI 渲染。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;
 use path_editor_core::db::Db;
@@ -50,8 +48,7 @@ fn write_bundle(dir: &TempDir, file: &str, name_json: &str) {
 #[test]
 fn invalid_profile_names_are_rejected_and_the_whole_bundle_rolls_back() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("bad_name.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("bad_name.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 空名 / 纯空白名 / 超长名 / 含控制字符 —— 四种都必须整包拒绝

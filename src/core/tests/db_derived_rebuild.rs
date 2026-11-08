@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // 派生表重建的验收判据：清空三张派生表 → 跑一遍重建 → 数据恢复。
 //
@@ -6,7 +5,6 @@
 // `daily_stats` / `var_references` 按水位判断）；编排的幂等性由
 // `bootstrap_initialize` 覆盖。本测试守的是更根本的性质：三个 rebuild
 // 函数能各自独立完成重建。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, NewSnapshot, SnapshotKind,
 };
@@ -21,8 +19,7 @@ use tempfile::TempDir;
 #[test]
 fn all_three_derived_tables_recover_after_being_cleared() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("d.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("d.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 造一份「当前快照」，三张派生表都要从它/它相关的事件重建

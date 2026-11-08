@@ -1,11 +1,9 @@
-// 一文件一测试（SQLCipher）。
 //
 // 回归守卫：配置方案必须只有 DB 一个真相源。
 //
 // 这条测试的存在理由：首版把 `profiles/*.json` 导入 DB 后，UI 仍在读写文件，
 // 造成「DB 数据永久冻结」的双真相源。缺口清单把它列为。
 // 若将来有人把 UI 改回文件通路，或让 CLI 重新写文件，本用例会失败。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{
     delete_profile_by_name, get_profile_by_name, list_profiles, mark_profile_applied_by_name,
@@ -19,8 +17,7 @@ use tempfile::TempDir;
 #[test]
 fn profiles_live_in_db_and_support_full_crud_by_name() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("p.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("p.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let snap = |path: &str| NewSnapshot {

@@ -1,9 +1,7 @@
-// 一文件一测试（SQLCipher）。
 //
 // 整改的守卫测试：`app_state` 单行必须在**建库时**就存在。
 // 若它为空，`set_current_snapshot` 的 CAS 永远匹配 0 行、恒返回 false，
 // 「并发写：CAS 冲突返回 conflict」将永远不可达。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, NewSnapshot, SnapshotKind,
 };
@@ -14,8 +12,7 @@ use tempfile::TempDir;
 #[test]
 fn app_state_is_seeded_at_creation_and_cas_works() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("cas.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("cas.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // ① 建库即有 app_state 单行，且 version = 1

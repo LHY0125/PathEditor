@@ -4,8 +4,6 @@
 //! 实体保持原样 —— 下次导出会用「本地仍存活的实体」覆盖刚记录的 new_value，
 //! 第三台设备也永远看不到用户选的远端内容。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{get_profile_by_name, rename_profile, save_profile};
 use path_editor_core::db::sync::conflict::{list_conflicts, resolve_conflict, Resolution};
@@ -16,8 +14,7 @@ use path_editor_core::domain::history::EventSource;
 use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join(name), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join(name)).unwrap();
     db.migrate_to_current().unwrap();
     db
 }

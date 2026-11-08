@@ -1,8 +1,8 @@
 //! FTS5 全文检索。
 //!
 //! **索引范围**：PATH 条目串、env 变量名、配置名/描述/标签。
-//! **绝不索引 env 变量的值** —— 明文值只存在于 `env_values.value`，
-//! 由 SQLCipher 保护，且不进任何派生表。
+//! **绝不索引 env 变量的值** —— 明文值只存在于 `env_values.value`，且不进任何派生表。
+//! （数据库不加密，敏感值的保护依赖 UI 掩码与 `reveal_env_var`。）
 //!
 //! **派生表**：`search_fts` 可从 `path_entries` / `env_values.name` /
 //! `profiles` 完整重建，见 [`rebuild_index`]。

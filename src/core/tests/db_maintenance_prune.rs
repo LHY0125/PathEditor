@@ -1,7 +1,5 @@
 //! 保留策略：只删「已导出且超过 90 天」的 changes 与「已解决超过 30 天」的冲突。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::maintenance::{prune, CHANGES_RETENTION_MS, CONFLICTS_RETENTION_MS};
 use path_editor_core::db::Db;
 use rusqlite::params;
@@ -10,8 +8,7 @@ use tempfile::TempDir;
 #[test]
 fn prune_deletes_only_expired_and_exported_rows() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("prune.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("prune.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let now: i64 = 1_800_000_000_000;

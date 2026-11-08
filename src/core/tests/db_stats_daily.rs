@@ -1,9 +1,7 @@
-// 一文件一测试（SQLCipher）。
 //
 // ** 时区约束**：`date(..., 'localtime')` 取 C 运行时时区，代码里没有任何地方
 // 强制 `Asia/Shanghai`。本测试**不使用固定的日期字面量**，只断言「有且只有一天」
 // 与「该天的值是确定的」——避免在 23:59 附近跑时因跨日而假失败。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::history_sink::DbHistory;
 use path_editor_core::db::stats::{dashboard, rebuild_daily};
@@ -17,8 +15,7 @@ use tempfile::TempDir;
 #[test]
 fn daily_stats_aggregates_events_and_is_rebuildable() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("st.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("st.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let snap_uid = insert_snapshot(

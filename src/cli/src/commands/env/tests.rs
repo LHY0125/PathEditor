@@ -552,13 +552,28 @@ fn key_home() -> std::path::PathBuf {
     .clone()
 }
 
-/// 启动 CLI 子进程，并把密钥目录重定向到 [`key_home`]。
+/// 测试进程独占的数据目录（`PATHEDITOR_DATA_DIR` 的取值）。
+///
+/// 数据库不加密，也不再借 `PATHEDITOR_KEY_DIR` 定位；CLI 的子进程若打开
+/// 数据库，必须靠这个变量把它留在临时目录里，绝不碰用户真实的
+/// `~/.patheditor/patheditor.db`。
+fn data_home() -> std::path::PathBuf {
+    static DIR: std::sync::LazyLock<std::path::PathBuf> = std::sync::LazyLock::new(|| {
+        let dir = std::env::temp_dir().join(format!("patheditor_t7_data_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("创建测试数据目录失败");
+        dir
+    });
+    DIR.clone()
+}
+
+/// 启动 CLI 子进程，并把密钥目录与数据目录重定向到临时目录。
 ///
 /// 所有进程级用例都必须走这里：漏掉重定向的 `env backup` / `env restore`
-/// 会读写用户真实的 `~/.patheditor` 密钥。
+/// 会读写用户真实的 `~/.patheditor`。
 fn cli_cmd() -> std::process::Command {
     let mut cmd = std::process::Command::new(cli_bin());
     cmd.env("PATHEDITOR_KEY_DIR", key_home());
+    cmd.env("PATHEDITOR_DATA_DIR", data_home());
     cmd
 }
 
@@ -1002,7 +1017,7 @@ fn env_restore_warns_about_legacy_plaintext_on_stderr() {
     );
     assert!(
         stderr.contains("pebak"),
-        "提示必须说明 v6 的加密格式是 .pebak: stderr={stderr:?}"
+        "提示必须说明备份默认格式是加密的 .pebak: stderr={stderr:?}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

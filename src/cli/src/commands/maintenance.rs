@@ -38,7 +38,7 @@ pub(crate) fn maintenance_prune(dry_run: bool) {
 /// 这是唯一会删除用户文件的维护命令。
 ///
 /// dry-run 走 [`scan_legacy_env_backups`] 而**不加载密钥**——`load_or_create_key`
-/// 在密钥不存在时会新建 `~/.patheditor/keys/db.key.dpapi`，预览不该有磁盘副作用。
+/// 在密钥不存在时会新建 `~/.patheditor/keys/db.key.dpapi`（本机盐），预览不该有磁盘副作用。
 pub(crate) fn maintenance_cleanup_legacy(dry_run: bool, yes: bool) {
     let dir = core::platform::backup::env_backup_dir();
 

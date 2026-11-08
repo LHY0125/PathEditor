@@ -25,8 +25,8 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Memory",
   "Win32_System_Threading",
 ] }
-# v6 M1：SQLCipher 全库加密。M0 已在 GNU/MSVC 双平台验证此 feature 组合。
-rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
+# 普通 SQLite（bundled 自带 FTS5 / JSON1），不需要 SQLCipher 与 OpenSSL。
+rusqlite = { version = "0.40", features = ["bundled"] }
 # content_hash：仅用于去重/判等，不是安全边界（spec H5）
 blake3 = "1"
 uuid = { version = "1", features = ["v7"] }

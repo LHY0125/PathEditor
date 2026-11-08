@@ -1,7 +1,5 @@
-// 一文件一测试（SQLCipher）。
 //
 // 水位未变时跳过派生表重建；事件/快照增删后必须重新重建。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::derived::rebuild_if_stale;
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::Db;
@@ -11,8 +9,7 @@ use tempfile::TempDir;
 #[test]
 fn rebuild_is_skipped_until_event_or_snapshot_watermark_changes() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("d.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("d.db")).unwrap();
     db.migrate_to_current().unwrap();
     let watermark_path = dir.path().join("derived.watermark");
 

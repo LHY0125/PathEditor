@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-6.2.2-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-7.0.0-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
   <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
@@ -111,7 +111,7 @@ PATH 之外的所有环境变量统一管理；敏感值默认打码，需先「
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v6.2.2 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，并新增 **SQLCipher 加密数据库**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
+v7.0.0 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，数据层是 **本地 SQLite**（不加密）：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
 
 ## 架构
 
@@ -146,7 +146,7 @@ graph TB
         Sync[同步<br/>bundle / LWW / 冲突]
     end
 
-    subgraph DB["SQLCipher 数据库（sidecar）"]
+    subgraph DB["SQLite 数据库（sidecar）"]
         Main[("patheditor.db<br/>snapshots / events / profiles<br/>changes / sync_conflicts")]
         Derived["派生表<br/>search_fts / daily_stats / var_references"]
     end
@@ -393,7 +393,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 
 ### 历史记录（v6 M1）
 
-- PATH 快照与操作事件持久化到 **SQLCipher 加密数据库**（`~/.patheditor/patheditor.db`）
+- PATH 快照与操作事件持久化到 **本地 SQLite 数据库**（`~/.patheditor/patheditor.db`；不加密）
 - 「历史记录」标签页按时间倒序浏览事件
 - **敏感变量的值默认掩码**（`••••`），掩码在 Rust 侧完成 —— 前端从不接收未要求的明文
 - **数据库是 sidecar，注册表仍是唯一真相源**：DB 打不开时 GUI 照常工作，只把历史/检索/统计/同步降级，
@@ -495,7 +495,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 
 **方式一：安装包**
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_6.2.2_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_7.0.0_x64-setup.exe` 安装。
 
 **方式二：Scoop（免安装）**
 
@@ -567,7 +567,7 @@ npx tauri build
 | 国际化    | i18next                                   |
 | 桌面框架  | Tauri 2.x                                 |
 | 核心库    | Rust workspace (core + gui + cli)         |
-| 数据库    | SQLCipher（rusqlite + bundled OpenSSL）   |
+| 数据库    | SQLite（rusqlite bundled + FTS5）         |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
 | 前端测试  | Vitest (40 files / 425) + Playwright (54) |
@@ -593,7 +593,7 @@ src/                          # 全部源码
 │   │   ├── capabilities.rs   # 按 hive 探测 PathCapabilities
 │   │   ├── persist.rs        # 持久化原语（schemaVersion / .bak 轮换 / 损坏隔离）
 │   │   └── fs.rs             # 文件读写、导入导出解析
-│   ├── db/                   # v6 SQLCipher 数据层
+│   ├── db/                   # 数据层（SQLite，不加密）
 │   │   ├── schema.rs / crypto.rs / dpapi.rs / dacl.rs
 │   │   ├── history.rs / history_sink.rs / profiles.rs / backup_index.rs
 │   │   ├── search.rs / stats.rs / refs.rs / compare.rs / scan_history.rs
@@ -643,13 +643,10 @@ docs/审核和开发/                # 审查与开发记录
 
 ### 本地开发环境
 
-- Node.js 20+（CI 使用 Node 20）
+- Node.js 22+
 - Rust 1.88+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
 - MinGW-w64（GNU 下测试需要 `windres`；MSVC 下由链接器清单处理）
-- 首次全量构建需要 `make`、`perl`（MSVC 下还需 NASM），约 45 分钟
-- **GNU 目标下 `perl` 必须是 POSIX 路径风格**：原生 Windows perl（Strawberry / Scoop）会在 OpenSSL 的
-  `Configure` 阶段被拒。可用 Git for Windows 自带的 `usr\bin\perl.exe`，并用 `PERL5LIB` 指向
-  `probes/v6-sqlcipher/perl5lib` 补齐该 perl 被裁剪的模块；三行命令见 `docs/dev/testing.md` 的「其他」一节
+- 数据库是普通 SQLite（`rusqlite` 的 `bundled`），**不需要 OpenSSL / perl / NASM**，直接 `cargo build` 即可
 
 ### 代码规范
 

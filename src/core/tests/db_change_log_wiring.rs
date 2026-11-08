@@ -4,8 +4,6 @@
 //! 注意本测试**不手写 `record_change_tx`**——它调 core 的写函数，然后断言
 //! `changes` 表自己多出了行。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles;
 use path_editor_core::db::sync::change_log::pending_export;
@@ -24,8 +22,7 @@ fn entry(path: &str) -> PathEntry {
 #[test]
 fn write_paths_populate_change_log_without_manual_recording() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("w.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("w.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 前置：空库没有任何待导出变更

@@ -2,9 +2,6 @@
 //!
 //! 首版把 `PRAGMA user_version` 写在 `if current < 1` 内部，
 //! 导致 v1→v2 执行了 DDL 但不更新版本号。 必须避免同样的错误。
-//!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::{schema, Db};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -13,14 +10,10 @@ use tempfile::TempDir;
 fn upgrading_a_v2_database_bumps_version_and_preserves_data() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("up.db");
-    let key = load_or_create_key(dir.path()).unwrap();
-    let kh = key_hex(&key);
 
     // 造一个真 v2 库：DDL_V1 + 种子 + DDL_V2 + user_version = 2
     {
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(&format!("PRAGMA key = \"x'{kh}'\";"))
-            .unwrap();
         conn.execute_batch(schema::DDL_V1).unwrap();
         conn.execute(
             schema::SEED_APP_STATE_SQL,
@@ -38,7 +31,7 @@ fn upgrading_a_v2_database_bumps_version_and_preserves_data() {
         .unwrap();
     }
 
-    let mut db = Db::open_encrypted(&path, &kh).unwrap();
+    let mut db = Db::open(&path).unwrap();
     assert_eq!(db.schema_version().unwrap(), 2, "前置：确实是 v2 库");
 
     db.migrate_to_current().unwrap();

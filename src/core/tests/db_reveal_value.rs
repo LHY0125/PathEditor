@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // ：`history_reveal_env_value` 的 core 侧实现。
 //
@@ -6,7 +5,6 @@
 // - 掩码是**默认**：`get_snapshot(reveal=false)` 对敏感值返回 None；
 // - 明文必须经**独立命令**显式请求，是一次可审计的动作；
 // - `restorable = 0` 的变量（`Unsupported` 类型）没有值可 reveal，返回 NotFound。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     get_snapshot, insert_snapshot, reveal_env_value, EnvValueRow, NewSnapshot, SnapshotKind,
 };
@@ -40,8 +38,7 @@ fn env(
 #[test]
 fn reveal_returns_plaintext_only_when_explicitly_requested() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("rv.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("rv.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let uid = insert_snapshot(

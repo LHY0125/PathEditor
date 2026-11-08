@@ -264,7 +264,7 @@ mod tests {
     use crate::platform::backup::{EnvBackupHives, EnvBackupVar};
     use crate::platform::persist::{Versioned, PERSIST_SCHEMA_VERSION};
 
-    /// 此文件只有一个测试：它用 DPAPI、不建 SQLCipher，因此可以放在单元测试模块里。
+    /// 只用 DPAPI、不建数据库，因此可以放在单元测试模块里。
     #[test]
     fn legacy_json_is_converted_to_pebak_before_deletion() {
         let dir = tempfile::TempDir::new().unwrap();

@@ -1,11 +1,9 @@
-// 一文件一测试（SQLCipher）。
 //
 // 回归守卫：事件必须能关联到快照（`events.snapshot_id` 非 NULL）。
 //
 // 缺口清单：首版 `service.rs:351` / `:486` 把 `snapshot_uid` 写死为 `None`，
 // 导致历史面板的详情按钮恒禁用。修复方式是在命令层「先建操作前快照、再调服务」，
 // 通过 `DbHistory::with_snapshot` 把 uid 绑定给该次操作的所有事件。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{list_events, EventFilter, NewSnapshot, SnapshotKind};
 use path_editor_core::db::history_sink::DbHistory;
 use path_editor_core::db::Db;
@@ -18,8 +16,7 @@ use tempfile::TempDir;
 #[test]
 fn events_recorded_through_bound_sink_point_at_the_snapshot() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("s.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("s.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 命令层的做法：先建「操作前」快照

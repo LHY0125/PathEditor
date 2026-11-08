@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // 恢复快照：读快照 → 写注册表 → 当前快照更新 → 事件 source=restore；
 // 旧快照保留（append-only），保证「恢复」本身可被撤销。
@@ -56,8 +55,7 @@ impl PathHiveIo for FakeIo {
 #[test]
 fn restore_snapshot_writes_registry_updates_current_and_keeps_old_snapshot() {
     let dir = TempDir::new().unwrap();
-    let key = "44".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("restore.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("restore.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 当前基线：C:\A

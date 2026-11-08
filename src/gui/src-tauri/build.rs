@@ -80,7 +80,7 @@ fn stage_webview2_loader_for_local_runs() {
 /// 依赖链里的 `windows-sys` 启用了 `Win32_UI_Controls`，导入
 /// `comctl32.dll!TaskDialogIndirect`。该符号**只在 comctl32 v6 里存在**，
 /// 而 `C:\Windows\System32\comctl32.dll` 是 v5.82——只有通过 side-by-side
-/// 清单请求 v6，加载器才会去 WinSxS 取 v6。
+/// 清单请求 comctl32 v6，加载器才会去 WinSxS 取 v6。
 ///
 /// Tauri 通过 `cargo:rustc-link-arg-bins=libresource.a` 给 **bin** 嵌了清单，
 /// 但 `cargo test -p patheditor --lib` 构建的是 **lib 的 test harness**，
@@ -155,7 +155,7 @@ fn embed_manifest_for_test_binaries() {
     match status {
         Ok(s) if s.success() => println!("cargo:rustc-link-arg={}", obj.display()),
         Ok(s) => println!(
-            "cargo:warning=windres 退出码 {:?}：测试二进制可能缺 v6 清单，\
+            "cargo:warning=windres 退出码 {:?}：测试二进制可能缺 comctl32 v6 清单，\
              会以 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) 退出",
             s.code()
         ),

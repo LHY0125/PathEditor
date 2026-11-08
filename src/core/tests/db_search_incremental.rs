@@ -1,6 +1,4 @@
-// 一文件一测试（SQLCipher）。
 // `index_snapshot_tx` 该测试覆盖增量索引。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{index_snapshot_tx, rebuild_index, search};
 use path_editor_core::db::Db;
@@ -11,8 +9,7 @@ use tempfile::TempDir;
 #[test]
 fn incremental_index_is_idempotent_and_matches_full_rebuild() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("i.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("i.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let uid = insert_snapshot(

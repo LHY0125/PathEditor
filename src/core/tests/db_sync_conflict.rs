@@ -1,7 +1,5 @@
 //! 冲突记录与解决：同 lamport 不同设备改同一字段 → 记冲突，用户选择后追加新变更。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::change_log::{
     current_lamport, pending_export, record_change_tx, NewChange,
 };
@@ -14,8 +12,7 @@ use path_editor_core::db::Db;
 use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join(name), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join(name)).unwrap();
     db.migrate_to_current().unwrap();
     db
 }

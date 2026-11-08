@@ -13,6 +13,7 @@
 - 恢复的差异计数有两个**已知的规格级口径问题**，不是已修复项：`RestorePreview.modified` 与 `RestoreOutcome.skipped` **恒为 0**（前者因为 `revision_of` 是 `(name, type, value)` 的纯函数，「值变了」与「备份已过期」是同一条件，后者一律判 `Conflict`；后者因为没有路径会「跳过」）。因此 `--dry-run` 与 GUI 确认弹窗的「修改 N」恒显示 0，而 `--force` 下被冲突覆盖的变量**确实被改写却计入 `conflicts`** —— 两者都会**低报** force 模式的实际改动量。`EnvBackupInfo.variable_count` 同样恒为 0（列表不解析内容）。**未提权时恢复恒失败**：普通用户无法以写权限打开 HKLM，`restore_env_backup_from` 必然返回 `permissionDenied`，且 GUI **不提供**「仅恢复 user hive」这类降级路径。
 - `env restore --dry-run` 对**损坏备份**并非严格纯读：`read_env_backup` 对不可解析文件会经 `persist::parse_error_quarantined` 把文件重命名为 `<file>.corrupt-<ts>`（注册表未触碰）。
 - 备份文件的暴露面：`.pebak` 是 DPAPI 加密的，但**备份目录 ACL 未收紧**；遗留/回落 `.json` 仍是**明文**（spec §S2.1 登记的未覆盖项）。
+- **数据库不加密**：`patheditor.db` 是标准 SQLite 明文文件，内容与注册表同级（`env_values` 可能含用户自设 token 的历史值）。`.pebak` 与同步 bundle 的加密不受影响；详见 `docs/superpowers/specs/2026-11-08-drop-db-encryption-design.md`。
 - **遗留明文备份清理**：遗留 `env_backup_*.json` 用 `maintenance cleanup-legacy-backups --yes` 先转 `.pebak` 并回读校验，再删除明文。
 - **同步与保留策略**：见 `docs/dev/sqlite-storage.md`；`maintenance prune` 只删已导出且到期的 `changes` 与已解决且到期的 `sync_conflicts`，**待导出队列（`exported_at IS NULL`）永不删**。
 

@@ -1,5 +1,3 @@
-// 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::scan_history::{diff_runs, list_runs, record_run};
 use path_editor_core::db::Db;
 use tempfile::TempDir;
@@ -7,8 +5,7 @@ use tempfile::TempDir;
 #[test]
 fn scan_runs_persist_and_diff_between_two_scans() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("sr.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("sr.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // ── 三次扫描，构造「首次出现」「最近出现」语义相反的场景 ──

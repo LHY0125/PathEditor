@@ -1,5 +1,3 @@
-// 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{
     delete_profile, list_profiles, mark_profile_applied, save_profile,
@@ -13,8 +11,7 @@ use tempfile::TempDir;
 fn profile_create_delete_recreate_with_same_name() {
     let dir = TempDir::new().unwrap();
 
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("p.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("p.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let snap = || NewSnapshot {

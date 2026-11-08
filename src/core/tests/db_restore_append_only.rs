@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // 回归守卫：恢复快照必须是 **append-only**。
 //
@@ -9,7 +8,6 @@
 // 本测试验证 DB 层的 append-only 语义：恢复 = 读旧快照 + 写新快照 + 记新事件，
 // **旧快照与旧事件都还在**。注册表写入本身由既有编排负责（不在此测试范围，
 // 因为它会碰真实注册表）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     get_snapshot, insert_snapshot, list_events, EventFilter, NewSnapshot, SnapshotKind,
 };
@@ -24,8 +22,7 @@ use tempfile::TempDir;
 #[test]
 fn restore_is_append_only_and_keeps_old_snapshots() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("r.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("r.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let mk = |path: &str| NewSnapshot {

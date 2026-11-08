@@ -1,6 +1,4 @@
-// 一文件一测试（SQLCipher）。
 use path_editor_core::db::compare::compare;
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::Db;
 use path_editor_core::domain::history::EventSource;
@@ -10,8 +8,7 @@ use tempfile::TempDir;
 #[test]
 fn compare_reports_both_hives_added_removed_and_reorder() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("c.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("c.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let mk = |sys: &[&str], usr: &[&str]| NewSnapshot {

@@ -1,40 +1,33 @@
-//! DPAPI 保护的本地密钥文件。
+//! DPAPI 保护的本地密钥材料文件。
 //!
-//! **密钥丢失即历史不可读，不得静默重建空库**。
+//! **数据库不加密**，本文件只承载 `.pebak` 备份去重盐
+//! （`payload_hash = BLAKE3(hash_salt ‖ canonical_json(payload))`）。
 //!
-//! 文件内容：`version(1) + db_key(32) + hash_salt(16)` = 49 字节明文，
+//! 文件内容：`version(1) + reserved(32) + hash_salt(16)` = 49 字节明文，
 //! 整体经 `CryptProtectData`（用户作用域）后落盘。
+//! 中间的 32 字节是旧版 SQLCipher 的 `db_key` 位置，现已**不再使用**；保留长度与随机填充
+//! 是为了让磁盘上已有的备份索引（依赖同一 `hash_salt`）继续有效，避免任何迁移。
 //!
 //! **并发安全**：用命名互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，
-//! 密钥文件以 `create_new(true)` 原子创建 —— **禁止「先 exists() 再写」的 TOCTOU**。
+//! 文件以 `create_new(true)` 原子创建 —— **禁止「先 exists() 再写」的 TOCTOU**。
 
 use crate::domain::error::{CoreError, ErrorCode};
 use std::path::{Path, PathBuf};
 
-/// 密钥材料的明文长度：`version(1) + db_key(32) + hash_salt(16)`。
+/// 密钥材料的明文长度：`version(1) + reserved(32) + hash_salt(16)`。
 const KEY_PLAIN_LEN: usize = 49;
+
+/// `hash_salt` 在明文中的起始偏移。
+const SALT_OFFSET: usize = 33;
 
 /// 当前密钥文件格式版本。
 const KEY_FORMAT_VERSION: u8 = 1;
 
-/// 密钥材料：数据库密钥 + 备份去重盐。
+/// 本机密钥材料，只承载备份去重盐。
 #[derive(Clone)]
 pub struct KeyMaterial {
-    /// 32 字节 SQLCipher 数据库密钥
-    pub db_key: [u8; 32],
     /// 16 字节盐，用于 `.pebak` 的 `payload_hash`（**不写进备份文件**）
     pub hash_salt: [u8; 16],
-}
-
-/// 十六进制表示（用于 `PRAGMA key = "x'...'"`）。
-pub fn key_hex(m: &KeyMaterial) -> String {
-    use std::fmt::Write as _;
-    let mut s = String::with_capacity(64);
-    for b in m.db_key {
-        // 写入 String 不会失败；忽略 Result 是安全的。
-        let _ = write!(s, "{b:02x}");
-    }
-    s
 }
 
 /// 配置目录 `~/.patheditor`。
@@ -64,6 +57,16 @@ pub fn key_home() -> PathBuf {
         .unwrap_or_else(config_dir)
 }
 
+/// 数据目录（数据库所在目录）：默认 [`config_dir`]，可被 `PATHEDITOR_DATA_DIR` 重定向。
+///
+/// 数据库不再需要密钥，不能再借 `PATHEDITOR_KEY_DIR` 顺带把库指到临时目录，
+/// 因此单独给它一个开关。**同样只给子进程测试用**；生产环境不设置它。
+pub fn data_home() -> PathBuf {
+    std::env::var_os("PATHEDITOR_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(config_dir)
+}
+
 /// 生产入口：按 [`key_home`] 加载（或首次创建）密钥。
 pub fn load_default_key() -> Result<KeyMaterial, CoreError> {
     load_or_create_key(&key_home())
@@ -83,10 +86,29 @@ pub fn load_or_create_key(home: &Path) -> Result<KeyMaterial, CoreError> {
     // 这个窗口里文件已存在但内容是 0/半截。锁外的读者会读到它，DPAPI 解密失败，
     // 整个进程 fail-closed（GUI 降级、CLI exit 5），直到下次重启才自愈。
     let _guard = InitGuard::acquire()?;
-    match read_key(&path)? {
-        Some(k) => Ok(k),
-        None => create_key_locked(&path),
+    let material = match read_key(&path)? {
+        Some(k) => k,
+        None => create_key_locked(&path)?,
+    };
+
+    // DACL 校验从 `db::open_default` 移到这里：数据库不再读密钥，
+    // 但盐被其它用户替换会让磁盘上既有 `.pebak` 全部校验失败，守护仍然需要。
+    // 过宽只告警、**不自动修改**——避免误伤用户自建的目录权限。
+    #[cfg(windows)]
+    {
+        match super::dacl::key_dacl_is_restricted(&path) {
+            Ok(true) => {}
+            Ok(false) => log::warn!(
+                "密钥文件 {} 的权限过宽（存在非当前用户/SYSTEM 的授权项）。\
+                 其它用户可能替换它，导致既有 .pebak 备份无法校验。",
+                path.display()
+            ),
+            // 读取 ACL 失败不影响使用：这是告警而非门禁
+            Err(e) => log::warn!("无法校验密钥文件权限: {}", e.message),
+        }
     }
+
+    Ok(material)
 }
 
 /// 读取并解密密钥文件；文件不存在返回 `Ok(None)`。
@@ -113,16 +135,17 @@ fn create_key_locked(path: &Path) -> Result<KeyMaterial, CoreError> {
     use std::fs;
     use std::io::Write;
 
-    let mut material = KeyMaterial {
-        db_key: [0u8; 32],
-        hash_salt: [0u8; 16],
-    };
-    rand_fill(&mut material.db_key)?;
-    rand_fill(&mut material.hash_salt)?;
+    let mut hash_salt = [0u8; 16];
+    rand_fill(&mut hash_salt)?;
+    let material = KeyMaterial { hash_salt };
+
+    // 前 32 字节是旧版 `db_key` 的布局，现只作保留位；填随机值保持长度不变。
+    let mut reserved = [0u8; 32];
+    rand_fill(&mut reserved)?;
 
     let mut plain = Vec::with_capacity(KEY_PLAIN_LEN);
     plain.push(KEY_FORMAT_VERSION);
-    plain.extend_from_slice(&material.db_key);
+    plain.extend_from_slice(&reserved);
     plain.extend_from_slice(&material.hash_salt);
     let blob = super::dpapi::protect(&plain)?;
 
@@ -170,7 +193,7 @@ fn create_key_locked(path: &Path) -> Result<KeyMaterial, CoreError> {
     }
 }
 
-/// 解析密钥明文（`version + db_key + hash_salt`）。
+/// 解析密钥明文（`version + reserved + hash_salt`）。
 fn parse_material(plain: &[u8]) -> Result<KeyMaterial, CoreError> {
     if plain.len() != KEY_PLAIN_LEN {
         return Err(CoreError::new(
@@ -192,11 +215,9 @@ fn parse_material(plain: &[u8]) -> Result<KeyMaterial, CoreError> {
             ),
         ));
     }
-    let mut db_key = [0u8; 32];
     let mut hash_salt = [0u8; 16];
-    db_key.copy_from_slice(&plain[1..33]);
-    hash_salt.copy_from_slice(&plain[33..49]);
-    Ok(KeyMaterial { db_key, hash_salt })
+    hash_salt.copy_from_slice(&plain[SALT_OFFSET..KEY_PLAIN_LEN]);
+    Ok(KeyMaterial { hash_salt })
 }
 
 /// 用 OS 熵源填充缓冲区。
@@ -286,28 +307,21 @@ impl Drop for InitGuard {
 mod tests {
     use super::*;
 
-    /// 纯函数测试：密钥材料的 hex 编解码与格式校验不触碰文件/DPAPI。
+    /// 纯函数测试：密钥材料的格式校验与盐位置，不触碰文件/DPAPI。
     #[test]
-    fn key_hex_is_lowercase_64_chars_and_parse_validates() {
-        let mut material = KeyMaterial {
-            db_key: [0u8; 32],
-            hash_salt: [0u8; 16],
-        };
-        material.db_key[0] = 0xab;
-        material.db_key[31] = 0x01;
-        let hex = key_hex(&material);
-        assert_eq!(hex.len(), 64);
-        assert!(hex.starts_with("ab"));
-        assert!(hex.ends_with("01"));
-        assert!(hex
-            .chars()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
-
-        // 长度不符 / 版本不符都必须拒绝
+    fn parse_material_rejects_bad_length_and_version_and_reads_salt_at_offset() {
+        // 长度不符必须拒绝
         assert!(parse_material(&[1u8; 10]).is_err());
-        let mut wrong_version = vec![KEY_FORMAT_VERSION];
-        wrong_version.extend_from_slice(&[0u8; 48]);
-        assert!(parse_material(&wrong_version).is_ok());
+
+        // 合法长度 + 合法版本：盐必须取自 SALT_OFFSET，前 32 字节不参与
+        let mut plain = vec![KEY_FORMAT_VERSION];
+        plain.extend_from_slice(&[0xAAu8; 32]);
+        plain.extend_from_slice(&[0x11u8; 16]);
+        let material = parse_material(&plain).expect("合法长度与版本应通过");
+        assert_eq!(material.hash_salt, [0x11u8; 16], "盐必须取自 SALT_OFFSET");
+
+        // 版本不符必须拒绝
+        let mut wrong_version = plain.clone();
         wrong_version[0] = 9;
         assert!(parse_material(&wrong_version).is_err());
     }

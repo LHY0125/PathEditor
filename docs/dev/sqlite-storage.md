@@ -1,12 +1,14 @@
-# v6 SQLite 存储
+# SQLite 存储（不加密）
 
 > 本文件是 `CLAUDE.md` 的详细补充。日常开工只需读 `CLAUDE.md` 的速览；
-> 涉及 schema、迁移、同步、保留策略或构建成本时再读本文。
+> 涉及 schema、迁移、同步或保留策略时再读本文。
 
 ## 基本形态
 
-- **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；注册表仍是唯一真相源。DB 打不开时 GUI fail-open：编辑照常、历史/同步/检索降级、禁用状态不可恢复、窗口顶部常驻条幅；**不静默重建空库**。
-- **密钥**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+db_key(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。
+- **sidecar**：`~/.patheditor/patheditor.db`（**标准 SQLite，明文**）；注册表仍是唯一真相源。DB 打不开时 GUI fail-open：编辑照常、历史/同步/检索降级、禁用状态不可恢复、窗口顶部常驻条幅；**不静默重建空库**。
+- **遗留加密库**：旧版加密库的文件头不是 `SQLite format 3`，`Db::open` **直接拒绝**并给出删除指引；不做任何自动转换。
+- **本机盐**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+reserved(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。前 32 字节是旧版 `db_key` 的遗留位置，现只作保留位；**保持 49 字节与文件名不变**，否则磁盘上既有 `.pebak` 的 `payload_hash` 会全部失配。
+- **数据目录**：`PATHEDITOR_DATA_DIR` 仅供 CLI 子进程测试把库重定向到临时目录；生产不设置。
 - **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 4`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
 ## 表
@@ -22,9 +24,9 @@
 
 ## 测试规则
 
-**一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内跑第二个 SQLCipher 测试会 `STATUS_STACK_OVERFLOW`（GNU 与 MSVC 均已复现，`--test-threads=1` 无效）。
+数据库是普通 SQLite，**不再有「一文件一测试」约束**（该约束的根因是 SQLCipher 全局状态导致同进程第二个测试 `STATUS_STACK_OVERFLOW`）。存量单测试文件保留原样，不为了合并而重排；新测试可以在同一文件放多个 `#[test]`。
 
-CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单开关），覆盖整个 workspace——规则靠文件布局保证，不靠 CI 逐文件调用。依据：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md` 的测试约束说明。
+CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单开关），覆盖整个 workspace。
 
 ## 初始化
 
@@ -50,19 +52,20 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 
 新 env 备份写 `.pebak`（DPAPI）；遗留 `env_backup_*.json` 仍可读，`maintenance cleanup-legacy-backups` 先转 `.pebak` 并**回读校验**、再删除（需 `--yes`）。备份目录 ACL 未收紧；遗留/回落 `.json` 仍是明文。
 
-## 为什么依赖 OpenSSL（构建成本来源）
+## 构建（不需要 OpenSSL）
 
-依赖链：`rusqlite → libsqlite3-sys → SQLCipher（C）→ OpenSSL（C）`。
+依赖链：`rusqlite → libsqlite3-sys → SQLite（C）`。
 
-- **OpenSSL 的唯一作用**：给 SQLCipher 提供 AES-256、HMAC、PBKDF2 等密码学原语。项目**没有任何 TLS / 网络调用**，与「OpenSSL 漏洞」常见的 Web 攻击面不同。
-- `bundled-sqlcipher-vendored-openssl` 把 SQLCipher 与 OpenSSL 的 **C 源码**都打进 crate，构建时用 `cc` 编译。因此需要 `make`、`perl`（MSVC 下还需 NASM），首次全量编译约 45 分钟，二进制 +1–2 MB。
-- 选 `vendored` 是为了「不依赖用户机器上是否装了 OpenSSL、版本是否兼容」，代价是构建工具链与时间——这是有意的权衡，不要改成链接系统 OpenSSL。
-- 密钥：`~/.patheditor/keys/db.key.dpapi`，内容为 `version(1)+db_key(32)+hash_salt(16)`，整体经 DPAPI（**当前 Windows 用户**作用域）加密；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。
+- `bundled` 把 SQLite 的 C 源码打进 crate，由 `cc` 编译；FTS5 与 JSON1 默认开启（`libsqlite3-sys` 的 `build.rs` 显式 `-DSQLITE_ENABLE_FTS5` / `-DSQLITE_ENABLE_JSON1`）。
+- 不再需要 `make` / `perl` / NASM，也不需要 `OPENSSL_SRC_PERL` / `PERL5LIB` 这类会话变量。
+- `.pebak` 备份与同步 bundle 的密码学全部来自纯 Rust crate（`argon2` / `chacha20poly1305`）与 Windows DPAPI，与构建链无关。
 
 ## 参考
 
-- 设计：`docs/superpowers/specs/2026-10-19-v6-sqlite-design.md`
-- 计划：`docs/superpowers/plans/`（M1–M4）
+- v7 设计：`docs/superpowers/specs/2026-11-08-drop-db-encryption-design.md`
+- v7 计划：`docs/superpowers/plans/2026-11-08-drop-db-encryption-implementation.md`
+- v6 设计：`docs/superpowers/specs/2026-10-19-v6-sqlite-design.md`
+- v6 计划：`docs/superpowers/plans/`（M1–M4）
 - M0 探针：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md`
 
 - **当前状态**：`app_state.current_snapshot_id` 由 `core::service::save_path_with_db` 维护（GUI 与 CLI 共用）；每次成功写 PATH 后写入 `kind=current` 快照并增量索引。DB 不可用时只读注册表。

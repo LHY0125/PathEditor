@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // 配置应用的**失败传播**：某个 hive 写入失败时，`apply_profile_io` 必须返回 Err，
 // 而不是把它包成一次「成功」的应用。
@@ -61,8 +60,7 @@ impl PathHiveIo for SystemWriteFailsIo {
 #[test]
 fn apply_profile_returns_err_when_a_hive_write_fails() {
     let dir = TempDir::new().unwrap();
-    let key = "44".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("apply_fail.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("apply_fail.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 基线必须与 fake 注册表的当前状态一致，否则「无变化」短路会让本用例空跑。

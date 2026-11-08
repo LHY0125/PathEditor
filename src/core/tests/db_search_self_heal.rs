@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // FTS 自愈：启动时按**行数一致性**判断派生表是否脱节，而不是只看「空/非空」。
 //
@@ -21,8 +20,7 @@ fn entry(path: &str, enabled: bool) -> PathEntry {
 #[test]
 fn fts_index_needs_rebuild_when_profile_rows_are_missing() {
     let dir = TempDir::new().unwrap();
-    let key = "55".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("fts_self_heal.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("fts_self_heal.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 先建立 PATH 基线（这一步会增量索引快照），保证索引里「有内容」。

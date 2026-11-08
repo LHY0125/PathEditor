@@ -291,7 +291,7 @@ pub(crate) fn cmd_env_restore(
         // 明文警告必须走 stderr 才真的可见（README 承诺的就是这一条）。
         if format == core::platform::backup::BackupFormat::LegacyPlaintext {
             eprintln!(
-                "警告: {} 是遗留明文备份（v6 起的备份为 DPAPI 加密的 .pebak）。\
+                "警告: {} 是遗留明文备份（备份默认是 DPAPI 加密的 .pebak）。\
                  恢复后建议重新执行 `patheditor env backup` 生成加密副本。",
                 path.display()
             );
@@ -328,7 +328,7 @@ pub(crate) fn cmd_env_restore(
         .unwrap_or(true)
     {
         eprintln!(
-            "警告: {} 是遗留明文备份（v6 起的备份为 DPAPI 加密的 .pebak）。\
+            "警告: {} 是遗留明文备份（备份默认是 DPAPI 加密的 .pebak）。\
              恢复后建议重新执行 `patheditor env backup` 生成加密副本。",
             path.display()
         );

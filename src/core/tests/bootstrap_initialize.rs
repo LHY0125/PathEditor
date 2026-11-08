@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // 启动引导的幂等性：基线只建一次；FTS 只首次构建；派生表水位未变时跳过。
 use path_editor_core::app::bootstrap::{self, BootstrapOptions};
@@ -11,8 +10,7 @@ use tempfile::TempDir;
 #[test]
 fn bootstrap_creates_baseline_once_and_skips_unchanged_derived_tables() {
     let dir = TempDir::new().unwrap();
-    let key = "22".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("bootstrap.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("bootstrap.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 先手动建立基线，避免 bootstrap 读取真实注册表。

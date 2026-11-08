@@ -1,15 +1,12 @@
 //! 配置同步：profile content 落库，且 profile 在 bundle 中先于 snapshot 时仍能应用。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{seal, BundleHeader};
 use path_editor_core::db::sync::import::import_bundle;
 use path_editor_core::db::Db;
 use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join(name), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join(name)).unwrap();
     db.migrate_to_current().unwrap();
     db
 }

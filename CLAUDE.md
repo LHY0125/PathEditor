@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **6.2.2**）。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **7.0.0**）。
 
-v6 起数据层是一个 **SQLCipher 加密数据库（sidecar）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
+数据层是一个 **SQLite 数据库（sidecar，不加密）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
 
 系统 PATH（HKLM）写入需要管理员权限；用户 PATH（HKCU）由 `PathCapabilities` 按 hive 独立判断权限。不能再用一个全局 `isAdmin` 字段推断两个 PATH 是否可写。
 
@@ -53,18 +53,11 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 
 ### 本地构建环境（Windows + GNU）
 
-首次 `cargo check` / `cargo test` 前，先在**当前会话**设好这三行，否则 `openssl-sys` 会在 OpenSSL
-`Configure` 阶段中止。本机 2026-11-06 已按此跑通（`cargo test --workspace` 336 passed，clippy 与 fmt 全绿）。
+`rusqlite` 只用 `bundled`（SQLite C 源码由 `cc` 编译，FTS5/JSON1 默认开启），**不再需要 OpenSSL、
+perl、PERL5LIB 或 NASM**。直接 `cargo check` / `cargo test` 即可；本机 2026-11-08 实测
+`cargo test --workspace` 336 passed / 2 ignored，clippy 与 fmt 全绿。
 
-```powershell
-$env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe" # 原生 Windows perl 产不出 POSIX 路径，会被拒
-$env:PERL5LIB         = "$PWD\probes\v6-sqlcipher\perl5lib"    # Git 自带 perl 被裁剪，补 Locale/Maketext、Pod 等
-$env:PATH            += ";$(scoop prefix git)\usr\bin"         # make 的 recipe 需要 sh / cp / rm
-```
-
-- 只对当前 shell 生效；**不要**写进 `.cargo/config.toml`——CI 走 MSVC 也会读它，指向本机路径会把 CI 弄红。
-- 首次全量编译约 24 分钟、`target/` 约 8–9 GB；之后增量是分钟级。
-- CI 与发布一律走 MSVC（原生 perl + NASM），不需要这些设置。原理与兜底方案见 `docs/dev/testing.md`。
+- `probes/v6-sqlcipher/` 仅作历史探针证据保留，不参与构建。
 
 ## 架构速览
 
@@ -75,7 +68,7 @@ PathEditor/
 │   │   ├── domain/   # 契约与端口：error / path_entry / env_var / history
 │   │   ├── platform/ # 外部世界适配：registry / backup / system / scanner /
 │   │   │             #   capabilities / persist / fs
-│   │   ├── db/       # v6 SQLCipher 数据层（schema/history/profiles/
+│   │   ├── db/       # 数据层（SQLite；schema/history/profiles/
 │   │   │             #   backup_index/search/stats/refs/compare/
 │   │   │             #   scan_history/maintenance/sync）
 │   │   ├── app/      # 编排：service / bootstrap / disabled
@@ -89,7 +82,7 @@ PathEditor/
 │       │                           #   profiles/analytics/sync）
 │       └── web/      # React + Vite（src/core/services/store/components/hooks/i18n）
 ├── src/gui/web/tests/unit / src/gui/web/tests/fixtures / src/gui/web/e2e/tests
-├── probes/v6-sqlcipher（不在 workspace；v6 探针证据）
+├── probes/v6-sqlcipher（不在 workspace；历史探针证据，不参与构建）
 └── docs/{superpowers,dev,审核和开发}
 ```
 
@@ -106,13 +99,13 @@ PathEditor/
 - 通用环境变量通路（`EnvVar`）与 PATH 通路（`PathEntry`）并存：`Path` 列入 `RESERVED_NAMES`，**PATH 只能经专用通路编辑**。`EnvVarMeta` 契约上不含 `value` 字段；命中敏感规则的变量明文只能经 `reveal_env_var` 获取。
 - 环境变量读写的并发契约只有一套：core 的 `update_env_var` / `delete_env_var` 恒要求 `expected_revision`。前端与 CLI **不得**自行实现并发校验；冲突判定只认 `CoreError.code`，`[E_CONFLICT]` 前缀仅是展示文本。
 - Windows 注册表无 CAS，读-比-写是两次独立调用，仍有毫秒级竞态窗口。缩小影响不等于消除 TOCTOU，不要宣称原子性。
-- **v6 数据层是 sidecar**：所有 DB 访问在 `src/core/src/db/`；GUI/CLI 不得直接打开 SQL。注册表仍是唯一真相源，DB 不可用时 fail-open。
+- **数据层是 sidecar**：所有 DB 访问在 `src/core/src/db/`；GUI/CLI 不得直接打开 SQL。注册表仍是唯一真相源，DB 不可用时 fail-open。
 - **同步导入是单事务，且不写注册表**：导入只改 DB；用户要生效必须另走 `apply_path_snapshot` 或前端保存编排。
 - **维护命令的删除类操作必须显式确认**：`cleanup-legacy-backups` 需 `--yes`；测试一律用 `TempDir`，不碰真实 `~/.patheditor`。
 - **DB 是唯一持久化状态**：`disabled.json` / `profiles/*.json` 不再读写。
 - `.codegraph/` 存在时，优先使用 CodeGraph 理解符号和调用路径，再决定是否读取文件。
 
-## 设计系统（v6）
+## 设计系统
 
 - 语义 token 全部在 `src/gui/web/src/styles/globals.css` 的 `:root` 与 `:root.dark`；组件**只允许**使用 `--app-*` 语义变量，禁止硬编码色值。
 - 主界面控件类：`.toolbar` / `.toolbar-sep` / `.toolbar-search` / `.tab-pill`。
@@ -121,21 +114,20 @@ PathEditor/
 - **陷阱**：上述工具类是**未分层规则**，会覆盖 Tailwind `@layer utilities`。追加 Tailwind 工具类前先确认它不会失效——`field-input text-xs` 曾是一个永不生效的死类名。
 - 对话框的视觉规格由 CSS 类承载，`Modal.tsx` 只负责挂载与 Escape 关闭；改视觉时改 `globals.css`，不要往组件里塞内联样式。
 
-## v6 数据层（速览）
+## 数据层（速览）
 
-- **sidecar**：`~/.patheditor/patheditor.db`（SQLCipher）；DB 打不开时 fail-open，不静默重建空库。
-- **密钥**：`~/.patheditor/keys/db.key.dpapi`，DPAPI 当前用户作用域；DACL 限当前用户 + SYSTEM。
+- **sidecar**：`~/.patheditor/patheditor.db`（标准 SQLite，**不加密**）；DB 打不开时 fail-open，不静默重建空库。旧版加密库文件头不是 SQLite magic，`Db::open` 直接拒绝并提示删除，**不做转换**。
+- **本机盐**：`~/.patheditor/keys/db.key.dpapi`，DPAPI 当前用户作用域，只用于 `.pebak` 的 `payload_hash`；49 字节 `version(1)+reserved(32)+salt(16)` 格式保持不变，否则既有备份索引全部失配。DACL 限当前用户 + SYSTEM。
 - **schema**：`CURRENT_SCHEMA_VERSION = 4`；`PRAGMA user_version` 只在建库/迁移事务内写。
-- **一文件一测试**：任何使用 SQLCipher 的 `.rs` 测试文件只放一个 `#[test]`（同进程第二个会 `STATUS_STACK_OVERFLOW`）。
 - **DB 初始化**：`migrate_to_current` 只做 schema 迁移；首次启动用注册表当前状态建 `kind=current` 基线。
 - **同步**：bundle = `PESYNC1\0 + version + header_len + header JSON + salt + nonce + ciphertext + tag`；Argon2id + ChaCha20-Poly1305；LWW；`snapshot`/`profile` 按整实体比较；导入不写注册表。
 - **保留策略**：已导出 `changes` 90 天、已解决 `sync_conflicts` 30 天；**待导出队列永不删**。
 
-**完整 schema、迁移、同步与构建成本**：`docs/dev/sqlite-storage.md`。
+**完整 schema、迁移、同步与构建**：`docs/dev/sqlite-storage.md`。
 
 ## 接口速览（IPC / CLI）
 
-- **IPC 唯一入口**：`src/gui/web/src/services/backend/` + 运行时形状校验；v6 的 DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
+- **IPC 唯一入口**：`src/gui/web/src/services/backend/` + 运行时形状校验；DB/同步命令返回结构化 `CoreError`，前端按 `code` 判定。
 - **CLI 退出码**：0 成功 / 1 一般错误（含 `SyncFormat`）/ 2 clap / 3 revision 冲突 / 4 同步合并冲突 / 5 密钥。
 - **同步与维护**：`patheditor sync …`、`patheditor maintenance …`；同步只改 DB，不写注册表。
 
@@ -155,8 +147,8 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v6.2.2，2026-11-06 本机实测）：Rust **336 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
-- **一文件一测试**（SQLCipher）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
+- 基线（v7.0.0，2026-11-08 本机实测）：Rust **336 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **40 files / 425**；E2E **54**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 「一文件一测试」已随 SQLCipher 退场取消（存量文件不合并）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 
 **完整测试布局与 CI 步骤**：`docs/dev/testing.md`。
@@ -183,6 +175,6 @@ PathEditor/
 | `docs/dev/data-and-security.md` | 保存/事务、备份、错误处理与安全边界            |
 | `docs/dev/testing.md`           | 测试布局、一文件一测试、CI 步骤、基线          |
 | `docs/dev/release.md`           | 版本号清单、发布流程、产物与事故教训           |
-| `docs/superpowers/specs/`       | v6 设计文档                                    |
+| `docs/superpowers/specs/`       | 按日期归档的设计文档                           |
 | `docs/superpowers/plans/`       | M1–M4 实施计划                                 |
 | `docs/审核和开发/`              | 审查与开发记录                                 |

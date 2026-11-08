@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // 配置应用编排：读配置 → 只写变化的 hive → 记账；重复应用同内容不重复写注册表。
 use path_editor_core::app::service::{self, PathHiveIo};
@@ -63,8 +62,7 @@ impl PathHiveIo for FakeIo {
 #[test]
 fn apply_profile_writes_changed_hive_then_skips_identical_second_apply() {
     let dir = TempDir::new().unwrap();
-    let key = "33".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("apply.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("apply.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 当前状态基线必须与 fake 注册表一致，否则第一次应用会因「当前快照为空」而误判。

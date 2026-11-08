@@ -1,8 +1,6 @@
-// 一文件一测试（SQLCipher）。
 // 的回归守卫：只有 user 侧变化时，compare 必须能发现。
 // 若 compare() 只比 system（首版实现），本测试会失败——这正是它存在的理由。
 use path_editor_core::db::compare::compare;
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::Db;
 use path_editor_core::domain::history::EventSource;
@@ -12,8 +10,7 @@ use tempfile::TempDir;
 #[test]
 fn compare_detects_user_only_change() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("c2.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("c2.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let mk = |usr: &[&str]| NewSnapshot {

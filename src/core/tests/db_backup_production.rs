@@ -1,5 +1,5 @@
 #![cfg(windows)]
-// 一文件一测试（SQLCipher）。`.pebak` 走 DPAPI，因此整体限定 Windows。
+// .pebak 走 DPAPI，因此整体限定 Windows。
 //
 // 生产备份路径的守卫测试：**生产备份路径**必须真的写 `.pebak`，而不是明文 `.json`。
 // 旧实现里 `write_env_backup_pebak` 只被测试调用，README/CHANGELOG 的

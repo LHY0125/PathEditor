@@ -1,5 +1,5 @@
 #![cfg(windows)]
-// 密钥文件 DACL 校验器的主体判定（不触碰 SQLCipher，不受一文件一测试约束）。
+// 密钥文件 DACL 校验器的主体判定。
 //
 // 背景：校验器曾经**按 SDDL 文本**比较主体，而 SDDL 会把众所周知的 SID 写成别名
 // （`SY` / `LA` / `BA`…）。CI runner 的进程令牌是 `S-1-5-114`（Local Administrator），

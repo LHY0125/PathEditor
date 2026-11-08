@@ -1,5 +1,3 @@
-// 一文件一测试（SQLCipher）。
-//
 // **v1 → v2 升级路径的回归守卫。**
 //
 // 为什么必须有这个测试：把 `PRAGMA user_version` 写在 `if current < 1` **内部**。
@@ -8,7 +6,6 @@
 //
 // 而 `db_schema_v2.rs` 只测了「新库直接建到 v2」，走的是 `current == 0 < 1` 分支，
 // 两条路径不同——这正是「看起来对、语义错」的典型。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::{schema, Db};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -17,14 +14,10 @@ use tempfile::TempDir;
 fn upgrading_a_v1_database_bumps_version_and_does_not_rerun_ddl_v2() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("upgrade.db");
-    let key = load_or_create_key(dir.path()).unwrap();
-    let key_hex = key_hex(&key);
 
     // ── 造一个真正的 v1 库：手动执行 DDL_V1 + 种子 + 写 user_version = 1 ──
     {
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))
-            .unwrap();
         conn.execute_batch(schema::DDL_V1).unwrap();
         conn.execute(
             schema::SEED_APP_STATE_SQL,
@@ -35,7 +28,7 @@ fn upgrading_a_v1_database_bumps_version_and_does_not_rerun_ddl_v2() {
     }
 
     // ── 用当前程序打开并迁移 ──
-    let mut db = Db::open_encrypted(&path, &key_hex).unwrap();
+    let mut db = Db::open(&path).unwrap();
     assert_eq!(db.schema_version().unwrap(), 1, "前置：确实是一个 v1 库");
 
     db.migrate_to_current().unwrap();
@@ -66,7 +59,7 @@ fn upgrading_a_v1_database_bumps_version_and_does_not_rerun_ddl_v2() {
     // 断言用 `CURRENT_SCHEMA_VERSION` 而非硬编码数字：本测试守的是「持久化」，
     // 不是「等于 2」——每次 schema 递增都不该让它失败。
     drop(db);
-    let reopened = Db::open_encrypted(&path, &key_hex).unwrap();
+    let reopened = Db::open(&path).unwrap();
     assert_eq!(
         reopened.schema_version().unwrap(),
         schema::CURRENT_SCHEMA_VERSION,

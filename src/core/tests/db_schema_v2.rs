@@ -1,17 +1,14 @@
-// 一文件一测试（SQLCipher）。
 //
 // 本测试守的是「派生表在新库上建得出来」与「迁移幂等」两件事。
 // 版本号断言用 `CURRENT_SCHEMA_VERSION` 而非硬编码 `2`——schema 每升一版
 // 都不该让它失败；「v1→v2 是否落版本号」由 `db_schema_v1_to_v2.rs` 专门守。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::{schema, Db};
 use tempfile::TempDir;
 
 #[test]
 fn schema_v2_adds_derived_tables_and_is_idempotent() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("v2.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("v2.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     assert_eq!(

@@ -3,8 +3,6 @@
 //! 旧实现只在首次启动全量重建时索引 `profiles`，之后新建/改名/删除的配置
 //! 永远搜不到或留下死引用。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{NewSnapshot, SnapshotKind};
 use path_editor_core::db::profiles::{delete_profile, rename_profile, save_profile};
 use path_editor_core::db::search::search;
@@ -15,8 +13,7 @@ use tempfile::TempDir;
 #[test]
 fn profile_writes_update_the_search_index() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("s.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("s.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let snap = NewSnapshot {

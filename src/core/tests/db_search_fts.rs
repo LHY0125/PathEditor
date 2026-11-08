@@ -1,5 +1,3 @@
-// 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{rebuild_index, search};
 use path_editor_core::db::Db;
@@ -10,8 +8,7 @@ use tempfile::TempDir;
 #[test]
 fn fts_indexes_paths_and_never_indexes_sensitive_values() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("s.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("s.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let snap = NewSnapshot {

@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // **本实现超出计划的维度：`enabled` 变化。**
 //
@@ -9,7 +8,6 @@
 //
 // 本测试是这个新增维度的唯一守卫。
 use path_editor_core::db::compare::compare;
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::Db;
 use path_editor_core::domain::history::EventSource;
@@ -19,8 +17,7 @@ use tempfile::TempDir;
 #[test]
 fn compare_detects_enabled_toggle_without_path_change() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("t.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("t.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let mk = |enabled: bool| NewSnapshot {

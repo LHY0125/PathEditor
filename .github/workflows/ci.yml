@@ -46,18 +46,6 @@ jobs:
       - name: 缓存 Cargo
         uses: Swatinem/rust-cache@v2
 
-      # OpenSSL 的 MSVC 构建需要 NASM；runner 通常已带，缺失时补装。
-      - name: 确保 NASM 可用
-        shell: pwsh
-        run: |
-          $nasm = Get-Command nasm -ErrorAction SilentlyContinue
-          if (-not $nasm) {
-            choco install nasm -y --no-progress
-            'C:\Program Files\NASM' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          } else {
-            Write-Host "NASM 已存在: $($nasm.Source)"
-          }
-
       - name: 安装前端依赖
         run: npm ci
 
@@ -67,8 +55,7 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      # 首次运行要编译 vendored SQLCipher + OpenSSL，约 20–45 分钟；
-      # 之后靠 rust-cache 复用 target 目录。
+      # v7 起只用 rusqlite 的 bundled SQLite（C 源码由 cc 编译），不再需要 OpenSSL/NASM。
       #
       # 分两步跑的原因：GUI crate 的 **bin** 已经通过 Tauri 的 resource.lib 拿到
       # comctl32 v6 清单，而 **lib 的 test harness** 拿不到。给所有目标无条件注入

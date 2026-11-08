@@ -213,7 +213,7 @@ pub fn read_env_backup_any(
         .unwrap_or(false);
     if !is_pebak {
         log::warn!(
-            "读取遗留明文备份 {}：DPAPI 加密的 .pebak 才是 v6 的默认格式",
+            "读取遗留明文备份 {}：备份默认是 DPAPI 加密的 .pebak",
             path.display()
         );
         return crate::platform::backup::read_env_backup(path);

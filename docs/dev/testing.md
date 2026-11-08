@@ -14,13 +14,14 @@
   - core 集成测试：`cargo test -p path-editor-core --test <file>`（包名是连字符，不是下划线）
   - CLI 单测：`cargo test -p patheditor-cli --bins <test_name>`（bin-only crate，`--lib` 会报 `no library targets found`）
 
-## 一文件一测试（v6 SQLCipher）
+## 一文件一测试（已取消）
 
-任何使用 SQLCipher 的 `.rs` 测试文件**只放一个 `#[test]`**。同一进程内跑第二个 SQLCipher 测试会
-`STATUS_STACK_OVERFLOW`（GNU 与 MSVC 均已复现，`--test-threads=1` 无效）。
+数据库是普通 SQLite，「一文件一测试」约束随 SQLCipher 退场而**取消**：栈溢出的根因是 SQLCipher
+的全局状态（同进程第二个测试 `STATUS_STACK_OVERFLOW`），明文 SQLite 没有这个问题。
 
-CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单开关），覆盖整个 workspace——
-规则靠文件布局保证，不靠 CI 逐文件调用。依据：`docs/审核和开发/2026.10.19/PathEditor-v6-M0-探针结果.md` §5.3。
+存量单测试文件保留原样（合并只是 churn）；新测试可以在同一文件放多个 `#[test]`。
+
+CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单开关），覆盖整个 workspace。
 
 ## 质量门
 
@@ -31,12 +32,11 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}`（`services/` 与 `components/` 不在门槛内）。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v6.2.2）**：Rust **336 passed / 0 failed / 2 ignored**；前端 **40 files / 425 passed**；E2E **54 passed**。
+- **当前基线（v7.0.0）**：Rust **336 passed / 0 failed / 2 ignored**；前端 **40 files / 425 passed**；E2E **54 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
-  - Rust 为 2026-11-06 本机实测（GNU 工具链）：`cargo test --workspace` → 336 passed / 2 ignored
-    （较 v6.1.1 增 6 条：3 条 CLI help + 冲突远端应用 / 配置 FTS / 广播非阻塞）；前端为同日实测：
-    `npx vitest run` → 40 files / 425 passed（2026-11-06：拖放 2 条 + 权限/明文备份 3 条）；E2E 沿用 2026-10-24
-    实测（本轮未跑）→ 54 passed。
+  - Rust 为 2026-11-08 本机实测（GNU 工具链，去掉 SQLCipher 后同一套用例）：
+    `cargo test --workspace` → 336 passed / 2 ignored；前端为 2026-11-06 实测且本轮未改前端代码：
+    `npx vitest run` → 40 files / 425 passed；E2E 沿用 2026-10-24 实测（本轮未跑）→ 54 passed。
 
 ## CI
 
@@ -59,9 +59,10 @@ npm run verify:all    # verify + Playwright E2E
 要点：
 
 - 用 `rustup override set stable-x86_64-pc-windows-msvc` 覆盖 `rust-toolchain.toml` 的 GNU 设置。
-- OpenSSL 的 MSVC 构建需要 NASM；runner 缺失时 `choco install nasm`。
+- 不再需要 NASM / OpenSSL（`rusqlite` 只用 `bundled`）。
 - CLI 的 `env restore` 夹具**不需要**预置宿主环境变量：差异夹具改用系统 hive（任何 Windows 都有
-  `SystemRoot` 等十几个变量），进程级用例通过 `PATHEDITOR_KEY_DIR` 把密钥目录指向临时目录。
+  `SystemRoot` 等十几个变量），进程级用例通过 `PATHEDITOR_KEY_DIR` / `PATHEDITOR_DATA_DIR`
+  把密钥与数据库指向临时目录。
 - **CI 不跑 E2E**——E2E 证据来自本地 `npm run verify:all`。
 
 ### `.github/workflows/release.yml`（发布）
@@ -78,31 +79,19 @@ npm run verify:all    # verify + Playwright E2E
 不能在测试里调用会内部走 `config_dir()` 的入口（`backup_env_vars()`、`open_default()`）。
 
 **例外：子进程用例。** CLI 的进程级用例跑的是 `patheditor.exe` 子进程，拿不到参数，
-只能靠环境变量。为此密钥解析走 `crypto::key_home()`：
-`PATHEDITOR_KEY_DIR` 存在时用它，否则回落 `config_dir()`（见 `crypto.rs` 的注释）。
-测试里由 `cli_cmd()` 统一下发这个变量，密钥落在临时目录，**不读写**真实的
-`~/.patheditor/keys/db.key.dpapi`（实测：跑完 CLI 用例后真实密钥 mtime 不变）。
+只能靠环境变量。密钥解析走 `crypto::key_home()`（`PATHEDITOR_KEY_DIR` 优先），数据库路径走
+`crypto::data_home()`（`PATHEDITOR_DATA_DIR` 优先），两者都回落 `config_dir()`（见 `crypto.rs` 的注释）。
+测试里由 `cli_cmd()` 统一下发这两个变量，密钥与库都落在临时目录，**不读写**真实的
+`~/.patheditor/keys/db.key.dpapi` 与 `~/.patheditor/patheditor.db`。
 
 **不要在同进程测试里 `set_var` 打开它**：那是进程级全局状态，会污染同进程其它测试。
 `PATHEDITOR_BACKUP_DIR` 是同一类可重定向变量（备份目录）。
 
 ## 其他
 
-- **Windows + GNU 目标本地构建需要三件事**，缺任一条都会在 `openssl-sys` 处失败：
-  1. 能产出 POSIX 路径的 perl。原生 Windows perl（`osname=MSWin32`，如 Strawberry/Scoop）会被
-     OpenSSL 的 `Configurations/unix-checker.pm`（`rel2abs('.') !~ m|/|`）拦下并中止。
-     Git for Windows 自带的 perl 是 cygwin 版、能过检查：
-     `$env:OPENSSL_SRC_PERL = "$(scoop prefix git)\usr\bin\perl.exe"`
-  2. 补齐该 perl 被裁剪掉的模块（缺 `Locale::Maketext::Simple` 等，`IPC::Cmd` 因此加载失败）。
-     `probes/v6-sqlcipher/perl5lib/` 被 `.gitignore` 排除，需自行生成（例如 `cpanm --local-lib=probes/v6-sqlcipher/perl5lib Locale::Maketext::Simple Pod::*`）：
-     `$env:PERL5LIB = "$PWD\probes\v6-sqlcipher\perl5lib"`
-  3. 给 `make` 的 recipe 提供 `sh` / `cp` / `rm`：
-     `$env:PATH += ";$(scoop prefix git)\usr\bin"`
-     三行都是会话级环境变量，**不要写进 `.cargo/config.toml`**——CI 走 MSVC 也会读它，
-     指向本机路径会直接把 CI 弄红。兜底方案：装 MSYS2 并 `pacman -S perl`，
-     把 `OPENSSL_SRC_PERL` 指向其 `usr\bin\perl.exe`。
-     验证记录：2026-10-24 本机 `cargo check -p path-editor-core` 通过（23m52s）。
-- CI 与发布一律走 MSVC（原生 perl + NASM），不受上述限制。
+- **本地构建不再需要 OpenSSL 工具链**：`rusqlite` 只用 `bundled`（SQLite C 源码，由 `cc` 编译，
+  FTS5/JSON1 默认开启），`OPENSSL_SRC_PERL` / `PERL5LIB` / NASM 全部不再需要。
+  `probes/v6-sqlcipher/` 仅作历史探针证据保留，不参与构建。
 - 前端全量跑曾出现 `use-path-validation.test.tsx` 的隔离抖动（期望 3 实得 11）。根因不是随机抖动：
   5 个测试文件各自挂了 `afterEach`、其余文件没挂，RTL 的 DOM 会跨用例残留。现在 `tests/setup.ts`
   统一注册 `afterEach(cleanup)`，单独跑与全量跑结果一致 —— 再遇到「单独跑绿、全量红」，按缺 cleanup 排查。

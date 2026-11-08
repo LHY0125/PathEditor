@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // **FTS5 查询转义的回归守卫。**
 //
@@ -8,7 +7,6 @@
 //
 // 我在 core 侧做了 phrase 转义（见 search.rs 的 `escape_query`），
 // 但这个决定计划里没有——所以**必须有测试守住**，否则它只是「我以为是好的」。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{rebuild_index, search};
 use path_editor_core::db::Db;
@@ -19,8 +17,7 @@ use tempfile::TempDir;
 #[test]
 fn user_input_with_quotes_and_spaces_does_not_break_fts_query() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("q.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("q.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     insert_snapshot(

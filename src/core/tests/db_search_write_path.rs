@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // `index_snapshot_tx` 必须真的被写链路调用。
 //
@@ -14,7 +13,6 @@
 // `with_history_and_snapshot`（那需要 Tauri State，core 集成测试拿不到）。
 // 因此它守的是「这对调用放在一起能工作」，**不是**「gui 真的把它们放在一起了」——
 // 后者的证据是 `gui/src/commands/service.rs` 里的两处 `index_snapshot_by_uid` 调用。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::search::{index_snapshot_tx, rebuild_index, search};
 use path_editor_core::db::Db;
@@ -25,8 +23,7 @@ use tempfile::TempDir;
 #[test]
 fn newly_written_snapshot_is_searchable_without_waiting_for_restart() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("inc.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("inc.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // ── 基线：先有一条快照并被全量索引（模拟「启动时的首次构建」）──

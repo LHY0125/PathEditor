@@ -5,8 +5,6 @@
 //! 2. 导出文件能被 `open()` 读回且 header 自洽（否则包是废的）
 //! 3. **写文件失败时待导出队列不变**（顺序反了会永久丢失变更）
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::sync::bundle::{open, BundleHeader};
 use path_editor_core::db::sync::change_log::{pending_export, record_change_tx, NewChange};
 use path_editor_core::db::sync::export::export_bundle;
@@ -34,8 +32,7 @@ fn seed(db: &mut Db, n: usize) {
 #[test]
 fn export_writes_bundle_then_marks_exported_and_never_loses_changes_on_write_failure() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("e.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("e.db")).unwrap();
     db.migrate_to_current().unwrap();
     seed(&mut db, 3);
 

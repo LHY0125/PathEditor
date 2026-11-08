@@ -1,10 +1,8 @@
-// 一文件一测试（SQLCipher）。
 //
 // **DB 当前快照读取守卫**：`load_path_snapshot_db` 必须从
 // `app_state.current_snapshot_id` 读取完整有序快照（含禁用项），而不是
 // 回落到其它状态源。
 //
-// **本测试使用 SQLCipher**，因此整个文件只放一个 `#[test]`。
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, NewSnapshot, SnapshotKind,
 };
@@ -22,8 +20,7 @@ fn entry(path: &str, enabled: bool) -> PathEntry {
 #[test]
 fn load_snapshot_reads_db_current_snapshot_and_keeps_disabled_entries() {
     let dir = tempfile::TempDir::new().unwrap();
-    let key = "00".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("state.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("state.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let uid = insert_snapshot(

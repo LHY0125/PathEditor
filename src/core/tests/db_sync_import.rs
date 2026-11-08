@@ -1,7 +1,5 @@
 //! 导入：两个独立库之间搬数据，幂等，且篡改的包整体拒绝。
 //!
-//! 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
 use path_editor_core::db::sync::export::export_bundle;
 use path_editor_core::db::sync::import::import_bundle;
@@ -11,8 +9,7 @@ use path_editor_core::PathEntry;
 use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join(name), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join(name)).unwrap();
     db.migrate_to_current().unwrap();
     db
 }

@@ -1,4 +1,3 @@
-// 一文件一测试（SQLCipher）。
 //
 // **偏离记录**：计划版测试插完快照就直接调 `rebuild_refs`，
 // 但 `rebuild_refs` 只处理 `app_state.current_snapshot_id` 指向的那一份——
@@ -7,7 +6,6 @@
 //
 // 计划版还把 `name:"PATH"` 放进 `env`，而 `insert_snapshot` 会拒绝它（ 的
 // CHECK）；计划自己的注释也说「换成合法名字更清晰」。这里按注释建议改。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     app_state_version, insert_snapshot, set_current_snapshot, EnvValueRow, NewSnapshot,
     SnapshotKind,
@@ -45,8 +43,7 @@ fn var_references_parses_edges_and_detects_cycles() {
     assert_eq!(parse_refs("%a%"), vec!["A"], "统一大写");
 
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("r.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("r.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 依赖链：PATH → JAVA_HOME → JDK_HOME（用于验证传递依赖）

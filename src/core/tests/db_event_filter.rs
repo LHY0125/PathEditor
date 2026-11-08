@@ -1,11 +1,9 @@
-// 一文件一测试（SQLCipher）。
 //
 // 回归守卫：EventFilter 必须支持要求的全部 5 个筛选维度。
 //
 // 缺口清单：首版只有 `action` / `source` 两个，缺
 // `hive` / `target` / `result` / 时间范围。本测试逐个断言它们真的生效，
 // 并确认 `total` 与分页用同一段 WHERE（旧代码的注释警告过这一点）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{list_events, EventFilter, NewSnapshot, SnapshotKind};
 use path_editor_core::db::history_sink::DbHistory;
 use path_editor_core::db::Db;
@@ -18,8 +16,7 @@ use tempfile::TempDir;
 #[test]
 fn event_filter_supports_all_five_dimensions() {
     let dir = TempDir::new().unwrap();
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("f.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("f.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     // 建一个快照，让事件有 snapshot 可指（不影响本测试的筛选逻辑）

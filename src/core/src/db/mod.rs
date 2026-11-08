@@ -1,14 +1,17 @@
-//! SQLCipher 数据库句柄。
+//! SQLite 数据库句柄（不加密）。
 //!
 //! **所有写事务 `BEGIN IMMEDIATE`**；
 //! 读-改-写必须带 `version` CAS。
 //!
 //! **安全边界文件**（改动需走安全审查，等同 `db/security/` 的职责）：
-//! `crypto.rs`（密钥派生与加解密）、`dpapi.rs`（DPAPI 保护数据库密钥）、
-//! `dacl.rs`（密钥文件访问控制，仅 Windows）。
+//! `crypto.rs`（本机盐与 `.pebak` 密钥材料）、`dpapi.rs`（DPAPI 加解密）、
+//! `dacl.rs`（盐文件访问控制，仅 Windows）。
 //!
 //! 这三个文件刻意留在 `db/` 顶层而不收进 `db/security/`——`db::crypto` 前缀在源码里
 //! 有近 60 处引用，加一层只会让路径变长。本清单是那次取舍的补偿措施（spec D4）。
+//!
+//! **数据库文件本身不加密**：`~/.patheditor/patheditor.db` 是标准 SQLite。
+//! 需要加密的只剩 `.pebak` 备份（DPAPI）与同步 bundle（Argon2id + AEAD）。
 
 pub mod backup_index;
 pub mod compare;
@@ -40,39 +43,27 @@ pub struct Db {
 }
 
 impl Db {
-    /// 用 32 字节十六进制密钥打开（或创建）加密库。
+    /// 打开（或创建）普通 SQLite 库。
     ///
-    /// 打开序列已由 SQLCipher 探针验证：
-    /// 先只设 key，再**做一次只读查询**让 SQLCipher 用 HMAC 校验密钥，
-    /// 最后才设 PRAGMA —— 否则错误密钥会先被 `journal_mode=WAL` 的写操作触发，
-    /// 报出的错误语义模糊。
-    pub fn open_encrypted(path: &Path, key_hex: &str) -> Result<Self, CoreError> {
-        if key_hex.len() != 64 || !key_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+    /// 数据库不加密。旧版 SQLCipher 库的文件头不是
+    /// SQLite magic，这里**直接拒绝**并提示用户删除，不做任何转换——
+    /// 静默重建空库会掩盖历史丢失。
+    pub fn open(path: &Path) -> Result<Self, CoreError> {
+        if !has_sqlite_header(path)? {
             return Err(CoreError::new(
-                ErrorCode::Crypto,
+                ErrorCode::Database,
                 "db_open",
-                "数据库密钥必须是 32 字节（64 个十六进制字符）",
+                format!(
+                    "检测到旧版加密数据库 {}（SQLCipher），当前版本不再支持。\
+                     请删除或重命名该文件（连同同目录的 patheditor.db-wal、patheditor.db-shm）后重启。\
+                     PATH 编辑不受影响；历史/同步/检索会从空库重建。",
+                    path.display()
+                ),
             ));
         }
         let conn = Connection::open(path).map_err(|e| db_err("open", e))?;
-        // SQLCipher 的 key PRAGMA 必须用双引号包住 x'...'，不能用参数绑定。
-        conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))
-            .map_err(|e| db_err("key", e))?;
-        conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
-            r.get::<_, i64>(0)
-        })
-        .map_err(|e| {
-            CoreError::new(
-                ErrorCode::Crypto,
-                "db_open",
-                format!("密钥错误或数据库损坏: {e}"),
-            )
-        })?;
-        // cipher_memory_security 默认 OFF：实测 ON 在受限进程里 VirtualLock 失败，
-        // 且 ON/OFF 性能无显著差异。
         conn.execute_batch(
-            "PRAGMA cipher_memory_security = OFF;
-             PRAGMA journal_mode = WAL;
+            "PRAGMA journal_mode = WAL;
              PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;",
         )
@@ -233,44 +224,47 @@ pub(crate) fn db_err(op: &'static str, e: rusqlite::Error) -> CoreError {
     CoreError::new(ErrorCode::Database, op, format!("{op} 失败: {e}"))
 }
 
-/// 用默认路径与 DPAPI 密钥打开数据库。
+/// 文件是否以 SQLite 的 16 字节 magic 开头。
 ///
-/// 失败时返回错误 —— **GUI 据此进入降级模式**，
-/// CLI 对需要 DB 的命令返回 exit 5（Crypto）或 1（Database）。
-///
-/// **不静默重建空库**：密钥丢失/DPAPI 不可用时必须明确报错，否则会静默丢失历史。
-pub fn open_default() -> Result<Db, CoreError> {
-    let home = crypto::key_home();
-    let material = crypto::load_or_create_key(&home)?;
-
-    // 启动时校验密钥文件 DACL（过宽只告警，**不自动修改**——
-    // 避免误伤用户自建的目录权限）。
-    #[cfg(windows)]
-    {
-        let key_path = home.join("keys").join("db.key.dpapi");
-        match dacl::key_dacl_is_restricted(&key_path) {
-            Ok(true) => {}
-            Ok(false) => log::warn!(
-                "密钥文件 {} 的权限过宽（存在非当前用户/SYSTEM 的授权项）。\
-                 其它用户可能删除或替换它，导致历史永久不可读。\
-                 建议确保只有当前用户可访问该文件。",
-                key_path.display()
-            ),
-            // 读取 ACL 失败不影响打开库：这是告警而非门禁
-            Err(e) => log::warn!("无法校验密钥文件权限: {}", e.message),
+/// 文件不存在或为空时返回 `true`（可以新建）；读失败按 IO 错误上抛。
+/// 判定放在这里而不是靠 `rusqlite` 的首条语句报错，是为了能给旧版加密库
+/// 一条可操作的提示，而不是混在「数据库损坏」里。
+fn has_sqlite_header(path: &Path) -> Result<bool, CoreError> {
+    use std::io::Read as _;
+    let mut f = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(e) => {
+            return Err(CoreError::new(
+                ErrorCode::Io,
+                "db_open",
+                format!("读取数据库文件失败: {e}"),
+            ))
         }
-    }
+    };
+    let mut buf = [0u8; 16];
+    let n = f.read(&mut buf).map_err(|e| {
+        CoreError::new(ErrorCode::Io, "db_open", format!("读取数据库文件失败: {e}"))
+    })?;
+    Ok(n == 0 || &buf[..n] == b"SQLite format 3\0")
+}
 
-    let path = home.join("patheditor.db");
-    Db::open_encrypted(&path, &crypto::key_hex(&material))
+/// 用默认路径打开（或创建）数据库。
+///
+/// 失败时返回错误 —— **GUI 据此进入降级模式**，CLI 对需要 DB 的命令返回 exit 1。
+///
+/// **不静默重建空库**：文件存在但不是 SQLite（旧版加密库）或已损坏时必须明确报错。
+pub fn open_default() -> Result<Db, CoreError> {
+    let path = crypto::data_home().join("patheditor.db");
+    Db::open(&path)
 }
 
 /// 打开**已存在**的默认库；不存在时返回 `Ok(None)`。
 ///
-/// 与 [`open_default`] 的区别：不存在时**不创建**密钥文件或空库。
+/// 与 [`open_default`] 的区别：不存在时**不创建**空库。
 /// CLI 的 PATH 命令据此决定「有 DB 就用、没有就降级」。
 pub fn open_existing() -> Result<Option<Db>, CoreError> {
-    let path = crypto::config_dir().join("patheditor.db");
+    let path = crypto::data_home().join("patheditor.db");
     if !path.exists() {
         return Ok(None);
     }

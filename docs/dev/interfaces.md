@@ -73,7 +73,7 @@ patheditor sync          {export <FILE>|import <FILE>|status|conflicts [--all]|r
 patheditor maintenance   {prune [--dry-run]|cleanup-legacy-backups [--dry-run] [--yes]}
 ```
 
-`sync export/import` 的口令用 `rpassword` 隐藏输入，不落盘、不进 shell 历史；同步只改 DB，不写注册表。退出码：`import` 记录到待人工解决的合并冲突 → **4**；包格式（`SyncFormat`）→ 1；口令错误、包被篡改、密钥/DPAPI 不可用（`Crypto`）→ 5。`maintenance cleanup-legacy-backups` 未给 `--yes` 时打印计划并以 1 退出；`prune` 是保留策略，不需要 `--yes`。
+`sync export/import` 的口令用 `rpassword` 隐藏输入，不落盘、不进 shell 历史；同步只改 DB，不写注册表。退出码：`import` 记录到待人工解决的合并冲突 → **4**；包格式（`SyncFormat`）→ 1；口令错误、包被篡改、本机盐/DPAPI 不可用（`Crypto`）→ 5。`maintenance cleanup-legacy-backups` 未给 `--yes` 时打印计划并以 1 退出；`prune` 是保留策略，不需要 `--yes`。
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
 
@@ -90,4 +90,4 @@ patheditor maintenance   {prune [--dry-run]|cleanup-legacy-backups [--dry-run] [
 | 2   | clap 参数解析失败                                                 |
 | 3   | revision 冲突（仅 `env set` / `env remove` 使用 `--revision` 时） |
 | 4   | 同步合并冲突（`sync import` 记录了待人工解决的冲突）              |
-| 5   | 密钥 / DPAPI / 口令错误或同步包被篡改（`ErrorCode::Crypto`）      |
+| 5   | 本机盐 / DPAPI / 口令错误或同步包被篡改（`ErrorCode::Crypto`）    |

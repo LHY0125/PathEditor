@@ -1,5 +1,5 @@
 #![cfg(windows)]
-// 一文件一测试（SQLCipher）。`.pebak` 走 DPAPI，因此整体限定 Windows。
+// .pebak 走 DPAPI，因此整体限定 Windows。
 //
 // 回归守卫：备份索引必须有生产调用者。
 //
@@ -9,7 +9,6 @@
 //
 // 本测试验证「刷新 + 列表」这条生产路径本身能闭环，覆盖「启动后新增的备份也能被看到」。
 use path_editor_core::db::backup_index::refresh_and_list_at;
-use path_editor_core::db::crypto::key_hex;
 use path_editor_core::db::crypto::load_or_create_key;
 use path_editor_core::db::Db;
 use path_editor_core::platform::backup::{
@@ -40,7 +39,7 @@ fn payload(n: usize) -> EnvBackupPayload {
 fn backup_index_sees_backups_created_after_first_index() {
     let tmp = TempDir::new().unwrap();
     let key = load_or_create_key(tmp.path()).unwrap();
-    let mut db = Db::open_encrypted(&tmp.path().join("b.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&tmp.path().join("b.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let backup_dir = tmp.path().join("backups");

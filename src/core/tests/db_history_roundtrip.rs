@@ -1,5 +1,3 @@
-// 一文件一测试（SQLCipher）。
-use path_editor_core::db::crypto::{key_hex, load_or_create_key};
 use path_editor_core::db::history::{
     current_snapshot, get_snapshot, insert_snapshot, list_events, EnvValueRow, EventFilter,
     NewSnapshot, SnapshotKind,
@@ -13,8 +11,7 @@ use tempfile::TempDir;
 fn snapshot_roundtrip_and_masking() {
     let dir = TempDir::new().unwrap();
 
-    let key = load_or_create_key(dir.path()).unwrap();
-    let mut db = Db::open_encrypted(&dir.path().join("h.db"), &key_hex(&key)).unwrap();
+    let mut db = Db::open(&dir.path().join("h.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let uid = insert_snapshot(

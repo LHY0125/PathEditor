@@ -1,11 +1,9 @@
-// 一文件一测试（SQLCipher）。
 //
 // **CLI/DB 保存链路守卫**：`save_path_with_db_io` 必须在写注册表成功后：
 // 1. 把当前快照写入 DB（`app_state.current_snapshot_id`）；
 // 2. 为 CLI 的写入产生 `changes`（否则跨设备同步看不到 CLI 修改）；
 // 3. 记录一条 `source = cli` 的事件。
 //
-// **本测试使用 SQLCipher**，因此整个文件只放一个 `#[test]`。
 use path_editor_core::app::service::{self, PathHiveIo, PathHiveWrite};
 use path_editor_core::db::history::{
     app_state_version, current_snapshot, insert_snapshot, set_current_snapshot, NewSnapshot,
@@ -48,8 +46,7 @@ impl PathHiveIo for FakeIo {
 #[test]
 fn cli_save_updates_current_snapshot_changes_and_event() {
     let dir = tempfile::TempDir::new().unwrap();
-    let key = "11".repeat(32);
-    let mut db = Db::open_encrypted(&dir.path().join("state.db"), &key).unwrap();
+    let mut db = Db::open(&dir.path().join("state.db")).unwrap();
     db.migrate_to_current().unwrap();
 
     let seed_uid = insert_snapshot(

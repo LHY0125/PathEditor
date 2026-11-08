@@ -345,7 +345,7 @@ pub(crate) fn read_env_backup_any(path: &Path) -> Result<EnvBackupPayload, CoreE
     if !is_pebak {
         // 遗留明文路径：给一次明确警告
         log::warn!(
-            "读取遗留明文备份 {}：v6 起的备份是 DPAPI 加密的 .pebak",
+            "读取遗留明文备份 {}：备份默认是 DPAPI 加密的 .pebak",
             path.display()
         );
         return read_env_backup(path);
