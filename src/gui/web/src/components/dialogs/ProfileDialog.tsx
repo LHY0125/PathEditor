@@ -16,9 +16,12 @@ export function ProfileDialog({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} ariaLabel={t('profile.title')}>
-      <div className="flex flex-col" style={{ width: 680, maxWidth: '100%', maxHeight: '75vh' }}>
+      <div
+        className="flex flex-col"
+        style={{ width: 680, minHeight: 360, maxWidth: '100%', maxHeight: '75vh' }}
+      >
         <div
-          className="flex items-center justify-between px-1 py-2"
+          className="flex items-center justify-between px-1 py-2 pr-8"
           style={{ borderBottom: '1px solid var(--app-border)' }}
         >
           <h2 className="text-base font-semibold">{t('profile.title')}</h2>
@@ -37,14 +40,6 @@ export function ProfileDialog({ open, onClose }: Props) {
               onClick={profiles.handleSave}
             >
               {t('profile.save')}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={onClose}
-              title={t('button.close')}
-              aria-label={t('button.close')}
-            >
-              ✕
             </Button>
           </div>
         </div>

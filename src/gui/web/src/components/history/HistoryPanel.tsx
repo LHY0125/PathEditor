@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { backend } from '@/services/backend';
+import type { RestoreOutcome } from '@/core/env-backup';
 import { errorMessage } from '@/core/error';
 import { Button } from '@/components/ui/Button';
 import { useHistoryStore } from '@/store/history-store';
@@ -62,6 +63,11 @@ export function HistoryPanel() {
   const [comparePair, setComparePair] = useState<[string, string] | null>(null);
   /** 选到第三条时提示「最早的一条已被挤掉」，避免静默改变选择。 */
   const [compareNotice, setCompareNotice] = useState(false);
+  // 结果按快照 uid 归属：切换快照后旧结果自然不再显示，无需在 effect 里 setState。
+  const [envOutcome, setEnvOutcome] = useState<{ uid: string; result: RestoreOutcome } | null>(
+    null,
+  );
+  const [envError, setEnvError] = useState<{ uid: string; message: string } | null>(null);
 
   useEffect(() => {
     void load();
@@ -117,8 +123,24 @@ export function HistoryPanel() {
     });
   };
 
+  /** 恢复快照里的环境变量；与 PATH 恢复分开，避免一次操作同时改两类状态。 */
+  const handleRestoreEnv = async (uid: string, count: number) => {
+    const confirmed = await backend
+      .confirmDialog(t('history.restoreEnvConfirm', { count }))
+      .catch(() => false);
+    if (!confirmed) return;
+    try {
+      const outcome = await backend.historyRestoreEnvSnapshot(uid, true);
+      setEnvOutcome({ uid, result: outcome });
+      setEnvError(null);
+    } catch (e) {
+      setEnvOutcome(null);
+      setEnvError({ uid, message: errorMessage(e) });
+    }
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="history-panel flex min-h-0 flex-1 flex-col gap-3">
       {pinned.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
@@ -136,7 +158,7 @@ export function HistoryPanel() {
           ))}
         </div>
       )}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--app-fg)' }}>
             {t('history.title')}
@@ -145,7 +167,7 @@ export function HistoryPanel() {
             {t('history.showing', { shown: events.length, total })}
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           {/* 筛选下拉：core 与 IPC 支持 action/source/hive/target/时间范围，
               界面目前只暴露最常用的 action/source/hive 三个维度。 */}
           <select
@@ -358,7 +380,9 @@ export function HistoryPanel() {
 
         {/* 详情 */}
         <div
-          className="min-h-0 w-80 shrink-0 overflow-y-auto rounded-lg border"
+          className={`min-h-0 w-80 shrink-0 overflow-y-auto rounded-lg border ${
+            !detailLoading && !detail ? 'history-detail-empty' : ''
+          }`}
           style={{ borderColor: 'var(--app-border)' }}
         >
           {detailLoading && (
@@ -378,9 +402,53 @@ export function HistoryPanel() {
                 >
                   {restoring ? t('history.restoring') : t('history.restore')}
                 </Button>
+                {detail.env.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    disabled={restoring}
+                    onClick={() => void handleRestoreEnv(detail.uid, detail.env.length)}
+                  >
+                    {t('history.restoreEnv')}
+                  </Button>
+                )}
                 <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('history.restoreHint')}
                 </p>
+                {envOutcome !== null && envOutcome.uid === detail.uid && (
+                  <>
+                    <p
+                      className="mt-1 text-xs"
+                      style={{
+                        color:
+                          envOutcome.result.failures.length > 0
+                            ? 'var(--app-warning-text)'
+                            : 'var(--app-success)',
+                      }}
+                    >
+                      {envOutcome.result.failures.length > 0
+                        ? t('history.restoreEnvFailed', {
+                            applied: envOutcome.result.applied,
+                            failed: envOutcome.result.failures.length,
+                          })
+                        : t('history.restoreEnvDone', {
+                            applied: envOutcome.result.applied,
+                          })}
+                    </p>
+                    {envOutcome.result.failures.length > 0 && (
+                      <ul className="mt-1 text-xs" style={{ color: 'var(--app-danger)' }}>
+                        {envOutcome.result.failures.map((failure) => (
+                          <li key={failure}>{failure}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+                {envError !== null && envError.uid === detail.uid && (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--app-danger)' }}>
+                    {envError.message}
+                  </p>
+                )}
               </div>
             </>
           )}

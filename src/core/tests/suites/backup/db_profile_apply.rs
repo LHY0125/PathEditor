@@ -90,8 +90,9 @@ fn apply_profile_writes_changed_hive_then_skips_identical_second_apply() {
     let io = FakeIo::new(&["C:\\A"], &["D:\\U"]);
     let pending = dir.path().join("pending.json");
 
-    let first = service::apply_profile_io(&io, &mut db, "Work", EventSource::Cli, &pending)
-        .expect("应用配置失败");
+    let first =
+        service::apply_profile_io(&io, &mut db, "Work", EventSource::Cli, &pending, Vec::new())
+            .expect("应用配置失败");
     assert_eq!(
         io.write_count(),
         1,
@@ -112,8 +113,9 @@ fn apply_profile_writes_changed_hive_then_skips_identical_second_apply() {
     assert!(view.last_applied_at.is_some());
 
     // 第二次应用：内容与当前状态一致 → 不写注册表，但仍记账。
-    let second = service::apply_profile_io(&io, &mut db, "Work", EventSource::Cli, &pending)
-        .expect("第二次应用失败");
+    let second =
+        service::apply_profile_io(&io, &mut db, "Work", EventSource::Cli, &pending, Vec::new())
+            .expect("第二次应用失败");
     assert_eq!(io.write_count(), 1, "内容一致时不得重复写注册表");
     assert!(matches!(
         second.system,

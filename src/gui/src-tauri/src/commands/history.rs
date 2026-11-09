@@ -108,6 +108,18 @@ pub fn history_export_events(
     })
 }
 
+/// 把快照里的环境变量恢复到注册表（与 PATH 分开）。
+#[tauri::command(async)]
+pub fn history_restore_env_snapshot(
+    uid: String,
+    force: bool,
+    state: State<'_, DbState>,
+) -> Result<path_editor_core::platform::backup::RestoreOutcome, CoreError> {
+    with_db(&state, "history_restore_env_snapshot", |db| {
+        service::restore_env_snapshot(db, &uid, force)
+    })
+}
+
 /// 读取数据库健康状态（只读）。
 #[tauri::command(async)]
 pub fn db_health(state: State<'_, DbState>) -> Result<DbHealth, CoreError> {

@@ -41,12 +41,13 @@ export function PathEditDialog({
         onKeyDown={(e) => {
           if (e.key === 'Enter') onConfirm(value);
         }}
-        className="field-input w-full min-w-[400px]"
+        placeholder={t('dialog.pathPlaceholder')}
+        className="field-input font-mono w-full min-w-[460px]"
       />
       <div className="flex justify-end gap-2 mt-4">
         <Button onClick={onCancel}>{t('dialog.cancel')}</Button>
         <Button variant="primary" onClick={() => onConfirm(value)}>
-          {t('dialog.confirm')}
+          {t('button.savePath')}
         </Button>
       </div>
     </Modal>

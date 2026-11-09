@@ -57,12 +57,16 @@ pub fn profile_save(
     state: State<'_, DbState>,
 ) -> Result<String, CoreError> {
     with_db_mut(&state, "profile_save", |db| {
+        let env = service::collect_env_snapshot_rows().unwrap_or_else(|e| {
+            log::warn!("采集环境变量快照失败（配置快照只含 PATH）: {}", e.message);
+            Vec::new()
+        });
         let snap = NewSnapshot {
             kind: SnapshotKind::Profile,
             source: EventSource::Gui,
             system: request.system,
             user: request.user,
-            env: Vec::new(),
+            env,
             parent_uid: None,
         };
         profiles::save_profile(

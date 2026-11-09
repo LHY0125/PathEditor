@@ -9,6 +9,7 @@
 - **遗留加密库**：旧版加密库的文件头不是 `SQLite format 3`，`Db::open` **直接拒绝**并给出删除指引；不做任何自动转换。
 - **本机盐**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+reserved(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。前 32 字节是旧版 `db_key` 的遗留位置，现只作保留位；**保持 49 字节与文件名不变**，否则磁盘上既有 `.pebak` 的 `payload_hash` 会全部失配。
 - **数据目录**：`PATHEDITOR_DATA_DIR` 仅供 CLI 子进程测试把库重定向到临时目录；生产不设置。
+- **快照内容**：每条快照同时保存 PATH（`path_entries`）与环境变量（`env_values`）；环境变量值以**明文**落库（数据库本身不加密），敏感标记只控制 UI 掩码。旧版本快照的 env 为空，恢复 env 时会被拒绝，避免把当前变量删光。
 - **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 5`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
 ## 表

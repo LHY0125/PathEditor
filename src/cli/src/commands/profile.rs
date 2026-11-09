@@ -35,12 +35,19 @@ pub(crate) fn profile_save(name: String) {
     let snapshot =
         core::app::service::load_path_snapshot_db(&db).unwrap_or_else(|e| exit_core_error(&e));
 
+    let env = core::app::service::collect_env_snapshot_rows().unwrap_or_else(|e| {
+        eprintln!(
+            "警告: 采集环境变量快照失败（配置快照只含 PATH）: {}",
+            e.message
+        );
+        Vec::new()
+    });
     let snap = core::db::history::NewSnapshot {
         kind: core::db::history::SnapshotKind::Profile,
         source: core::domain::history::EventSource::Cli,
         system: snapshot.system,
         user: snapshot.user,
-        env: Vec::new(),
+        env,
         parent_uid: None,
     };
     db_profiles::save_profile(&mut db, &name, None, &[], snap)

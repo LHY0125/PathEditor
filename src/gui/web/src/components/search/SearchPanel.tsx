@@ -123,19 +123,19 @@ export function SearchPanel() {
   };
 
   return (
-    <div className="p-3">
-      <form onSubmit={onSubmit} className="mb-3 flex gap-2">
+    <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      <form onSubmit={onSubmit} className="search-form">
         <input
-          className="field-input"
+          className="field-input search-input"
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('search.placeholder')}
           aria-label={t('search.placeholder')}
         />
-        <button type="submit" className="tab-pill" disabled={loading}>
+        <Button type="submit" variant="secondary" disabled={loading}>
           {loading ? t('search.searching') : t('search.submit')}
-        </button>
+        </Button>
       </form>
 
       {error !== null && (
@@ -151,52 +151,55 @@ export function SearchPanel() {
       )}
 
       {hits.length > 0 && (
-        <ul className="space-y-1">
-          {hits.map((hit, index) => {
-            const key = hitKey(hit, index);
-            const pathLoc = hit.kind === 'path' ? findPath(hit.content) : null;
-            const envMeta = hit.kind === 'envName' ? findEnv(hit.content) : null;
-            return (
-              <li key={key} className="text-xs search-hit">
-                <div className="search-hit-main">
-                  <span className="search-kind rounded px-1">{kindLabel(hit.kind)}</span>
-                  <span className="search-snippet font-mono">{renderSnippet(hit.snippet)}</span>
-                </div>
-                <div className="search-hit-actions">
-                  {hit.kind === 'path' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pathLoc === null}
-                      title={pathLoc === null ? t('search.openFailed') : undefined}
-                      onClick={() => {
-                        if (pathLoc) goPath(pathLoc);
-                      }}
-                    >
-                      {t('search.openPath')}
+        <>
+          <p className="search-count">{t('search.resultCount', { count: hits.length })}</p>
+          <ul className="space-y-1">
+            {hits.map((hit, index) => {
+              const key = hitKey(hit, index);
+              const pathLoc = hit.kind === 'path' ? findPath(hit.content) : null;
+              const envMeta = hit.kind === 'envName' ? findEnv(hit.content) : null;
+              return (
+                <li key={key} className="text-xs search-hit">
+                  <div className="search-hit-main">
+                    <span className="search-kind rounded px-1">{kindLabel(hit.kind)}</span>
+                    <span className="search-snippet font-mono">{renderSnippet(hit.snippet)}</span>
+                  </div>
+                  <div className="search-hit-actions">
+                    {hit.kind === 'path' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pathLoc === null}
+                        title={pathLoc === null ? t('search.openFailed') : undefined}
+                        onClick={() => {
+                          if (pathLoc) goPath(pathLoc);
+                        }}
+                      >
+                        {t('search.openPath')}
+                      </Button>
+                    )}
+                    {hit.kind === 'envName' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={envMeta === null}
+                        title={envMeta === null ? t('search.openFailed') : undefined}
+                        onClick={() => {
+                          if (envMeta) goEnv(envMeta);
+                        }}
+                      >
+                        {t('search.openVar')}
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => void copy(hit, key)}>
+                      {copied === key ? t('search.copied') : t('search.copy')}
                     </Button>
-                  )}
-                  {hit.kind === 'envName' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={envMeta === null}
-                      title={envMeta === null ? t('search.openFailed') : undefined}
-                      onClick={() => {
-                        if (envMeta) goEnv(envMeta);
-                      }}
-                    >
-                      {t('search.openVar')}
-                    </Button>
-                  )}
-                  <Button size="sm" variant="ghost" onClick={() => void copy(hit, key)}>
-                    {copied === key ? t('search.copied') : t('search.copy')}
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </div>
   );

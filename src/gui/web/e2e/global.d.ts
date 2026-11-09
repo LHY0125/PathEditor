@@ -16,6 +16,8 @@ interface Window {
     }>;
     total: number;
   };
+  /** 对话框确认 mock：true 时 `plugin:dialog|message` 返回 Ok。 */
+  __confirmResponse?: boolean;
   /** 数据库健康 fixture（统计页健康卡片）。 */
   __healthFixture?: {
     path: string;

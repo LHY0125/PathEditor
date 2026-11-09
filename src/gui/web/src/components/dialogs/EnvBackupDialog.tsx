@@ -27,7 +27,7 @@ export function EnvBackupDialog({ open, onClose, onRestored }: EnvBackupDialogPr
       ariaLabel={t('envBackup.title')}
       dismissible={!controller.busy && !controller.creating}
     >
-      <EnvBackupPanel controller={controller} />
+      <EnvBackupPanel controller={controller} onClose={onClose} />
     </Modal>
   );
 }

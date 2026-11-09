@@ -92,8 +92,15 @@ fn apply_profile_returns_err_when_a_hive_write_fails() {
     };
     let pending = dir.path().join("pending.json");
 
-    let err = service::apply_profile_io(&io, &mut db, "Broken", EventSource::Cli, &pending)
-        .expect_err("某个 hive 写入失败时必须返回 Err，而不是包装成成功");
+    let err = service::apply_profile_io(
+        &io,
+        &mut db,
+        "Broken",
+        EventSource::Cli,
+        &pending,
+        Vec::new(),
+    )
+    .expect_err("某个 hive 写入失败时必须返回 Err，而不是包装成成功");
 
     assert_eq!(
         err.code,

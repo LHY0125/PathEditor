@@ -529,6 +529,9 @@ fn find_backup_var<'a>(
 /// - `Ok(RestoreOutcome)` — 恢复结果（可能含逐条失败）
 /// - `Err(CoreError)` — 读取/解析备份失败，差异计算失败（code=`Io`），
 ///   或**默认模式下检测到冲突**（code=`Conflict`，注册表零改动）
+///
+/// 测试专用：读备份文件后走内存载荷恢复（生产入口见 [`restore_env_backup_from`]）。
+#[cfg(test)]
 pub(crate) fn restore_in_stores(
     sys: &dyn EnvHiveStore,
     usr: &dyn EnvHiveStore,
@@ -536,7 +539,17 @@ pub(crate) fn restore_in_stores(
     force: bool,
 ) -> Result<RestoreOutcome, CoreError> {
     let payload = read_env_backup_any(path)?;
-    let preview = preview_restore_in_stores(sys, usr, &payload)?;
+    restore_payload_in_stores(sys, usr, &payload, force)
+}
+
+/// 从内存载荷恢复环境变量（快照恢复复用；不经过备份文件校验）。
+pub(crate) fn restore_payload_in_stores(
+    sys: &dyn EnvHiveStore,
+    usr: &dyn EnvHiveStore,
+    payload: &EnvBackupPayload,
+    force: bool,
+) -> Result<RestoreOutcome, CoreError> {
+    let preview = preview_restore_in_stores(sys, usr, payload)?;
 
     // 默认模式下任何冲突都中止，且不做任何写入。
     // 位置很关键——必须早于下面第一个写调用，否则会留下部分写入。
@@ -573,18 +586,16 @@ pub(crate) fn restore_in_stores(
         // 三个分支都必须先用备份侧的值/类型，再交给 core 写函数做判定。
         // 未知差异类型一律记失败（宁可响亮地失败，也不静默漏掉一个变量）。
         let result: Result<(), CoreError> = match change.kind {
-            RestoreChangeKind::Added => {
-                match find_backup_var(&payload, change.hive, &change.name) {
-                    Some(var) => {
-                        create_env_var_in_store(store, change.hive, &var.name, &var.value, var.kind)
-                    }
-                    None => Err(inconsistent_change(&change.name)),
+            RestoreChangeKind::Added => match find_backup_var(payload, change.hive, &change.name) {
+                Some(var) => {
+                    create_env_var_in_store(store, change.hive, &var.name, &var.value, var.kind)
                 }
-            }
+                None => Err(inconsistent_change(&change.name)),
+            },
             // Conflict 在 force 模式下按 Modified 处理；非 force 模式已在上面整批中止，
             // 因此走到这里时这两个变体的语义完全相同。
             RestoreChangeKind::Modified | RestoreChangeKind::Conflict => {
-                match find_backup_var(&payload, change.hive, &change.name) {
+                match find_backup_var(payload, change.hive, &change.name) {
                     Some(var) => {
                         update_env_var_force_in_store(store, change.hive, &var.name, &var.value)
                     }
@@ -643,7 +654,7 @@ pub(crate) fn restore_should_broadcast(outcome: &RestoreOutcome) -> bool {
 /// 从备份文件恢复环境变量（公开入口，供 CLI `env restore` 与 GUI 命令使用）。
 ///
 /// 先做来源校验（[`validate_backup_path`]：扩展名、目录/文件名前缀、大小上限），
-/// 再以**可写方式**打开两个 hive 执行恢复。**不产生新备份**（见 [`restore_in_stores`]）；
+/// 再以**可写方式**打开两个 hive 执行恢复。**不产生新备份**（见 [`restore_payload_in_stores`]）；
 /// 恢复前的手工兜底提示由调用方打印。
 ///
 /// 恢复按 hive 独立执行（单变量失败记入 `failures` 而不中止整体），但两个 hive 的
@@ -657,9 +668,21 @@ pub(crate) fn restore_should_broadcast(outcome: &RestoreOutcome) -> bool {
 ///   或默认模式下检测到冲突（`Conflict`，注册表零改动）
 pub fn restore_env_backup_from(path: &Path, force: bool) -> Result<RestoreOutcome, CoreError> {
     let verified = validate_backup_path(&path.to_string_lossy())?;
+    let payload = read_env_backup_any(&verified)?;
+    restore_env_payload(&payload, force)
+}
+
+/// 从内存载荷恢复环境变量（供历史快照恢复复用）。
+///
+/// 与 [`restore_env_backup_from`] 的差异只在来源：不校验文件路径，
+/// 直接以可写方式打开两个 hive，执行同一套差异/冲突/写回逻辑并广播。
+pub fn restore_env_payload(
+    payload: &EnvBackupPayload,
+    force: bool,
+) -> Result<RestoreOutcome, CoreError> {
     let sys = WinregHive::open(EnvHive::System, true)?;
     let usr = WinregHive::open(EnvHive::User, true)?;
-    let outcome = restore_in_stores(&sys, &usr, &verified, force)?;
+    let outcome = restore_payload_in_stores(&sys, &usr, payload, force)?;
     // 广播只在确实写入过时发出：无差异的恢复不应惊动已运行的进程（判据见谓词）。
     if restore_should_broadcast(&outcome) {
         crate::platform::system::broadcast_env_change();

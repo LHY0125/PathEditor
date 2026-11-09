@@ -55,7 +55,7 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 
 `rusqlite` 只用 `bundled`（SQLite C 源码由 `cc` 编译，FTS5/JSON1 默认开启），**不再需要 OpenSSL、
 perl、PERL5LIB 或 NASM**。直接 `cargo check` / `cargo test` 即可；本机 2026-11-08 实测
-`cargo test --workspace` 353 passed / 2 ignored，clippy 与 fmt 全绿。
+`cargo test --workspace` 356 passed / 2 ignored，clippy 与 fmt 全绿。
 
 - `probes/v6-sqlcipher/` 仅作历史探针证据保留，不参与构建。
 
@@ -147,7 +147,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v7.0.0，2026-11-08 本机实测）：Rust **353 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **41 files / 448**；E2E **55**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 基线（v7.0.0，2026-11-08 本机实测）：Rust **356 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **41 files / 448**；E2E **59**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - 「一文件一测试」已随 SQLCipher 退场取消（存量文件不合并）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 

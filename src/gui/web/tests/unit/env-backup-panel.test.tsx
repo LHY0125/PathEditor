@@ -97,6 +97,7 @@ describe('EnvBackupPanel 删除项渲染（验收标准 12）', () => {
             text: '新增 1、删除 2、冲突 3',
           },
         })}
+        onClose={() => {}}
       />,
     );
 
@@ -119,6 +120,7 @@ describe('EnvBackupPanel 删除项渲染（验收标准 12）', () => {
             text: '新增 1',
           },
         })}
+        onClose={() => {}}
       />,
     );
 
@@ -137,6 +139,7 @@ describe('EnvBackupPanel 删除项渲染（验收标准 12）', () => {
             text: '摘要',
           },
         })}
+        onClose={() => {}}
       />,
     );
 
@@ -160,6 +163,7 @@ describe('EnvBackupPanel 删除项渲染（验收标准 12）', () => {
           },
           outcome: { applied: 1, skipped: 0, failures: ['[系统] LEGACY_HOME: 拒绝访问'] },
         })}
+        onClose={() => {}}
       />,
     );
 
@@ -181,6 +185,7 @@ describe('EnvBackupPanel 删除项渲染（验收标准 12）', () => {
             text: '摘要',
           },
         })}
+        onClose={() => {}}
       />,
     );
 

@@ -11,8 +11,8 @@ test('添加路径后可撤销和重做', async ({ page }) => {
   await page.click('text=新建');
   // 填入路径（对话框内自动聚焦的 input）
   await page.locator('.modal-overlay input[type="text"]').fill('C:\\\\NewPath');
-  // 对话框确认按钮是"确认"
-  await page.click('text=确认');
+  // 对话框主按钮是「保存」（与工具栏的「保存」区分，限定在弹窗内）
+  await page.locator('.modal-surface').getByRole('button', { name: '保存', exact: true }).click();
   // 路径应出现在列表中
   await page.waitForTimeout(300);
   await expect(page.locator('text=C:\\\\NewPath')).toBeVisible();

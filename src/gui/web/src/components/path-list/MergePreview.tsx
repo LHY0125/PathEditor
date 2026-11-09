@@ -50,7 +50,7 @@ export function MergePreview() {
     <div ref={parentRef} className="flex-1 overflow-auto relative">
       <div className="path-table-head merge-head">
         <div className="w-10 px-2 py-1">#</div>
-        <div className="px-2 py-1 flex-1">{t('dialog.pathLabel')}</div>
+        <div className="px-2 py-1 flex-1">{t('table.path')}</div>
         <div className="w-16 px-2 py-1">{t('merge.source')}</div>
       </div>
       <div

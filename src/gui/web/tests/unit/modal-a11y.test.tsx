@@ -57,7 +57,9 @@ describe('Modal 可访问性契约', () => {
   it('Tab / Shift+Tab 在弹窗内循环', () => {
     openDialog();
     const first = screen.getByRole('button', { name: 'first' });
-    const last = screen.getByRole('button', { name: 'last' });
+    // 关闭按钮由 Modal 统一挂载，是 Tab 环里的最后一个可聚焦元素
+    const last = document.querySelector('.modal-close') as HTMLElement;
+    expect(last).not.toBeNull();
 
     last.focus();
     fireEvent.keyDown(last, { key: 'Tab' });

@@ -195,7 +195,7 @@ describe('EnvVarTable', () => {
 
   it('顶部显示 Path 引导提示', () => {
     const { container } = render(<EnvVarTable />);
-    expect(container.textContent).toContain('Path 请在');
+    expect(container.textContent).toContain('PATH 请在');
   });
 
   it('切换 hiveFilter 后只显示对应 hive', () => {

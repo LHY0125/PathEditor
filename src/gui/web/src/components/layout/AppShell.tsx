@@ -9,6 +9,7 @@ import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
 import { DegradedBanner } from './DegradedBanner';
 import { ToolBar } from '@/components/toolbar/ToolBar';
+import { Button } from '@/components/ui/Button';
 import { PathTable } from '@/components/path-list/PathTable';
 import { MergePreview } from '@/components/path-list/MergePreview';
 import { PathEditDialog } from '@/components/dialogs/PathEditDialog';
@@ -291,9 +292,10 @@ export function AppShell() {
         ))}
       </nav>
 
-      <div className="px-4 py-2">
-        {/* 「全部变量」使用独立工具栏：PATH 的上移/下移/清理/导入/导出对其语义不成立。 */}
-        {activeTab === 'allVars' ? (
+      {/* 各 Tab 的工具栏语义不同：PATH 编辑动作只属于 system/user；
+          merged 只读；其余面板自带标题/筛选/操作区，不能再显示 PATH 工具栏。 */}
+      {activeTab === 'allVars' && (
+        <div className="px-4 py-2">
           <EnvVarToolbar
             onCreate={() => setNewVarOpen(true)}
             onEdit={() => {
@@ -308,7 +310,10 @@ export function AppShell() {
             searchQuery={envSearch}
             selected={selectedVar}
           />
-        ) : (
+        </div>
+      )}
+      {(activeTab === 'system' || activeTab === 'user') && (
+        <div className="px-4 py-2">
           <ToolBar
             onNew={actions.handleNew}
             onEdit={actions.handleEdit}
@@ -348,14 +353,26 @@ export function AppShell() {
             onAnalyze={() => setAnalyzeOpen(true)}
             onDarkMode={() => useThemeStore.getState().toggle()}
           />
-        )}
-      </div>
+        </div>
+      )}
+      {activeTab === 'merged' && (
+        <div className="merge-hint">
+          <span>{t('merge.readOnly')}</span>
+          <span className="merge-hint-spacer" />
+          <Button size="sm" variant="ghost" onClick={() => setActiveTab('system')}>
+            {t('merge.gotoSystem')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setActiveTab('user')}>
+            {t('merge.gotoUser')}
+          </Button>
+        </div>
+      )}
 
       <div
         id="tabpanel"
         role="tabpanel"
         aria-labelledby={`tab-${activeTab}`}
-        className="flex-1 overflow-auto"
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
         data-testid="path-drop-zone"
         onDragOver={(e) => {
           e.preventDefault();

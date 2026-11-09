@@ -117,6 +117,7 @@ pub fn run() {
             commands::history::history_set_pinned,
             commands::history::history_list_pinned,
             commands::history::db_health,
+            commands::history::history_restore_env_snapshot,
             commands::profiles::profile_list,
             commands::profiles::profile_apply,
             commands::profiles::profile_save,

@@ -8,6 +8,8 @@ import type { EnvBackupController } from './use-env-backup';
 
 interface EnvBackupPanelProps {
   controller: EnvBackupController;
+  /** 关闭对话框（页脚「取消」与全局 ✕ 同源）。 */
+  onClose: () => void;
 }
 
 const sectionTitleClass = 'text-xs font-semibold uppercase tracking-wide';
@@ -19,7 +21,7 @@ const sectionTitleClass = 'text-xs font-semibold uppercase tracking-wide';
  * 「值变了」≡「备份过期」，一律计 conflict），强制覆盖低报改动量 —— 两个
  * 取舍都在界面上写明，而不是悄悄修正数字。
  */
-export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
+export function EnvBackupPanel({ controller, onClose }: EnvBackupPanelProps) {
   const { t } = useTranslation();
   const { backups, busy, creating, selected, summary, preview, outcome, createdPath, error } =
     controller;
@@ -60,7 +62,7 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
       className="flex flex-col gap-3"
       style={{ width: 720, maxWidth: '100%', maxHeight: '78vh' }}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pr-8">
         <h2 className="text-base font-semibold">{t('envBackup.title')}</h2>
         <Button disabled={creating} onClick={() => void controller.createBackup()}>
           {creating ? t('envBackup.creating') : t('envBackup.create')}
@@ -74,23 +76,41 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Button variant="ghost" disabled={reconciling} onClick={() => void checkReconcile()}>
-          {t('envBackup.reconcile')}
-        </Button>
-        {reconcile && (
-          <span style={{ color: 'var(--app-fg-muted)' }}>
-            {t('envBackup.reconcileResult', {
-              missing: reconcile.missing,
-              orphans: reconcile.orphans,
-            })}
-          </span>
-        )}
-        {reconcile && reconcile.missing > 0 && (
-          <Button variant="ghost" disabled={reconciling} onClick={() => void purgeMissing()}>
-            {t('envBackup.purgeMissing')}
+        <span className="font-semibold" style={{ color: 'var(--app-fg)' }}>
+          {t('envBackup.listTitle')}
+        </span>
+        <span style={{ color: 'var(--app-fg-muted)' }}>
+          {t('envBackup.backupCount', { count: backups?.length ?? 0 })}
+        </span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={reconciling}
+            onClick={() => void checkReconcile()}
+          >
+            {t('envBackup.reconcile')}
           </Button>
-        )}
-        {reconcileError && <span style={{ color: 'var(--app-error)' }}>{reconcileError}</span>}
+          {reconcile && (
+            <span style={{ color: 'var(--app-fg-muted)' }}>
+              {t('envBackup.reconcileResult', {
+                missing: reconcile.missing,
+                orphans: reconcile.orphans,
+              })}
+            </span>
+          )}
+          {reconcile && reconcile.missing > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={reconciling}
+              onClick={() => void purgeMissing()}
+            >
+              {t('envBackup.purgeMissing')}
+            </Button>
+          )}
+          {reconcileError && <span style={{ color: 'var(--app-error)' }}>{reconcileError}</span>}
+        </div>
       </div>
 
       <div className="flex gap-3 overflow-hidden" style={{ minHeight: 260 }}>
@@ -99,12 +119,6 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
           className="w-72 flex flex-col rounded border overflow-auto"
           style={{ borderColor: 'var(--app-border)', backgroundColor: 'var(--app-surface)' }}
         >
-          <div
-            className={sectionTitleClass + ' px-3 py-2'}
-            style={{ color: 'var(--app-fg-muted)' }}
-          >
-            {t('envBackup.title')}
-          </div>
           {backups === null ? (
             <p className="px-3 py-2 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
               {t('envBackup.loading')}
@@ -199,33 +213,30 @@ export function EnvBackupPanel({ controller }: EnvBackupPanelProps) {
                   </p>
                 </div>
               )}
-              {preview.modified === 0 && (
-                <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
-                  {t('envBackup.modifiedAlwaysZero')}
-                </p>
-              )}
-              {preview.conflicts > 0 && (
-                <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
-                  {t('envBackup.forceUnderreport')}
-                </p>
-              )}
-              <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
-                {t('envBackup.manualFallback')}
-              </p>
-              <p className="text-xs font-mono" style={{ color: 'var(--app-fg-muted)' }}>
-                patheditor backup
-              </p>
-              <p className="text-xs font-mono" style={{ color: 'var(--app-fg-muted)' }}>
-                patheditor env backup
-              </p>
               {!summary?.hasChanges && !summary?.hasConflicts && (
                 <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
                   {t('envBackup.noDiffHint')}
                 </p>
               )}
-              <Button variant="primary" disabled={busy} onClick={() => void controller.restore()}>
-                {busy ? t('envBackup.restoring') : t('envBackup.restore')}
-              </Button>
+              {/* 技术口径与手工兜底收进折叠区：默认界面只保留影响操作的结论。 */}
+              <details className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+                <summary className="cursor-pointer select-none">
+                  {t('envBackup.techDetails')}
+                </summary>
+                <div className="mt-1 flex flex-col gap-1">
+                  {preview.modified === 0 && <p>{t('envBackup.modifiedAlwaysZero')}</p>}
+                  {preview.conflicts > 0 && <p>{t('envBackup.forceUnderreport')}</p>}
+                  <p>{t('envBackup.manualFallback')}</p>
+                  <p className="font-mono">patheditor backup</p>
+                  <p className="font-mono">patheditor env backup</p>
+                </div>
+              </details>
+              <div className="mt-1 flex justify-end gap-2">
+                <Button onClick={onClose}>{t('dialog.cancel')}</Button>
+                <Button variant="primary" disabled={busy} onClick={() => void controller.restore()}>
+                  {busy ? t('envBackup.restoring') : t('envBackup.restore')}
+                </Button>
+              </div>
             </>
           )}
 

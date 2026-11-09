@@ -100,6 +100,21 @@ export function installMock(data) {
               currentPathItems: 0,
             }
           );
+        case 'db_health':
+          return (
+            data.health ?? {
+              path: 'C:/Users/me/.patheditor/patheditor.db',
+              fileBytes: 0,
+              walBytes: 0,
+              shmBytes: 0,
+              schemaVersion: 5,
+              expectedSchemaVersion: 5,
+              integrity: 'ok',
+              integrityOk: true,
+              tableRows: [],
+              lastPruneAt: null,
+            }
+          );
         case 'sync_status':
           return data.syncStatus ?? { pendingCount: 0, unresolvedConflicts: 0 };
         case 'sync_list_conflicts':

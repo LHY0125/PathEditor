@@ -409,3 +409,170 @@ fn event_result_classifies_hive_combinations() {
         EventResult::Success
     );
 }
+
+/// 环境变量快照恢复：新增/删除/敏感值/Path 排除/旧快照拒绝。
+#[test]
+fn restore_env_snapshot_applies_env_only_without_touching_path() {
+    use crate::db::history::{get_snapshot, insert_snapshot, NewSnapshot, SnapshotKind};
+    use crate::domain::env_var::revision_of;
+    use crate::platform::registry::store::memory::MemoryHive;
+    use crate::platform::registry::store::EnvHiveStore;
+    use winreg::enums::{REG_EXPAND_SZ, REG_SZ};
+    use winreg::types::FromRegValue;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut db = Db::open(&dir.path().join("env-snapshot.db")).unwrap();
+    db.migrate_to_current().unwrap();
+
+    let env = vec![
+        EnvValueRow {
+            hive: "system".into(),
+            name: "JAVA_HOME".into(),
+            kind: "String".into(),
+            value: Some("C:\\Java".into()),
+            revision: revision_of("JAVA_HOME", REG_SZ, "C:\\Java"),
+            sensitive: false,
+            restorable: true,
+        },
+        EnvValueRow {
+            hive: "user".into(),
+            name: "MY_TOKEN".into(),
+            kind: "ExpandString".into(),
+            value: Some("secret".into()),
+            revision: revision_of("MY_TOKEN", REG_EXPAND_SZ, "secret"),
+            sensitive: true,
+            restorable: true,
+        },
+    ];
+    let uid = insert_snapshot(
+        &mut db,
+        NewSnapshot {
+            kind: SnapshotKind::History,
+            source: EventSource::Gui,
+            system: Vec::new(),
+            user: Vec::new(),
+            env,
+            parent_uid: None,
+        },
+    )
+    .unwrap();
+
+    // 快照列表默认掩码敏感值；恢复路径必须能拿到真实值
+    let masked = get_snapshot(&db, &uid, false).unwrap();
+    let token = masked
+        .env
+        .iter()
+        .find(|row| row.name == "MY_TOKEN")
+        .unwrap();
+    assert_eq!(token.value, None);
+    let revealed = get_snapshot(&db, &uid, true).unwrap();
+    assert_eq!(
+        revealed
+            .env
+            .iter()
+            .find(|row| row.name == "MY_TOKEN")
+            .unwrap()
+            .value
+            .as_deref(),
+        Some("secret")
+    );
+
+    let sys = MemoryHive::new(true);
+    let usr = MemoryHive::new(true);
+    sys.seed("Path", "C:\\Windows", REG_SZ);
+    sys.seed("JAVA_HOME", "C:\\Java", REG_SZ);
+    sys.seed("OBSOLETE", "old", REG_SZ);
+    usr.seed("MY_TOKEN", "secret", REG_EXPAND_SZ);
+
+    let outcome = super::restore_env_snapshot_in_stores(&sys, &usr, &db, &uid, false).unwrap();
+    assert_eq!(outcome.applied, 1, "只应删除 OBSOLETE");
+    assert!(outcome.failures.is_empty(), "{:?}", outcome.failures);
+
+    // Path 不进入快照，也不得被恢复删除
+    assert!(sys.get_raw("Path").is_ok(), "恢复不得触碰 PATH");
+    assert!(sys.get_raw("JAVA_HOME").is_ok());
+    assert!(
+        sys.get_raw("OBSOLETE").is_err(),
+        "快照中不存在的可写变量应被删除"
+    );
+    assert_eq!(
+        String::from_reg_value(&usr.get_raw("MY_TOKEN").unwrap()).unwrap(),
+        "secret"
+    );
+}
+
+#[test]
+fn restore_env_snapshot_rejects_snapshot_without_env_data() {
+    use crate::db::history::{insert_snapshot, NewSnapshot, SnapshotKind};
+    use crate::platform::registry::store::memory::MemoryHive;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut db = Db::open(&dir.path().join("empty-env.db")).unwrap();
+    db.migrate_to_current().unwrap();
+    let uid = insert_snapshot(
+        &mut db,
+        NewSnapshot {
+            kind: SnapshotKind::History,
+            source: EventSource::Gui,
+            system: Vec::new(),
+            user: Vec::new(),
+            env: Vec::new(),
+            parent_uid: None,
+        },
+    )
+    .unwrap();
+
+    let sys = MemoryHive::new(true);
+    let usr = MemoryHive::new(true);
+    let err = super::restore_env_snapshot_in_stores(&sys, &usr, &db, &uid, false).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidValue);
+    assert!(
+        err.message.contains("不包含环境变量数据"),
+        "错误必须说明旧快照没有 env 数据: {}",
+        err.message
+    );
+}
+
+/// PATH 保存生成的两条快照都必须携带环境变量行。
+#[test]
+fn save_path_persists_env_rows_in_before_and_current_snapshots() {
+    use crate::db::history::{current_snapshot, get_snapshot, list_events, EventFilter};
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut db = Db::open(&dir.path().join("save-env.db")).unwrap();
+    db.migrate_to_current().unwrap();
+
+    let env = vec![EnvValueRow {
+        hive: "user".into(),
+        name: "CARGO_HOME".into(),
+        kind: "String".into(),
+        value: Some("D:\\cargo".into()),
+        revision: "rev-1".into(),
+        sensitive: false,
+        restorable: true,
+    }];
+    save_path_with_db_io(
+        &FakePathIo::new(),
+        &mut db,
+        EventSource::Gui,
+        Some(write(vec![entry("C:\\A", true)])),
+        None,
+        &dir.path().join("pending.json"),
+        env,
+    )
+    .unwrap();
+
+    let current = current_snapshot(&db)
+        .unwrap()
+        .expect("必须写入 current 快照");
+    assert_eq!(current.env.len(), 1, "current 快照必须携带环境变量");
+    assert_eq!(current.env[0].name, "CARGO_HOME");
+
+    let page = list_events(&db, &EventFilter::default()).unwrap();
+    let before_uid = page.items[0]
+        .snapshot_uid
+        .as_deref()
+        .expect("事件应关联操作前快照");
+    let before = get_snapshot(&db, before_uid, false).unwrap();
+    assert_eq!(before.env.len(), 1, "操作前快照同样必须携带环境变量");
+}

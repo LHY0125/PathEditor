@@ -221,6 +221,43 @@ const ENV_VARS = {
 };
 
 /** `history_list_events`：8 条事件，总数 42（触发分页文案）。 */
+/** 历史详情：PATH + 环境变量（敏感值掩码）。 */
+const SNAPSHOT = {
+  uid: 'snap-1',
+  createdAt: T0 + 7 * H,
+  kind: 'history',
+  system: [
+    { path: 'C:\\WINDOWS\\system32', enabled: true },
+    { path: 'C:\\WINDOWS', enabled: true },
+  ],
+  user: [
+    { path: 'D:\\settings\\Scoop\\shims', enabled: true },
+    { path: 'C:\\Users\\me\\.bun\\bin', enabled: false },
+  ],
+  env: [
+    {
+      hive: 'user',
+      name: 'JAVA_HOME',
+      kind: 'String',
+      value: 'D:\\settings\\Java\\jdk21',
+      revision: 'rev-java',
+      sensitive: false,
+      restorable: true,
+    },
+    {
+      hive: 'user',
+      name: 'MY_TOKEN',
+      kind: 'String',
+      value: null,
+      revision: 'rev-token',
+      sensitive: true,
+      restorable: true,
+    },
+  ],
+  note: '安装 JDK 前',
+  pinned: false,
+};
+
 const HISTORY = {
   items: [
     {
@@ -357,6 +394,29 @@ const STATS = {
   ],
   currentAvgLen: 42,
   currentPathItems: 24,
+  scanRuns: 12,
+  conflictRate: 0.25,
+  topConflicts: [
+    { target: 'python.exe', count: 3 },
+    { target: 'node.exe', count: 2 },
+  ],
+};
+
+/** 数据库健康卡片。 */
+const HEALTH = {
+  path: 'C:/Users/me/.patheditor/patheditor.db',
+  fileBytes: 2_411_724,
+  walBytes: 1_048_576,
+  shmBytes: 32_768,
+  schemaVersion: 5,
+  expectedSchemaVersion: 5,
+  integrity: 'ok',
+  integrityOk: true,
+  tableRows: [
+    { name: 'snapshots', rows: 42 },
+    { name: 'events', rows: 386 },
+  ],
+  lastPruneAt: T0,
 };
 
 /** 同步中心：2 条未解决冲突。 */
@@ -576,8 +636,10 @@ async function captureGui(browser) {
     invalid: [],
     scan: SCAN_RESULT,
     history: HISTORY,
+    snapshot: SNAPSHOT,
     search: SEARCH_HITS,
     stats: STATS,
+    health: HEALTH,
     syncStatus: SYNC_STATUS,
     syncConflicts: SYNC_CONFLICTS,
     profiles: PROFILES,
@@ -638,6 +700,8 @@ async function captureGui(browser) {
   // 9) 历史记录
   await clickEl(page, page.locator('#tab-history'), { after: 300 });
   await page.getByText(/已显示 \d+ \/ \d+ 条/).waitFor({ timeout: 10000 });
+  await clickEl(page, page.getByRole('button', { name: /保存 PATH/ }).first(), { after: 400 });
+  await page.getByText('环境变量（2）').waitFor({ timeout: 10000 });
   await shot(page, 'history.png');
 
   // 10) 搜索：输入并提交

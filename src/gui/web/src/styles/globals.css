@@ -256,15 +256,35 @@ textarea {
 /* 禁用态：必须用未分层的显式规则覆盖 —— Tailwind 的 disabled:opacity-40
    位于 @layer utilities，而未分层的 .btn-* 规则优先级高于任何 layer。
    同时清掉 primary 的强调光晕，避免禁用按钮在深色主题下看起来仍可点。 */
-.btn-primary:disabled,
-.btn-secondary:disabled,
 .btn-ghost:disabled,
 .btn-danger:disabled {
-  opacity: 0.4;
+  opacity: 1;
+  color: var(--app-disabled-fg);
   cursor: not-allowed;
   pointer-events: none;
   box-shadow: none;
   filter: none;
+}
+
+/* primary/secondary 的禁用态不能用「整体透明度」：
+   白字在 40% 透明度的紫底上对比度不足，看起来像坏掉的按钮。
+   改为中性的禁用表面 + 达标的前景文字，仍然明确「不可点」。 */
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
+  filter: none;
+  border-color: var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-fg-muted);
+}
+
+/* 原生复选框统一到主题强调色 */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--app-accent);
 }
 
 /* 下拉菜单
@@ -429,6 +449,12 @@ textarea {
   padding: 6px 10px;
   border-bottom: 1px solid var(--app-border);
   flex: 0 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  height: 0;
 }
 
 /* 状态栏 */
@@ -451,6 +477,24 @@ textarea {
 
 .statusbar-muted {
   color: var(--app-fg-muted);
+}
+
+.statusbar-theme {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--app-fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.statusbar-theme:hover {
+  color: var(--app-fg);
+}
+
+.statusbar-theme:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
 }
 
 /* 虚拟滚动行。
@@ -607,6 +651,7 @@ textarea {
 }
 
 .modal-surface {
+  position: relative;
   max-width: 90vw;
   max-height: 85vh;
   overflow: auto;
@@ -617,6 +662,36 @@ textarea {
   color: var(--app-fg);
   box-shadow: var(--app-dialog-shadow);
   backdrop-filter: blur(14px);
+}
+
+/* 对话框统一关闭按钮：由 Modal 挂载，避免每个对话框各写一套。 */
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--app-fg-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--app-hover);
+  color: var(--app-fg);
+}
+
+.modal-close:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
 }
 
 /* 表单控件：对话框内 input / select 统一使用，替代内联颜色样式 */
@@ -670,7 +745,7 @@ textarea {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  max-width: 960px;
+  max-width: 860px;
 }
 
 .sync-header {
@@ -829,4 +904,145 @@ textarea {
   display: flex;
   flex-shrink: 0;
   gap: 4px;
+}
+
+/* ── 面板布局（Wave 4.2）────────────────────────────────────
+   tabpanel 改为纵向 flex，面板自己决定内部滚动，避免整页滚动时
+   工具栏/标题跟着走。 */
+
+.stats-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  align-content: start;
+  align-items: start;
+  overflow-y: auto;
+}
+
+.stats-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  background: var(--app-surface);
+}
+
+.stats-card-wide {
+  grid-column: 1 / -1;
+}
+
+/* 宽屏时让「最近 30 天」占两行，右侧短卡片上下排布，避免半屏空白。 */
+@media (min-width: 900px) {
+  .stats-card-tall {
+    grid-row: span 2;
+  }
+
+  .stats-card-span2 {
+    grid-column: span 2;
+  }
+}
+
+.stats-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  font-size: 12px;
+}
+
+.stats-kv-value {
+  margin-left: 4px;
+  font-weight: 600;
+  color: var(--app-fg);
+}
+
+.merge-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-fg-muted);
+  font-size: 12px;
+}
+
+.merge-hint-spacer {
+  flex: 1;
+}
+
+.search-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 520px;
+  height: 30px;
+}
+
+.search-count {
+  margin: 0 0 8px;
+  color: var(--app-fg-muted);
+  font-size: 12px;
+}
+
+.search-hit:hover {
+  background: var(--app-hover);
+}
+
+.search-kind {
+  padding: 1px 6px;
+  border: 1px solid var(--app-border);
+  background: var(--app-accent-bg);
+  color: var(--app-accent-text);
+  font-size: 11px;
+}
+
+.sync-center {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sync-check {
+  margin-left: auto;
+}
+
+.sync-conflict-head {
+  align-items: baseline;
+}
+
+.sync-conflict-field {
+  font-weight: 600;
+  color: var(--app-fg);
+}
+
+.sync-conflict-values {
+  display: flex;
+  gap: 6px;
+}
+
+.sync-value-label {
+  color: var(--app-fg-muted);
+}
+
+.sync-value {
+  color: var(--app-fg);
+  overflow-wrap: anywhere;
+}
+
+.history-panel {
+  padding: 12px;
+}
+
+.history-detail-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 16px;
+  text-align: center;
 }

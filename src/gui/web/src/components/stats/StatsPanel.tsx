@@ -100,24 +100,20 @@ export function StatsPanel() {
   const maxEvents = Math.max(1, ...data.days.map((d) => d.events));
 
   return (
-    <div className="p-3">
+    <div className="stats-panel flex-1 min-h-0">
       {/* ── 当前状态（与历史序列口径不同，单独一块）── */}
-      <section className="mb-4">
-        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+      <section className="stats-card stats-card-wide">
+        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('stats.currentTitle')}
         </h4>
-        <div className="flex gap-4 text-xs">
+        <div className="stats-kv">
           <div>
             <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.currentPathItems')}</span>
-            <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
-              {data.currentPathItems}
-            </span>
+            <span className="stats-kv-value">{data.currentPathItems}</span>
           </div>
           <div>
             <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.currentAvgLen')}</span>
-            <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
-              {data.currentAvgLen.toFixed(1)}
-            </span>
+            <span className="stats-kv-value">{data.currentAvgLen.toFixed(1)}</span>
           </div>
         </div>
         <p className="mt-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
@@ -127,11 +123,11 @@ export function StatsPanel() {
 
       {/* ── 数据库健康（#7）：自检入口，异常时用警告色突出 ── */}
       {health !== null && (
-        <section className="mb-4">
-          <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+        <section className="stats-card stats-card-wide">
+          <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
             {t('stats.healthTitle')}
           </h4>
-          <div className="flex flex-wrap gap-4 text-xs">
+          <div className="stats-kv">
             <div>
               <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.healthSchema')}</span>
               <span className="ml-1 font-semibold" style={{ color: 'var(--app-fg)' }}>
@@ -169,8 +165,8 @@ export function StatsPanel() {
       )}
 
       {/* ── 历史序列 ── */}
-      <section className="mb-4">
-        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+      <section className="stats-card stats-card-tall">
+        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('stats.historyTitle')}
         </h4>
         {data.days.length === 0 ? (
@@ -202,8 +198,8 @@ export function StatsPanel() {
       </section>
 
       {/* ── 最常改变的变量 ── */}
-      <section className="mb-4">
-        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+      <section className="stats-card">
+        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('stats.topTargets')}
         </h4>
         {data.topTargets.length === 0 ? (
@@ -223,11 +219,11 @@ export function StatsPanel() {
       </section>
 
       {/* ── 冲突 Top（来自最近 200 次扫描） ── */}
-      <section className="mb-4">
-        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+      <section className="stats-card">
+        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('stats.conflictTop')}
         </h4>
-        <p className="mb-1 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
+        <p className="mb-1 text-xs" style={{ color: 'var(--app-fg)' }}>
           {t('stats.scanSummary', {
             runs: data.scanRuns,
             rate: Math.round(data.conflictRate * 100),
@@ -250,8 +246,8 @@ export function StatsPanel() {
       </section>
 
       {/* ── 配置应用次数 ── */}
-      <section>
-        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg-muted)' }}>
+      <section className="stats-card stats-card-span2">
+        <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('stats.profileApplies')}
         </h4>
         {data.profileApplies.length === 0 ? (

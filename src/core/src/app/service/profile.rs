@@ -13,12 +13,20 @@ pub fn apply_profile(
     name: &str,
     source: EventSource,
 ) -> Result<ApplyOutcome, CoreError> {
+    let env = super::collect_env_snapshot_rows().unwrap_or_else(|e| {
+        log::warn!(
+            "采集环境变量快照失败（本次配置应用快照只含 PATH）: {}",
+            e.message
+        );
+        Vec::new()
+    });
     apply_profile_io(
         &RealPathHiveIo,
         db,
         name,
         source,
         &disabled::default_pending_path(),
+        env,
     )
 }
 
@@ -29,6 +37,7 @@ pub fn apply_profile_io(
     name: &str,
     source: EventSource,
     pending_path: &std::path::Path,
+    env: Vec<EnvValueRow>,
 ) -> Result<ApplyOutcome, CoreError> {
     let Some((system, user)) = crate::db::profiles::profile_paths(db, name)? else {
         return Err(CoreError::new(
@@ -58,6 +67,7 @@ pub fn apply_profile_io(
                     expected: None,
                 }),
                 pending_path,
+                env,
             )?
         } else {
             ApplyOutcome {

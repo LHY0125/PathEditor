@@ -48,7 +48,7 @@
     "addedLabel": "Added",
     "modifiedLabel": "Modified",
     "removedLabel": "Removed",
-    "modifiedAlwaysZero": "\"Modified\" is always 0: a changed value means the backup is stale and is counted as a conflict (design doc K3).",
+    "modifiedAlwaysZero": "\"Modified\" is always 0: changed values are treated as a stale backup and counted under \"conflicts\".",
     "forceUnderreport": "Note: under force overwrite, variables replaced because of a conflict are still counted as conflicts, so the change count shown here is an underestimate.",
     "summaryAdded": "Added {{count}}",
     "summaryModified": "Modified {{count}}",
@@ -56,7 +56,10 @@
     "summaryConflicts": "Conflicts {{count}}",
     "summarySeparator": ", ",
     "summaryNoChange": "No changes to environment variables",
-    "summaryConflictSuffix": "; conflicting items abort the restore in default mode"
+    "summaryConflictSuffix": "; conflicting items abort the restore in default mode",
+    "techDetails": "Technical notes and manual fallback",
+    "listTitle": "Backups",
+    "backupCount": "{{count}} backups"
   },
   "envVar": {
     "name": "Name",
@@ -139,7 +142,10 @@
   "merge": {
     "system": "System",
     "user": "User",
-    "source": "Source"
+    "source": "Source",
+    "readOnly": "Merge preview is read-only: the effective order after de-duplicating system and user PATH.",
+    "gotoSystem": "Edit system PATH",
+    "gotoUser": "Edit user PATH"
   },
   "error": {
     "code": {
@@ -181,12 +187,13 @@
     "saveSystemFailed": "System PATH: {{error}}",
     "saveUserFailed": "User PATH: {{error}}",
     "cleanChanged": "The list changed while cleaning; please run clean again",
-    "saved_plaintext_backup": "Saved — backup is plaintext (key unavailable). After fixing the key, run patheditor maintenance cleanup-legacy-backups --yes to re-encrypt"
+    "saved_plaintext_backup": "Saved — backup is plaintext (key unavailable). After fixing the key, run patheditor maintenance cleanup-legacy-backups --yes to re-encrypt",
+    "toggleTheme": "Toggle theme"
   },
   "dialog": {
     "newPath": "New Path",
     "editPath": "Edit Path",
-    "pathLabel": "Enter path:",
+    "pathLabel": "Path",
     "importTarget": "Import Target",
     "importSystem": "System Only",
     "importUser": "User Only",
@@ -199,13 +206,13 @@
     "unsavedConfirm": "You have unsaved changes. Exit anyway?",
     "importFilterName": "Supported formats",
     "importSystemCount": "System: {{count}} entries",
-    "importUserCount": "User: {{count}} entries"
+    "importUserCount": "User: {{count}} entries",
+    "pathPlaceholder": "e.g. C:\\\\Program Files\\\\Git\\\\cmd"
   },
   "analyze": {
     "title": "PATH Analysis",
     "conflicts": "Conflicts",
     "tools": "Tools",
-
     "history": "Scan history",
     "historyHint": "Select two scans to compare (first selected is the earlier one)",
     "historyEmpty": "No scan history yet",
@@ -243,7 +250,6 @@
   "history": {
     "title": "History",
     "refresh": "Refresh",
-
     "pinnedSnapshots": "Pinned snapshots",
     "notePlaceholder": "Snapshot note…",
     "saveNote": "Save note",
@@ -273,7 +279,7 @@
       "drift": "Registry drift",
       "save": "Save PATH",
       "apply": "Apply profile",
-      "restore": "Restore snapshot",
+      "restore": "Restore PATH",
       "import": "Import",
       "envSet": "Edit variable",
       "envAdd": "Create variable",
@@ -290,7 +296,7 @@
       "migration": "Migration",
       "sync": "Sync"
     },
-    "restore": "Restore this snapshot",
+    "restore": "Restore PATH",
     "restoring": "Restoring…",
     "restoreConfirm": "Restoring overwrites the current PATH (system and user). Continue?",
     "restoreHint": "The current PATH is backed up automatically before restoring.",
@@ -298,8 +304,8 @@
     "filterAllActions": "All actions",
     "filterSource": "Filter by source",
     "filterAllSources": "All sources",
-    "filterHive": "Filter by hive",
-    "filterAllHives": "All hives",
+    "filterHive": "Filter by scope",
+    "filterAllHives": "All scopes",
     "undoLast": "Undo last operation",
     "undoConfirm": "Undo restores the PATH to its state before that operation. Continue?",
     "undoHint": "Cross-session undo: restored from history, survives restarts",
@@ -310,7 +316,14 @@
     "errorCrypto": "History database key unavailable (the Windows account or machine may have changed); history is temporarily unavailable",
     "errorUnavailable": "History unavailable",
     "loadMore": "Load more",
-    "showing": "Showing {{shown}} of {{total}}"
+    "showing": "Showing {{shown}} of {{total}}",
+    "exportCsv": "Export CSV",
+    "exportHint": "Export the current filter to CSV",
+    "restoreEnv": "Restore environment variables",
+    "restoreEnvConfirm": "This will restore {{count}} environment variables to this snapshot (overwriting current values and deleting writable variables absent from the snapshot). Continue?",
+    "restoreEnvDone": "Environment variables restored: {{applied}} applied",
+    "restoreEnvFailed": "Partially restored: {{applied}} applied, {{failed}} failed",
+    "noEnvData": "This snapshot has no environment variable data (created by an older version or capture failed)"
   },
   "search": {
     "placeholder": "Search paths, variable names, profiles…",
@@ -326,7 +339,8 @@
     "copied": "Copied",
     "openPath": "Locate in PATH",
     "openVar": "Locate variable",
-    "openFailed": "Cannot locate this item in the current view (it may come from a historical snapshot)"
+    "openFailed": "Cannot locate this item in the current view (it may come from a historical snapshot)",
+    "resultCount": "{{count}} results"
   },
   "stats": {
     "healthTitle": "Database health",
@@ -426,6 +440,13 @@
     "chooseImport": "Choose import file",
     "fileFilter": "PathEditor sync bundle",
     "exporting": "Exporting…",
-    "importing": "Importing…"
+    "importing": "Importing…",
+    "wholeEntity": "Whole entity",
+    "field": {
+      "name": "Name",
+      "description": "Description",
+      "tags": "Tags",
+      "content": "Content"
+    }
   }
 }

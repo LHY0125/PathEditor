@@ -108,5 +108,56 @@ test('有事件时可展开快照详情，敏感值仍被掩码', async ({ page 
   await expect(page.getByText('••••••')).toBeVisible();
   await expect(page.getByText('已掩码')).toBeVisible();
   // 恢复按钮存在
-  await expect(page.getByRole('button', { name: '恢复到此快照' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '恢复 PATH' })).toBeVisible();
+});
+
+test('快照可单独恢复环境变量', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__historyPageFixture = {
+      items: [
+        {
+          uid: 'evt-env',
+          createdAt: Date.now(),
+          source: 'gui',
+          action: 'save',
+          hive: 'user',
+          target: 'Path',
+          result: 'success',
+          snapshotUid: 'snap-env',
+        },
+      ],
+      total: 1,
+    };
+    window.__confirmResponse = true;
+    window.__snapshotFixture = {
+      uid: 'snap-env',
+      createdAt: Date.now(),
+      kind: 'history',
+      system: [{ path: 'C:\\Before', enabled: true }],
+      user: [],
+      env: [
+        {
+          hive: 'user',
+          name: 'CARGO_HOME',
+          kind: 'String',
+          value: 'D:\\cargo',
+          revision: 'r1',
+          sensitive: false,
+          restorable: true,
+        },
+      ],
+    };
+  });
+  await page.reload();
+  await page.waitForTimeout(300);
+
+  await openHistoryTab(page);
+  await page.getByRole('button', { name: /保存 PATH/ }).click();
+  await page.waitForTimeout(300);
+
+  await expect(page.getByText('CARGO_HOME')).toBeVisible();
+  await expect(page.getByRole('button', { name: '恢复 PATH' })).toBeVisible();
+
+  await page.getByRole('button', { name: '恢复环境变量' }).click();
+  await expect(page.getByText(/环境变量已恢复：成功 1 项/)).toBeVisible();
 });

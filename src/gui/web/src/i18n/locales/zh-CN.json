@@ -48,7 +48,7 @@
     "addedLabel": "新增",
     "modifiedLabel": "修改",
     "removedLabel": "删除",
-    "modifiedAlwaysZero": "「修改」恒为 0：值发生变化即视为备份过期，计入「冲突」（见设计文档 K3）。",
+    "modifiedAlwaysZero": "「修改」恒为 0：值发生变化会按「备份过期」计入「冲突」。",
     "forceUnderreport": "注意：强制覆盖模式下被冲突覆盖的变量仍计入「冲突」，因此此处的改动量是低估值。",
     "summaryAdded": "新增 {{count}}",
     "summaryModified": "修改 {{count}}",
@@ -56,7 +56,10 @@
     "summaryConflicts": "冲突 {{count}}",
     "summarySeparator": "、",
     "summaryNoChange": "与当前环境变量无变化",
-    "summaryConflictSuffix": "；其中冲突项在默认模式下会中止恢复"
+    "summaryConflictSuffix": "；其中冲突项在默认模式下会中止恢复",
+    "techDetails": "技术说明与手工兜底",
+    "listTitle": "备份文件",
+    "backupCount": "{{count}} 个备份"
   },
   "envVar": {
     "name": "变量名",
@@ -79,7 +82,7 @@
     "typeUnsupported": "不支持的类型",
     "unsupportedValue": "(不支持的注册表类型)",
     "protectedHint": "系统内置变量，修改可能导致系统异常",
-    "pathGuide": "Path 请在「系统 PATH」/「用户 PATH」中编辑",
+    "pathGuide": "PATH 请在「系统 PATH」/「用户 PATH」中编辑",
     "pathGuideAction": "前往",
     "newVarTitle": "新建环境变量",
     "editVarTitle": "编辑环境变量",
@@ -139,7 +142,10 @@
   "merge": {
     "system": "系统",
     "user": "用户",
-    "source": "来源"
+    "source": "来源",
+    "readOnly": "合并预览为只读：展示系统与用户 PATH 去重后的生效顺序。",
+    "gotoSystem": "去系统 PATH",
+    "gotoUser": "去用户 PATH"
   },
   "error": {
     "code": {
@@ -181,12 +187,13 @@
     "saveSystemFailed": "系统 PATH: {{error}}",
     "saveUserFailed": "用户 PATH: {{error}}",
     "cleanChanged": "列表在清理期间已变化，请重新执行清理",
-    "saved_plaintext_backup": "已保存 — 备份为明文（密钥不可用）。修复密钥后运行 patheditor maintenance cleanup-legacy-backups --yes 可重新加密"
+    "saved_plaintext_backup": "已保存 — 备份为明文（密钥不可用）。修复密钥后运行 patheditor maintenance cleanup-legacy-backups --yes 可重新加密",
+    "toggleTheme": "切换主题"
   },
   "dialog": {
     "newPath": "新建路径",
     "editPath": "编辑路径",
-    "pathLabel": "请输入路径:",
+    "pathLabel": "路径",
     "importTarget": "导入目标",
     "importSystem": "仅系统变量",
     "importUser": "仅用户变量",
@@ -199,13 +206,13 @@
     "unsavedConfirm": "有未保存的修改，确定退出吗？",
     "importFilterName": "受支持格式",
     "importSystemCount": "系统变量: {{count}} 条",
-    "importUserCount": "用户变量: {{count}} 条"
+    "importUserCount": "用户变量: {{count}} 条",
+    "pathPlaceholder": "例如 C:\\\\Program Files\\\\Git\\\\cmd"
   },
   "analyze": {
     "title": "PATH 分析",
     "conflicts": "冲突检测",
     "tools": "工具清单",
-
     "history": "扫描历史",
     "historyHint": "选择两次扫描进行对比（先选的作为上次）",
     "historyEmpty": "还没有扫描历史",
@@ -243,7 +250,6 @@
   "history": {
     "title": "历史记录",
     "refresh": "刷新",
-
     "pinnedSnapshots": "固定快照",
     "notePlaceholder": "快照备注…",
     "saveNote": "保存备注",
@@ -273,7 +279,7 @@
       "drift": "注册表漂移",
       "save": "保存 PATH",
       "apply": "应用配置",
-      "restore": "恢复快照",
+      "restore": "恢复 PATH",
       "import": "导入",
       "envSet": "修改变量",
       "envAdd": "新增变量",
@@ -290,7 +296,7 @@
       "migration": "迁移",
       "sync": "同步"
     },
-    "restore": "恢复到此快照",
+    "restore": "恢复 PATH",
     "restoring": "正在恢复…",
     "restoreConfirm": "恢复会覆盖当前 PATH（系统与用户）。确定继续吗？",
     "restoreHint": "恢复前会自动备份当前 PATH。",
@@ -298,8 +304,8 @@
     "filterAllActions": "全部动作",
     "filterSource": "按来源筛选",
     "filterAllSources": "全部来源",
-    "filterHive": "按 hive 筛选",
-    "filterAllHives": "全部 hive",
+    "filterHive": "按区域筛选",
+    "filterAllHives": "全部区域",
     "undoLast": "撤销上次操作",
     "undoConfirm": "撤销会把 PATH 恢复到该操作执行前的状态。确定继续吗？",
     "undoHint": "跨会话撤销：从历史记录恢复，进程重启后仍可用",
@@ -310,7 +316,14 @@
     "errorCrypto": "历史库密钥不可用（可能更换了 Windows 账户或机器），历史暂时无法读取",
     "errorUnavailable": "历史不可用",
     "loadMore": "加载更多",
-    "showing": "已显示 {{shown}} / {{total}} 条"
+    "showing": "已显示 {{shown}} / {{total}} 条",
+    "exportCsv": "导出 CSV",
+    "exportHint": "把当前筛选结果导出为 CSV",
+    "restoreEnv": "恢复环境变量",
+    "restoreEnvConfirm": "将把 {{count}} 条环境变量恢复为该快照的状态（覆盖当前值，并删除快照中不存在的可写变量）。确定继续吗？",
+    "restoreEnvDone": "环境变量已恢复：成功 {{applied}} 项",
+    "restoreEnvFailed": "环境变量部分恢复：成功 {{applied}} 项，失败 {{failed}} 项",
+    "noEnvData": "该快照没有环境变量数据（可能由旧版本创建或采集失败）"
   },
   "search": {
     "placeholder": "搜索路径、变量名、配置…",
@@ -326,7 +339,8 @@
     "copied": "已复制",
     "openPath": "定位到 PATH",
     "openVar": "定位到变量",
-    "openFailed": "无法定位到当前位置（可能来自历史快照）"
+    "openFailed": "无法定位到当前位置（可能来自历史快照）",
+    "resultCount": "找到 {{count}} 条结果"
   },
   "stats": {
     "healthTitle": "数据库健康",
@@ -426,6 +440,13 @@
     "chooseImport": "选择导入文件",
     "fileFilter": "PathEditor 同步包",
     "exporting": "导出中…",
-    "importing": "导入中…"
+    "importing": "导入中…",
+    "wholeEntity": "整体内容",
+    "field": {
+      "name": "名称",
+      "description": "描述",
+      "tags": "标签",
+      "content": "内容"
+    }
   }
 }

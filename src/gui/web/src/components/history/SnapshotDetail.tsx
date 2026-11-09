@@ -182,7 +182,7 @@ export function SnapshotDetail({ snapshot }: Props) {
         </h4>
         {snapshot.env.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--app-fg-muted)' }}>
-            {t('history.noEntries')}
+            {t('history.noEnvData')}
           </p>
         ) : (
           <ul className="space-y-1">
@@ -198,7 +198,9 @@ export function SnapshotDetail({ snapshot }: Props) {
                     <span className="font-medium" style={{ color: 'var(--app-fg)' }}>
                       {v.name}
                     </span>
-                    <span style={{ color: 'var(--app-fg-muted)' }}>{v.hive}</span>
+                    <span style={{ color: 'var(--app-fg-muted)' }}>
+                      {v.hive === 'system' ? t('history.hiveSystem') : t('history.hiveUser')}
+                    </span>
                     {v.sensitive && (
                       <span
                         className="rounded px-1"

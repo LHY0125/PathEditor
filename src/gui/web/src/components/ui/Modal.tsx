@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { markModalOpen } from '@/core/modal-state';
 
 /** 可聚焦元素：与浏览器 Tab 顺序一致，排除 disabled 与 tabindex=-1。 */
@@ -32,6 +33,7 @@ interface ModalProps {
  * 业务内容由调用方决定。
  */
 export function Modal({ open, onClose, ariaLabel, dismissible = true, children }: ModalProps) {
+  const { t } = useTranslation();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
@@ -106,6 +108,17 @@ export function Modal({ open, onClose, ariaLabel, dismissible = true, children }
         onKeyDown={trapFocus}
       >
         {children}
+        {dismissible && (
+          <button
+            type="button"
+            className="modal-close"
+            aria-label={t('button.close')}
+            title={t('button.close')}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        )}
       </div>
     </div>
   );

@@ -269,6 +269,11 @@ export const backend = {
     }
     return content;
   },
+  /** 把快照中的环境变量恢复到注册表（与 PATH 恢复分开）。 */
+  historyRestoreEnvSnapshot: async (uid: string, force: boolean) =>
+    parseRestoreOutcome(
+      await parseCoreError(invoke<unknown>('history_restore_env_snapshot', { uid, force })),
+    ),
   /** 数据库健康状态（只读）。 */
   dbHealth: async () => parseDbHealth(await parseCoreError(invoke<unknown>('db_health'))),
   /** 设置快照备注（null 清空）。 */

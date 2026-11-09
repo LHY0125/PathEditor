@@ -26,6 +26,10 @@ pub struct BootstrapOptions {
     pub pending_path: Option<PathBuf>,
     /// 派生表水位文件；默认 `<config_dir>/derived.watermark`。
     pub derived_watermark: Option<PathBuf>,
+    /// 是否在启动时采集环境变量写入快照。
+    ///
+    /// 生产默认 `true`；测试关掉以保持不读真实注册表。
+    pub capture_env: bool,
     /// 是否在启动时比较注册表与 `current_snapshot`（漂移检测）。
     ///
     /// 生产默认 `true`；测试可关掉以保持不读真实注册表。
@@ -40,6 +44,7 @@ impl Default for BootstrapOptions {
             backup_dir: None,
             pending_path: None,
             derived_watermark: None,
+            capture_env: true,
             detect_drift: true,
             maintenance_meta_dir: None,
         }
@@ -67,6 +72,8 @@ pub struct BootstrapReport {
     pub fts_indexed: usize,
     /// 派生表重建结果 `(daily_stats 天数, 引用图边数)`；跳过时为 `None`
     pub derived_rebuilt: Option<(usize, usize)>,
+    /// 本次采集到的环境变量快照行数
+    pub env_captured: usize,
     /// 检测到的注册表漂移 hive（`system` / `user`）
     pub drift_fields: Vec<String>,
     /// 本次是否真的写入了 drift 事件（同一份外部状态只记一次）
@@ -93,7 +100,22 @@ pub fn initialize(
         .pending_path
         .clone()
         .unwrap_or_else(crate::app::disabled::default_pending_path);
-    match service::retry_pending_path_state_db_at(db, source, &pending_path) {
+    let captured_env = if options.capture_env {
+        match service::collect_env_snapshot_rows() {
+            Ok(rows) => rows,
+            Err(e) => {
+                report.warnings.push(format!(
+                    "采集环境变量快照失败（本次只含 PATH）: {}",
+                    e.message
+                ));
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    report.env_captured = captured_env.len();
+    match service::retry_pending_path_state_db_at(db, source, &pending_path, &captured_env) {
         Ok(_) => report.pending_retried = true,
         Err(e) => report
             .warnings
@@ -101,7 +123,7 @@ pub fn initialize(
     }
 
     // ③ 当前状态基线
-    match ensure_current_snapshot_baseline(db) {
+    match ensure_current_snapshot_baseline(db, captured_env) {
         Ok(created) => report.baseline_created = created,
         Err(e) => report
             .warnings
@@ -171,12 +193,15 @@ pub fn initialize(
 /// 确保 DB 里有一条 `kind=current` 快照；没有就用注册表当前状态建一条。
 ///
 /// 幂等：已有 current 时返回 `Ok(false)`。
-fn ensure_current_snapshot_baseline(db: &mut Db) -> Result<bool, CoreError> {
+fn ensure_current_snapshot_baseline(
+    db: &mut Db,
+    env: Vec<db::history::EnvValueRow>,
+) -> Result<bool, CoreError> {
     if db::history::has_current_snapshot(db)? {
         return Ok(false);
     }
     let snapshot = service::load_path_snapshot_db(db)?;
-    ensure_baseline_from(db, snapshot)
+    ensure_baseline_from_with_env(db, snapshot, env)
 }
 
 /// 用调用方给定的快照建立 `kind=current` 基线。
@@ -184,6 +209,15 @@ fn ensure_current_snapshot_baseline(db: &mut Db) -> Result<bool, CoreError> {
 /// 独立于注册表读取，供测试与需要显式快照的入口复用。
 /// 幂等：已有 current 时返回 `Ok(false)`。
 pub fn ensure_baseline_from(db: &mut Db, snapshot: crate::PathSnapshot) -> Result<bool, CoreError> {
+    ensure_baseline_from_with_env(db, snapshot, Vec::new())
+}
+
+/// [`ensure_baseline_from`] 的环境变量版本。
+pub fn ensure_baseline_from_with_env(
+    db: &mut Db,
+    snapshot: crate::PathSnapshot,
+    env: Vec<db::history::EnvValueRow>,
+) -> Result<bool, CoreError> {
     if db::history::has_current_snapshot(db)? {
         return Ok(false);
     }
@@ -195,7 +229,7 @@ pub fn ensure_baseline_from(db: &mut Db, snapshot: crate::PathSnapshot) -> Resul
             source: EventSource::Migration,
             system: snapshot.system,
             user: snapshot.user,
-            env: Vec::new(),
+            env,
             parent_uid: None,
         },
     )?;

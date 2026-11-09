@@ -17,6 +17,7 @@ export function StatusBar() {
   const envStatusIsError = useEnvStore((s) => s.statusIsError);
   const envIsLoading = useEnvStore((s) => s.isLoading);
   const isDark = useThemeStore((s) => s.isDark);
+  const toggleTheme = useThemeStore((s) => s.toggle);
 
   // 「全部变量」下展示环境变量操作的状态（create/remove/reveal 的成败）；
   // 其余 Tab 维持 PATH 语义不变。
@@ -52,7 +53,14 @@ export function StatusBar() {
         {!isAdmin && !pathCapabilities.canWriteUser && (
           <span className="statusbar-warn">{t('status.readonly_label')}</span>
         )}
-        <span className="statusbar-muted">{isDark ? t('status.dark') : t('status.light')}</span>
+        <button
+          type="button"
+          className="statusbar-theme"
+          title={t('status.toggleTheme')}
+          onClick={toggleTheme}
+        >
+          {isDark ? t('status.dark') : t('status.light')}
+        </button>
       </div>
     </footer>
   );

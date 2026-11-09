@@ -23,7 +23,7 @@ export function AnalyzeDialog({ open, onClose }: Props) {
     <Modal open={open} onClose={onClose} ariaLabel={t('analyze.title')}>
       <div className="flex flex-col" style={{ width: 680, maxWidth: '100%', maxHeight: '75vh' }}>
         <div
-          className="flex items-center justify-between px-1 py-2"
+          className="flex items-center justify-between px-1 py-2 pr-8"
           style={{ borderBottom: '1px solid var(--app-border)' }}
         >
           <h2 className="text-base font-semibold">{t('analyze.title')}</h2>

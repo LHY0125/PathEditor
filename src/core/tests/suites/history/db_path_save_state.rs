@@ -89,6 +89,7 @@ fn cli_save_updates_current_snapshot_changes_and_event() {
         }),
         None,
         &dir.path().join("pending_path_snapshot.json"),
+        Vec::new(),
     )
     .expect("保存失败");
 

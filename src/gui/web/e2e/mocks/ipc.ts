@@ -177,6 +177,7 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'history_get_snapshot': return window.__snapshotFixture ?? null;
           case 'history_get_current': return window.__snapshotFixture ?? null;
           case 'history_restore_snapshot': return { system: 'applied', user: 'applied', sidecar: 'saved' };
+          case 'history_restore_env_snapshot': return { applied: 1, skipped: 0, failures: [] };
           // 检索 / 统计 / 对比 / 引用图 / 冲突历史。
           // 降级判定与 history_list_events 同源：DB 不可用时抛 code=database。
           case 'search':

@@ -32,6 +32,7 @@ export function ToolBar(props: ToolBarProps) {
   const activeTab = useAppStore((s) => s.activeTab);
   const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const target = targetForTab(activeTab);
+  const isModified = useAppStore((s) => s.isModified);
   const canWrite = target === null ? false : canWriteTarget(isAdmin, pathCapabilities, target);
 
   return (
@@ -54,7 +55,7 @@ export function ToolBar(props: ToolBarProps) {
       <Button onClick={props.onExport}>{t('button.export')}</Button>
       {/* 未保存指示由状态栏的「● 未保存」（StatusBar）承担：
           按钮内只有强调底色与前景文字两色，任何标记都会与其中之一同色而不可辨。 */}
-      <Button variant="primary" disabled={!canWrite} onClick={props.onSave}>
+      <Button variant="primary" disabled={!canWrite || !isModified} onClick={props.onSave}>
         {t('button.savePath')}
       </Button>
       <ToolbarMenu

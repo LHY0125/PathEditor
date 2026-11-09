@@ -225,6 +225,17 @@ pub(crate) enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// 把快照中的环境变量恢复到注册表（与 PATH 分开）
+    HistoryRestoreEnv {
+        /// 快照 uid
+        uid: String,
+        /// 强制覆盖快照后被外部修改的变量
+        #[arg(long)]
+        force: bool,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
     /// 检查管理员权限
     CheckAdmin {
         /// 以 JSON 输出

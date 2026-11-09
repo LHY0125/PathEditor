@@ -63,3 +63,18 @@ pub(crate) fn history_pinned(json_out: bool) {
         );
     }
 }
+
+/// `history-restore-env <UID> [--force] [--json]`：只恢复环境变量，不触碰 PATH。
+pub(crate) fn history_restore_env(uid: String, force: bool, json_out: bool) {
+    let db = open_db_or_exit();
+    let outcome = path_editor_core::app::service::restore_env_snapshot(&db, &uid, force)
+        .unwrap_or_else(|e| exit_core_error(&e));
+    if json_out {
+        print_json(&outcome);
+        return;
+    }
+    println!("环境变量恢复完成：成功 {} 项", outcome.applied);
+    for failure in &outcome.failures {
+        eprintln!("失败: {failure}");
+    }
+}

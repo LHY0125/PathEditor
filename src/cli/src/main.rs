@@ -66,6 +66,9 @@ fn main() {
         }
         Command::HistoryPin { uid, off, json } => commands::history::history_pin(uid, off, json),
         Command::HistoryPinned { json } => commands::history::history_pinned(json),
+        Command::HistoryRestoreEnv { uid, force, json } => {
+            commands::history::history_restore_env(uid, force, json)
+        }
         Command::CheckAdmin { json } => cmd_check_admin(json),
         Command::Env(cmd) => match cmd {
             EnvCmd::List { system, user, json } => commands::env::cmd_env_list(system, user, json),

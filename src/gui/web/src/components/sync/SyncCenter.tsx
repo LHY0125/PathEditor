@@ -14,6 +14,15 @@ import { Button } from '@/components/ui/Button';
  * `imported` 分两种文案：有 `skippedUnsupported` 时必须**显式说出**
  * 「这些没同步」，否则「应用 N 条」会被理解成全部成功。
  */
+/** 冲突值展示：短 JSON 字符串去掉外层引号，长值仍按 maskConflictValue 折叠。 */
+function displayConflictValue(value: string | null): string {
+  const masked = maskConflictValue(value);
+  if (value !== null && value.length <= 60 && masked.startsWith('"') && masked.endsWith('"')) {
+    return masked.slice(1, -1);
+  }
+  return masked;
+}
+
 function renderNotice(
   notice: SyncNotice,
   t: (key: string, params?: Record<string, unknown>) => string,
@@ -258,23 +267,28 @@ export function SyncCenter() {
                 {list.map((c) => (
                   <li key={c.id} className="sync-conflict">
                     <div className="sync-conflict-head">
-                      <code>{c.entityUid}</code>
-                      {c.field !== null && <span>· {c.field}</span>}
+                      <span className="sync-conflict-field">
+                        {c.field === null
+                          ? t('sync.wholeEntity')
+                          : t(`sync.field.${c.field}`, { defaultValue: c.field })}
+                      </span>
                       <span className="sync-muted">
                         · {t('sync.fromDevice', { device: c.remoteDevice })}
                       </span>
                     </div>
                     <div className="sync-conflict-values">
-                      {t('sync.localValue')}: {maskConflictValue(c.localValue)}
+                      <span className="sync-value-label">{t('sync.localValue')}</span>
+                      <span className="sync-value">{displayConflictValue(c.localValue)}</span>
                     </div>
                     <div className="sync-conflict-values">
-                      {t('sync.remoteValue')}: {maskConflictValue(c.remoteValue)}
+                      <span className="sync-value-label">{t('sync.remoteValue')}</span>
+                      <span className="sync-value">{displayConflictValue(c.remoteValue)}</span>
                     </div>
                     {c.resolvedAt === null ? (
                       <div className="sync-conflict-actions">
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="secondary"
                           disabled={loading}
                           onClick={() => void resolve(c.id, 'local')}
                         >
@@ -282,7 +296,7 @@ export function SyncCenter() {
                         </Button>
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="secondary"
                           disabled={loading}
                           onClick={() => void resolve(c.id, 'remote')}
                         >

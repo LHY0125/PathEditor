@@ -91,7 +91,7 @@ export function EnvVarTable({
         <div className="px-2 py-1 flex-[2]">{t('envVar.value')}</div>
         <div className="w-24 px-2 py-1">{t('envVar.type')}</div>
         <div className="w-14 px-2 py-1">{t('envVar.source')}</div>
-        <div className="w-44 px-2 py-1">{t('envVar.actions')}</div>
+        <div className="w-52 px-2 py-1">{t('envVar.actions')}</div>
       </div>
       <div ref={parentRef} className="flex-1 overflow-auto">
         {rows.length === 0 && (
@@ -178,7 +178,7 @@ export function EnvVarTable({
                 <div className="w-14 env-var-cell env-var-cell-dim">
                   {meta.hive === 'system' ? t('merge.system') : t('merge.user')}
                 </div>
-                <div className="w-44 px-2 flex items-center gap-1">
+                <div className="w-52 px-2 flex items-center gap-1">
                   {meta.sensitive && (
                     <Button
                       size="sm"

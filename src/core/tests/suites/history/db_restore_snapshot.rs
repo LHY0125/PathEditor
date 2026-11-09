@@ -89,6 +89,7 @@ fn restore_snapshot_writes_registry_updates_current_and_keeps_old_snapshot() {
         &uid,
         EventSource::Restore,
         &dir.path().join("pending.json"),
+        Vec::new(),
     )
     .expect("恢复失败");
 

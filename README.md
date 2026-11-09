@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-801%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-804%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -405,13 +405,13 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 ### 检索与统计（v6 M2）
 
 - **全文检索**（FTS5）：索引 PATH 条目串、环境变量名、配置名/描述/标签。
-  **绝不索引环境变量的值** —— 明文只存在于加密库里，不进任何派生表。
+  **绝不索引环境变量的值** —— 值只存在于本机 SQLite（不加密）与快照行里，不进任何派生表。
   命中处由 Rust 侧产出高亮片段，前端只渲染，不重新匹配。
 - **统计仪表盘**：「当前状态」（条目数 / 平均长度）与「最近 30 天」历史序列**分两块显示**——
   某一天的条目数是「那天最后一次保存时」的值，不是「现在」，混在一起会误导。
   另有最常改变的变量与配置应用次数。
-- **快照对比**：任选两条历史事件对比，**系统与用户 PATH 分开**呈现新增 / 删除 / 移动 / 启用状态变化。
-  ⚠️ 环境变量对比**尚未提供**（本版本未纳入范围），界面上会显式说明，而不是让你以为「env 没变化」。
+- **快照对比**：任选两条历史事件对比，**系统与用户 PATH 分开**呈现新增 / 删除 / 移动 / 启用状态变化；
+  环境变量段列出新增 / 删除 / 修改的变量名与变化类型，**不展示变量值**。
 - **引用图**：解析 `%VAR%` 引用关系，展示「谁引用了它」（删除前的影响范围）、
   「它依赖了谁」（递归）与循环引用。
 - **冲突历史**：每次路径扫描持久化，支持两次扫描的差异对比与「首次 / 最近出现」。
@@ -446,10 +446,10 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 > **同步包是增量包**：导出只包含「尚未导出的变更」。新设备需要**从第一份包开始按顺序应用**；
 > 只拿到后续包时，配置引用的快照不在本地，整包会被拒绝（`SyncFormat`，退出码 1）。
 
-> **密钥与备份**：数据库密钥由 Windows DPAPI 保护，存放在 `~/.patheditor/keys/db.key.dpapi`，
-> 文件权限限定为当前用户 + SYSTEM。
-> **该密钥与当前 Windows 用户绑定**，换用户或换机器后历史无法解密；PathEditor 不会静默重建空库。
-> 环境变量备份从本版起写 `.pebak`（DPAPI 加密），`env backups` 会带 `encrypted` 标志。
+> **密钥与备份**：数据库本身**不加密**（标准 SQLite），历史与快照可用任意 SQLite 工具读取；
+> `.pebak` 备份的密钥材料由 Windows DPAPI 保护，存放在 `~/.patheditor/keys/db.key.dpapi`，
+> 文件权限限定为当前用户 + SYSTEM，**与当前 Windows 用户绑定**：换用户或换机器后旧 `.pebak` 无法解密。
+> 环境变量备份从 v6 起写 `.pebak`（DPAPI 加密），`env backups` 会带 `encrypted` 标志。
 > 遗留的 `env_backup_*.json` 仍可一次性恢复，**读取时会在 stderr 打印明文警告**（GUI 记入日志）。
 > **降级回落**：若密钥文件不可用（拿不到 DPAPI 密钥），备份会回落到明文 `.json` 并**在 stderr 打印警告**——
 > 这是为了让备份功能在密钥故障时依然可用，但意味着此时磁盘上会新增明文敏感文件。
@@ -576,8 +576,8 @@ npx tauri build
 | 数据库    | SQLite（rusqlite bundled + FTS5）         |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (41 files / 448) + Playwright (55) |
-| Rust 测试 | cargo test (353 passed / 2 ignored)       |
+| 前端测试  | Vitest (41 files / 448) + Playwright (59) |
+| Rust 测试 | cargo test (356 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 

@@ -10,10 +10,10 @@
 //! - **广播**：任一 hive 注册表写成功后由服务层广播。
 
 use crate::app::disabled;
-use crate::db::history::{self, NewSnapshot, SnapshotKind};
+use crate::db::history::{self, EnvValueRow, NewSnapshot, SnapshotKind};
 use crate::db::history_sink::DbHistory;
 use crate::db::{search, Db};
-use crate::domain::env_var::EnvHive;
+use crate::domain::env_var::{is_sensitive, EnvHive, EnvValueKind};
 use crate::domain::error::{CoreError, ErrorCode};
 use crate::domain::history::{EventAction, EventResult, EventSource, HistoryEvent, HistorySink};
 use crate::domain::path_entry::{PathEntry, PathSnapshot};
@@ -467,6 +467,7 @@ fn persist_current_snapshot(
     db: &mut Db,
     source: EventSource,
     snapshot: PathSnapshot,
+    env: Vec<EnvValueRow>,
 ) -> Result<String, CoreError> {
     let uid = history::insert_snapshot(
         db,
@@ -475,7 +476,7 @@ fn persist_current_snapshot(
             source,
             system: snapshot.system,
             user: snapshot.user,
-            env: Vec::new(),
+            env,
             parent_uid: None,
         },
     )?;
@@ -516,9 +517,10 @@ pub fn save_path_with_db_io(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
     pending_path: &std::path::Path,
+    env: Vec<EnvValueRow>,
 ) -> Result<ApplyOutcome, CoreError> {
     // 先 best-effort 补写上次失败留下的 pending；失败不阻断本次保存。
-    if let Err(e) = retry_pending_path_state_db_at(db, source, pending_path) {
+    if let Err(e) = retry_pending_path_state_db_at(db, source, pending_path, &env) {
         log::warn!("补写上次待落盘的当前快照失败: {}", e.message);
     }
 
@@ -531,7 +533,7 @@ pub fn save_path_with_db_io(
             source,
             system: before.system.clone(),
             user: before.user.clone(),
-            env: Vec::new(),
+            env: env.clone(),
             parent_uid: None,
         },
     ) {
@@ -563,7 +565,7 @@ pub fn save_path_with_db_io(
             },
         };
         let pending_snapshot = current.clone();
-        match persist_current_snapshot(db, source, current) {
+        match persist_current_snapshot(db, source, current, env) {
             Ok(uid) => {
                 index_snapshot_by_uid(db, &uid);
                 // 本次 current 已落库，任何陈旧 pending 都被取代。
@@ -602,6 +604,38 @@ pub fn save_path_with_db_io(
     Ok(outcome)
 }
 
+/// 采集当前全部可恢复环境变量，转换为快照行（PATH 除外，包含明文值）。
+///
+/// 供快照写入路径使用；采集失败由调用方降级为空列表（不要让环境变量读取
+/// 失败阻断 PATH 保存）。
+pub fn collect_env_snapshot_rows() -> Result<Vec<EnvValueRow>, CoreError> {
+    let payload = backup::collect_env_backup()?;
+    let mut rows = Vec::new();
+    for (hive, vars) in [
+        ("system", payload.hives.system),
+        ("user", payload.hives.user),
+    ] {
+        for var in vars {
+            let kind = match var.kind {
+                EnvValueKind::String => "String",
+                EnvValueKind::ExpandString => "ExpandString",
+                // collect_env_backup 已过滤 Unsupported；这里防御性跳过
+                EnvValueKind::Unsupported => continue,
+            };
+            rows.push(EnvValueRow {
+                hive: hive.to_string(),
+                name: var.name.clone(),
+                kind: kind.to_string(),
+                value: Some(var.value),
+                revision: var.revision,
+                sensitive: is_sensitive(&var.name),
+                restorable: true,
+            });
+        }
+    }
+    Ok(rows)
+}
+
 /// 保存 PATH 并把当前状态提交到 DB（生产入口）。
 pub fn save_path_with_db(
     db: &mut Db,
@@ -609,6 +643,10 @@ pub fn save_path_with_db(
     system: Option<PathHiveWrite>,
     user: Option<PathHiveWrite>,
 ) -> Result<ApplyOutcome, CoreError> {
+    let env = collect_env_snapshot_rows().unwrap_or_else(|e| {
+        log::warn!("采集环境变量快照失败（本次快照只含 PATH）: {}", e.message);
+        Vec::new()
+    });
     save_path_with_db_io(
         &RealPathHiveIo,
         db,
@@ -616,6 +654,7 @@ pub fn save_path_with_db(
         system,
         user,
         &disabled::default_pending_path(),
+        env,
     )
 }
 
@@ -623,14 +662,23 @@ mod profile;
 mod restore;
 
 pub use profile::{apply_profile, apply_profile_io};
-pub use restore::{restore_snapshot, restore_snapshot_io};
+pub use restore::{
+    restore_env_snapshot, restore_env_snapshot_in_stores, restore_snapshot, restore_snapshot_io,
+};
 
 /// 把文件 pending 快照补写进 DB 的当前快照（DB 模式）。
 pub fn retry_pending_path_state_db(
     db: &mut Db,
     source: EventSource,
 ) -> Result<ApplyOutcome, CoreError> {
-    retry_pending_path_state_db_at(db, source, &disabled::default_pending_path())
+    let env = collect_env_snapshot_rows().unwrap_or_else(|e| {
+        log::warn!(
+            "采集环境变量快照失败（pending 补写只含 PATH）: {}",
+            e.message
+        );
+        Vec::new()
+    });
+    retry_pending_path_state_db_at(db, source, &disabled::default_pending_path(), &env)
 }
 
 /// [`retry_pending_path_state_db`] 的显式 pending 路径版本（测试注入 `TempDir`）。
@@ -638,6 +686,7 @@ pub fn retry_pending_path_state_db_at(
     db: &mut Db,
     source: EventSource,
     pending_path: &std::path::Path,
+    env: &[EnvValueRow],
 ) -> Result<ApplyOutcome, CoreError> {
     let Some(pending) = disabled::load_pending_path_snapshot_at(pending_path)? else {
         return Ok(ApplyOutcome {
@@ -655,7 +704,7 @@ pub fn retry_pending_path_state_db_at(
             source,
             system: pending.system,
             user: pending.user,
-            env: Vec::new(),
+            env: env.to_vec(),
             parent_uid: None,
         },
     )?;
