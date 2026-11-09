@@ -20,6 +20,9 @@ mod db_schema_v2;
 #[path = "suites/schema/db_health.rs"]
 mod db_health;
 
+#[path = "suites/schema/db_migration_restore.rs"]
+mod db_migration_restore;
+
 #[path = "suites/schema/db_migration_backup.rs"]
 mod db_migration_backup;
 

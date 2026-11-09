@@ -23,6 +23,7 @@ import { EnvVarToolbar } from '@/components/env-list/EnvVarToolbar';
 import { NewEnvVarDialog } from '@/components/dialogs/NewEnvVarDialog';
 import { EditEnvVarDialog } from '@/components/dialogs/EditEnvVarDialog';
 import { EnvBackupDialog } from '@/components/dialogs/EnvBackupDialog';
+import { RulesDialog } from '@/components/dialogs/RulesDialog';
 import { HistoryPanel } from '@/components/history/HistoryPanel';
 import { SearchPanel } from '@/components/search/SearchPanel';
 import { StatsPanel } from '@/components/stats/StatsPanel';
@@ -63,6 +64,7 @@ export function AppShell() {
   const [profilesOpen, setProfilesOpen] = useState(false);
   const [newVarOpen, setNewVarOpen] = useState(false);
   const [envBackupOpen, setEnvBackupOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   // 选中与编辑都只存稳定键；meta 一律从快照派生 —— 冲突刷新后重试自动
   // 携带新 revision，快照换代后悬空引用自动失效。
   // 选中键放 store（而不是局部 state）：搜索结果需要跨面板定位到变量。
@@ -350,8 +352,10 @@ export function AppShell() {
               void i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
             }}
             onProfiles={() => setProfilesOpen(true)}
+            onRules={() => setRulesOpen(true)}
             onAnalyze={() => setAnalyzeOpen(true)}
             onDarkMode={() => useThemeStore.getState().toggle()}
+            onSystemTheme={() => useThemeStore.getState().setMode('system')}
           />
         </div>
       )}
@@ -455,6 +459,7 @@ export function AppShell() {
       <AnalyzeDialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} />
       <ProfileDialog open={profilesOpen} onClose={() => setProfilesOpen(false)} />
       {/* 恢复改的是注册表：成功后刷新环境变量表格，否则界面与实际不一致。 */}
+      <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />
       <EnvBackupDialog
         open={envBackupOpen}
         onClose={() => setEnvBackupOpen(false)}

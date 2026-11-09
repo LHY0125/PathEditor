@@ -1,9 +1,10 @@
-use crate::commands::db_state::{with_db_mut, DbState};
+use crate::commands::db_state::{with_db_mut, with_optional_db_mut, DbState};
+use path_editor_core::app::service;
 use path_editor_core::db::history_sink;
 use path_editor_core::domain::env_var::{EnvHive, EnvValueKind, EnvVarSnapshot, RevealedValue};
 use path_editor_core::domain::error::CoreError;
 use path_editor_core::domain::history::{EventResult, EventSource};
-use path_editor_core::platform::registry::{self, WriteOutcome};
+use path_editor_core::platform::registry;
 use tauri::State;
 
 /// 一次读取两个 hive 的全部环境变量元数据（不含敏感明文）。
@@ -57,8 +58,23 @@ pub fn update_env_var(
     name: String,
     value: String,
     expected_revision: String,
-) -> Result<WriteOutcome, CoreError> {
-    registry::update_env_var(hive, &name, &value, &expected_revision)
+    state: State<'_, DbState>,
+) -> Result<service::EnvMutationOutcome, CoreError> {
+    with_optional_db_mut(&state, "update_env_var", |db| match db {
+        Some(db) => service::update_env_with_db(
+            db,
+            EventSource::Gui,
+            hive,
+            &name,
+            &value,
+            &expected_revision,
+        ),
+        None => Ok(service::EnvMutationOutcome {
+            write: registry::update_env_var(hive, &name, &value, &expected_revision)?,
+            before_snapshot_uid: None,
+            after_snapshot_uid: None,
+        }),
+    })
 }
 
 /// 新建变量，`kind` 决定写入的注册表类型；同名或保护名单变量会被拒绝。
@@ -75,8 +91,16 @@ pub fn create_env_var(
     name: String,
     value: String,
     kind: EnvValueKind,
-) -> Result<WriteOutcome, CoreError> {
-    registry::create_env_var(hive, &name, &value, kind)
+    state: State<'_, DbState>,
+) -> Result<service::EnvMutationOutcome, CoreError> {
+    with_optional_db_mut(&state, "create_env_var", |db| match db {
+        Some(db) => service::create_env_with_db(db, EventSource::Gui, hive, &name, &value, kind),
+        None => Ok(service::EnvMutationOutcome {
+            write: registry::create_env_var(hive, &name, &value, kind)?,
+            before_snapshot_uid: None,
+            after_snapshot_uid: None,
+        }),
+    })
 }
 
 /// 删除变量；revision 不匹配则拒绝（code=`Conflict`），变量保持原样。
@@ -91,6 +115,16 @@ pub fn delete_env_var(
     hive: EnvHive,
     name: String,
     expected_revision: String,
-) -> Result<WriteOutcome, CoreError> {
-    registry::delete_env_var(hive, &name, &expected_revision)
+    state: State<'_, DbState>,
+) -> Result<service::EnvMutationOutcome, CoreError> {
+    with_optional_db_mut(&state, "delete_env_var", |db| match db {
+        Some(db) => {
+            service::delete_env_with_db(db, EventSource::Gui, hive, &name, &expected_revision)
+        }
+        None => Ok(service::EnvMutationOutcome {
+            write: registry::delete_env_var(hive, &name, &expected_revision)?,
+            before_snapshot_uid: None,
+            after_snapshot_uid: None,
+        }),
+    })
 }

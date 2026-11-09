@@ -45,6 +45,11 @@ export function EnvVarToolbar({
   const hiveFilter = useEnvStore((s) => s.hiveFilter);
   const setHiveFilter = useEnvStore((s) => s.setHiveFilter);
   const revealed = useEnvStore((s) => s.revealed);
+  const envUndo = useEnvStore((s) => s.envUndo);
+  const envRedo = useEnvStore((s) => s.envRedo);
+  const undoEnv = useEnvStore((s) => s.undoEnv);
+  const redoEnv = useEnvStore((s) => s.redoEnv);
+  const busy = useEnvStore((s) => s.isSaving);
 
   // 权限已由 Rust 算好：此处只读 canEdit / canDelete，不自行判断类型。
   // 敏感变量在打码状态下不允许进入编辑（Spec：必须先「显示」）。
@@ -68,6 +73,21 @@ export function EnvVarToolbar({
         {t('envVar.refresh')}
       </Button>
       <Button onClick={onBackup}>{t('envBackup.title')}</Button>
+      <span className="toolbar-sep" aria-hidden="true" />
+      <Button
+        variant="ghost"
+        disabled={busy || envUndo.length === 0}
+        onClick={() => void undoEnv()}
+      >
+        {t('button.undo')}
+      </Button>
+      <Button
+        variant="ghost"
+        disabled={busy || envRedo.length === 0}
+        onClick={() => void redoEnv()}
+      >
+        {t('button.redo')}
+      </Button>
       <div className="flex-1" />
       <input
         type="text"

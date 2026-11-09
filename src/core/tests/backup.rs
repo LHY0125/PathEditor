@@ -20,6 +20,9 @@ mod db_change_log;
 #[path = "suites/backup/db_change_log_wiring.rs"]
 mod db_change_log_wiring;
 
+#[path = "suites/backup/db_rules.rs"]
+mod db_rules;
+
 #[path = "suites/backup/db_profiles.rs"]
 mod db_profiles;
 

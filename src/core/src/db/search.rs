@@ -38,6 +38,8 @@ pub struct SearchHit {
     pub snippet: String,
     /// 排名（越小越相关）
     pub rank: f64,
+    /// 关联实体时间（Unix 毫秒；无法解析时 0）
+    pub created_at: i64,
 }
 
 /// `search_fts` 当前行数；启动引导据此判断是否需要首次全量构建。
@@ -60,7 +62,9 @@ pub fn index_needs_rebuild(db: &Db) -> Result<bool, CoreError> {
               JOIN snapshots s ON s.id = p.snapshot_id WHERE s.deleted_at IS NULL)
          + (SELECT count(*) FROM env_values e
               JOIN snapshots s ON s.id = e.snapshot_id WHERE s.deleted_at IS NULL)
-         + (SELECT count(*) FROM profiles WHERE deleted_at IS NULL)",
+         + (SELECT count(*) FROM profiles WHERE deleted_at IS NULL)
+         + (SELECT count(*) FROM snapshots
+              WHERE deleted_at IS NULL AND note IS NOT NULL AND trim(note) <> '')",
         [],
         |r| r.get(0),
     )?;
@@ -130,6 +134,23 @@ fn index_all_tx(tx: &Transaction) -> Result<usize, CoreError> {
     for row in rows {
         let (uid, hive, name) = row.map_err(|e| super::db_err("fts_env", e))?;
         insert_tx(tx, &name, "envName", &format!("{uid}#{hive}#{name}"))?;
+        n += 1;
+    }
+    drop(stmt);
+
+    // 快照备注（备注是用户主动写的检索锚点）
+    let mut stmt = tx
+        .prepare(
+            "SELECT uid, note FROM snapshots
+              WHERE deleted_at IS NULL AND note IS NOT NULL AND trim(note) <> ''",
+        )
+        .map_err(|e| super::db_err("fts_notes", e))?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| super::db_err("fts_notes", e))?;
+    for row in rows {
+        let (uid, note) = row.map_err(|e| super::db_err("fts_notes", e))?;
+        insert_tx(tx, &note, "snapshotNote", &uid)?;
         n += 1;
     }
     drop(stmt);
@@ -300,7 +321,17 @@ pub fn search(db: &Db, query: &str, limit: u32) -> Result<Vec<SearchHit>, CoreEr
     let mut stmt = db.prepare(
         "SELECT kind, ref_uid, content,
                     snippet(search_fts, 0, '[', ']', '…', 12),
-                    rank
+                    rank,
+                    CASE
+                      WHEN kind = 'profile' THEN COALESCE(
+                        (SELECT updated_at FROM profiles p WHERE p.uid = search_fts.ref_uid), 0)
+                      WHEN kind = 'snapshotNote' THEN COALESCE(
+                        (SELECT created_at FROM snapshots s WHERE s.uid = search_fts.ref_uid), 0)
+                      ELSE COALESCE(
+                        (SELECT created_at FROM snapshots s
+                          WHERE s.uid = substr(search_fts.ref_uid, 1,
+                                               instr(search_fts.ref_uid, '#') - 1)), 0)
+                    END
                FROM search_fts
               WHERE search_fts MATCH ?1
               ORDER BY rank
@@ -314,6 +345,7 @@ pub fn search(db: &Db, query: &str, limit: u32) -> Result<Vec<SearchHit>, CoreEr
                 content: r.get(2)?,
                 snippet: r.get(3)?,
                 rank: r.get(4)?,
+                created_at: r.get(5)?,
             })
         })
         .map_err(|e| super::db_err("fts_query", e))?;

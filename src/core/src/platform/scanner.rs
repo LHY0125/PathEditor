@@ -18,10 +18,13 @@ pub struct ConflictEntry {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolGroup {
     pub dir: String,
     pub exists: bool,
     pub exes: Vec<String>,
+    /// 该目录是否已在当前 PATH 中（winget/choco 等探测目录可能不在）
+    pub in_path: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -103,6 +106,18 @@ fn enumerate_paths(paths: &[String]) -> Result<Vec<DirScan>, CoreError> {
     Ok(results)
 }
 
+/// winget / Chocolatey 的常见 shim 目录（仅返回存在的候选由调用方判断）。
+fn package_manager_dirs() -> Vec<String> {
+    let mut dirs = Vec::new();
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        dirs.push(format!("{local}\\Microsoft\\WinGet\\Links"));
+    }
+    if let Ok(program_data) = std::env::var("PROGRAMDATA") {
+        dirs.push(format!("{program_data}\\chocolatey\\bin"));
+    }
+    dirs
+}
+
 /// 只枚举一次目录，同时生成冲突和工具清单结果。
 pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, CoreError> {
     let query_lower = query.to_lowercase();
@@ -128,6 +143,28 @@ pub fn scan_paths(paths: Vec<String>, query: String) -> Result<ScanResult, CoreE
             dir,
             exists,
             exes: filtered,
+            in_path: true,
+        });
+    }
+
+    // winget / Chocolatey 的 shim 目录可能没有加入 PATH：单独探测并标记，
+    // 让「装了但命令不可用」在分析面板里可见，而不是静默消失。
+    let in_path_lower: Vec<String> = paths.iter().map(|p| p.to_ascii_lowercase()).collect();
+    for dir in package_manager_dirs() {
+        if in_path_lower.iter().any(|p| p == &dir.to_ascii_lowercase()) || !Path::new(&dir).is_dir()
+        {
+            continue;
+        }
+        let mut exes = list_exes(&dir);
+        if !query_lower.is_empty() {
+            exes.retain(|name| name.to_lowercase().contains(&query_lower));
+        }
+        exes.sort();
+        tools.push(ToolGroup {
+            dir,
+            exists: true,
+            exes,
+            in_path: false,
         });
     }
 

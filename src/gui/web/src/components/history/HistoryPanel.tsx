@@ -6,6 +6,7 @@ import { errorMessage } from '@/core/error';
 import { Button } from '@/components/ui/Button';
 import { useHistoryStore } from '@/store/history-store';
 import { CompareDialog } from './CompareDialog';
+import { MultiCompareDialog } from './MultiCompareDialog';
 import { SnapshotDetail } from './SnapshotDetail';
 
 function formatTime(ms: number): string {
@@ -33,6 +34,7 @@ export function HistoryPanel() {
   const loadMore = useHistoryStore((s) => s.loadMore);
   const selectEvent = useHistoryStore((s) => s.selectEvent);
   const restore = useHistoryStore((s) => s.restore);
+  const restoreFull = useHistoryStore((s) => s.restoreFull);
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
   const undoLast = useHistoryStore((s) => s.undoLast);
@@ -61,6 +63,7 @@ export function HistoryPanel() {
   // 对比的对象是快照，而事件只是「哪两个快照可比」的入口）
   const [compareSel, setCompareSel] = useState<string[]>([]);
   const [comparePair, setComparePair] = useState<[string, string] | null>(null);
+  const [compareMany, setCompareMany] = useState<string[] | null>(null);
   /** 选到第三条时提示「最早的一条已被挤掉」，避免静默改变选择。 */
   const [compareNotice, setCompareNotice] = useState(false);
   // 结果按快照 uid 归属：切换快照后旧结果自然不再显示，无需在 effect 里 setState。
@@ -120,6 +123,17 @@ export function HistoryPanel() {
     if (!confirmed) return;
     await restore(uid).catch(() => {
       // 错误已由 store 写入 `error`，条幅会显示
+    });
+  };
+
+  /** 一次性恢复整份快照（PATH + env）。 */
+  const handleRestoreFull = async (uid: string) => {
+    const confirmed = await backend
+      .confirmDialog(t('history.restoreFullConfirm'))
+      .catch(() => false);
+    if (!confirmed) return;
+    await restoreFull(uid).catch(() => {
+      // 错误已由 store 写入 `error`
     });
   };
 
@@ -319,11 +333,6 @@ export function HistoryPanel() {
                           setCompareNotice(false);
                           return prev.filter((x) => x !== uid);
                         }
-                        // 最多选两个：再选第三个时挤掉最早的那个，并明确告知
-                        if (prev.length >= 2) {
-                          setCompareNotice(true);
-                          return [...prev.slice(1), uid];
-                        }
                         return [...prev, uid];
                       });
                     }}
@@ -395,12 +404,20 @@ export function HistoryPanel() {
               <SnapshotDetail snapshot={detail} />
               <div className="border-t px-3 py-2" style={{ borderColor: 'var(--app-border)' }}>
                 <Button
+                  variant="primary"
+                  className="w-full"
+                  disabled={restoring}
+                  onClick={() => void handleRestoreFull(detail.uid)}
+                >
+                  {restoring ? t('history.restoring') : t('history.restoreFull')}
+                </Button>
+                <Button
                   variant="ghost"
                   className="w-full"
                   disabled={restoring}
                   onClick={() => void handleRestore(detail.uid)}
                 >
-                  {restoring ? t('history.restoring') : t('history.restore')}
+                  {t('history.restore')}
                 </Button>
                 {detail.env.length > 0 && (
                   <Button
@@ -459,6 +476,10 @@ export function HistoryPanel() {
           )}
         </div>
       </div>
+
+      {compareMany !== null && (
+        <MultiCompareDialog uids={compareMany} onClose={() => setCompareMany(null)} />
+      )}
 
       {comparePair !== null && (
         <CompareDialog

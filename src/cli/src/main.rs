@@ -13,7 +13,8 @@ use commands::path::{
     cmd_add, cmd_backup, cmd_clean, cmd_edit, cmd_list, cmd_move, cmd_remove, cmd_toggle,
 };
 use commands::profile::{
-    profile_apply, profile_delete, profile_list, profile_load, profile_rename, profile_save,
+    profile_apply, profile_delete, profile_diff, profile_list, profile_load, profile_rename,
+    profile_save,
 };
 use commands::scan::{cmd_check_admin, cmd_conflicts, cmd_scan, cmd_scan_diff, cmd_scan_history};
 
@@ -68,6 +69,9 @@ fn main() {
         Command::HistoryPinned { json } => commands::history::history_pinned(json),
         Command::HistoryRestoreEnv { uid, force, json } => {
             commands::history::history_restore_env(uid, force, json)
+        }
+        Command::HistoryRestoreFull { uid, json } => {
+            commands::history::history_restore_full(uid, json)
         }
         Command::CheckAdmin { json } => cmd_check_admin(json),
         Command::Env(cmd) => match cmd {
@@ -137,6 +141,7 @@ fn main() {
             ProfileCmd::Load { name } => profile_load(name),
             ProfileCmd::Apply { name } => profile_apply(name),
             ProfileCmd::Delete { name } => profile_delete(name),
+            ProfileCmd::Diff { left, right, json } => profile_diff(left, right, json),
             ProfileCmd::Rename { old, new } => profile_rename(old, new),
         },
         Command::Sync(cmd) => match cmd {
@@ -150,6 +155,10 @@ fn main() {
             MaintenanceCmd::Prune { dry_run } => commands::maintenance::maintenance_prune(dry_run),
             MaintenanceCmd::Vacuum => commands::maintenance::maintenance_vacuum(),
             MaintenanceCmd::Health { json } => commands::maintenance::maintenance_health(json),
+            MaintenanceCmd::Backups { json } => commands::maintenance::maintenance_backups(json),
+            MaintenanceCmd::RestoreBackup { file, yes } => {
+                commands::maintenance::maintenance_restore_backup(file, yes)
+            }
             MaintenanceCmd::CleanupLegacyBackups { dry_run, yes } => {
                 commands::maintenance::maintenance_cleanup_legacy(dry_run, yes)
             }

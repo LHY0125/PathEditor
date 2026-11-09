@@ -7,6 +7,7 @@ pub mod fs;
 pub mod history;
 pub mod profiles;
 pub mod registry;
+pub mod rules;
 pub mod scanner;
 pub mod service;
 pub mod sync;

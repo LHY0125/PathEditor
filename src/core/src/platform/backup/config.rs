@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{ENV_BACKUP_KEEP, PATH_BACKUP_KEEP};
+use crate::domain::error::{CoreError, ErrorCode};
 
 pub(crate) fn config_file_path() -> PathBuf {
     if let Some(file) = std::env::var_os("PATHEDITOR_CONFIG_FILE") {
@@ -121,4 +122,46 @@ pub fn env_backup_dir() -> PathBuf {
 /// 获取备份目录路径
 pub fn get_appdata_dir() -> String {
     backup_base_dir().to_string_lossy().to_string()
+}
+
+/// 写入一个 `key = value` 配置项，保留其它行与注释。
+///
+/// 原子写：先写临时文件再 rename，避免半截配置导致下次启动回落默认值。
+pub(crate) fn write_config_value(key: &str, value: &str) -> Result<(), CoreError> {
+    let path = config_file_path();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut replaced = false;
+    let mut lines: Vec<String> = existing
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with(';') || trimmed.starts_with('#') {
+                return line.to_string();
+            }
+            match trimmed.split_once('=') {
+                Some((k, _)) if k.trim() == key => {
+                    replaced = true;
+                    format!("{key} = {value}")
+                }
+                _ => line.to_string(),
+            }
+        })
+        .collect();
+    if !replaced {
+        lines.push(format!("{key} = {value}"));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            CoreError::new(
+                ErrorCode::Io,
+                "write_config",
+                format!("创建配置目录失败: {e}"),
+            )
+        })?;
+    }
+    let tmp = path.with_extension("ini.tmp");
+    std::fs::write(&tmp, lines.join("\r\n") + "\r\n")
+        .map_err(|e| CoreError::new(ErrorCode::Io, "write_config", format!("写入配置失败: {e}")))?;
+    std::fs::rename(&tmp, &path)
+        .map_err(|e| CoreError::new(ErrorCode::Io, "write_config", format!("替换配置失败: {e}")))
 }

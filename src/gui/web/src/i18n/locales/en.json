@@ -100,7 +100,9 @@
     },
     "noResults": "No matching variables",
     "empty": "No environment variables",
-    "deleteConfirmWithRefs": "Delete {{name}}? {{count}} variable(s) reference it via %{{name}}%; those references will break. This cannot be undone."
+    "deleteConfirmWithRefs": "Delete {{name}}? {{count}} variable(s) reference it via %{{name}}%; those references will break. This cannot be undone.",
+    "undoDone": "Environment change undone",
+    "redoDone": "Environment change redone"
   },
   "table": {
     "path": "Path",
@@ -127,7 +129,8 @@
     "retry": "Retry",
     "close": "Close",
     "savePath": "Save",
-    "cancelAndClose": "Cancel"
+    "cancelAndClose": "Cancel",
+    "systemTheme": "Follow system theme"
   },
   "menu": {
     "label": "More actions",
@@ -137,7 +140,8 @@
     "analyze": "Analyze",
     "profiles": "Profiles",
     "language": "Language",
-    "help": "Help"
+    "help": "Help",
+    "rules": "Path rules"
   },
   "merge": {
     "system": "System",
@@ -229,7 +233,8 @@
     "searchPlaceholder": "Search executable name...",
     "conflictCount": "{{count}} file conflict(s) found",
     "notExists": "(not found)",
-    "error": "Analysis failed"
+    "error": "Analysis failed",
+    "notInPath": "Not in PATH"
   },
   "profile": {
     "title": "PATH Profiles",
@@ -239,10 +244,17 @@
     "delete": "Delete",
     "rename": "Rename",
     "noProfiles": "No saved profiles",
-    "applyConfirm": "This will overwrite current PATH with profile \"{{name}}\" and write to registry. Confirm?",
+    "applyConfirm": "This will overwrite current PATH and environment variables with profile \"{{name}}\" (deleting writable variables absent from the profile) and write to the registry. Confirm?",
     "deleteConfirm": "Delete profile \"{{name}}\"?",
     "selectProfile": "Select a profile",
-    "empty": "(empty)"
+    "empty": "(empty)",
+    "compare": "Compare",
+    "compareWith": "Choose a profile to compare",
+    "comparePick": "Choose another profile…",
+    "comparing": "Comparing…",
+    "closeCompare": "Back",
+    "tagsDiff": "Tags added: {{added}}; removed: {{removed}}",
+    "envDiff": "Env vars added: {{added}}; removed: {{removed}}; modified: {{modified}}"
   },
   "help": {
     "content": "PathEditor v{{version}} — Windows System Environment Variable (PATH) Editor\n\nFeatures:\n• Create/Edit/Delete path entries\n• Move Up/Down to adjust priority\n• One-click cleanup of invalid & duplicate paths\n• Import/Export JSON, CSV, TXT formats\n• Full Undo/Redo support\n\nShortcuts:\n• Ctrl+N New\n• Ctrl+S Save\n• Ctrl+Z Undo\n• Ctrl+Y Redo\n• Ctrl+F Search\n• Delete Delete selected\n• F1 Help\n\nAuthor: 刘航宇\nGitHub: https://github.com/LHY0125/PathEditor"
@@ -323,7 +335,9 @@
     "restoreEnvConfirm": "This will restore {{count}} environment variables to this snapshot (overwriting current values and deleting writable variables absent from the snapshot). Continue?",
     "restoreEnvDone": "Environment variables restored: {{applied}} applied",
     "restoreEnvFailed": "Partially restored: {{applied}} applied, {{failed}} failed",
-    "noEnvData": "This snapshot has no environment variable data (created by an older version or capture failed)"
+    "noEnvData": "This snapshot has no environment variable data (created by an older version or capture failed)",
+    "restoreFull": "Restore full snapshot (PATH + env)",
+    "restoreFullConfirm": "This will restore both PATH and environment variables, overwriting current values and deleting writable variables absent from the snapshot. Continue?"
   },
   "search": {
     "placeholder": "Search paths, variable names, profiles…",
@@ -340,7 +354,14 @@
     "openPath": "Locate in PATH",
     "openVar": "Locate variable",
     "openFailed": "Cannot locate this item in the current view (it may come from a historical snapshot)",
-    "resultCount": "{{count}} results"
+    "resultCount": "{{count}} results",
+    "kindSnapshotNote": "Snapshot note",
+    "savedSearches": "Saved:",
+    "filterKind": "Filter by type",
+    "allKinds": "All types",
+    "removeSaved": "Remove saved search \"{{query}}\"",
+    "from": "From",
+    "to": "To"
   },
   "stats": {
     "healthTitle": "Database health",
@@ -364,11 +385,19 @@
     "scanSummary": "{{runs}} scans · {{rate}}% with conflicts",
     "errorDegraded": "Stats unavailable (degraded mode)",
     "errorLoadFailed": "Failed to load statistics",
-    "retry": "Retry"
+    "retry": "Retry",
+    "retentionTitle": "Retention",
+    "retentionSnapshotDays": "Snapshot keep days",
+    "retentionSnapshotMax": "Snapshot max count",
+    "retentionEventDays": "Event keep days",
+    "retentionSave": "Save",
+    "retentionSaved": "Retention settings saved",
+    "retentionInvalid": "Days and counts must be greater than 0",
+    "healthOpenDir": "Open data folder"
   },
   "compare": {
     "title": "Compare snapshots",
-    "loading": "Comparing…",
+    "loading": "Computing differences…",
     "close": "Close",
     "noChange": "No changes",
     "moved": "{{path}} (position {{from}} → {{to}})",
@@ -386,7 +415,12 @@
     "selectForCompare": "Select this snapshot for comparison",
     "open": "Compare selected ({{count}}/2)",
     "clearSelection": "Clear selection",
-    "maxTwo": "Only two snapshots can be compared; the earliest selection was cleared"
+    "maxTwo": "Only two snapshots can be compared; the earliest selection was cleared",
+    "openMany": "N-way compare ({{count}})",
+    "manyTitle": "N-way snapshot comparison",
+    "base": "Base: {{uid}}",
+    "pathsSummary": "System PATH +{{sysAdded}}/−{{sysRemoved}}, user PATH +{{userAdded}}/−{{userRemoved}}",
+    "envSummary": "Env vars +{{added}} / −{{removed}} / ~{{modified}}"
   },
   "refs": {
     "title": "References for \"{{name}}\"",
@@ -447,6 +481,28 @@
       "description": "Description",
       "tags": "Tags",
       "content": "Content"
-    }
+    },
+    "selectedCount": "{{count}} selected",
+    "takeLocalBatch": "Keep local (batch)",
+    "takeRemoteBatch": "Take remote (batch)",
+    "clearSelection": "Clear selection",
+    "selectConflict": "Select conflict {{id}}",
+    "remoteContent": "Raw remote content",
+    "noRemoteContent": "No remote content (legacy record)",
+    "loading": "Loading…"
+  },
+  "rules": {
+    "title": "PATH rules",
+    "name": "Rule name",
+    "contains": "Contains",
+    "action": "Action",
+    "moveTop": "Move to top",
+    "remove": "Remove",
+    "add": "Add rule",
+    "enabled": "Enable rule {{name}}",
+    "empty": "No rules yet",
+    "preview": "Preview",
+    "apply": "Apply to draft",
+    "previewSummary": "{{hits}} paths matched (not written to registry)"
   }
 }

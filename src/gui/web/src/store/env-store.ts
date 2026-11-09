@@ -69,6 +69,9 @@ interface EnvState {
   selectedKey: string | null;
   /** 请求表格滚动到某个变量键；消费后置回 null。 */
   scrollToKey: string | null;
+  /** 会话内环境变量撤销/重做栈（只保存快照 uid，值不进入前端内存）。 */
+  envUndo: { before: string; after: string | null }[];
+  envRedo: { before: string; after: string | null }[];
 
   load: () => Promise<void>;
   setHiveFilter: (filter: HiveFilter) => void;
@@ -84,6 +87,8 @@ interface EnvState {
   remove: (meta: EnvVarMeta) => Promise<boolean>;
   reveal: (meta: EnvVarMeta) => Promise<void>;
   hide: (meta: EnvVarMeta) => void;
+  undoEnv: () => Promise<void>;
+  redoEnv: () => Promise<void>;
   hasDrafts: () => boolean;
   setStatusMessage: (message: string) => void;
   setStatusError: (message: string) => void;
@@ -101,6 +106,18 @@ export const useEnvStore = create<EnvState>((set, get) => {
     await get().load();
   };
 
+  /** 记录一次成功写入的前后快照，供会话内撤销/重做。 */
+  const rememberMutation = (outcome: Awaited<ReturnType<typeof backend.updateEnvVar>>) => {
+    if (!outcome.beforeSnapshotUid) return;
+    set((state) => ({
+      envUndo: [
+        ...state.envUndo,
+        { before: outcome.beforeSnapshotUid as string, after: outcome.afterSnapshotUid },
+      ],
+      envRedo: [],
+    }));
+  };
+
   return {
     snapshot: null,
     revealed: new Map(),
@@ -112,6 +129,8 @@ export const useEnvStore = create<EnvState>((set, get) => {
     statusIsError: false,
     selectedKey: null,
     scrollToKey: null,
+    envUndo: [],
+    envRedo: [],
 
     load: async () => {
       const seq = ++loadSeq;
@@ -175,7 +194,9 @@ export const useEnvStore = create<EnvState>((set, get) => {
       if (value === undefined) return false;
       set({ isSaving: true });
       try {
-        const { backup } = await backend.updateEnvVar(meta.hive, meta.name, value, meta.revision);
+        const result = await backend.updateEnvVar(meta.hive, meta.name, value, meta.revision);
+        const { backup } = result.write;
+        rememberMutation(result);
         const draft = new Map(get().draft);
         draft.delete(envVarKey(meta));
         set({
@@ -211,7 +232,9 @@ export const useEnvStore = create<EnvState>((set, get) => {
       }
       set({ isSaving: true });
       try {
-        const { backup } = await backend.createEnvVar(hive, name, value, kind);
+        const result = await backend.createEnvVar(hive, name, value, kind);
+        const { backup } = result.write;
+        rememberMutation(result);
         set({ isSaving: false, statusIsError: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
@@ -228,7 +251,9 @@ export const useEnvStore = create<EnvState>((set, get) => {
     remove: async (meta) => {
       set({ isSaving: true });
       try {
-        const { backup } = await backend.deleteEnvVar(meta.hive, meta.name, meta.revision);
+        const result = await backend.deleteEnvVar(meta.hive, meta.name, meta.revision);
+        const { backup } = result.write;
+        rememberMutation(result);
         set({ isSaving: false, statusIsError: false, statusMessage: savedStatusMessage(backup) });
         await get().load();
         return true;
@@ -243,6 +268,54 @@ export const useEnvStore = create<EnvState>((set, get) => {
           });
         }
         return false;
+      }
+    },
+
+    undoEnv: async () => {
+      const stack = get().envUndo;
+      const record = stack[stack.length - 1];
+      if (!record) return;
+      set({ isSaving: true });
+      try {
+        await backend.historyRestoreEnvSnapshot(record.before, true);
+        set({
+          isSaving: false,
+          statusIsError: false,
+          statusMessage: i18n.t('envVar.undoDone'),
+          envUndo: stack.slice(0, -1),
+          envRedo: [...get().envRedo, record],
+        });
+        await get().load();
+      } catch (error) {
+        set({
+          isSaving: false,
+          statusIsError: true,
+          statusMessage: `${i18n.t('status.error')}: ${describeError(error)}`,
+        });
+      }
+    },
+
+    redoEnv: async () => {
+      const stack = get().envRedo;
+      const record = stack[stack.length - 1];
+      if (!record?.after) return;
+      set({ isSaving: true });
+      try {
+        await backend.historyRestoreEnvSnapshot(record.after, true);
+        set({
+          isSaving: false,
+          statusIsError: false,
+          statusMessage: i18n.t('envVar.redoDone'),
+          envRedo: stack.slice(0, -1),
+          envUndo: [...get().envUndo, record],
+        });
+        await get().load();
+      } catch (error) {
+        set({
+          isSaving: false,
+          statusIsError: true,
+          statusMessage: `${i18n.t('status.error')}: ${describeError(error)}`,
+        });
       }
     },
 

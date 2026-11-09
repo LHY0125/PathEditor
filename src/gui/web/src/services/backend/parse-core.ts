@@ -56,6 +56,8 @@ export interface ToolGroup {
   dir: string;
   exists: boolean;
   exes: string[];
+  /** 是否已在当前 PATH 中（winget/choco 探测目录可能为 false）。 */
+  inPath?: boolean;
 }
 
 export interface ScanResult {
@@ -506,6 +508,36 @@ export function parseBackupOutcome(value: unknown, label: string): BackupOutcome
  * 若两层文案互相包含，删掉本层守卫后下一层抛出的错误会「撞上」同一个断言，
  * 该分支就变成不可证的死代码 —— 测试同样按分支分别断言。
  */
+/** 环境变量写入 + 前后快照 uid（对应 core 的 `EnvMutationOutcome`）。 */
+export interface EnvMutationOutcome {
+  write: WriteOutcome;
+  beforeSnapshotUid: string | null;
+  afterSnapshotUid: string | null;
+}
+
+/** 校验 `EnvMutationOutcome`。 */
+export function parseEnvMutationOutcome(value: unknown, label: string): EnvMutationOutcome {
+  // 旧后端 / 未接线的 mock：保持原先「undefined = 无需备份」的语义
+  if (value === undefined) {
+    return { write: { backup: 'skipped' }, beforeSnapshotUid: null, afterSnapshotUid: null };
+  }
+  if (!isRecord(value)) throw new Error(`${label} 返回了无效契约`);
+  // 旧后端 / 未接线 mock 可能没有这两个字段：按 null 处理
+  const before = value.beforeSnapshotUid === undefined ? null : value.beforeSnapshotUid;
+  const after = value.afterSnapshotUid === undefined ? null : value.afterSnapshotUid;
+  if (
+    (before !== null && typeof before !== 'string') ||
+    (after !== null && typeof after !== 'string')
+  ) {
+    throw new Error(`${label} 的 snapshot uid 必须是字符串或 null`);
+  }
+  return {
+    write: parseWriteOutcome(value.write, label),
+    beforeSnapshotUid: before,
+    afterSnapshotUid: after,
+  };
+}
+
 export function parseWriteOutcome(value: unknown, label: string): WriteOutcome {
   if (value === undefined) return { backup: 'skipped' };
   if (!isRecord(value) || !('backup' in value)) {

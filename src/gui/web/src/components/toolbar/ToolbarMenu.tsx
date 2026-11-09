@@ -8,8 +8,10 @@ interface ToolbarMenuProps {
   onClean: () => void;
   onAnalyze: () => void;
   onProfiles: () => void;
+  onRules: () => void;
   onLanguage: () => void;
   onDarkMode: () => void;
+  onSystemTheme: () => void;
   onHelp: () => void;
   onCancel: () => void;
 }
@@ -54,6 +56,12 @@ export function ToolbarMenu(props: ToolbarMenuProps) {
               label: isDark ? t('button.lightMode') : t('button.darkMode'),
               onSelect: props.onDarkMode,
             },
+            {
+              key: 'theme-system',
+              label: t('button.systemTheme'),
+              onSelect: props.onSystemTheme,
+            },
+            { key: 'rules', label: t('menu.rules'), onSelect: props.onRules },
             { key: 'lang', label: t('menu.language'), onSelect: props.onLanguage },
             { key: 'help', label: t('menu.help'), onSelect: props.onHelp, shortcut: 'F1' },
           ],

@@ -178,6 +178,10 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
           case 'history_get_current': return window.__snapshotFixture ?? null;
           case 'history_restore_snapshot': return { system: 'applied', user: 'applied', sidecar: 'saved' };
           case 'history_restore_env_snapshot': return { applied: 1, skipped: 0, failures: [] };
+          case 'history_restore_full_snapshot': return {
+            path: { system: 'applied', user: 'applied', sidecar: 'saved' },
+            env: { applied: 1, skipped: 0, failures: [] }
+          };
           // 检索 / 统计 / 对比 / 引用图 / 冲突历史。
           // 降级判定与 history_list_events 同源：DB 不可用时抛 code=database。
           case 'search':
@@ -353,10 +357,21 @@ export function createIpcMock(overrides: IpcOverrides = {}) {
               };
             }
             return {
-              backup: { created: { path: 'C:\\\\backups\\\\env_backup_x.json', encrypted: true } },
+              write: {
+                backup: {
+                  created: { path: 'C:\\\\backups\\\\env_backup_x.json', encrypted: true }
+                }
+              },
+              beforeSnapshotUid: 'env-before',
+              afterSnapshotUid: 'env-after'
             };
-          case 'create_env_var': return { backup: 'skipped' };
-          case 'delete_env_var': return { backup: 'skipped' };
+          case 'create_env_var':
+          case 'delete_env_var':
+            return {
+              write: { backup: 'skipped' },
+              beforeSnapshotUid: 'env-before',
+              afterSnapshotUid: 'env-after'
+            };
           default: throw new Error('Unexpected invoke: ' + cmd);
         }
       }

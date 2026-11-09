@@ -159,28 +159,41 @@ describe('formatSize', () => {
   });
 });
 
-describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => {
+describe('backend 写方法返回 EnvMutationOutcome 的运行时形状校验', () => {
+  const mutation = (write: Record<string, unknown>) => ({
+    write,
+    beforeSnapshotUid: null,
+    afterSnapshotUid: null,
+  });
   it('合法 {backup:{created}} 通过并白名单构造', async () => {
-    mockInvoke.mockResolvedValue({
-      backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
-    });
+    mockInvoke.mockResolvedValue(
+      mutation({
+        backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
+      }),
+    );
 
     const outcome = await backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1');
 
     expect(outcome).toEqual({
-      backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
+      write: { backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } } },
+      beforeSnapshotUid: null,
+      afterSnapshotUid: null,
     });
   });
 
   it("合法 'skipped' 与 {failed} 通过", async () => {
-    mockInvoke.mockResolvedValue({ backup: 'skipped' });
+    mockInvoke.mockResolvedValue(mutation({ backup: 'skipped' }));
     await expect(backend.createEnvVar('user', 'N', 'v', 'string')).resolves.toEqual({
-      backup: 'skipped',
+      write: { backup: 'skipped' },
+      beforeSnapshotUid: null,
+      afterSnapshotUid: null,
     });
 
-    mockInvoke.mockResolvedValue({ backup: { failed: '磁盘满' } });
+    mockInvoke.mockResolvedValue(mutation({ backup: { failed: '磁盘满' } }));
     await expect(backend.deleteEnvVar('user', 'N', 'rev')).resolves.toEqual({
-      backup: { failed: '磁盘满' },
+      write: { backup: { failed: '磁盘满' } },
+      beforeSnapshotUid: null,
+      afterSnapshotUid: null,
     });
   });
 
@@ -188,12 +201,14 @@ describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => 
     mockInvoke.mockResolvedValue(undefined);
 
     await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).resolves.toEqual({
-      backup: 'skipped',
+      write: { backup: 'skipped' },
+      beforeSnapshotUid: null,
+      afterSnapshotUid: null,
     });
   });
 
   it('缺少 backup 字段时拒绝 —— 命中入口守卫本身（不只是「也会抛错」）', async () => {
-    mockInvoke.mockResolvedValue({ applied: 1 });
+    mockInvoke.mockResolvedValue({ write: { applied: 1 } });
 
     // 断言必须能区分两个分支：入口守卫的文案不带 `.backup`，枚举层的带。
     // 若只断言 /WriteOutcome/，删掉入口守卫后 `{applied:1}` 会落到枚举层抛出
@@ -207,7 +222,7 @@ describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => 
   });
 
   it('backup 为非法形状（未知键）时拒绝 —— 命中枚举层（文案带 .backup）', async () => {
-    mockInvoke.mockResolvedValue({ backup: { something: 'else' } });
+    mockInvoke.mockResolvedValue({ write: { backup: { something: 'else' } } });
 
     await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.toThrow(
       /WriteOutcome\.backup/,
@@ -215,7 +230,7 @@ describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => 
   });
 
   it('backup.created 非字符串时拒绝', async () => {
-    mockInvoke.mockResolvedValue({ backup: { created: 42 } });
+    mockInvoke.mockResolvedValue({ write: { backup: { created: 42 } } });
 
     await expect(backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1')).rejects.toThrow(
       /WriteOutcome\.backup/,
@@ -223,11 +238,15 @@ describe('backend 写方法返回 WriteOutcome 的运行时形状校验', () => 
   });
 
   it('白名单构造：上游多余字段不透传', async () => {
-    mockInvoke.mockResolvedValue({ backup: 'skipped', extra: 'payload' });
+    mockInvoke.mockResolvedValue({
+      write: { backup: 'skipped', extra: 'payload' },
+      extra: 'payload',
+    });
 
     const outcome = await backend.updateEnvVar('user', 'JAVA_HOME', 'v', 'rev-1');
 
-    expect(Object.keys(outcome)).toEqual(['backup']);
+    expect(Object.keys(outcome)).toEqual(['write', 'beforeSnapshotUid', 'afterSnapshotUid']);
+    expect(Object.keys(outcome.write)).toEqual(['backup']);
   });
 });
 

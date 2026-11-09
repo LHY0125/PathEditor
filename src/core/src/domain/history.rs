@@ -52,6 +52,8 @@ pub enum EventAction {
     RevealEnv,
     /// 注册表被本工具之外修改（漂移检测；只记事件，不建快照）
     Drift,
+    /// 从历史快照恢复环境变量
+    EnvRestore,
 }
 
 /// 事件结果。

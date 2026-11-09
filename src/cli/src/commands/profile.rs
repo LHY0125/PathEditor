@@ -123,3 +123,41 @@ pub(crate) fn profile_rename(old_name: String, new_name: String) {
         ));
     }
 }
+
+/// `profile diff <LEFT> <RIGHT> [--json]`
+pub(crate) fn profile_diff(left: String, right: String, json_out: bool) {
+    let db = open_db_or_exit();
+    let diff =
+        db_profiles::diff_profiles(&db, &left, &right).unwrap_or_else(|e| exit_core_error(&e));
+    if json_out {
+        print_json(&diff);
+        return;
+    }
+    println!("配置差异：{left} ↔ {right}");
+    println!(
+        "系统 PATH：新增 {} / 删除 {} / 移动 {} / 启用变化 {}",
+        diff.paths.system.added.len(),
+        diff.paths.system.removed.len(),
+        diff.paths.system.reordered.len(),
+        diff.paths.system.toggled.len()
+    );
+    println!(
+        "用户 PATH：新增 {} / 删除 {} / 移动 {} / 启用变化 {}",
+        diff.paths.user.added.len(),
+        diff.paths.user.removed.len(),
+        diff.paths.user.reordered.len(),
+        diff.paths.user.toggled.len()
+    );
+    println!(
+        "环境变量：新增 {} / 删除 {} / 修改 {}",
+        diff.paths.env_added.len(),
+        diff.paths.env_removed.len(),
+        diff.paths.env_modified.len()
+    );
+    if !diff.tags_added.is_empty() {
+        println!("新增标签：{}", diff.tags_added.join(", "));
+    }
+    if !diff.tags_removed.is_empty() {
+        println!("删除标签：{}", diff.tags_removed.join(", "));
+    }
+}

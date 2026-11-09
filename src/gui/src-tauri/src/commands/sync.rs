@@ -62,6 +62,36 @@ pub fn sync_list_conflicts(
     })
 }
 
+/// 读取单条冲突详情（含远端内容）。
+#[tauri::command(async)]
+pub fn sync_conflict_detail(
+    id: i64,
+    state: State<'_, DbState>,
+) -> Result<path_editor_core::db::sync::conflict::SyncConflictDetail, CoreError> {
+    with_db(&state, "sync_conflict_detail", |db| {
+        path_editor_core::db::sync::conflict::conflict_detail(db, id)
+    })
+}
+
+/// 批量解决冲突（单事务）。
+#[tauri::command(async)]
+pub fn sync_resolve_conflicts(
+    ids: Vec<i64>,
+    resolution: String,
+    state: State<'_, DbState>,
+) -> Result<(), CoreError> {
+    let Some(r) = Resolution::parse(&resolution) else {
+        return Err(CoreError::new(
+            path_editor_core::ErrorCode::InvalidValue,
+            "sync_resolve_conflicts",
+            "解决方式只能是 local 或 remote",
+        ));
+    };
+    with_db_mut(&state, "sync_resolve_conflicts", |db| {
+        path_editor_core::db::sync::conflict::resolve_conflicts(db, &ids, r)
+    })
+}
+
 /// 解决一条冲突。`resolution` 取 `local` / `remote`。
 #[tauri::command(async)]
 pub fn sync_resolve_conflict(

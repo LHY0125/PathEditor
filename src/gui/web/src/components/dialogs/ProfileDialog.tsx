@@ -64,6 +64,13 @@ export function ProfileDialog({ open, onClose }: Props) {
             onApply={profiles.handleApply}
             onRename={profiles.handleRename}
             onDelete={profiles.handleDelete}
+            others={profiles.profiles
+              .map((p) => p.name)
+              .filter((name) => name !== profiles.selected)}
+            diff={profiles.diff}
+            diffLoading={profiles.diffLoading}
+            onCompare={profiles.handleCompare}
+            onClearDiff={profiles.clearDiff}
           />
         </div>
       </div>

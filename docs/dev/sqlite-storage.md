@@ -10,7 +10,7 @@
 - **本机盐**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+reserved(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。前 32 字节是旧版 `db_key` 的遗留位置，现只作保留位；**保持 49 字节与文件名不变**，否则磁盘上既有 `.pebak` 的 `payload_hash` 会全部失配。
 - **数据目录**：`PATHEDITOR_DATA_DIR` 仅供 CLI 子进程测试把库重定向到临时目录；生产不设置。
 - **快照内容**：每条快照同时保存 PATH（`path_entries`）与环境变量（`env_values`）；环境变量值以**明文**落库（数据库本身不加密），敏感标记只控制 UI 掩码。旧版本快照的 env 为空，恢复 env 时会被拒绝，避免把当前变量删光。
-- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 5`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
+- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 6`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
 
 ## 表
 
@@ -50,6 +50,12 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 已导出的 `changes` 保留 90 天、已解决的 `sync_conflicts` 保留 30 天；GUI 每次启动执行一次，CLI `maintenance prune`。**绝不删除 `exported_at IS NULL` 的待导出队列**。
 
 快照按 `snapshot_keep_days`（默认 365 天）与 `snapshot_keep_max`（默认 500 条）清理，事件按 `event_keep_days`（默认 730 天）清理，键写在 `~/.patheditor/config.ini`。以下快照**永不删除**：`pinned = 1`、`app_state.current_snapshot_id` 指向的、被 `profile_revisions` 引用的、被 `backups` 引用的。被删快照只把 `events.snapshot_id` 置 NULL，审计事件保留。`maintenance vacuum` 先清理再 `wal_checkpoint(TRUNCATE)` + `VACUUM`。
+
+## 规则引擎（v6）
+
+`rules` 保存条件/动作/优先级/启用状态；`rule_hits` 记录每次应用时每条规则的命中条数。
+规则只作用于草稿预览与应用，不自行写注册表。当前支持 `pathContains` 条件与
+`moveTop` / `remove` 两种动作。
 
 ## 迁移前备份与健康检查
 

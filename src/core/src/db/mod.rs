@@ -26,6 +26,7 @@ pub mod history_sink;
 pub mod maintenance;
 pub mod profiles;
 pub mod refs;
+pub mod rules;
 pub mod scan_history;
 pub mod schema;
 pub mod search;
@@ -152,6 +153,11 @@ impl Db {
             if current < 5 {
                 tx.execute_batch(schema::DDL_V5)
                     .map_err(|e| db_err("ddl_v5", e))?;
+            }
+            // v6：规则引擎（rules / rule_hits）
+            if current < 6 {
+                tx.execute_batch(schema::DDL_V6)
+                    .map_err(|e| db_err("ddl_v6", e))?;
             }
             // 版本号写在**所有分支之后**：v1→v2 的升级路径同样要落版本，
             // 写在 `if current < 1` 内部会让升级后 user_version 仍停在 1，
@@ -385,4 +391,98 @@ pub fn open_and_migrate() -> Result<Db, CoreError> {
     let mut db = open_default()?;
     db.migrate_to_current()?;
     Ok(db)
+}
+
+/// 一份迁移前备份（`<db>.pre-v{n}.bak`）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrationBackup {
+    /// 文件路径
+    pub path: String,
+    /// 备份时的 schema 版本
+    pub version: u32,
+    /// 字节数
+    pub bytes: u64,
+}
+
+/// 列出同目录下全部迁移前备份，按版本升序。
+pub fn list_migration_backups(db_path: &Path) -> Result<Vec<MigrationBackup>, CoreError> {
+    let Some(dir) = db_path.parent() else {
+        return Ok(Vec::new());
+    };
+    let Some(name) = db_path.file_name().and_then(|n| n.to_str()) else {
+        return Ok(Vec::new());
+    };
+    let prefix = format!("{name}.pre-v");
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let Some(rest) = file_name.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Some(version) = rest
+            .strip_suffix(".bak")
+            .and_then(|v| v.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        out.push(MigrationBackup {
+            path: entry.path().display().to_string(),
+            version,
+            bytes,
+        });
+    }
+    out.sort_by_key(|item| item.version);
+    Ok(out)
+}
+
+/// 用迁移前备份替换当前数据库。
+///
+/// **必须先关闭 PathEditor/GUI**：本函数不做进程占用检测，直接覆盖主文件。
+/// 覆盖前会把当前库复制成 `<db>.pre-restore.bak`，失败则中止。
+pub fn restore_migration_backup(
+    db_path: &Path,
+    backup: &Path,
+    confirmed: bool,
+) -> Result<(), CoreError> {
+    if !confirmed {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "restore_migration_backup",
+            "替换数据库需要显式确认（--yes）",
+        ));
+    }
+    let db_name = db_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let backup_name = backup.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if db_path.parent() != backup.parent()
+        || !backup_name.starts_with(&format!("{db_name}.pre-v"))
+        || !backup_name.ends_with(".bak")
+    {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "restore_migration_backup",
+            "备份必须是同目录下的 <数据库名>.pre-vN.bak",
+        ));
+    }
+    let header = std::fs::read(backup)
+        .map_err(|e| CoreError::new(ErrorCode::Io, "restore_migration_backup", e.to_string()))?;
+    if !header.starts_with(b"SQLite format 3\0") {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "restore_migration_backup",
+            "备份不是 SQLite 数据库",
+        ));
+    }
+    // 先保底保存当前库，任何一步失败都不动主文件。
+    let safety = db_path.with_file_name(format!("{db_name}.pre-restore.bak"));
+    std::fs::copy(db_path, &safety)
+        .map_err(|e| CoreError::new(ErrorCode::Io, "restore_migration_backup", e.to_string()))?;
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = db_path.with_file_name(format!("{db_name}{suffix}"));
+        let _ = std::fs::remove_file(sidecar);
+    }
+    std::fs::copy(backup, db_path)
+        .map_err(|e| CoreError::new(ErrorCode::Io, "restore_migration_backup", e.to_string()))?;
+    Ok(())
 }

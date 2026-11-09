@@ -484,7 +484,9 @@ fn restore_env_snapshot_applies_env_only_without_touching_path() {
     sys.seed("OBSOLETE", "old", REG_SZ);
     usr.seed("MY_TOKEN", "secret", REG_EXPAND_SZ);
 
-    let outcome = super::restore_env_snapshot_in_stores(&sys, &usr, &db, &uid, false).unwrap();
+    let outcome =
+        super::restore_env_snapshot_in_stores(&sys, &usr, &mut db, EventSource::Gui, &uid, false)
+            .unwrap();
     assert_eq!(outcome.applied, 1, "只应删除 OBSOLETE");
     assert!(outcome.failures.is_empty(), "{:?}", outcome.failures);
 
@@ -524,7 +526,9 @@ fn restore_env_snapshot_rejects_snapshot_without_env_data() {
 
     let sys = MemoryHive::new(true);
     let usr = MemoryHive::new(true);
-    let err = super::restore_env_snapshot_in_stores(&sys, &usr, &db, &uid, false).unwrap_err();
+    let err =
+        super::restore_env_snapshot_in_stores(&sys, &usr, &mut db, EventSource::Gui, &uid, false)
+            .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidValue);
     assert!(
         err.message.contains("不包含环境变量数据"),

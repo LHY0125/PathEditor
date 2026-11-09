@@ -40,6 +40,7 @@ import {
   parseBackupPath,
   parseCoreError,
   parseEnvBackupInfo,
+  parseEnvMutationOutcome,
   parseEnvVarSnapshot,
   isRecord,
   parsePathCapabilities,
@@ -51,20 +52,25 @@ import {
   parseScanResult,
   parseScanRunDiff,
   parseScanRuns,
-  parseWriteOutcome,
 } from './parse-core';
 import type { PathEntryWrite } from './parse-core';
-import type { EventFilter, ProfileView } from './parse-data';
+import type { EventFilter, ProfileView, RuleAction } from './parse-data';
 import {
+  parseCompareMany,
   parseCompareResult,
   parseDbHealth,
+  parseRetentionSettings,
   parseCycleList,
   parseDashboard,
   parseEventPage,
+  parseProfileDiff,
   parseProfileList,
+  parseRuleApplyResult,
+  parseRules,
   parseRefEdges,
   parseSearchHits,
   parseSnapshotView,
+  parseSyncConflictDetail,
   parseSyncConflicts,
   parseSyncExportReport,
   parseSyncImportReport,
@@ -175,6 +181,8 @@ export const backend = {
    *
    * 与 CLI 的 `profile apply` 共用同一编排；记账失败不影响保存结果。
    */
+  profileDiff: async (left: string, right: string) =>
+    parseProfileDiff(await parseCoreError(invoke<unknown>('profile_diff', { left, right }))),
   profileApply: async (name: string) =>
     parseApplyOutcome(await parseCoreError(invoke<unknown>('profile_apply', { name }))),
   listAllEnvVars: async () => parseEnvVarSnapshot(await invoke<unknown>('list_all_env_vars')),
@@ -190,19 +198,19 @@ export const backend = {
    * `parseWriteOutcome` 收口，不靠 TS 断言。
    */
   updateEnvVar: async (hive: EnvHive, name: string, value: string, expectedRevision: string) =>
-    parseWriteOutcome(
+    parseEnvMutationOutcome(
       await parseCoreError(
         invoke<unknown>('update_env_var', { hive, name, value, expectedRevision }),
       ),
       'update_env_var',
     ),
   createEnvVar: async (hive: EnvHive, name: string, value: string, kind: EnvValueKind) =>
-    parseWriteOutcome(
+    parseEnvMutationOutcome(
       await parseCoreError(invoke<unknown>('create_env_var', { hive, name, value, kind })),
       'create_env_var',
     ),
   deleteEnvVar: async (hive: EnvHive, name: string, expectedRevision: string) =>
-    parseWriteOutcome(
+    parseEnvMutationOutcome(
       await parseCoreError(invoke<unknown>('delete_env_var', { hive, name, expectedRevision })),
       'delete_env_var',
     ),
@@ -269,11 +277,51 @@ export const backend = {
     }
     return content;
   },
+  /** 一次性恢复整份快照（PATH + env）。 */
+  historyRestoreFullSnapshot: async (uid: string): Promise<void> => {
+    const raw = await parseCoreError(invoke<unknown>('history_restore_full_snapshot', { uid }));
+    if (!isRecord(raw)) throw new Error('history_restore_full_snapshot 返回了无效契约');
+  },
   /** 把快照中的环境变量恢复到注册表（与 PATH 恢复分开）。 */
   historyRestoreEnvSnapshot: async (uid: string, force: boolean) =>
     parseRestoreOutcome(
       await parseCoreError(invoke<unknown>('history_restore_env_snapshot', { uid, force })),
     ),
+  rulesList: async () => parseRules(await parseCoreError(invoke<unknown>('rules_list'))),
+  rulesCreate: async (request: { name: string; contains: string; action: RuleAction }) => {
+    const raw = await parseCoreError(invoke<unknown>('rules_create', { request }));
+    if (typeof raw !== 'string') throw new Error('rules_create 必须返回 uid');
+    return raw;
+  },
+  rulesDelete: async (uid: string): Promise<void> => {
+    await parseCoreError(invoke<unknown>('rules_delete', { uid }));
+  },
+  rulesSetEnabled: async (uid: string, enabled: boolean): Promise<void> => {
+    await parseCoreError(invoke<unknown>('rules_set_enabled', { uid, enabled }));
+  },
+  rulesApply: async (
+    system: { path: string; enabled: boolean }[],
+    user: { path: string; enabled: boolean }[],
+    record: boolean,
+  ) =>
+    parseRuleApplyResult(
+      await parseCoreError(invoke<unknown>('rules_apply', { system, user, record })),
+    ),
+  /** 读取保留策略设置。 */
+  retentionSettings: async () =>
+    parseRetentionSettings(await parseCoreError(invoke<unknown>('retention_settings'))),
+  /** 保存保留策略设置。 */
+  retentionSave: async (settings: {
+    snapshotKeepDays: number;
+    snapshotKeepMax: number;
+    eventKeepDays: number;
+  }): Promise<void> => {
+    await parseCoreError(invoke<unknown>('retention_save', { settings }));
+  },
+  /** 在资源管理器中打开数据目录。 */
+  openDataDir: async (): Promise<void> => {
+    await parseCoreError(invoke<unknown>('open_data_dir'));
+  },
   /** 数据库健康状态（只读）。 */
   dbHealth: async () => parseDbHealth(await parseCoreError(invoke<unknown>('db_health'))),
   /** 设置快照备注（null 清空）。 */
@@ -370,6 +418,8 @@ export const backend = {
     ),
 
   /** 比较两个快照（system 与 user 分开返回）。 */
+  compareMany: async (uids: string[]) =>
+    parseCompareMany(await parseCoreError(invoke<unknown>('compare_many', { uids }))),
   compareSnapshots: async (leftUid: string, rightUid: string) =>
     parseCompareResult(
       await parseCoreError(invoke<unknown>('compare_snapshots', { leftUid, rightUid })),
@@ -431,6 +481,11 @@ export const backend = {
     ),
 
   /** 解决一条冲突。`resolution` 取 `local` / `remote`。 */
+  syncConflictDetail: async (id: number) =>
+    parseSyncConflictDetail(await parseCoreError(invoke<unknown>('sync_conflict_detail', { id }))),
+  syncResolveConflicts: async (ids: number[], resolution: 'local' | 'remote'): Promise<void> => {
+    await parseCoreError(invoke<unknown>('sync_resolve_conflicts', { ids, resolution }));
+  },
   syncResolveConflict: async (id: number, resolution: 'local' | 'remote') => {
     const result = await parseCoreError(
       invoke<unknown>('sync_resolve_conflict', { id, resolution }),

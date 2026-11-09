@@ -97,6 +97,19 @@ pub(crate) struct AddArgs {
 /// `--revision` 走 CAS（冲突退出码 3）；`--force` 走真正的覆盖写
 /// （最后写入者胜，**不会**产生退出码 3）。
 ///
+/// 有 DB 时走带历史/快照的写入；DB 不存在或不可用时退回纯注册表写入。
+fn mutate_with_history<F, G>(with_db: F, without_db: G) -> core::app::service::EnvMutationOutcome
+where
+    F: FnOnce(&mut core::db::Db) -> Result<core::app::service::EnvMutationOutcome, core::CoreError>,
+    G: FnOnce() -> Result<core::app::service::EnvMutationOutcome, core::CoreError>,
+{
+    if let Some(mut db) = crate::runtime::open_db_silent() {
+        with_db(&mut db).unwrap_or_else(|e| exit_core_error(&e))
+    } else {
+        without_db().unwrap_or_else(|e| exit_core_error(&e))
+    }
+}
+
 /// `--dry-run` 只预览、不写注册表，且**不要求** `--revision`/`--force`
 /// 。
 pub(crate) fn cmd_env_set(args: SetArgs) {
@@ -137,14 +150,51 @@ pub(crate) fn cmd_env_set(args: SetArgs) {
     let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
-            let outcome = core::platform::registry::update_env_var(hive, &name, &new_value, &r)
-                .unwrap_or_else(|e| exit_core_error(&e));
-            warn_if_backup_failed(&outcome.backup);
+            let outcome = mutate_with_history(
+                |db| {
+                    core::app::service::update_env_with_db(
+                        db,
+                        core::domain::history::EventSource::Cli,
+                        hive,
+                        &name,
+                        &new_value,
+                        &r,
+                    )
+                },
+                || {
+                    Ok(core::app::service::EnvMutationOutcome {
+                        write: core::platform::registry::update_env_var(
+                            hive, &name, &new_value, &r,
+                        )?,
+                        before_snapshot_uid: None,
+                        after_snapshot_uid: None,
+                    })
+                },
+            );
+            warn_if_backup_failed(&outcome.write.backup);
         }
         Concurrency::Force => {
-            let outcome = core::platform::registry::update_env_var_force(hive, &name, &new_value)
-                .unwrap_or_else(|e| exit_core_error(&e));
-            warn_if_backup_failed(&outcome.backup);
+            let outcome = mutate_with_history(
+                |db| {
+                    core::app::service::update_env_force_with_db(
+                        db,
+                        core::domain::history::EventSource::Cli,
+                        hive,
+                        &name,
+                        &new_value,
+                    )
+                },
+                || {
+                    Ok(core::app::service::EnvMutationOutcome {
+                        write: core::platform::registry::update_env_var_force(
+                            hive, &name, &new_value,
+                        )?,
+                        before_snapshot_uid: None,
+                        after_snapshot_uid: None,
+                    })
+                },
+            );
+            warn_if_backup_failed(&outcome.write.backup);
         }
     }
     println!("已更新{}变量: {name}", hive_label(hive));
@@ -188,9 +238,26 @@ pub(crate) fn cmd_env_add(args: AddArgs) {
     }
     let kind = parse_kind(&kind);
     // 新建无并发语义：core 会拒绝重名（检查与写入是两步，存在竞态窗口，见 IPC 文档）
-    let outcome = core::platform::registry::create_env_var(hive, &name, &new_value, kind)
-        .unwrap_or_else(|e| exit_core_error(&e));
-    warn_if_backup_failed(&outcome.backup);
+    let outcome = mutate_with_history(
+        |db| {
+            core::app::service::create_env_with_db(
+                db,
+                core::domain::history::EventSource::Cli,
+                hive,
+                &name,
+                &new_value,
+                kind,
+            )
+        },
+        || {
+            Ok(core::app::service::EnvMutationOutcome {
+                write: core::platform::registry::create_env_var(hive, &name, &new_value, kind)?,
+                before_snapshot_uid: None,
+                after_snapshot_uid: None,
+            })
+        },
+    );
+    warn_if_backup_failed(&outcome.write.backup);
     // 广播由 core 负责，此处不重复
     println!("已新建{}变量: {name}", hive_label(hive));
 }
@@ -230,14 +297,45 @@ pub(crate) fn cmd_env_remove(
     let mode = resolve_concurrency(revision, force);
     match mode {
         Concurrency::Revision(r) => {
-            let outcome = core::platform::registry::delete_env_var(hive, &name, &r)
-                .unwrap_or_else(|e| exit_core_error(&e));
-            warn_if_backup_failed(&outcome.backup);
+            let outcome = mutate_with_history(
+                |db| {
+                    core::app::service::delete_env_with_db(
+                        db,
+                        core::domain::history::EventSource::Cli,
+                        hive,
+                        &name,
+                        &r,
+                    )
+                },
+                || {
+                    Ok(core::app::service::EnvMutationOutcome {
+                        write: core::platform::registry::delete_env_var(hive, &name, &r)?,
+                        before_snapshot_uid: None,
+                        after_snapshot_uid: None,
+                    })
+                },
+            );
+            warn_if_backup_failed(&outcome.write.backup);
         }
         Concurrency::Force => {
-            let outcome = core::platform::registry::delete_env_var_force(hive, &name)
-                .unwrap_or_else(|e| exit_core_error(&e));
-            warn_if_backup_failed(&outcome.backup);
+            let outcome = mutate_with_history(
+                |db| {
+                    core::app::service::delete_env_force_with_db(
+                        db,
+                        core::domain::history::EventSource::Cli,
+                        hive,
+                        &name,
+                    )
+                },
+                || {
+                    Ok(core::app::service::EnvMutationOutcome {
+                        write: core::platform::registry::delete_env_var_force(hive, &name)?,
+                        before_snapshot_uid: None,
+                        after_snapshot_uid: None,
+                    })
+                },
+            );
+            warn_if_backup_failed(&outcome.write.backup);
         }
     }
     println!("已删除{}变量: {name}", hive_label(hive));

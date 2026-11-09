@@ -15,3 +15,30 @@ pub fn export_path_entries(
 ) -> Result<String, CoreError> {
     fs::export_path_entries(&sys, &usr, &format)
 }
+
+/// 在资源管理器中打开数据目录（健康卡片兜底入口）。
+#[tauri::command(async)]
+pub fn open_data_dir() -> Result<(), path_editor_core::CoreError> {
+    let dir = path_editor_core::db::crypto::data_home();
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        path_editor_core::CoreError::new(
+            path_editor_core::ErrorCode::Io,
+            "open_data_dir",
+            format!("无法创建数据目录: {e}"),
+        )
+    })?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| {
+                path_editor_core::CoreError::new(
+                    path_editor_core::ErrorCode::Io,
+                    "open_data_dir",
+                    format!("无法打开数据目录: {e}"),
+                )
+            })?;
+    }
+    Ok(())
+}

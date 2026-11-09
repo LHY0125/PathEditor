@@ -632,6 +632,88 @@ pub fn get_profile_paths_view(db: &Db, name: &str) -> Result<Option<ProfilePaths
 /// 读取配置最新版本对应的快照 PATH 条目（供 UI 预览与应用）。
 ///
 /// 返回 `(system, user)`；配置不存在或没有 revision 时返回 `None`。
+/// 两个配置方案的差异（PATH + env + 元数据）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileDiff {
+    /// 左侧配置名
+    pub left: String,
+    /// 右侧配置名
+    pub right: String,
+    /// 左侧描述
+    pub left_description: Option<String>,
+    /// 右侧描述
+    pub right_description: Option<String>,
+    /// 右侧新增的标签
+    pub tags_added: Vec<String>,
+    /// 右侧删除的标签
+    pub tags_removed: Vec<String>,
+    /// PATH 与环境变量的差异（复用快照对比）
+    pub paths: crate::db::compare::CompareResult,
+}
+
+/// 比较两个配置方案（按名称）。
+pub fn diff_profiles(db: &Db, left: &str, right: &str) -> Result<ProfileDiff, CoreError> {
+    let a = get_profile_by_name(db, left)?.ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::NotFound,
+            "diff_profiles",
+            format!("配置不存在: {left}"),
+        )
+    })?;
+    let b = get_profile_by_name(db, right)?.ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::NotFound,
+            "diff_profiles",
+            format!("配置不存在: {right}"),
+        )
+    })?;
+    let (Some(a_snap), Some(b_snap)) = (a.snapshot_uid.as_deref(), b.snapshot_uid.as_deref())
+    else {
+        return Err(CoreError::new(
+            ErrorCode::NotFound,
+            "diff_profiles",
+            "配置缺少快照内容",
+        ));
+    };
+    let a_tags: std::collections::HashSet<&str> = a.tags.iter().map(String::as_str).collect();
+    let b_tags: std::collections::HashSet<&str> = b.tags.iter().map(String::as_str).collect();
+    Ok(ProfileDiff {
+        left: a.name.clone(),
+        right: b.name.clone(),
+        left_description: a.description.clone(),
+        right_description: b.description.clone(),
+        tags_added: b
+            .tags
+            .iter()
+            .filter(|tag| !a_tags.contains(tag.as_str()))
+            .cloned()
+            .collect(),
+        tags_removed: a
+            .tags
+            .iter()
+            .filter(|tag| !b_tags.contains(tag.as_str()))
+            .cloned()
+            .collect(),
+        paths: crate::db::compare::compare(db, a_snap, b_snap)?,
+    })
+}
+
+/// 读取配置快照中的环境变量（明文；仅可恢复行）。
+pub fn profile_env(
+    db: &Db,
+    name: &str,
+) -> Result<Option<Vec<crate::db::history::EnvValueRow>>, CoreError> {
+    let Some(p) = get_profile_by_name(db, name)? else {
+        return Ok(None);
+    };
+    let Some(snapshot_uid) = p.snapshot_uid else {
+        return Ok(None);
+    };
+    let view = crate::db::history::get_snapshot(db, &snapshot_uid, true)?;
+    Ok(Some(view.env))
+}
+
 pub fn profile_paths(db: &Db, name: &str) -> Result<Option<ProfilePaths>, CoreError> {
     let Some(p) = get_profile_by_name(db, name)? else {
         return Ok(None);

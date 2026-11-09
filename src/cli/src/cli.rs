@@ -225,6 +225,14 @@ pub(crate) enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// 一次性恢复整份快照（PATH + 环境变量）
+    HistoryRestoreFull {
+        /// 快照 uid
+        uid: String,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
     /// 把快照中的环境变量恢复到注册表（与 PATH 分开）
     HistoryRestoreEnv {
         /// 快照 uid
@@ -276,6 +284,20 @@ pub(crate) enum MaintenanceCmd {
     },
     /// 清理过期数据并压缩数据库（VACUUM，可能短暂锁库）
     Vacuum,
+    /// 列出迁移前自动备份（.pre-vN.bak）
+    Backups {
+        /// JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 用迁移前备份替换当前数据库（必须先关闭 GUI）
+    RestoreBackup {
+        /// 备份文件路径
+        file: String,
+        /// 确认覆盖当前数据库
+        #[arg(long)]
+        yes: bool,
+    },
     /// 输出数据库健康状态（schema/完整性/行数/体积/最近清理）
     Health {
         /// JSON 输出
@@ -399,6 +421,16 @@ pub(crate) enum ProfileCmd {
     Delete {
         /// 配置名
         name: String,
+    },
+    /// 比较两个配置方案（PATH + env + 标签）
+    Diff {
+        /// 左侧配置名
+        left: String,
+        /// 右侧配置名
+        right: String,
+        /// 以 JSON 输出
+        #[arg(long)]
+        json: bool,
     },
     /// 重命名配置
     Rename {

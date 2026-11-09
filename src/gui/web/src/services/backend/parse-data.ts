@@ -82,6 +82,27 @@ export interface SnapshotView {
   pinned: boolean;
 }
 
+/** 保留策略设置（对应 core 的 `RetentionSettings`）。 */
+export interface RetentionSettings {
+  snapshotKeepDays: number;
+  snapshotKeepMax: number;
+  eventKeepDays: number;
+}
+
+/** 校验 `RetentionSettings`。 */
+export function parseRetentionSettings(value: unknown): RetentionSettings {
+  if (!isRecord(value)) throw new Error('retention_settings 返回了无效契约');
+  const { snapshotKeepDays, snapshotKeepMax, eventKeepDays } = value;
+  if (
+    typeof snapshotKeepDays !== 'number' ||
+    typeof snapshotKeepMax !== 'number' ||
+    typeof eventKeepDays !== 'number'
+  ) {
+    throw new Error('retention_settings 字段形状无效');
+  }
+  return { snapshotKeepDays, snapshotKeepMax, eventKeepDays };
+}
+
 /** 数据库健康快照（对应 core 的 `DbHealth`）。 */
 export interface DbHealth {
   path: string;
@@ -142,6 +163,66 @@ export function parseDbHealth(value: unknown): DbHealth {
     integrityOk,
     tableRows: rows,
     lastPruneAt,
+  };
+}
+
+/** N 路对比的一行（对应 core 的 `MultiCompareEntry`）。 */
+export interface MultiCompareEntry {
+  baseUid: string;
+  otherUid: string;
+  diff: CompareResult;
+}
+
+/** 校验 `MultiCompareEntry[]`。 */
+export function parseCompareMany(value: unknown): MultiCompareEntry[] {
+  if (!Array.isArray(value)) throw new Error('compare_many 必须返回数组');
+  return value.map((raw) => {
+    if (!isRecord(raw) || typeof raw.baseUid !== 'string' || typeof raw.otherUid !== 'string') {
+      throw new Error('compare_many 条目形状无效');
+    }
+    return {
+      baseUid: raw.baseUid,
+      otherUid: raw.otherUid,
+      diff: parseCompareResult(raw.diff, 'compare_many.diff'),
+    };
+  });
+}
+
+/** 配置方案差异（对应 core 的 `ProfileDiff`）。 */
+export interface ProfileDiff {
+  left: string;
+  right: string;
+  leftDescription: string | null;
+  rightDescription: string | null;
+  tagsAdded: string[];
+  tagsRemoved: string[];
+  paths: CompareResult;
+}
+
+/** 校验 `ProfileDiff`。 */
+export function parseProfileDiff(value: unknown): ProfileDiff {
+  if (!isRecord(value)) throw new Error('profile_diff 返回了无效契约');
+  const { left, right, leftDescription, rightDescription, tagsAdded, tagsRemoved } = value;
+  if (
+    typeof left !== 'string' ||
+    typeof right !== 'string' ||
+    (leftDescription !== null && typeof leftDescription !== 'string') ||
+    (rightDescription !== null && typeof rightDescription !== 'string') ||
+    !Array.isArray(tagsAdded) ||
+    !tagsAdded.every((tag) => typeof tag === 'string') ||
+    !Array.isArray(tagsRemoved) ||
+    !tagsRemoved.every((tag) => typeof tag === 'string')
+  ) {
+    throw new Error('profile_diff 字段形状无效');
+  }
+  return {
+    left,
+    right,
+    leftDescription,
+    rightDescription,
+    tagsAdded: tagsAdded as string[],
+    tagsRemoved: tagsRemoved as string[],
+    paths: parseCompareResult(value.paths, 'profile_diff.paths'),
   };
 }
 
@@ -319,6 +400,8 @@ export interface SearchHit {
   content: string;
   /** 高亮片段（FTS5 `snippet()`，命中处用 `[]` 包裹） */
   snippet: string;
+  /** 关联实体时间（Unix 毫秒；旧契约缺省为 0） */
+  createdAt: number;
   /** 排名，越小越相关 */
   rank: number;
 }
@@ -428,7 +511,8 @@ export function parseSearchHits(value: unknown, label = 'search'): SearchHit[] {
       typeof raw.refUid !== 'string' ||
       typeof raw.content !== 'string' ||
       typeof raw.snippet !== 'string' ||
-      typeof raw.rank !== 'number'
+      typeof raw.rank !== 'number' ||
+      (raw.createdAt !== undefined && typeof raw.createdAt !== 'number')
     ) {
       throw new Error(`${label} 的命中项形状无效`);
     }
@@ -438,6 +522,7 @@ export function parseSearchHits(value: unknown, label = 'search'): SearchHit[] {
       content: raw.content,
       snippet: raw.snippet,
       rank: raw.rank,
+      createdAt: raw.createdAt ?? 0,
     };
   });
 }
@@ -767,4 +852,92 @@ export function parseSyncConflicts(value: unknown, label = 'sync_list_conflicts'
       resolution: raw.resolution,
     };
   });
+}
+
+/** 单条冲突详情（含远端原始内容）。 */
+export interface SyncConflictDetail {
+  conflict: SyncConflict;
+  remoteContent: string | null;
+}
+
+/** 校验 `SyncConflictDetail`。 */
+export function parseSyncConflictDetail(value: unknown): SyncConflictDetail {
+  if (!isRecord(value) || !('conflict' in value)) {
+    throw new Error('sync_conflict_detail 返回了无效契约');
+  }
+  const [conflict] = parseSyncConflicts([value.conflict], 'sync_conflict_detail.conflict');
+  if (value.remoteContent !== null && typeof value.remoteContent !== 'string') {
+    throw new Error('sync_conflict_detail.remoteContent 必须是字符串或 null');
+  }
+  return { conflict, remoteContent: value.remoteContent };
+}
+
+/** 规则条件/动作（对应 core 的 `RuleCondition` / `RuleAction`）。 */
+export type RuleCondition = { kind: 'pathContains'; value: string };
+export type RuleAction = 'moveTop' | 'remove';
+
+/** 一条整理规则。 */
+export interface Rule {
+  uid: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  condition: RuleCondition;
+  action: RuleAction;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 规则执行结果。 */
+export interface RuleApplyResult {
+  system: PathEntry[];
+  user: PathEntry[];
+  hits: { ruleUid: string; matchedCount: number }[];
+}
+
+export function parseRules(value: unknown): Rule[] {
+  if (!Array.isArray(value)) throw new Error('rules_list 必须返回数组');
+  return value.map((raw) => {
+    if (
+      !isRecord(raw) ||
+      typeof raw.uid !== 'string' ||
+      typeof raw.name !== 'string' ||
+      typeof raw.enabled !== 'boolean' ||
+      typeof raw.priority !== 'number' ||
+      typeof raw.createdAt !== 'number' ||
+      typeof raw.updatedAt !== 'number' ||
+      (raw.action !== 'moveTop' && raw.action !== 'remove') ||
+      !isRecord(raw.condition) ||
+      raw.condition.kind !== 'pathContains' ||
+      typeof raw.condition.value !== 'string'
+    ) {
+      throw new Error('rules_list 条目形状无效');
+    }
+    return {
+      uid: raw.uid,
+      name: raw.name,
+      enabled: raw.enabled,
+      priority: raw.priority,
+      condition: { kind: 'pathContains', value: raw.condition.value },
+      action: raw.action,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+    };
+  });
+}
+
+export function parseRuleApplyResult(value: unknown): RuleApplyResult {
+  if (!isRecord(value)) throw new Error('rules_apply 返回了无效契约');
+  if (!Array.isArray(value.hits)) throw new Error('rules_apply.hits 必须是数组');
+  const hits = value.hits.map((raw) => {
+    if (!isRecord(raw) || typeof raw.ruleUid !== 'string' || typeof raw.matchedCount !== 'number') {
+      throw new Error('rules_apply.hits 条目形状无效');
+    }
+    return { ruleUid: raw.ruleUid, matchedCount: raw.matchedCount };
+  });
+  return {
+    system: parsePathEntries(value.system, 'rules_apply.system'),
+    user: parsePathEntries(value.user, 'rules_apply.user'),
+    hits,
+  };
 }

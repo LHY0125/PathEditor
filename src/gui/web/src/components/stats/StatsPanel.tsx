@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { isCoreError } from '@/core/error';
 import { useTranslation } from 'react-i18next';
-import { backend, type Dashboard, type DbHealth } from '@/services/backend';
+import { backend, type Dashboard, type DbHealth, type RetentionSettings } from '@/services/backend';
 import { Button } from '@/components/ui/Button';
 
 /**
@@ -154,13 +154,22 @@ export function StatsPanel() {
               </span>
             </div>
           </div>
-          <p
-            className="mt-1 truncate text-xs"
-            style={{ color: 'var(--app-fg-muted)' }}
-            title={health.path}
-          >
-            {health.path}
-          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <p
+              className="min-w-0 flex-1 truncate text-xs"
+              style={{ color: 'var(--app-fg-muted)' }}
+              title={health.path}
+            >
+              {health.path}
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void backend.openDataDir().catch(() => {})}
+            >
+              {t('stats.healthOpenDir')}
+            </Button>
+          </div>
         </section>
       )}
 
@@ -246,6 +255,7 @@ export function StatsPanel() {
       </section>
 
       {/* ── 配置应用次数 ── */}
+      <RetentionCard />
       <section className="stats-card stats-card-span2">
         <h4 className="mb-1 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
           {t('stats.profileApplies')}
@@ -266,5 +276,88 @@ export function StatsPanel() {
         )}
       </section>
     </div>
+  );
+}
+
+/** 保留策略卡片：数值写入 config.ini，下次 prune 生效。 */
+function RetentionCard() {
+  const { t } = useTranslation();
+  const [settings, setSettings] = useState<RetentionSettings | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void backend
+      .retentionSettings()
+      .then(setSettings)
+      .catch(() => setSettings(null));
+  }, []);
+
+  if (settings === null) return null;
+
+  const update = (patch: Partial<RetentionSettings>) => {
+    setSettings((current) => (current ? { ...current, ...patch } : current));
+    setStatus(null);
+    setError(null);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await backend.retentionSave(settings);
+      setStatus(t('stats.retentionSaved'));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="stats-card stats-card-wide">
+      <h4 className="mb-2 text-xs font-semibold" style={{ color: 'var(--app-fg)' }}>
+        {t('stats.retentionTitle')}
+      </h4>
+      <div className="flex flex-wrap items-end gap-3 text-xs">
+        <label className="flex flex-col gap-1">
+          <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.retentionSnapshotDays')}</span>
+          <input
+            type="number"
+            min={1}
+            className="field-input w-28"
+            value={settings.snapshotKeepDays}
+            onChange={(e) => update({ snapshotKeepDays: Number(e.target.value) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.retentionSnapshotMax')}</span>
+          <input
+            type="number"
+            min={1}
+            className="field-input w-28"
+            value={settings.snapshotKeepMax}
+            onChange={(e) => update({ snapshotKeepMax: Number(e.target.value) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span style={{ color: 'var(--app-fg-muted)' }}>{t('stats.retentionEventDays')}</span>
+          <input
+            type="number"
+            min={1}
+            className="field-input w-28"
+            value={settings.eventKeepDays}
+            onChange={(e) => update({ eventKeepDays: Number(e.target.value) })}
+          />
+        </label>
+        <Button size="sm" disabled={saving} onClick={() => void save()}>
+          {t('stats.retentionSave')}
+        </Button>
+        {status !== null && <span style={{ color: 'var(--app-success)' }}>{status}</span>}
+        {error !== null && <span style={{ color: 'var(--app-danger)' }}>{error}</span>}
+      </div>
+    </section>
   );
 }

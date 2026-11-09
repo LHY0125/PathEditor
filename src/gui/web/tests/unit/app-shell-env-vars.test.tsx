@@ -94,11 +94,17 @@ import { useAppStore } from '@/store/app-store';
 import { useEnvStore } from '@/store/env-store';
 import type { EnvVarMeta } from '@/core/env-var';
 import type { WriteOutcome } from '@/core/env-var';
+import type { EnvMutationOutcome } from '@/services/backend';
 
 const mockBackend = vi.mocked(backend);
 
 /** 写成功的标准返回：本次无需备份（`Skipped`）。 */
 const noBackup: WriteOutcome = { backup: 'skipped' };
+const mutation = (write: WriteOutcome): EnvMutationOutcome => ({
+  write,
+  beforeSnapshotUid: null,
+  afterSnapshotUid: null,
+});
 
 /** 设定异步确认对话框的返回值（关窗确认 describe 与后续用例共用）。 */
 function mockDialogConfirm(v: boolean) {
@@ -495,7 +501,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
   });
 
   it('确定后调用 updateEnvVar 并携带 revision', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(noBackup));
     await openEditDialog();
     fireEvent.change(screen.getByLabelText('变量值'), { target: { value: 'C:\\NewJava' } });
     fireEvent.click(screen.getByRole('button', { name: '确定' }));
@@ -531,7 +537,7 @@ describe('编辑环境变量（选中 → 编辑弹窗 → 保存）', () => {
         retryable: true,
         message: '变量已被其他进程修改，请重新加载',
       })
-      .mockResolvedValueOnce(noBackup);
+      .mockResolvedValueOnce(mutation(noBackup));
     mockBackend.listAllEnvVars
       .mockResolvedValueOnce({ system: [], user: [oldMeta], capturedAt: 0 })
       .mockResolvedValue({ system: [], user: [newMeta], capturedAt: 0 });
@@ -673,7 +679,7 @@ describe('删除与选中管理', () => {
   it('删除前弹异步确认；确认后调用 deleteEnvVar 并清除选中', async () => {
     mockDialogConfirm(true);
     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
-    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
 
     render(<AppShell />);
@@ -697,7 +703,7 @@ describe('删除与选中管理', () => {
   it('取消删除时不调用 deleteEnvVar', async () => {
     mockDialogConfirm(false);
     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
-    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
 
     render(<AppShell />);
@@ -718,7 +724,7 @@ describe('删除与选中管理', () => {
   it('确认对话框 IPC 失败时不删除（破坏性操作 fail-closed，与关窗路径相反）', async () => {
     vi.mocked(dialogConfirm).mockRejectedValue(new Error('ipc denied'));
     mockBackend.listAllEnvVars.mockResolvedValueOnce({ system: [], user: [meta()], capturedAt: 0 });
-    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue({ system: [], user: [], capturedAt: 0 });
 
     render(<AppShell />);

@@ -3,7 +3,7 @@
 //! 冲突是**待人工决定的记录**，不是错误：LWW 在平局时无法自动化，
 //! 保守做法是保留双方、让用户选。
 
-use crate::db::sync::change_log::{next_lamport, record_change_tx, ChangeRow, NewChange};
+use crate::db::sync::change_log::{record_change_tx, ChangeRow, NewChange};
 use crate::db::{db_err, Db};
 use crate::domain::error::{CoreError, ErrorCode};
 use rusqlite::{params, OptionalExtension};
@@ -215,80 +215,126 @@ impl ConflictTarget {
 }
 
 pub fn resolve_conflict(db: &mut Db, id: i64, resolution: Resolution) -> Result<(), CoreError> {
-    let lamport = next_lamport(db)?;
+    db.with_transaction(|tx| resolve_one_tx(tx, id, resolution))
+}
+
+/// 批量解决：单事务，任一失败整批回滚。
+pub fn resolve_conflicts(
+    db: &mut Db,
+    ids: &[i64],
+    resolution: Resolution,
+) -> Result<(), CoreError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
     db.with_transaction(|tx| {
-        let Some(target) = ConflictTarget::load(tx, id)? else {
-            return Err(CoreError::new(
-                ErrorCode::NotFound,
-                "resolve_conflict",
-                format!("冲突 {id} 不存在"),
-            ));
-        };
-        if target.resolved_at.is_some() {
-            return Err(CoreError::new(
-                ErrorCode::Conflict,
-                "resolve_conflict",
-                format!("冲突 {id} 已解决"),
-            ));
+        for id in ids {
+            resolve_one_tx(tx, *id, resolution)?;
         }
-
-        let (winner, loser) = match resolution {
-            Resolution::Local => (target.local_value.clone(), target.remote_value.clone()),
-            Resolution::Remote => (target.remote_value.clone(), target.local_value.clone()),
-        };
-
-        tx.execute(
-            "UPDATE sync_conflicts SET resolved_at = ?1, resolution = ?2 WHERE id = ?3",
-            params![
-                chrono::Utc::now().timestamp_millis(),
-                resolution.as_str(),
-                id
-            ],
-        )
-        .map_err(|e| db_err("resolve_conflict", e))?;
-
-        // **选择必须真的落地**：只追加一条 change 不改变任何实体，
-        // 下次导出会拿「本地仍存活的实体」覆盖刚记录的 new_value，
-        // 第三台设备也永远看不到用户选的远端内容。
-        if resolution == Resolution::Remote {
-            if target.field.as_deref() == Some("deleted_at") {
-                super::import::apply_tombstone_tx(tx, &target.entity_type, &target.entity_uid)?;
-            } else if let Some(raw) = &target.remote_content {
-                let content: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
-                    CoreError::new(
-                        ErrorCode::SyncFormat,
-                        "resolve_conflict",
-                        format!("冲突 {id} 的远端内容无法解析: {e}"),
-                    )
-                })?;
-                super::import::apply_entity_tx(
-                    tx,
-                    &target.entity_type,
-                    &target.entity_uid,
-                    &content,
-                    &target.remote_device,
-                )?;
-            } else {
-                // 旧版本记录的冲突没有内容：无法应用，只能记录解决结果。
-                log::warn!("冲突 {id} 没有远端内容（旧版本记录），仅记录解决结果");
-            }
-        }
-
-        // 追加的 change 用 `record_change_tx`，但它的 lamport 由该函数自增分配。
-        // 这里需要「当前 + 1」的语义恰好等价——`record_change_tx` 内部就是
-        // 取 app_state.lamport + 1，与 `next_lamport()` 同一算法，因此无需另写。
-        // `lamport` 变量仅用于断言语义一致（debug 场景）与文档化。
-        debug_assert!(lamport >= 1, "lamport 必须为正");
-        record_change_tx(
-            tx,
-            NewChange {
-                entity_type: target.entity_type,
-                entity_uid: target.entity_uid,
-                field: target.field,
-                old_value: loser.unwrap_or_default(),
-                new_value: winner.unwrap_or_default(),
-            },
-        )?;
         Ok(())
+    })
+}
+
+fn resolve_one_tx(
+    tx: &rusqlite::Transaction<'_>,
+    id: i64,
+    resolution: Resolution,
+) -> Result<(), CoreError> {
+    let Some(target) = ConflictTarget::load(tx, id)? else {
+        return Err(CoreError::new(
+            ErrorCode::NotFound,
+            "resolve_conflict",
+            format!("冲突 {id} 不存在"),
+        ));
+    };
+    if target.resolved_at.is_some() {
+        return Err(CoreError::new(
+            ErrorCode::Conflict,
+            "resolve_conflict",
+            format!("冲突 {id} 已解决"),
+        ));
+    }
+
+    let (winner, loser) = match resolution {
+        Resolution::Local => (target.local_value.clone(), target.remote_value.clone()),
+        Resolution::Remote => (target.remote_value.clone(), target.local_value.clone()),
+    };
+
+    tx.execute(
+        "UPDATE sync_conflicts SET resolved_at = ?1, resolution = ?2 WHERE id = ?3",
+        params![
+            chrono::Utc::now().timestamp_millis(),
+            resolution.as_str(),
+            id
+        ],
+    )
+    .map_err(|e| db_err("resolve_conflict", e))?;
+
+    if resolution == Resolution::Remote {
+        if target.field.as_deref() == Some("deleted_at") {
+            super::import::apply_tombstone_tx(tx, &target.entity_type, &target.entity_uid)?;
+        } else if let Some(raw) = &target.remote_content {
+            let content: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
+                CoreError::new(
+                    ErrorCode::SyncFormat,
+                    "resolve_conflict",
+                    format!("冲突 {id} 的远端内容无法解析: {e}"),
+                )
+            })?;
+            super::import::apply_entity_tx(
+                tx,
+                &target.entity_type,
+                &target.entity_uid,
+                &content,
+                &target.remote_device,
+            )?;
+        } else {
+            log::warn!("冲突 {id} 没有远端内容（旧版本记录），仅记录解决结果");
+        }
+    }
+
+    record_change_tx(
+        tx,
+        NewChange {
+            entity_type: target.entity_type,
+            entity_uid: target.entity_uid,
+            field: target.field,
+            old_value: loser.unwrap_or_default(),
+            new_value: winner.unwrap_or_default(),
+        },
+    )?;
+    Ok(())
+}
+
+/// 单条冲突的详情（含远端原始内容，供并排 diff）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConflictDetail {
+    /// 冲突本身
+    pub conflict: SyncConflictView,
+    /// 远端实体内容（JSON 字符串；旧记录可能为空）
+    pub remote_content: Option<String>,
+}
+
+/// 读取单条冲突详情。
+pub fn conflict_detail(db: &Db, id: i64) -> Result<SyncConflictDetail, CoreError> {
+    let conflict = list_conflicts(db, true)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| {
+            CoreError::new(
+                ErrorCode::NotFound,
+                "conflict_detail",
+                format!("冲突 {id} 不存在"),
+            )
+        })?;
+    let remote_content: Option<String> = db.query_row_with(
+        "SELECT remote_content FROM sync_conflicts WHERE id = ?1",
+        params![id],
+        |r| r.get(0),
+    )?;
+    Ok(SyncConflictDetail {
+        conflict,
+        remote_content,
     })
 }

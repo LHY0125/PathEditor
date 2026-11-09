@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import type { PathEntry } from '@/core/path-entry';
-import type { ProfilePathsView } from '@/services/backend';
+import { useState } from 'react';
+import type { ProfileDiff, ProfilePathsView } from '@/services/backend';
 
 interface ProfileDetailProps {
   data: ProfilePathsView | null;
@@ -13,6 +14,11 @@ interface ProfileDetailProps {
   onApply: () => void;
   onRename: () => void;
   onDelete: (name: string) => void;
+  others: string[];
+  diff: ProfileDiff | null;
+  diffLoading: boolean;
+  onCompare: (other: string) => void;
+  onClearDiff: () => void;
 }
 
 export function ProfileDetail({
@@ -25,8 +31,14 @@ export function ProfileDetail({
   onApply,
   onRename,
   onDelete,
+  others,
+  diff,
+  diffLoading,
+  onCompare,
+  onClearDiff,
 }: ProfileDetailProps) {
   const { t } = useTranslation();
+  const [compareWith, setCompareWith] = useState('');
 
   if (!data) {
     return (
@@ -37,6 +49,8 @@ export function ProfileDetail({
       </div>
     );
   }
+
+  if (diff) return <ProfileDiffView diff={diff} onClose={onClearDiff} />;
 
   return (
     <div className="flex-1 p-3 overflow-auto">
@@ -56,6 +70,29 @@ export function ProfileDetail({
         </Button>
         <Button size="sm" variant="danger" onClick={() => onDelete(data.name)}>
           {t('profile.delete')}
+        </Button>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <select
+          className="field-input"
+          value={compareWith}
+          onChange={(event) => setCompareWith(event.target.value)}
+          aria-label={t('profile.compareWith')}
+        >
+          <option value="">{t('profile.comparePick')}</option>
+          {others.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={!compareWith || diffLoading}
+          onClick={() => onCompare(compareWith)}
+        >
+          {diffLoading ? t('profile.comparing') : t('profile.compare')}
         </Button>
       </div>
 
@@ -119,6 +156,56 @@ function PathSection({ title, paths }: { title: string; paths: PathEntry[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 两个配置的差异摘要（不重新拉快照，直接用 core 的 ProfileDiff）。 */
+function ProfileDiffView({ diff, onClose }: { diff: ProfileDiff; onClose: () => void }) {
+  const { t } = useTranslation();
+  const pathSide = (label: string, side: ProfileDiff['paths']['system']) => (
+    <div className="mb-2 text-xs">
+      <div className="font-medium" style={{ color: 'var(--app-fg-muted)' }}>
+        {label}：+{side.added.length} / -{side.removed.length} / ↔{side.reordered.length} / ◐
+        {side.toggled.length}
+      </div>
+      {[
+        ...side.added.map((entry) => `+ ${entry.path}`),
+        ...side.removed.map((entry) => `- ${entry.path}`),
+      ].map((line) => (
+        <div key={line} className="font-mono truncate" title={line}>
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div className="flex-1 p-3 overflow-auto">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xs font-semibold">
+          {diff.left} ↔ {diff.right}
+        </span>
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          {t('profile.closeCompare')}
+        </Button>
+      </div>
+      {(diff.tagsAdded.length > 0 || diff.tagsRemoved.length > 0) && (
+        <p className="mb-2 text-xs">
+          {t('profile.tagsDiff', {
+            added: diff.tagsAdded.join(', ') || '—',
+            removed: diff.tagsRemoved.join(', ') || '—',
+          })}
+        </p>
+      )}
+      {pathSide(`${t('merge.system')} PATH`, diff.paths.system)}
+      {pathSide(`${t('merge.user')} PATH`, diff.paths.user)}
+      <div className="mb-2 text-xs">
+        {t('profile.envDiff', {
+          added: diff.paths.envAdded.join(', ') || '—',
+          removed: diff.paths.envRemoved.join(', ') || '—',
+          modified: diff.paths.envModified.join(', ') || '—',
+        })}
+      </div>
     </div>
   );
 }

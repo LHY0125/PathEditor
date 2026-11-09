@@ -149,11 +149,15 @@ describe('parseCoreError rejection 解析（双形状兼容）', () => {
   it('成功时原样返回，不包裹为错误对象', async () => {
     // 成功路径原样透传写结果。
     mockInvoke.mockResolvedValue({
-      backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
+      write: { backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } } },
+      beforeSnapshotUid: 'before-1',
+      afterSnapshotUid: 'after-1',
     });
 
     await expect(backend.updateEnvVar('user', 'X', 'v', 'rev')).resolves.toEqual({
-      backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } },
+      write: { backup: { created: { path: 'C:\\b\\env_backup_1.json', encrypted: true } } },
+      beforeSnapshotUid: 'before-1',
+      afterSnapshotUid: 'after-1',
     });
   });
 });

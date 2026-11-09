@@ -3,7 +3,13 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import appConfig from '@/config/default.json';
 import { useAppStore } from '@/store/app-store';
-import { backend, type ProfileView, type ProfilePathsView } from '@/services/backend';
+import { useEnvStore } from '@/store/env-store';
+import {
+  backend,
+  type ProfileDiff,
+  type ProfileView,
+  type ProfilePathsView,
+} from '@/services/backend';
 import { errorMessage } from '@/core/error';
 
 export function useProfiles(open: boolean, onClose: () => void) {
@@ -12,6 +18,8 @@ export function useProfiles(open: boolean, onClose: () => void) {
   const [newName, setNewName] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedData, setSelectedData] = useState<ProfilePathsView | null>(null);
+  const [diff, setDiff] = useState<ProfileDiff | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -104,7 +112,7 @@ export function useProfiles(open: boolean, onClose: () => void) {
       await backend.profileApply(selected);
       // 应用会写注册表：主界面必须重新读快照，否则显示旧 PATH，
       // 且后续保存会带着过期 expected 被 core 判冲突。
-      await useAppStore.getState().loadPaths();
+      await Promise.all([useAppStore.getState().loadPaths(), useEnvStore.getState().load()]);
       onClose();
     } catch (error) {
       useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
@@ -145,8 +153,27 @@ export function useProfiles(open: boolean, onClose: () => void) {
     }
   }, [refreshProfiles, renameValue, selected, t]);
 
+  const handleCompare = useCallback(
+    async (other: string) => {
+      if (!selected || selected === other) return;
+      setDiffLoading(true);
+      try {
+        setDiff(await backend.profileDiff(selected, other));
+      } catch (error) {
+        useAppStore.getState().setStatusError(`${t('status.error')}: ${errorMessage(error)}`);
+      } finally {
+        setDiffLoading(false);
+      }
+    },
+    [selected, t],
+  );
+
   return {
     profiles,
+    diff,
+    diffLoading,
+    clearDiff: () => setDiff(null),
+    handleCompare,
     newName,
     setNewName,
     selected,

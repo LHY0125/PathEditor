@@ -17,6 +17,18 @@ pub fn profile_list(state: State<'_, DbState>) -> Result<Vec<ProfileView>, CoreE
     with_db(&state, "profile_list", profiles::list_profiles)
 }
 
+/// 比较两个配置方案（PATH + env + 标签）。
+#[tauri::command(async)]
+pub fn profile_diff(
+    left: String,
+    right: String,
+    state: State<'_, DbState>,
+) -> Result<profiles::ProfileDiff, CoreError> {
+    with_db(&state, "profile_diff", |db| {
+        profiles::diff_profiles(db, &left, &right)
+    })
+}
+
 /// 应用一个配置方案：读配置内容、写注册表与当前快照、记录应用次数。
 ///
 /// 与 CLI 的 `profile apply` 共用 `core::app::service::apply_profile`：

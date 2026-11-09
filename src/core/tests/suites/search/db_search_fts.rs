@@ -49,3 +49,31 @@ fn fts_indexes_paths_and_never_indexes_sensitive_values() {
     rebuild_index(&mut db).unwrap();
     assert!(!search(&db, "jdk21", 10).unwrap().is_empty(), "重建后恢复");
 }
+
+#[test]
+fn fts_indexes_snapshot_notes() {
+    use path_editor_core::db::history::set_snapshot_note;
+
+    let (_dir, mut db) = crate::common::new_db("note-search.db");
+    let uid = insert_snapshot(
+        &mut db,
+        NewSnapshot {
+            kind: SnapshotKind::History,
+            source: EventSource::Gui,
+            system: vec![],
+            user: vec![],
+            env: vec![],
+            parent_uid: None,
+        },
+    )
+    .unwrap();
+    set_snapshot_note(&mut db, &uid, Some("before installing the GPU driver")).unwrap();
+
+    rebuild_index(&mut db).unwrap();
+    let hits = search(&db, "driver", 10).unwrap();
+    assert!(
+        hits.iter()
+            .any(|hit| hit.kind == "snapshotNote" && hit.ref_uid == uid),
+        "快照备注必须进入 FTS: {hits:?}"
+    );
+}

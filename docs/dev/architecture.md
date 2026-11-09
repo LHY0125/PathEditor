@@ -24,7 +24,7 @@ PathEditor/
 │   │   │   └── backup/          # 注册表备份、env 备份（.pebak）
 │   │   ├── db/                  # 数据层（SQLite，不加密）
 │   │   │   ├── mod.rs           # Db 句柄、事务、open_default / open_and_migrate
-│   │   │   ├── schema.rs        # DDL v1–v5；CURRENT_SCHEMA_VERSION = 5
+│   │   │   ├── schema.rs        # DDL v1–v6；CURRENT_SCHEMA_VERSION = 6
 │   │   │   ├── crypto.rs / dpapi.rs / dacl.rs   # 本机盐、DPAPI、DACL
 │   │   │   ├── history.rs / history_sink.rs      # 快照、事件、HistorySink 实现
 │   │   │   ├── profiles.rs      # 配置元数据/版本（DB 版）

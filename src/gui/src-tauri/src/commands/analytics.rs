@@ -10,7 +10,8 @@
 //! 内部 clamp），因为搜索是「即时过滤」而非分页浏览。
 
 use path_editor_core::db::{
-    compare::{self, CompareResult},
+    compare::{self, CompareResult, MultiCompareEntry},
+    maintenance::{self, RetentionSettings},
     refs::{self, RefEdge},
     search::{self, SearchHit},
     stats::{self, Dashboard},
@@ -86,4 +87,27 @@ pub fn refs_dependencies(
 #[tauri::command]
 pub fn refs_cycles(state: State<'_, DbState>) -> Result<Vec<Vec<String>>, CoreError> {
     with_db(&state, "refs_cycles", refs::find_cycles)
+}
+
+/// 读取保留策略设置。
+#[tauri::command]
+pub fn retention_settings() -> RetentionSettings {
+    maintenance::retention_settings()
+}
+
+/// 保存保留策略设置（值非法时返回 `InvalidValue`）。
+#[tauri::command]
+pub fn retention_save(settings: RetentionSettings) -> Result<(), CoreError> {
+    maintenance::save_retention_settings(&settings)
+}
+
+/// N 路快照对比：第一个 uid 为基准。
+#[tauri::command(async)]
+pub fn compare_many(
+    uids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<Vec<MultiCompareEntry>, CoreError> {
+    with_db(&state, "compare_many", |db| {
+        compare::compare_many(db, &uids)
+    })
 }

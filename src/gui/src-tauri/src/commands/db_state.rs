@@ -42,6 +42,19 @@ pub(crate) fn with_db_mut<T>(
     f(db)
 }
 
+/// 取 DB 的**可选可变**引用：写入仍可在 DB 降级时继续（历史副作用跳过）。
+pub(crate) fn with_optional_db_mut<T>(
+    state: &State<'_, DbState>,
+    op: &'static str,
+    f: impl FnOnce(Option<&mut Db>) -> Result<T, CoreError>,
+) -> Result<T, CoreError> {
+    let mut guard = state
+        .0
+        .lock()
+        .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
+    f(guard.as_mut())
+}
+
 /// 取 DB 的**可选**引用：降级模式传 `None`，由 core 决定回退行为。
 ///
 /// 只用于「DB 不可用仍可继续」的读路径（如加载 PATH 快照）；

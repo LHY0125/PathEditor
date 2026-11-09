@@ -658,12 +658,18 @@ pub fn save_path_with_db(
     )
 }
 
+mod env_ops;
 mod profile;
 mod restore;
 
+pub use env_ops::{
+    create_env_with_db, delete_env_force_with_db, delete_env_with_db, update_env_force_with_db,
+    update_env_with_db, EnvMutationOutcome,
+};
 pub use profile::{apply_profile, apply_profile_io};
 pub use restore::{
-    restore_env_snapshot, restore_env_snapshot_in_stores, restore_snapshot, restore_snapshot_io,
+    restore_env_snapshot, restore_env_snapshot_in_stores, restore_snapshot, restore_snapshot_full,
+    restore_snapshot_io, FullRestoreOutcome,
 };
 
 /// 把文件 pending 快照补写进 DB 的当前快照（DB 模式）。

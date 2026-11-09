@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { backend } from '@/services/backend';
 import { maskConflictValue, useSyncStore, type SyncNotice } from '@/store/sync-store';
+import { errorMessage } from '@/core/error';
 import type { SyncConflict } from '@/services/backend';
 import { Button } from '@/components/ui/Button';
 
@@ -104,6 +105,7 @@ export function SyncCenter() {
   const [passphrase, setPassphrase] = useState('');
   const [filePath, setFilePath] = useState('');
   const [includeResolved, setIncludeResolved] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   /** 正在执行的导出/导入：用于按钮文案，避免长耗时加密看起来没反应。 */
   const [busyAction, setBusyAction] = useState<'export' | 'import' | null>(null);
 
@@ -125,6 +127,23 @@ export function SyncCenter() {
   }, [conflicts]);
 
   const canSubmit = passphrase.length > 0 && filePath.length > 0 && !loading;
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  const resolveBatch = async (resolution: 'local' | 'remote') => {
+    if (selectedIds.length === 0) return;
+    try {
+      await backend.syncResolveConflicts(selectedIds, resolution);
+      setSelectedIds([]);
+      await refresh();
+    } catch (err) {
+      useSyncStore.setState({ error: errorMessage(err) });
+    }
+  };
 
   const onExport = async () => {
     setBusyAction('export');
@@ -242,6 +261,22 @@ export function SyncCenter() {
       <section className="sync-section">
         <header className="sync-conflicts-header">
           <h3 className="text-xs font-semibold">{t('sync.conflicts')}</h3>
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="sync-muted">
+                {t('sync.selectedCount', { count: selectedIds.length })}
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => void resolveBatch('local')}>
+                {t('sync.takeLocalBatch')}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void resolveBatch('remote')}>
+                {t('sync.takeRemoteBatch')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
+                {t('sync.clearSelection')}
+              </Button>
+            </div>
+          )}
           <label className="sync-check">
             <input
               type="checkbox"
@@ -267,6 +302,14 @@ export function SyncCenter() {
                 {list.map((c) => (
                   <li key={c.id} className="sync-conflict">
                     <div className="sync-conflict-head">
+                      {c.resolvedAt === null && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(c.id)}
+                          onChange={() => toggleSelected(c.id)}
+                          aria-label={t('sync.selectConflict', { id: c.id })}
+                        />
+                      )}
                       <span className="sync-conflict-field">
                         {c.field === null
                           ? t('sync.wholeEntity')
@@ -284,6 +327,7 @@ export function SyncCenter() {
                       <span className="sync-value-label">{t('sync.remoteValue')}</span>
                       <span className="sync-value">{displayConflictValue(c.remoteValue)}</span>
                     </div>
+                    <RemoteContent id={c.id} />
                     {c.resolvedAt === null ? (
                       <div className="sync-conflict-actions">
                         <Button
@@ -316,5 +360,33 @@ export function SyncCenter() {
         )}
       </section>
     </div>
+  );
+}
+
+/** 懒加载远端原始内容（并排 diff 的补充证据）。 */
+function RemoteContent({ id }: { id: number }) {
+  const { t } = useTranslation();
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const load = () => {
+    if (content !== null || loading) return;
+    setLoading(true);
+    void backend
+      .syncConflictDetail(id)
+      .then((detail) => setContent(detail.remoteContent))
+      .catch(() => setContent(null))
+      .finally(() => setLoading(false));
+  };
+  return (
+    <details className="sync-muted text-xs" onToggle={(e) => e.currentTarget.open && load()}>
+      <summary className="cursor-pointer">{t('sync.remoteContent')}</summary>
+      {loading ? (
+        <p>{t('sync.loading')}</p>
+      ) : content === null ? (
+        <p>{t('sync.noRemoteContent')}</p>
+      ) : (
+        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all">{content}</pre>
+      )}
+    </details>
   );
 }

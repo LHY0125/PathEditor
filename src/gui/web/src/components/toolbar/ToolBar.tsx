@@ -21,8 +21,10 @@ interface ToolBarProps {
   onHelp: () => void;
   onLanguage: () => void;
   onDarkMode: () => void;
+  onSystemTheme?: () => void;
   onAnalyze: () => void;
   onProfiles: () => void;
+  onRules?: () => void;
 }
 
 /** 单行分层工具栏：搜索 │ 编辑 │ 排序 │ 撤销 ...推... 批量 │ 保存 │ ⋯ */
@@ -63,8 +65,10 @@ export function ToolBar(props: ToolBarProps) {
         onClean={props.onClean}
         onAnalyze={props.onAnalyze}
         onProfiles={props.onProfiles}
+        onRules={props.onRules ?? (() => {})}
         onLanguage={props.onLanguage}
         onDarkMode={props.onDarkMode}
+        onSystemTheme={props.onSystemTheme ?? (() => {})}
         onHelp={props.onHelp}
         onCancel={props.onCancel}
       />

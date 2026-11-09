@@ -245,3 +245,31 @@ pub fn compare_paths(left: &[PathEntry], right: &[PathEntry]) -> PathDiff {
         toggled,
     }
 }
+
+/// N 路对比：以第一个快照为基准，返回它与其余每个快照的差异。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiCompareEntry {
+    /// 基准快照 uid
+    pub base_uid: String,
+    /// 被比较的快照 uid
+    pub other_uid: String,
+    /// 两者的差异
+    pub diff: CompareResult,
+}
+
+/// 以 `uids[0]` 为基准做 N 路对比（至少 2 个 uid）。
+pub fn compare_many(db: &Db, uids: &[String]) -> Result<Vec<MultiCompareEntry>, CoreError> {
+    let Some((base, rest)) = uids.split_first() else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::with_capacity(rest.len());
+    for other in rest {
+        out.push(MultiCompareEntry {
+            base_uid: base.clone(),
+            other_uid: other.clone(),
+            diff: compare(db, base, other)?,
+        });
+    }
+    Ok(out)
+}

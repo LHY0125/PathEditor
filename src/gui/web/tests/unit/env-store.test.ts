@@ -16,11 +16,17 @@ vi.mock('@/services/backend', async () => {
 import { useEnvStore } from '@/store/env-store';
 import { backend } from '@/services/backend';
 import type { EnvVarMeta, RevealedValue, WriteOutcome } from '@/core/env-var';
+import type { EnvMutationOutcome } from '@/services/backend';
 
 const mockBackend = vi.mocked(backend);
 
 /** 写成功的标准返回：本次无需备份（`Skipped`）。 */
 const noBackup: WriteOutcome = { backup: 'skipped' };
+const mutation = (write: WriteOutcome): EnvMutationOutcome => ({
+  write,
+  beforeSnapshotUid: null,
+  afterSnapshotUid: null,
+});
 
 function meta(overrides: Partial<EnvVarMeta> = {}): EnvVarMeta {
   return {
@@ -165,7 +171,7 @@ describe('load 竞态防护', () => {
 
 describe('save', () => {
   it('携带 meta.revision 调用 updateEnvVar', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -182,7 +188,7 @@ describe('save', () => {
   });
 
   it('readRevision 与 meta.revision 不一致时拒绝保存、不调 IPC 且触发刷新', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -199,7 +205,7 @@ describe('save', () => {
   });
 
   it('readRevision 与 meta.revision 一致时正常保存', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -308,7 +314,7 @@ describe('save', () => {
 
 describe('create / remove', () => {
   it('create 校验名称后调用 createEnvVar', async () => {
-    mockBackend.createEnvVar.mockResolvedValue(noBackup);
+    mockBackend.createEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
 
     await useEnvStore.getState().create('user', 'NEW_VAR', 'value', 'string');
@@ -324,7 +330,7 @@ describe('create / remove', () => {
   });
 
   it('remove 携带 meta.revision 调用 deleteEnvVar', async () => {
-    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
 
@@ -347,7 +353,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   it('save 成功返回 true，失败返回 false', async () => {
     const target = meta();
 
-    mockBackend.updateEnvVar.mockResolvedValue(noBackup);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
     await expect(useEnvStore.getState().save(target, null)).resolves.toBe(true);
@@ -358,7 +364,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   });
 
   it('create 成功返回 true，失败返回 false', async () => {
-    mockBackend.createEnvVar.mockResolvedValue(noBackup);
+    mockBackend.createEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     await expect(useEnvStore.getState().create('user', 'N1', 'v', 'string')).resolves.toBe(true);
 
@@ -369,7 +375,7 @@ describe('操作结果返回值（弹窗据此决定是否关闭）', () => {
   it('remove 成功返回 true，失败返回 false', async () => {
     const target = meta();
 
-    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     await expect(useEnvStore.getState().remove(target)).resolves.toBe(true);
 
@@ -397,7 +403,7 @@ describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链�
   };
 
   it('save：备份失败 → 「保存成功（备份失败）」且仍返回 true', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(backupFailedOutcome);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(backupFailedOutcome));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -409,7 +415,7 @@ describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链�
   });
 
   it('save：备份成功 → 普通「保存成功」', async () => {
-    mockBackend.updateEnvVar.mockResolvedValue(backupCreatedOutcome);
+    mockBackend.updateEnvVar.mockResolvedValue(mutation(backupCreatedOutcome));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
     const target = meta();
     useEnvStore.getState().setDraft(target, 'C:\\NewJava');
@@ -422,7 +428,7 @@ describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链�
   });
 
   it('create：备份失败 → 降级文案，仍返回 true', async () => {
-    mockBackend.createEnvVar.mockResolvedValue(backupFailedOutcome);
+    mockBackend.createEnvVar.mockResolvedValue(mutation(backupFailedOutcome));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
 
     await expect(useEnvStore.getState().create('user', 'N1', 'v', 'string')).resolves.toBe(true);
@@ -430,7 +436,7 @@ describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链�
   });
 
   it('remove：备份失败 → 降级文案，仍返回 true', async () => {
-    mockBackend.deleteEnvVar.mockResolvedValue(backupFailedOutcome);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(backupFailedOutcome));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
 
     await expect(useEnvStore.getState().remove(meta())).resolves.toBe(true);
@@ -438,7 +444,7 @@ describe('写前备份失败时的状态文案（WriteOutcome.backup 消费链�
   });
 
   it('Skipped 不触发降级文案（成对反例）', async () => {
-    mockBackend.deleteEnvVar.mockResolvedValue(noBackup);
+    mockBackend.deleteEnvVar.mockResolvedValue(mutation(noBackup));
     mockBackend.listAllEnvVars.mockResolvedValue(snapshot);
 
     await useEnvStore.getState().remove(meta());

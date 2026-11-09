@@ -48,6 +48,53 @@ pub fn snapshot_keep_max() -> usize {
     )
 }
 
+/// 保留策略设置（GUI 编辑用）。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionSettings {
+    /// 快照保留天数
+    pub snapshot_keep_days: usize,
+    /// 快照保留条数上限
+    pub snapshot_keep_max: usize,
+    /// 事件保留天数
+    pub event_keep_days: usize,
+}
+
+/// 读取当前保留策略。
+pub fn retention_settings() -> RetentionSettings {
+    RetentionSettings {
+        snapshot_keep_days: snapshot_keep_days(),
+        snapshot_keep_max: snapshot_keep_max(),
+        event_keep_days: event_keep_days(),
+    }
+}
+
+/// 保存保留策略；非法值（0）拒绝写入。
+pub fn save_retention_settings(settings: &RetentionSettings) -> Result<(), CoreError> {
+    if settings.snapshot_keep_days == 0
+        || settings.snapshot_keep_max == 0
+        || settings.event_keep_days == 0
+    {
+        return Err(CoreError::new(
+            ErrorCode::InvalidValue,
+            "save_retention_settings",
+            "保留天数与条数必须大于 0",
+        ));
+    }
+    crate::platform::backup::config::write_config_value(
+        "snapshot_keep_days",
+        &settings.snapshot_keep_days.to_string(),
+    )?;
+    crate::platform::backup::config::write_config_value(
+        "snapshot_keep_max",
+        &settings.snapshot_keep_max.to_string(),
+    )?;
+    crate::platform::backup::config::write_config_value(
+        "event_keep_days",
+        &settings.event_keep_days.to_string(),
+    )
+}
+
 /// 读取事件保留天数。
 pub fn event_keep_days() -> usize {
     read_backup_keep(

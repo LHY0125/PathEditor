@@ -66,9 +66,14 @@ pub(crate) fn history_pinned(json_out: bool) {
 
 /// `history-restore-env <UID> [--force] [--json]`：只恢复环境变量，不触碰 PATH。
 pub(crate) fn history_restore_env(uid: String, force: bool, json_out: bool) {
-    let db = open_db_or_exit();
-    let outcome = path_editor_core::app::service::restore_env_snapshot(&db, &uid, force)
-        .unwrap_or_else(|e| exit_core_error(&e));
+    let mut db = open_db_or_exit();
+    let outcome = path_editor_core::app::service::restore_env_snapshot(
+        &mut db,
+        path_editor_core::domain::history::EventSource::Cli,
+        &uid,
+        force,
+    )
+    .unwrap_or_else(|e| exit_core_error(&e));
     if json_out {
         print_json(&outcome);
         return;
@@ -76,5 +81,31 @@ pub(crate) fn history_restore_env(uid: String, force: bool, json_out: bool) {
     println!("环境变量恢复完成：成功 {} 项", outcome.applied);
     for failure in &outcome.failures {
         eprintln!("失败: {failure}");
+    }
+}
+
+/// `history-restore-full <UID> [--json]`：PATH 与 env 一起恢复。
+pub(crate) fn history_restore_full(uid: String, json_out: bool) {
+    let mut db = open_db_or_exit();
+    let outcome = path_editor_core::app::service::restore_snapshot_full(
+        &mut db,
+        path_editor_core::domain::history::EventSource::Cli,
+        &uid,
+    )
+    .unwrap_or_else(|e| exit_core_error(&e));
+    if json_out {
+        print_json(&outcome);
+        return;
+    }
+    println!("整份快照已恢复（PATH + 环境变量）");
+    if let Some(env) = &outcome.env {
+        println!(
+            "环境变量：成功 {} 项，失败 {} 项",
+            env.applied,
+            env.failures.len()
+        );
+        for failure in &env.failures {
+            eprintln!("失败: {failure}");
+        }
     }
 }

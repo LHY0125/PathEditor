@@ -35,6 +35,8 @@
 
 全部经 `services/backend/` 运行时形状校验：
 
+- 设置：`retention_settings` / `retention_save`；`open_data_dir`。
+- 历史：`history_restore_full_snapshot`。
 - 健康：`db_health`（schema/完整性/行数/体积/最近清理）。
 - 历史：`history_list_events` / `history_get_snapshot` / `history_get_current` / `history_reveal_env_value` / `history_restore_snapshot` / `history_restore_env_snapshot` / `history_set_note` / `history_set_pinned` / `history_list_pinned`。两个 reveal 入口（实时 `reveal_env_var` 与历史 `history_reveal_env_value`）都会写 `revealEnv` 审计事件；事件不含值。
 - 配置：`profile_list` / `profile_save` / `profile_paths` / `profile_rename` / `profile_delete_by_name` / `profile_mark_applied` / `profile_mark_applied_by_name`
@@ -65,9 +67,10 @@ patheditor history-note  <UID> [TEXT] [--json]
 patheditor history-pin   <UID> [--off] [--json]
 patheditor history-pinned [--json]
 patheditor history-restore-env <UID> [--force] [--json]
+patheditor history-restore-full <UID> [--json]
 patheditor scan-diff     <A> <B> [--json]
 patheditor check-admin   [--json]
-patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|delete <NAME>|rename --old <OLD> --new <NEW>}
+patheditor profile       {list [--json]|save <NAME>|load <NAME>|apply <NAME>|delete <NAME>|diff <LEFT> <RIGHT> [--json]|rename --old <OLD> --new <NEW>}
 patheditor env list      [--system|--user] [--json]
 patheditor env get       <NAME> [--system]
 patheditor env set       <NAME> [--value <V>|--stdin|--value-file <F>] (--revision <R>|--force) [--dry-run] [--json]
@@ -77,10 +80,10 @@ patheditor env backup    [--json]
 patheditor env backups   [--json]
 patheditor env restore   <FILE> [--dry-run] [--force] [--strict] [--json]
 patheditor sync          {export <FILE>|import <FILE>|status|conflicts [--all]|resolve <ID> --take local|remote}
-patheditor maintenance   {prune [--dry-run]|vacuum|health [--json]|cleanup-legacy-backups [--dry-run] [--yes]|reconcile-backups [--json] [--purge-missing]|export --events|--changes [--format csv|json] [--out FILE] [--since YYYY-MM-DD] [--until YYYY-MM-DD]}
+patheditor maintenance   {backups [--json]|restore-backup <FILE> --yes|prune [--dry-run]|vacuum|health [--json]|cleanup-legacy-backups [--dry-run] [--yes]|reconcile-backups [--json] [--purge-missing]|export --events|--changes [--format csv|json] [--out FILE] [--since YYYY-MM-DD] [--until YYYY-MM-DD]}
 ```
 
-`sync export/import` 的口令用 `rpassword` 隐藏输入，不落盘、不进 shell 历史；同步只改 DB，不写注册表。退出码：`import` 记录到待人工解决的合并冲突 → **4**；包格式（`SyncFormat`）→ 1；口令错误、包被篡改、本机盐/DPAPI 不可用（`Crypto`）→ 5。`maintenance cleanup-legacy-backups` 未给 `--yes` 时打印计划并以 1 退出；`prune` 是保留策略，不需要 `--yes`；`vacuum` 先清理再 `wal_checkpoint(TRUNCATE)` + `VACUUM`，会短暂锁库。`history-note` 省略 TEXT 即清空备注（上限 500 字符），`history-pin --off` 取消固定。`history-restore-env` 只恢复环境变量、不触碰 PATH；`--force` 覆盖快照后被外部修改的变量，省略时遇冲突整批中止。`maintenance export` 的 `--since/--until` 只对 `--events` 生效（按 UTC 日界），单次最多导出 1 万行；`--out` 省略时输出到 stdout。`maintenance reconcile-backups` 只对账：`--purge-missing` 仅把「文件已丢失」的索引行标记为已删除，**不删除任何磁盘文件**。
+`sync export/import` 的口令用 `rpassword` 隐藏输入，不落盘、不进 shell 历史；同步只改 DB，不写注册表。退出码：`import` 记录到待人工解决的合并冲突 → **4**；包格式（`SyncFormat`）→ 1；口令错误、包被篡改、本机盐/DPAPI 不可用（`Crypto`）→ 5。`maintenance cleanup-legacy-backups` 未给 `--yes` 时打印计划并以 1 退出；`prune` 是保留策略，不需要 `--yes`；`vacuum` 先清理再 `wal_checkpoint(TRUNCATE)` + `VACUUM`，会短暂锁库。`history-note` 省略 TEXT 即清空备注（上限 500 字符），`history-pin --off` 取消固定。`history-restore-env` 只恢复环境变量、不触碰 PATH；`profile diff` 输出两个配置的 PATH/env/标签差异；`maintenance backups` 列出 `.pre-vN.bak`，`restore-backup` 替换前会留 `pre-restore.bak`（必须先关闭 GUI）；`--force` 覆盖快照后被外部修改的变量，省略时遇冲突整批中止。`maintenance export` 的 `--since/--until` 只对 `--events` 生效（按 UTC 日界），单次最多导出 1 万行；`--out` 省略时输出到 stdout。`maintenance reconcile-backups` 只对账：`--purge-missing` 仅把「文件已丢失」的索引行标记为已删除，**不删除任何磁盘文件**。
 
 `remove`、`edit`、`move-up`、`move-down` 默认操作用户 PATH，传入 `--system` 才操作系统 PATH。CLI 的 `list`、`import/export`、`profile`、`enable/disable` 都使用完整快照，避免丢失 `enabled=false` 条目和顺序。
 

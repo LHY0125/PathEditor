@@ -74,3 +74,56 @@ fn profile_create_delete_recreate_with_same_name() {
     // 幂等删除：已删除再删返回 false 而不是报错
     assert!(!delete_profile(&mut db, &uid1).unwrap());
 }
+
+#[test]
+fn profile_env_and_diff_are_exposed() {
+    use path_editor_core::db::history::EnvValueRow;
+    use path_editor_core::db::profiles::{diff_profiles, profile_env};
+
+    let dir = TempDir::new().unwrap();
+    let mut db = Db::open(&dir.path().join("diff.db")).unwrap();
+    db.migrate_to_current().unwrap();
+
+    let snap = |env_name: &str, value: &str, revision: &str| NewSnapshot {
+        kind: SnapshotKind::Profile,
+        source: EventSource::Gui,
+        system: vec![],
+        user: vec![],
+        env: vec![EnvValueRow {
+            hive: "user".into(),
+            name: env_name.into(),
+            kind: "String".into(),
+            value: Some(value.into()),
+            revision: revision.into(),
+            sensitive: false,
+            restorable: true,
+        }],
+        parent_uid: None,
+    };
+
+    save_profile(
+        &mut db,
+        "A",
+        None,
+        &["old".into()],
+        snap("JAVA_HOME", "a", "r1"),
+    )
+    .unwrap();
+    save_profile(
+        &mut db,
+        "B",
+        None,
+        &["new".into()],
+        snap("JAVA_HOME", "b", "r2"),
+    )
+    .unwrap();
+
+    let env = profile_env(&db, "A").unwrap().expect("配置必须存在");
+    assert_eq!(env.len(), 1);
+    assert_eq!(env[0].name, "JAVA_HOME");
+
+    let diff = diff_profiles(&db, "A", "B").unwrap();
+    assert_eq!(diff.tags_added, vec!["new".to_string()]);
+    assert_eq!(diff.tags_removed, vec!["old".to_string()]);
+    assert_eq!(diff.paths.env_modified, vec!["JAVA_HOME".to_string()]);
+}

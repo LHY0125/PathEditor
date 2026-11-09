@@ -101,7 +101,7 @@ test('⋯ 菜单展开后全部条目可见且未被祖先裁切', async ({ page
   await page.getByRole('button', { name: '更多操作' }).click();
   await expect(page.getByTestId('menu-panel')).toBeVisible();
   // 前置断言：确认测的确实是 8 条目菜单，而非空面板假绿
-  await expect(page.getByTestId('menu-panel').getByRole('menuitem')).toHaveCount(8);
+  await expect(page.getByTestId('menu-panel').getByRole('menuitem')).toHaveCount(10);
 
   expect(await countOccludedItems(page)).toBe(0);
 
@@ -151,5 +151,5 @@ test('遮挡检测本身可证伪 —— 面板塞回工具栏的 overflow 裁�
   // elementFromPoint 甚至能命中被裁掉的条目，所以「点击可用」不能作为可见性判据。
   // 本用例只能证明「裁切几何」这一层可被检出，不能证明 countOccludedItems 本身可失败；
   // 后者由上面「修复前代码必须变红」的真机验证覆盖。
-  expect(clippedOut).toBe(7);
+  expect(clippedOut).toBe(9);
 });

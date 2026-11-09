@@ -44,6 +44,7 @@ interface HistoryState {
   openSnapshot: (uid: string) => Promise<void>;
   clearDetail: () => void;
   restore: (uid: string) => Promise<void>;
+  restoreFull: (uid: string) => Promise<void>;
   /** 跨会话撤销：恢复最近一次可撤销操作前的快照 */
   undoLast: () => Promise<EventView | null>;
   /** 设置筛选并重新加载（offset 归零） */
@@ -163,8 +164,25 @@ export const useHistoryStore = create<HistoryState>((set) => ({
     const { events } = useHistoryStore.getState();
     const target = events.find((e) => e.snapshotUid !== null && e.action !== 'restore');
     if (!target || !target.snapshotUid) return null;
-    await useHistoryStore.getState().restore(target.snapshotUid);
+    await useHistoryStore.getState().restoreFull(target.snapshotUid);
     return target;
+  },
+
+  /** 一次性恢复快照的 PATH 与环境变量。 */
+  restoreFull: async (uid: string) => {
+    set({ restoring: true, error: null });
+    try {
+      await backend.historyRestoreFullSnapshot(uid);
+      set({ restoring: false, detail: null });
+      await Promise.all([
+        useAppStore.getState().loadPaths(),
+        useEnvStore.getState().load(),
+        useHistoryStore.getState().load(),
+      ]);
+    } catch (e) {
+      set({ restoring: false, error: errorMessage(e) });
+      throw e;
+    }
   },
 
   /**

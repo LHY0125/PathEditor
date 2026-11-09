@@ -79,12 +79,18 @@ fn snapshot_env_payload(view: &SnapshotView) -> Result<EnvBackupPayload, CoreErr
             "该快照不包含环境变量数据（可能由旧版本创建或采集失败）",
         ));
     }
+    env_payload_from_rows(&view.env, view.created_at)
+}
 
+/// 把快照 env 行转换为备份载荷（配置应用与快照恢复共用）。
+pub(crate) fn env_payload_from_rows(
+    rows: &[EnvValueRow],
+    captured_at: i64,
+) -> Result<EnvBackupPayload, CoreError> {
     let mut system = Vec::new();
     let mut user = Vec::new();
-    for row in &view.env {
+    for row in rows {
         let Some(value) = row.value.clone() else {
-            // 快照读取已传 reveal=true；仍为空说明该行不可恢复，跳过
             continue;
         };
         if !row.restorable {
@@ -116,7 +122,7 @@ fn snapshot_env_payload(view: &SnapshotView) -> Result<EnvBackupPayload, CoreErr
     }
 
     Ok(EnvBackupPayload {
-        captured_at: view.created_at,
+        captured_at,
         hives: EnvBackupHives { system, user },
     })
 }
@@ -126,24 +132,88 @@ fn snapshot_env_payload(view: &SnapshotView) -> Result<EnvBackupPayload, CoreErr
 /// `force = false`：当前值自快照后被修改过则整批中止；
 /// `force = true`：按快照覆盖，并删除快照中不存在的可写变量。
 pub fn restore_env_snapshot(
-    db: &Db,
+    db: &mut Db,
+    source: EventSource,
     uid: &str,
     force: bool,
 ) -> Result<backup::RestoreOutcome, CoreError> {
     let view = history::get_snapshot(db, uid, true)?;
     let payload = snapshot_env_payload(&view)?;
-    backup::restore_env_payload(&payload, force)
+    let outcome = backup::restore_env_payload(&payload, force)?;
+    record_env_restore_event(db, source, uid, &outcome);
+    Ok(outcome)
 }
 
 /// [`restore_env_snapshot`] 的存储注入版本（测试不触碰真实注册表）。
 pub fn restore_env_snapshot_in_stores(
     sys: &dyn crate::platform::registry::store::EnvHiveStore,
     usr: &dyn crate::platform::registry::store::EnvHiveStore,
-    db: &Db,
+    db: &mut Db,
+    source: EventSource,
     uid: &str,
     force: bool,
 ) -> Result<backup::RestoreOutcome, CoreError> {
     let view = history::get_snapshot(db, uid, true)?;
     let payload = snapshot_env_payload(&view)?;
-    backup::restore_payload_in_stores(sys, usr, &payload, force)
+    let outcome = backup::restore_payload_in_stores(sys, usr, &payload, force)?;
+    record_env_restore_event(db, source, uid, &outcome);
+    Ok(outcome)
+}
+
+fn record_env_restore_event(
+    db: &mut Db,
+    source: EventSource,
+    uid: &str,
+    outcome: &backup::RestoreOutcome,
+) {
+    let result = if outcome.failures.is_empty() {
+        EventResult::Success
+    } else if outcome.applied == 0 {
+        EventResult::Failure
+    } else {
+        EventResult::Partial
+    };
+    let event = crate::domain::history::HistoryEvent {
+        source,
+        action: EventAction::EnvRestore,
+        hive: None,
+        target: None,
+        changed_fields: vec!["env_values".to_string()],
+        before_revision: None,
+        after_revision: None,
+        result,
+        snapshot_uid: Some(uid.to_string()),
+    };
+    if let Err(e) = DbHistory::new(db).record(event) {
+        log::warn!("环境变量恢复审计写入失败（恢复已执行）: {}", e.message);
+    }
+}
+
+/// 一次性恢复整份快照（PATH + env）。
+///
+/// 先恢复 env、再恢复 PATH：env 失败时整次中止，不会出现「PATH 已改、env 没改」；
+/// PATH 失败时 env 已生效，错误原样返回（注册表跨 hive 无法做到真正原子）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullRestoreOutcome {
+    /// PATH 恢复结果
+    pub path: ApplyOutcome,
+    /// env 恢复结果；快照没有 env 数据时为 `None`
+    pub env: Option<backup::RestoreOutcome>,
+}
+
+/// 恢复整份快照：PATH 与 env 一起还原。
+pub fn restore_snapshot_full(
+    db: &mut Db,
+    source: EventSource,
+    uid: &str,
+) -> Result<FullRestoreOutcome, CoreError> {
+    let view = history::get_snapshot(db, uid, false)?;
+    let env = if view.env.is_empty() {
+        None
+    } else {
+        Some(restore_env_snapshot(db, source, uid, true)?)
+    };
+    let path = restore_snapshot(db, uid, source)?;
+    Ok(FullRestoreOutcome { path, env })
 }

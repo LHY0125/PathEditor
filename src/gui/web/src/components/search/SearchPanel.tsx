@@ -26,6 +26,18 @@ export function SearchPanel() {
   const userPaths = useAppStore((s) => s.userPaths);
   const envSnapshot = useEnvStore((s) => s.snapshot);
   const [copied, setCopied] = useState<string | null>(null);
+  const [kindFilter, setKindFilter] = useState('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [saved, setSaved] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('savedSearches');
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
 
   // 首次进入时清空上一次会话的残留结果
   useEffect(() => {
@@ -35,6 +47,29 @@ export function SearchPanel() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     void run();
+    const text = query.trim();
+    if (!text) return;
+    setSaved((prev) => {
+      const next = [text, ...prev.filter((item) => item !== text)].slice(0, 8);
+      try {
+        localStorage.setItem('savedSearches', JSON.stringify(next));
+      } catch {
+        // localStorage 不可用时只影响记忆
+      }
+      return next;
+    });
+  };
+
+  const removeSaved = (text: string) => {
+    setSaved((prev) => {
+      const next = prev.filter((item) => item !== text);
+      try {
+        localStorage.setItem('savedSearches', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   /** 把 FTS5 的 `[命中]` 片段渲染成高亮，其余部分原样转义。 */
@@ -67,6 +102,7 @@ export function SearchPanel() {
     if (kind === 'path') return t('search.kindPath');
     if (kind === 'envName') return t('search.kindEnvName');
     if (kind === 'profile') return t('search.kindProfile');
+    if (kind === 'snapshotNote') return t('search.kindSnapshotNote');
     return kind;
   };
 
@@ -138,6 +174,58 @@ export function SearchPanel() {
         </Button>
       </form>
 
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <select
+          className="field-input"
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value)}
+          aria-label={t('search.filterKind')}
+        >
+          <option value="all">{t('search.allKinds')}</option>
+          <option value="path">{t('search.kindPath')}</option>
+          <option value="envName">{t('search.kindEnvName')}</option>
+          <option value="profile">{t('search.kindProfile')}</option>
+          <option value="snapshotNote">{t('search.kindSnapshotNote')}</option>
+        </select>
+        <label className="flex items-center gap-1" style={{ color: 'var(--app-fg-muted)' }}>
+          {t('search.from')}
+          <input
+            type="date"
+            className="field-input"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-1" style={{ color: 'var(--app-fg-muted)' }}>
+          {t('search.to')}
+          <input
+            type="date"
+            className="field-input"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+        </label>
+        {saved.length > 0 && (
+          <>
+            <span style={{ color: 'var(--app-fg-muted)' }}>{t('search.savedSearches')}</span>
+            {saved.map((text) => (
+              <span key={text} className="tab-pill inline-flex items-center gap-1">
+                <button type="button" onClick={() => setQuery(text)}>
+                  {text}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t('search.removeSaved', { query: text })}
+                  onClick={() => removeSaved(text)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </>
+        )}
+      </div>
+
       {error !== null && (
         <p role="alert" className="text-xs" style={{ color: 'var(--app-danger)' }}>
           {error}
@@ -154,50 +242,59 @@ export function SearchPanel() {
         <>
           <p className="search-count">{t('search.resultCount', { count: hits.length })}</p>
           <ul className="space-y-1">
-            {hits.map((hit, index) => {
-              const key = hitKey(hit, index);
-              const pathLoc = hit.kind === 'path' ? findPath(hit.content) : null;
-              const envMeta = hit.kind === 'envName' ? findEnv(hit.content) : null;
-              return (
-                <li key={key} className="text-xs search-hit">
-                  <div className="search-hit-main">
-                    <span className="search-kind rounded px-1">{kindLabel(hit.kind)}</span>
-                    <span className="search-snippet font-mono">{renderSnippet(hit.snippet)}</span>
-                  </div>
-                  <div className="search-hit-actions">
-                    {hit.kind === 'path' && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={pathLoc === null}
-                        title={pathLoc === null ? t('search.openFailed') : undefined}
-                        onClick={() => {
-                          if (pathLoc) goPath(pathLoc);
-                        }}
-                      >
-                        {t('search.openPath')}
+            {hits
+              .filter((hit) => {
+                if (kindFilter !== 'all' && hit.kind !== kindFilter) return false;
+                const from = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
+                const to = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
+                if (from !== null && hit.createdAt < from) return false;
+                if (to !== null && hit.createdAt > to) return false;
+                return true;
+              })
+              .map((hit, index) => {
+                const key = hitKey(hit, index);
+                const pathLoc = hit.kind === 'path' ? findPath(hit.content) : null;
+                const envMeta = hit.kind === 'envName' ? findEnv(hit.content) : null;
+                return (
+                  <li key={key} className="text-xs search-hit">
+                    <div className="search-hit-main">
+                      <span className="search-kind rounded px-1">{kindLabel(hit.kind)}</span>
+                      <span className="search-snippet font-mono">{renderSnippet(hit.snippet)}</span>
+                    </div>
+                    <div className="search-hit-actions">
+                      {hit.kind === 'path' && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={pathLoc === null}
+                          title={pathLoc === null ? t('search.openFailed') : undefined}
+                          onClick={() => {
+                            if (pathLoc) goPath(pathLoc);
+                          }}
+                        >
+                          {t('search.openPath')}
+                        </Button>
+                      )}
+                      {hit.kind === 'envName' && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={envMeta === null}
+                          title={envMeta === null ? t('search.openFailed') : undefined}
+                          onClick={() => {
+                            if (envMeta) goEnv(envMeta);
+                          }}
+                        >
+                          {t('search.openVar')}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => void copy(hit, key)}>
+                        {copied === key ? t('search.copied') : t('search.copy')}
                       </Button>
-                    )}
-                    {hit.kind === 'envName' && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={envMeta === null}
-                        title={envMeta === null ? t('search.openFailed') : undefined}
-                        onClick={() => {
-                          if (envMeta) goEnv(envMeta);
-                        }}
-                      >
-                        {t('search.openVar')}
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => void copy(hit, key)}>
-                      {copied === key ? t('search.copied') : t('search.copy')}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
+                    </div>
+                  </li>
+                );
+              })}
           </ul>
         </>
       )}

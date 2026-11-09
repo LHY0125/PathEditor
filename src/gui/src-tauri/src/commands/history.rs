@@ -115,8 +115,19 @@ pub fn history_restore_env_snapshot(
     force: bool,
     state: State<'_, DbState>,
 ) -> Result<path_editor_core::platform::backup::RestoreOutcome, CoreError> {
-    with_db(&state, "history_restore_env_snapshot", |db| {
-        service::restore_env_snapshot(db, &uid, force)
+    with_db_mut(&state, "history_restore_env_snapshot", |db| {
+        service::restore_env_snapshot(db, EventSource::Gui, &uid, force)
+    })
+}
+
+/// 一次性恢复整份快照（PATH + 环境变量）。
+#[tauri::command(async)]
+pub fn history_restore_full_snapshot(
+    uid: String,
+    state: State<'_, DbState>,
+) -> Result<service::FullRestoreOutcome, CoreError> {
+    with_db_mut(&state, "history_restore_full_snapshot", |db| {
+        service::restore_snapshot_full(db, EventSource::Gui, &uid)
     })
 }
 

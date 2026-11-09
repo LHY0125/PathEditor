@@ -35,6 +35,11 @@ export function ToolsTab({ groups, query, onQueryChange }: ToolsTabProps) {
               }}
             >
               {group.dir} {!group.exists && t('analyze.notExists')}
+              {group.inPath === false && (
+                <span className="ml-2" style={{ color: 'var(--app-warning-text)' }}>
+                  {t('analyze.notInPath')}
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-1 mt-1 ml-2">
               {group.exes.map((exe) => (

@@ -4,7 +4,7 @@
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
 /// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
-pub const CURRENT_SCHEMA_VERSION: u32 = 5;
+pub const CURRENT_SCHEMA_VERSION: u32 = 6;
 
 /// v1 全量 DDL。
 ///
@@ -221,6 +221,29 @@ ALTER TABLE sync_conflicts ADD COLUMN remote_content TEXT;
 CREATE INDEX idx_backups_file_path ON backups(file_path);
 CREATE INDEX idx_refs_from ON var_references(from_name);
 CREATE INDEX idx_refs_to ON var_references(to_name);
+"#;
+
+/// v6：PATH 整理规则与命中历史。
+pub const DDL_V6: &str = r#"
+CREATE TABLE rules (
+  id             INTEGER PRIMARY KEY,
+  uid            TEXT NOT NULL UNIQUE,
+  name           TEXT NOT NULL,
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  priority       INTEGER NOT NULL DEFAULT 0,
+  condition_json TEXT NOT NULL,
+  action_json    TEXT NOT NULL,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+CREATE INDEX idx_rules_priority ON rules(enabled, priority);
+CREATE TABLE rule_hits (
+  id            INTEGER PRIMARY KEY,
+  rule_id       INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+  event_uid     TEXT,
+  hit_at        INTEGER NOT NULL,
+  matched_count INTEGER NOT NULL
+);
 "#;
 
 /// v5：快照可标记为「固定」（保留策略不删）。

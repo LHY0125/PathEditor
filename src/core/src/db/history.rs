@@ -72,6 +72,7 @@ pub(crate) fn action_str(a: EventAction) -> &'static str {
         EventAction::Redo => "redo",
         EventAction::RevealEnv => "revealEnv",
         EventAction::Drift => "drift",
+        EventAction::EnvRestore => "envRestore",
     }
 }
 
@@ -88,6 +89,7 @@ pub(crate) fn action_from_str(s: &str) -> EventAction {
         "redo" => EventAction::Redo,
         "revealEnv" => EventAction::RevealEnv,
         "drift" => EventAction::Drift,
+        "envRestore" => EventAction::EnvRestore,
         _ => EventAction::Save,
     }
 }
