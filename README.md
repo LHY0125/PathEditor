@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/version-7.0.1-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
-  <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
+  <img src="https://img.shields.io/badge/rust-1.89-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/tests-848%20passed-brightgreen" alt="tests">
@@ -650,7 +650,7 @@ docs/审核和开发/                # 审查与开发记录
 ### 本地开发环境
 
 - Node.js 22+
-- Rust 1.88+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
+- Rust 1.89+；本地开发用 `stable-x86_64-pc-windows-gnu`，CI/发布用 MSVC
 - MinGW-w64（GNU 下测试需要 `windres`；MSVC 下由链接器清单处理）
 - 数据库是普通 SQLite（`rusqlite` 的 `bundled`），**不需要 OpenSSL / perl / NASM**，直接 `cargo build` 即可
 

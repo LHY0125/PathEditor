@@ -91,6 +91,9 @@ jobs:
   audit:
     name: 依赖审计
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     # 仓库的 rust-toolchain.toml 钉的是 `stable-x86_64-pc-windows-gnu`；
     # Linux runner 上 rustup 会把它当成带 target 的 channel 名而拒绝执行
     # （`error: target tuple in channel name`）。审计只读 Cargo.lock，与目标平台无关，

@@ -211,6 +211,16 @@ mod tests {
         dir
     }
 
+    /// 按目录取组：CI 上可能同时探测到 winget/choco 的 shim 目录，
+    /// 不能假设临时目录一定是第一组或唯一一组。
+    fn group_for<'a>(groups: &'a [ToolGroup], dir: &std::path::Path) -> &'a ToolGroup {
+        let dir = dir.to_string_lossy().to_string();
+        groups
+            .iter()
+            .find(|group| group.dir == dir)
+            .expect("临时目录对应的工具组必须存在")
+    }
+
     #[test]
     fn scan_conflicts_no_duplicates() {
         let d1 = make_temp_dir_with_exes(&["a.exe"]);
@@ -243,10 +253,18 @@ mod tests {
         let d1 = make_temp_dir_with_exes(&["tool.exe", "helper.bat"]);
         let paths = vec![d1.path().to_string_lossy().to_string()];
         let groups = scan_tools(paths, String::new()).unwrap();
-        assert_eq!(groups.len(), 1);
-        assert!(groups[0].exists);
-        assert!(groups[0].exes.contains(&"helper.bat".to_string()));
-        assert!(groups[0].exes.contains(&"tool.exe".to_string()));
+        let group = group_for(&groups, d1.path());
+        assert!(group.exists);
+        assert_eq!(group.exes.len(), 2);
+        assert!(group.exes.contains(&"helper.bat".to_string()));
+        assert!(group.exes.contains(&"tool.exe".to_string()));
+        assert_eq!(
+            groups
+                .iter()
+                .filter(|group| group.dir == d1.path().to_string_lossy())
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -254,7 +272,8 @@ mod tests {
         let d1 = make_temp_dir_with_exes(&["apple.exe", "banana.exe"]);
         let paths = vec![d1.path().to_string_lossy().to_string()];
         let groups = scan_tools(paths, "apple".into()).unwrap();
-        assert_eq!(groups[0].exes.len(), 1);
-        assert_eq!(groups[0].exes[0], "apple.exe");
+        let group = group_for(&groups, d1.path());
+        assert_eq!(group.exes.len(), 1);
+        assert_eq!(group.exes[0], "apple.exe");
     }
 }
