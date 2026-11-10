@@ -24,10 +24,13 @@ function savedMode(): ThemeMode {
   try {
     const mode = localStorage.getItem('themeMode');
     if (mode === 'light' || mode === 'dark' || mode === 'system') return mode;
-    // 兼容旧键：只有显式亮/暗，没有 system
-    return localStorage.getItem('darkMode') === '1' ? 'dark' : 'light';
+    // 兼容旧键；没有历史偏好时默认深色（桌面工具主场景）。
+    const legacy = localStorage.getItem('darkMode');
+    if (legacy === '1') return 'dark';
+    if (legacy === '0') return 'light';
+    return 'dark';
   } catch {
-    return 'system';
+    return 'dark';
   }
 }
 
@@ -51,9 +54,13 @@ function persist(mode: ThemeMode): void {
 }
 
 const initialMode = savedMode();
+const initialIsDark = resolve(initialMode);
+// 模块求值时就挂上 html.dark：默认深色下若等到 App 的 useEffect 才应用，
+// 首帧会先按浅色 token 绘制一次，出现白闪。
+if (typeof document !== 'undefined') apply(initialIsDark);
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  isDark: resolve(initialMode),
+  isDark: initialIsDark,
   mode: initialMode,
   toggle: () =>
     set((state) => {

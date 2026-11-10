@@ -422,7 +422,7 @@ fn restore_env_snapshot_applies_env_only_without_touching_path() {
 
     let dir = tempfile::TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("env-snapshot.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let env = vec![
         EnvValueRow {
@@ -510,7 +510,7 @@ fn restore_env_snapshot_rejects_snapshot_without_env_data() {
 
     let dir = tempfile::TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("empty-env.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     let uid = insert_snapshot(
         &mut db,
         NewSnapshot {
@@ -544,7 +544,7 @@ fn save_path_persists_env_rows_in_before_and_current_snapshots() {
 
     let dir = tempfile::TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("save-env.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let env = vec![EnvValueRow {
         hive: "user".into(),

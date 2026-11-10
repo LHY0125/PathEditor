@@ -22,8 +22,9 @@ const TYPE_LABEL_KEY: Record<EnvVarMeta['kind'], string> = {
   unsupported: 'envVar.typeUnsupported',
 };
 
-// 与 PathTable 一致：28px 固定行高（UI 规范对齐）
-const ROW_HEIGHT = 28;
+// 行内操作按钮为 32px（Button sm）；行高至少 34px 才能上下各留 1px，
+// 否则相邻两行的按钮热区会重叠。
+const ROW_HEIGHT = 34;
 
 export function EnvVarTable({
   searchQuery = '',
@@ -156,7 +157,7 @@ export function EnvVarTable({
                 }}
                 // 交替底色按逻辑索引，选中态由 .is-selected 覆盖
                 data-odd={rowIdx % 2 === 1}
-                className={`path-row${isSelected ? ' is-selected' : ''}`}
+                className={`path-row path-table-row${isSelected ? ' is-selected' : ''}`}
                 style={{
                   height: `${virtualRow.size}px`,
                   transform: `translateY(${virtualRow.start}px)`,

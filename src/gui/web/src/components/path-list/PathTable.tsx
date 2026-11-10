@@ -92,8 +92,8 @@ export function PathTable({ tabId }: PathTableProps) {
   const rowVirtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 28, // 预估行高 28px
-    initialRect: { width: 800, height: 600 },
+    estimateSize: () => 29, // 与 --row-h 保持一致
+    initialRect: { width: 1400, height: 900 },
   });
 
   // 搜索定位：滚动到目标逻辑索引后清空请求，避免后续滚动被反复拉回。
@@ -117,9 +117,9 @@ export function PathTable({ tabId }: PathTableProps) {
   return (
     <div ref={parentRef} className="flex-1 overflow-auto relative" data-testid="path-table">
       <div className="path-table-head">
-        <div className="w-8 px-2 py-1">#</div>
-        <div className="w-6 px-1 py-1"></div>
-        <div className="px-2 py-1 flex-1">{t('table.path')}</div>
+        <div className="path-col-index">#</div>
+        <div className="path-col-check" aria-hidden="true"></div>
+        <div className="path-col-text">{t('table.path')}</div>
       </div>
       {filtered.length === 0 && (
         <p className="px-3 py-4 text-xs" style={{ color: 'var(--app-fg-muted)' }}>
@@ -187,29 +187,31 @@ export function PathTable({ tabId }: PathTableProps) {
               data-odd={rowIdx % 2 === 1}
               onClick={(e) => handleClick(index, e)}
               onDoubleClick={() => handleDoubleClick(index)}
-              className={`path-row${isSelected ? ' is-selected' : ''}`}
+              className={`path-row path-table-row${isSelected ? ' is-selected' : ''}`}
               style={{
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <div className="w-8 px-2 py-0.5 text-xs opacity-50">{index + 1}</div>
-              <div className="w-6 px-1 py-0.5 flex items-center">
-                <input
-                  type="checkbox"
-                  data-testid="path-enabled"
-                  aria-label={t('table.toggleEnabled', { path })}
-                  checked={enabled}
-                  disabled={!canWrite}
-                  onChange={() => {
-                    useAppStore.getState().togglePath(index, target);
-                  }}
-                  className={canWrite ? 'cursor-pointer' : 'cursor-not-allowed'}
-                />
+              <div className="path-col-index">{index + 1}</div>
+              <div className="path-col-check">
+                <label className="path-check-hit">
+                  <input
+                    type="checkbox"
+                    data-testid="path-enabled"
+                    aria-label={t('table.toggleEnabled', { path })}
+                    checked={enabled}
+                    disabled={!canWrite}
+                    onChange={() => {
+                      useAppStore.getState().togglePath(index, target);
+                    }}
+                    className="path-check"
+                  />
+                </label>
               </div>
               <div
                 data-testid="path-text"
-                className="path-text"
+                className="path-text path-col-text"
                 title={expandedCache.get(path) || undefined}
               >
                 {path}

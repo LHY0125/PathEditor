@@ -12,7 +12,7 @@ fn db_history_records_events_and_counts_total() {
     let dir = TempDir::new().unwrap();
 
     let mut db = Db::open(&dir.path().join("s.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let make = |action: EventAction| HistoryEvent {
         source: EventSource::Gui,

@@ -1,11 +1,9 @@
 //
-// 本测试守的是「派生表在新库上建得出来」与「迁移幂等」两件事。
-// 版本号断言用 `CURRENT_SCHEMA_VERSION` 而非硬编码 `2`——schema 每升一版
-// 都不该让它失败；「v1→v2 是否落版本号」由 `db_schema_v1_to_v2.rs` 专门守。
+// 守住「派生表在新库上建得出来」与「重复建库幂等」。
 use path_editor_core::db::schema;
 
 #[test]
-fn schema_v2_adds_derived_tables_and_is_idempotent() {
+fn schema_adds_derived_tables_and_is_idempotent() {
     let (_dir, mut db) = crate::common::new_db("v2.db");
 
     assert_eq!(
@@ -19,6 +17,6 @@ fn schema_v2_adds_derived_tables_and_is_idempotent() {
     }
 
     // 幂等：重复迁移不改版本、不报错
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     assert_eq!(db.schema_version().unwrap(), schema::CURRENT_SCHEMA_VERSION);
 }

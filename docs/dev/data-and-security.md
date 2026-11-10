@@ -17,7 +17,6 @@
 - **明文查看留审计**：GUI 实时 reveal、GUI 历史 reveal 与 CLI `env get` 都会写一条 `action = revealEnv` 的事件（只含变量名/hive/结果，**不含值**）。审计写入 best-effort，DB 不可用不影响查看本身。
 - **遗留明文备份清理**：遗留 `env_backup_*.json` 用 `maintenance cleanup-legacy-backups --yes` 先转 `.pebak` 并回读校验，再删除明文。
 - **快照敏感面**：数据库不加密，快照里的环境变量值（含 `sensitive` 变量）均为明文；UI 默认掩码、`reveal` 才显示。恢复环境变量走 `restore_env_snapshot`，与 PATH 恢复分开。
-- **迁移前备份**：schema 升级前自动生成 `.pre-v{n}.bak`（保留 3 份）；备份失败不迁移。
 - **同步与保留策略**：见 `docs/dev/sqlite-storage.md`；`maintenance prune` 只删已导出且到期的 `changes`、已解决且到期的 `sync_conflicts`、到期/超限且未被保护的快照与到期事件，**待导出队列（`exported_at IS NULL`）永不删**；快照保护位见 `docs/dev/sqlite-storage.md`。
 
 路径验证和环境变量展开使用有界并发队列，不按前 20 条截断；扫描通过 `scan_paths` 共享枚举结果，最多使用 8 个扫描线程。

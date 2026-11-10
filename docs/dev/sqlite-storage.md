@@ -1,7 +1,7 @@
 # SQLite 存储（不加密）
 
 > 本文件是 `CLAUDE.md` 的详细补充。日常开工只需读 `CLAUDE.md` 的速览；
-> 涉及 schema、迁移、同步或保留策略时再读本文。
+> 涉及 schema、同步或保留策略时再读本文。
 
 ## 基本形态
 
@@ -10,16 +10,17 @@
 - **本机盐**：`~/.patheditor/keys/db.key.dpapi`，内容 `version(1)+reserved(32)+hash_salt(16)`，整体 DPAPI（**当前 Windows 用户**作用域）；互斥量 `Local\PathEditor.KeyInit` 串行化首次创建，DACL 限当前用户 + SYSTEM。首次创建用 `create_new(true)` 原子写入，禁止 `exists()`→写入的 TOCTOU。前 32 字节是旧版 `db_key` 的遗留位置，现只作保留位；**保持 49 字节与文件名不变**，否则磁盘上既有 `.pebak` 的 `payload_hash` 会全部失配。
 - **数据目录**：`PATHEDITOR_DATA_DIR` 仅供 CLI 子进程测试把库重定向到临时目录；生产不设置。
 - **快照内容**：每条快照同时保存 PATH（`path_entries`）与环境变量（`env_values`）；环境变量值以**明文**落库（数据库本身不加密），敏感标记只控制 UI 掩码。旧版本快照的 env 为空，恢复 env 时会被拒绝，避免把当前变量删光。
-- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 6`。`PRAGMA user_version` 启动只读，**只在建库/迁移事务内写**；新增迁移时递增并补 `DDL_Vn`。
+- **schema**：`src/core/src/db/schema.rs`，`CURRENT_SCHEMA_VERSION = 7`。`PRAGMA user_version` 启动只读，**只在建库事务内写**；不提供逐版本迁移，旧版本库直接拒绝。
 
 ## 表
 
-| 版本 | 表                                                                                                                  | 性质                                                                |
-| ---- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| v1   | `snapshots` / `path_entries` / `env_values` / `events` / `profiles` / `profile_revisions` / `backups` / `app_state` | 真相或业务状态                                                      |
-| v2   | `scan_runs` / `var_references` / `daily_stats` / `search_fts`                                                       | `scan_runs` 是真实记录；其余是派生表                                |
-| v3   | `changes` / `sync_conflicts`                                                                                        | `changes` 是变更日志（真相，不可重建）；`sync_conflicts` 待人工决定 |
-| v4   | `sync_conflicts.remote_content` + 三个查询索引                                                                      | 冲突需保留远端实体内容，「采纳远端」才能真正落地                    |
+| 模块     | 表                                                                                                                  | 性质                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 核心     | `snapshots` / `path_entries` / `env_values` / `events` / `profiles` / `profile_revisions` / `backups` / `app_state` | 真相或业务状态                                                      |
+| 派生     | `scan_runs` / `var_references` / `daily_stats` / `search_fts`                                                       | `scan_runs` 是真实记录；其余是派生表                                |
+| 同步     | `changes` / `sync_conflicts`                                                                                        | `changes` 是变更日志（真相，不可重建）；`sync_conflicts` 待人工决定 |
+| 同步扩展 | `sync_conflicts.remote_content` + 三个查询索引                                                                      | 冲突需保留远端实体内容，「采纳远端」才能真正落地                    |
+| 规则     | `rules` / `rule_hits`                                                                                               | 路径整理规则与命中历史                                              |
 
 **派生表**：`search_fts` / `daily_stats` / `var_references` 可随时重建（不是真相）；`scan_runs` 是真实记录。GUI 启动时按需重建（FTS 仅空时、daily/refs 每次）；**CLI 不重建**（已知限制，改 PATH 后 GUI 派生数据可能陈旧）。
 
@@ -31,18 +32,18 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 
 ## 初始化
 
-- 启动时 `migrate_to_current` 只做 schema 迁移；首次启动若没有 `current_snapshot_id`，用注册表当前状态建一条基线。
+- 启动时 `ensure_schema` 只接受空库或当前版本；首次启动若没有 `current_snapshot_id`，用注册表当前状态建一条基线。
 - 遗留 `env_backup_*.json` 用 `maintenance cleanup-legacy-backups --yes` 先转 `.pebak` 并回读校验，再删除明文。
 
 ## 同步
 
 `changes` 是变更日志（真相，不可重建），`sync_conflicts` 是待人工决定。
 
-- **bundle 格式**：`PESYNC1\0 + version + header_len + header JSON + salt(16) + nonce(12) + ciphertext + tag`
+- **bundle 格式**：`PESYNC1\0 + version + header_len + header JSON + salt(16) + nonce(12) + ciphertext + tag`；当前 `version = 2`，不接受任何其它版本。
 - **加密**：Argon2id（m=65536 KiB, t=3, p=1）+ ChaCha20-Poly1305；AAD 覆盖 header/salt/nonce。
-- **导入**：单事务；冲突写 `sync_conflicts`；失败整体回滚；**不写注册表**。
-- **合并**：LWW（`lamport` 高者胜，同 lamport 按 `device_id`）；`snapshot` / `profile` 按**整实体**比较（墓碑与内容变更同一时间线）。
-- **配置同步**：`profile` / `profile_revision` 随包落库；远端 uid 保留；同名不同 uid 自动改名 `原名 (来自 设备前 8 位)`；墓碑（`content=null` + `field=deleted_at`）软删除；`profile.name` 过本地同一套 `validate_name`，非法名称 → `SyncFormat` 整包回滚。
+- **导入**：单事务；冲突写 `sync_conflicts`；失败整体回滚；**不写注册表**。进入事务前校验 `header.schemaVersion == CURRENT_SCHEMA_VERSION`、`header.baseLamport` 钳制后的范围、每条变更的 `deviceId` 与 header 一致且不等于本机、`0 <= lamport <= baseLamport`、`0 <= seq <= i64::MAX - 2`；`deleted_at` 不得携带 `content`。
+- **合并**：LWW（`lamport` 高者胜，同 lamport 按 `device_id`）；`snapshot` 按**整实体**，`profile` 按**字段**（`name` / `description` / `tags` / `content`）比较。墓碑单独比较且压过更早的字段编辑。
+- **配置同步**：`profile` 拆成四个字段变更后随包落库，`profile_revision` 仍随包；远端 uid 保留；同名不同 uid 自动改名 `原名 (来自 设备前 8 位)`；墓碑（`content=null` + `field=deleted_at`）软删除；`profile.name` 过本地同一套 `validate_name`，非法名称 → `SyncFormat` 整包回滚。冲突解决“采纳远端”只写冲突字段，不覆盖其它已合并字段。
 - **增量包**：导出只包含 `exported_at IS NULL` 的变更；新设备需从第一份包按顺序应用。
 
 ## 保留策略
@@ -51,16 +52,14 @@ CI 分两步跑（core/cli 用 `--exclude patheditor`，GUI 用 `--lib` + 清单
 
 快照按 `snapshot_keep_days`（默认 365 天）与 `snapshot_keep_max`（默认 500 条）清理，事件按 `event_keep_days`（默认 730 天）清理，键写在 `~/.patheditor/config.ini`。以下快照**永不删除**：`pinned = 1`、`app_state.current_snapshot_id` 指向的、被 `profile_revisions` 引用的、被 `backups` 引用的。被删快照只把 `events.snapshot_id` 置 NULL，审计事件保留。`maintenance vacuum` 先清理再 `wal_checkpoint(TRUNCATE)` + `VACUUM`。
 
-## 规则引擎（v6）
+## 规则引擎
 
 `rules` 保存条件/动作/优先级/启用状态；`rule_hits` 记录每次应用时每条规则的命中条数。
 规则只作用于草稿预览与应用，不自行写注册表。当前支持 `pathContains` 条件与
 `moveTop` / `remove` 两种动作。
 
-## 迁移前备份与健康检查
+## 健康检查
 
-- `migrate_to_current` 在真正迁移前用 SQLite Online Backup API 复制一份
-  `<数据库文件名>.pre-v{旧版本}.bak`（同目录，最多保留 3 份）；备份失败则中止迁移。
 - `db_health` / `maintenance health` 输出 schema、`integrity_check(1)`、9 张关键表行数、
   主库/WAL/SHM 体积与最近清理时间。
 - 最近清理时间写在 `<数据目录>/maintenance.json` 的 `lastPruneAt`，不占用 schema 列。

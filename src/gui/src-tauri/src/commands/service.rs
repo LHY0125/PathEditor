@@ -26,7 +26,7 @@ pub fn save_path_with_sidecar(
         return service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory);
     };
 
-    match guard.as_mut() {
+    match guard.db.as_mut() {
         Some(db) => service::save_path_with_db(db, EventSource::Gui, system, user),
         None => service::save_path_registry_only(system, user, EventSource::Gui, &NoopHistory),
     }

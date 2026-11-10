@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **7.0.0**）。
+PathEditor 是 Windows 系统环境变量（PATH）编辑器，采用 Tauri 2.x + React 19 + TypeScript strict + Rust workspace，提供 GUI 和 CLI 两种入口。当前版本见 `package.json` 与 `Cargo.toml` 的 `[workspace.package] version`（两处必须一致；当前 **7.0.1**）。
 
 数据层是一个 **SQLite 数据库（sidecar，不加密）**：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**，DB 打不开时应用 fail-open（编辑照常、历史/同步/检索降级）。
 
@@ -54,8 +54,8 @@ cargo test -p patheditor-cli --bins <test_name>   # CLI 单测（必须 --bins�
 ### 本地构建环境（Windows + GNU）
 
 `rusqlite` 只用 `bundled`（SQLite C 源码由 `cc` 编译，FTS5/JSON1 默认开启），**不再需要 OpenSSL、
-perl、PERL5LIB 或 NASM**。直接 `cargo check` / `cargo test` 即可；本机 2026-11-08 实测
-`cargo test --workspace` 360 passed / 2 ignored，clippy 与 fmt 全绿。
+perl、PERL5LIB 或 NASM**。直接 `cargo check` / `cargo test` 即可；本机 2026-11-10 实测
+`cargo test --workspace` 374 passed / 2 ignored，clippy 与 fmt 全绿。
 
 - `probes/v6-sqlcipher/` 仅作历史探针证据保留，不参与构建。
 
@@ -118,12 +118,12 @@ PathEditor/
 
 - **sidecar**：`~/.patheditor/patheditor.db`（标准 SQLite，**不加密**）；DB 打不开时 fail-open，不静默重建空库。旧版加密库文件头不是 SQLite magic，`Db::open` 直接拒绝并提示删除，**不做转换**。
 - **本机盐**：`~/.patheditor/keys/db.key.dpapi`，DPAPI 当前用户作用域，只用于 `.pebak` 的 `payload_hash`；49 字节 `version(1)+reserved(32)+salt(16)` 格式保持不变，否则既有备份索引全部失配。DACL 限当前用户 + SYSTEM。
-- **schema**：`CURRENT_SCHEMA_VERSION = 6`；`PRAGMA user_version` 只在建库/迁移事务内写。
-- **DB 初始化**：`migrate_to_current` 只做 schema 迁移；首次启动用注册表当前状态建 `kind=current` 基线。
-- **同步**：bundle = `PESYNC1\0 + version + header_len + header JSON + salt + nonce + ciphertext + tag`；Argon2id + ChaCha20-Poly1305；LWW；`snapshot`/`profile` 按整实体比较；导入不写注册表。
+- **schema**：`CURRENT_SCHEMA_VERSION = 7`；`PRAGMA user_version` 只在建库事务内写；不提供旧库迁移。
+- **DB 初始化**：`ensure_schema` 只建当前版本或校验已是最新；旧版本库直接拒绝。首次启动用注册表当前状态建 `kind=current` 基线。
+- **同步**：bundle = `PESYNC1\0 + version + header_len + header JSON + salt + nonce + ciphertext + tag`；Argon2id + ChaCha20-Poly1305；LWW；`snapshot` 整实体、`profile` 按 `name`/`description`/`tags`/`content` 字段比较；导入校验 header schema/lamport/seq/deviceId，且不写注册表。
 - **保留策略**：已导出 `changes` 90 天、已解决 `sync_conflicts` 30 天；**待导出队列永不删**。
 
-**完整 schema、迁移、同步与构建**：`docs/dev/sqlite-storage.md`。
+**完整 schema、同步与构建**：`docs/dev/sqlite-storage.md`。
 
 ## 接口速览（IPC / CLI）
 
@@ -147,7 +147,7 @@ PathEditor/
 ## 测试与质量门（速览）
 
 - 提交前优先 `npm run verify:all`；覆盖率门槛 **80% 行**。
-- 基线（v7.0.0，2026-11-08 本机实测）：Rust **360 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **41 files / 448**；E2E **59**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
+- 基线（2026-11-10 本机实测）：Rust **374 passed / 0 failed / 2 ignored**（`cargo test --workspace`；同轮 `clippy -D warnings`、`cargo fmt --check` 均通过）；前端 **46 files / 474**；E2E **59**。数字的唯一出处是 `docs/dev/testing.md` 的「质量门」一节——更新基线时只改那里，这里跟着改一行即可。
 - 「一文件一测试」已随 SQLCipher 退场取消（存量文件不合并）；测试必须显式传路径，不碰真实 `~/.patheditor`（`config_dir()` 不可重定向）。
 - CI：`.github/workflows/ci.yml` 在 push `main` / PR / 手动时跑 MSVC 质量门；`release.yml` 只在 `v*` tag 时发布。**CI 不跑 E2E**。
 
@@ -167,14 +167,14 @@ PathEditor/
 
 ## 文档索引
 
-| 文档                            | 内容                                           |
-| --------------------------------- | ------------------------------------------------ |
-| `docs/dev/architecture.md`      | 完整目录树、模块职责、保存数据流               |
-| `docs/dev/sqlite-storage.md`    | schema、迁移、同步、保留策略、OpenSSL 构建成本 |
-| `docs/dev/interfaces.md`        | Tauri IPC 全表、CLI 命令与退出码               |
-| `docs/dev/data-and-security.md` | 保存/事务、备份、错误处理与安全边界            |
-| `docs/dev/testing.md`           | 测试布局、一文件一测试、CI 步骤、基线          |
-| `docs/dev/release.md`           | 版本号清单、发布流程、产物与事故教训           |
-| `docs/superpowers/specs/`       | 按日期归档的设计文档                           |
-| `docs/superpowers/plans/`       | M1–M4 实施计划                                |
-| `docs/审核和开发/`              | 审查与开发记录                                 |
+| 文档                            | 内容                                     |
+| ------------------------------- | ---------------------------------------- |
+| `docs/dev/architecture.md`      | 完整目录树、模块职责、保存数据流         |
+| `docs/dev/sqlite-storage.md`    | schema、同步、保留策略、OpenSSL 构建成本 |
+| `docs/dev/interfaces.md`        | Tauri IPC 全表、CLI 命令与退出码         |
+| `docs/dev/data-and-security.md` | 保存/事务、备份、错误处理与安全边界      |
+| `docs/dev/testing.md`           | 测试布局、一文件一测试、CI 步骤、基线    |
+| `docs/dev/release.md`           | 版本号清单、发布流程、产物与事故教训     |
+| `docs/superpowers/specs/`       | 按日期归档的设计文档                     |
+| `docs/superpowers/plans/`       | M1–M4 实施计划                           |
+| `docs/审核和开发/`              | 审查与开发记录                           |

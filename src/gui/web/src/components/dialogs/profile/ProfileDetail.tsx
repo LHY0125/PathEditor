@@ -177,6 +177,29 @@ function ProfileDiffView({ diff, onClose }: { diff: ProfileDiff; onClose: () => 
           {line}
         </div>
       ))}
+      {side.reordered.map((entry) => {
+        const line = t('compare.moved', {
+          path: entry.path,
+          from: entry.leftIndex + 1,
+          to: entry.rightIndex + 1,
+        });
+        return (
+          <div key={`↔${entry.path}`} className="font-mono truncate" title={line}>
+            {line}
+          </div>
+        );
+      })}
+      {side.toggled.map((entry) => {
+        const line = t('compare.toggled', {
+          path: entry.path,
+          state: entry.rightEnabled ? t('compare.enabled') : t('compare.disabled'),
+        });
+        return (
+          <div key={`◐${entry.path}`} className="font-mono truncate" title={line}>
+            {line}
+          </div>
+        );
+      })}
     </div>
   );
   return (
@@ -189,6 +212,11 @@ function ProfileDiffView({ diff, onClose }: { diff: ProfileDiff; onClose: () => 
           {t('profile.closeCompare')}
         </Button>
       </div>
+      {(diff.leftDescription !== null || diff.rightDescription !== null) && (
+        <p className="mb-2 text-xs">
+          {t('profile.description')}：{diff.leftDescription ?? '—'} ↔ {diff.rightDescription ?? '—'}
+        </p>
+      )}
       {(diff.tagsAdded.length > 0 || diff.tagsRemoved.length > 0) && (
         <p className="mb-2 text-xs">
           {t('profile.tagsDiff', {

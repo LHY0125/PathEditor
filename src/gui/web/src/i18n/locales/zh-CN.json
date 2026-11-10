@@ -192,7 +192,12 @@
     "saveUserFailed": "用户 PATH: {{error}}",
     "cleanChanged": "列表在清理期间已变化，请重新执行清理",
     "saved_plaintext_backup": "已保存 — 备份为明文（密钥不可用）。修复密钥后运行 patheditor maintenance cleanup-legacy-backups --yes 可重新加密",
-    "toggleTheme": "切换主题"
+    "toggleTheme": "切换主题",
+    "systemCount": "系统",
+    "userCount": "用户",
+    "totalCount": "总计",
+    "countsLabel": "PATH 条目统计",
+    "envCountsLabel": "环境变量统计"
   },
   "dialog": {
     "newPath": "新建路径",
@@ -253,6 +258,7 @@
     "comparePick": "选择另一个配置…",
     "comparing": "对比中…",
     "closeCompare": "返回",
+    "description": "描述",
     "tagsDiff": "标签新增：{{added}}；删除：{{removed}}",
     "envDiff": "环境变量 新增：{{added}}；删除：{{removed}}；修改：{{modified}}"
   },
@@ -286,7 +292,10 @@
     "emptyValue": "（空）",
     "degradedTitle": "历史功能不可用",
     "degradedDetail": "历史库无法打开，当前处于降级模式",
-    "degradedHint": "环境变量编辑不受影响；重启后可重试",
+    "degradedHint": "环境变量编辑不受影响；请打开数据目录检查旧库",
+    "degradedHintMigration": "请打开数据目录，备份后删除旧库再重启",
+    "degradedHintDatabase": "请打开数据目录检查并先备份，不要直接删除数据库",
+    "degradedOpenDataDir": "打开数据目录",
     "action": {
       "drift": "注册表漂移",
       "save": "保存 PATH",
@@ -361,7 +370,8 @@
     "allKinds": "全部类型",
     "removeSaved": "删除保存的搜索「{{query}}」",
     "from": "从",
-    "to": "到"
+    "to": "到",
+    "dateRangeInvalid": "开始日期不能晚于结束日期"
   },
   "stats": {
     "healthTitle": "数据库健康",
@@ -480,7 +490,8 @@
       "name": "名称",
       "description": "描述",
       "tags": "标签",
-      "content": "内容"
+      "content": "内容",
+      "deleted_at": "已删除"
     },
     "selectedCount": "已选 {{count}} 条",
     "takeLocalBatch": "批量保留本地",
@@ -504,5 +515,12 @@
     "preview": "预览",
     "apply": "应用到草稿",
     "previewSummary": "命中 {{hits}} 条路径（未写入注册表）"
+  },
+  "toolbar": {
+    "editGroup": "编辑操作",
+    "orderGroup": "顺序调整",
+    "historyGroup": "撤销与重做",
+    "fileGroup": "文件操作",
+    "confirmGroup": "保存"
   }
 }

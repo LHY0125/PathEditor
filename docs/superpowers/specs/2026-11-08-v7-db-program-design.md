@@ -6,6 +6,10 @@
 - **范围**：`src/core/src/db`、`src/cli`、`src/gui`、`docs/dev`
 - **目标版本**：v7.1 – v7.5（按批次发布，不绑定单一版本号）
 
+> **2026-11-10 用户指令覆盖**：同步只接受 v2 包，旧包与 `profile.field = null`
+> 兼容路径不再保留；§12 中「旧包 `field = null` 视为 content」作废。
+> 旧库迁移与迁移前备份/还原命令也已移除，旧 schema 库直接拒绝。
+
 ## 一、背景与原则
 
 V7 已完成「数据库去加密」，数据层（SQLite + FTS5 + 快照/事件/同步）本身是可用的。
@@ -113,7 +117,7 @@ V7 已完成「数据库去加密」，数据层（SQLite + FTS5 + 快照/事件
 
 - **目标**：出问题时有自检入口；schema 升级前自动留一份可回退副本。
 - **数据**：`PRAGMA integrity_check(1)`、各表 `COUNT(*)`、文件与 `-wal` 大小、schema 版本、最近 prune 时间（写 `app_state` 新列需 v5；或写独立元数据文件，优先文件避免迁移）。
-- **Core**：`health(db, db_path) -> DbHealth`；迁移前备份：`migrate_to_current` 前若 `user_version < 当前`，复制 `patheditor.db.pre-v{n}.bak`（同目录，保留 3 份）。
+- **Core**：`health(db, db_path) -> DbHealth`；迁移前备份：`ensure_schema` 前若 `user_version < 当前`，复制 `patheditor.db.pre-v{n}.bak`（同目录，保留 3 份）。
 - **接口**：IPC `db_health`；CLI `maintenance health [--json]`。
 - **UI**：统计页顶部卡片；异常时红色提示并给出「打开目录」。
 - **规模**：M。**依赖**：无。

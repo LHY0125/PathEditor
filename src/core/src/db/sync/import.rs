@@ -24,7 +24,7 @@ use serde::Deserialize;
 use crate::db::history::{EnvValueRow, NewSnapshot, SnapshotKind};
 use crate::db::sync::bundle::{open, BundleHeader};
 use crate::db::sync::change_log::{
-    change_exists_tx, record_remote_change_tx, ChangeRow, RemoteChange,
+    change_exists_tx, current_device_id, record_remote_change_tx, ChangeRow, RemoteChange,
 };
 use crate::db::sync::conflict::record_conflict_tx;
 use crate::db::sync::merge::{resolve, MergeDecision};
@@ -128,6 +128,10 @@ const MAX_BUNDLE_BYTES: u64 = 64 * 1024 * 1024;
 /// 单个包允许的变更条数上限（与体积上限互补：小而多的条目同样能撑爆内存）。
 const MAX_BUNDLE_CHANGES: usize = 100_000;
 
+/// 远端 `seq` 上限。留出 2 的余量：`next_seq` 还要在本地做两次递增，
+/// 不能把 `i64::MAX` 和 `i64::MAX - 1` 留给远端包。
+const MAX_INBOUND_SEQ: i64 = i64::MAX - 2;
+
 /// 读取同步包文件，并在**读入内存之前**拒绝超限文件。
 fn read_bundle_file(path: &Path) -> Result<Vec<u8>, CoreError> {
     let size = std::fs::metadata(path)
@@ -170,6 +174,17 @@ struct OpenedBundle {
 fn open_bundle(passphrase: &str, bytes: &[u8]) -> Result<OpenedBundle, CoreError> {
     // ② header 与 payload 交叉校验：自述条数与实际不符说明包被拼接/截断过
     let (header, payload_bytes) = open(passphrase, bytes)?;
+    if header.schema_version != crate::db::schema::CURRENT_SCHEMA_VERSION {
+        return Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import",
+            format!(
+                "同步包数据库结构版本 {} 与当前 {} 不匹配，请两端同时升级",
+                header.schema_version,
+                crate::db::schema::CURRENT_SCHEMA_VERSION
+            ),
+        ));
+    }
     let payload: InboundPayload = serde_json::from_slice(&payload_bytes)
         .map_err(|_| CoreError::new(ErrorCode::SyncFormat, "import", "同步包 payload 无法解析"))?;
     if payload.changes.len() != header.change_count as usize {
@@ -195,17 +210,6 @@ fn open_bundle(passphrase: &str, bytes: &[u8]) -> Result<OpenedBundle, CoreError
         ));
     }
 
-    // ③ 实体类型白名单：未知类型说明对端版本更新，静默忽略会丢掉用户的配置
-    for c in &payload.changes {
-        if !KNOWN_ENTITY_TYPES.contains(&c.entity_type.as_str()) {
-            return Err(CoreError::new(
-                ErrorCode::SyncFormat,
-                "import",
-                format!("未知的实体类型: {}", c.entity_type),
-            ));
-        }
-    }
-
     // header 在明文里（只受 AEAD 保护），持有口令的对端可以把 `baseLamport`
     // 顶到 `i64::MAX`；沿用后本地 `+1` 会溢出（SQLite 转 REAL → 类型错误），
     // 此后本地记账永久失败。钳制到一半，留出足够的单调增长空间。
@@ -216,6 +220,75 @@ fn open_bundle(passphrase: &str, bytes: &[u8]) -> Result<OpenedBundle, CoreError
             header.base_lamport,
             base_lamport
         );
+    }
+    if header.device_id.trim().is_empty() {
+        return Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import",
+            "同步包缺少 deviceId",
+        ));
+    }
+
+    // ③ 实体类型白名单、设备一致性、时钟/序号边界与 profile 形状。
+    //    这些字段都在密文/AAD 保护范围内，但持有口令的对端仍可构造非法值。
+    for c in &payload.changes {
+        if !KNOWN_ENTITY_TYPES.contains(&c.entity_type.as_str()) {
+            return Err(CoreError::new(
+                ErrorCode::SyncFormat,
+                "import",
+                format!("未知的实体类型: {}", c.entity_type),
+            ));
+        }
+        if c.device_id != header.device_id {
+            return Err(CoreError::new(
+                ErrorCode::SyncFormat,
+                "import",
+                format!(
+                    "变更设备 {} 与 header 设备 {} 不一致",
+                    c.device_id, header.device_id
+                ),
+            ));
+        }
+        if c.lamport < 0 || c.lamport > base_lamport {
+            return Err(CoreError::new(
+                ErrorCode::SyncFormat,
+                "import",
+                format!("变更 lamport {} 超出允许范围 0..={base_lamport}", c.lamport),
+            ));
+        }
+        if c.seq < 0 || c.seq > MAX_INBOUND_SEQ {
+            return Err(CoreError::new(
+                ErrorCode::SyncFormat,
+                "import",
+                format!("变更 seq {} 超出允许范围 0..={MAX_INBOUND_SEQ}", c.seq),
+            ));
+        }
+        // profile 必须带字段名：字段级 LWW 的值无法从整实体猜测。
+        if c.entity_type == "profile" {
+            let Some(field) = c.field.as_deref() else {
+                return Err(CoreError::new(
+                    ErrorCode::SyncFormat,
+                    "import",
+                    "profile 变更必须带字段名",
+                ));
+            };
+            if !["name", "description", "tags", "content", "deleted_at"].contains(&field) {
+                return Err(CoreError::new(
+                    ErrorCode::SyncFormat,
+                    "import",
+                    format!("未知的配置字段: {field}"),
+                ));
+            }
+            // 墓碑必须是「无内容」的删除意图；带 content 的 deleted_at 是
+            // 自相矛盾的形状，必须拒绝，否则会走整实体应用并清空删除标记。
+            if field == "deleted_at" && c.content.is_some() {
+                return Err(CoreError::new(
+                    ErrorCode::SyncFormat,
+                    "import",
+                    "profile 墓碑不能携带 content",
+                ));
+            }
+        }
     }
 
     Ok(OpenedBundle {
@@ -249,6 +322,16 @@ pub fn import_bundle(
 
     let header_device = header.device_id.clone();
 
+    // 远端包不能声称来自本机：否则伪造的 `seq` 会污染本地 `next_seq`。
+    let local_device = current_device_id(db)?;
+    if header_device == local_device {
+        return Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import",
+            "同步包声称来自本机设备，已拒绝（请勿导入本机导出的包）",
+        ));
+    }
+
     // ④ 依赖排序：`sort_by_key` 是稳定排序，同类型内部维持包内原有顺序。
     //
     // `profile.content.snapshotUid` 指向同一包里的快照；不排序时，
@@ -260,9 +343,14 @@ pub fn import_bundle(
     // ⑤ 单事务应用
     db.with_transaction(|tx| {
         let mut report = ImportReport::default();
-        // 同一包子内按 entityUid 去重：后到的 content 覆盖先到的（同一实体
-        // 多次变更时，最后一次的内容才是当前值）。
-        let mut seen_entities: HashSet<(String, String)> = HashSet::new();
+        // 同一包子内按 entityUid 去重：同一实体只应用一次。
+        //
+        // 导出侧给每条变更附的都是**导出瞬间的当前内容**，所以同一实体
+        // 多次出现时各条 content 相同；取第一条与取最后一条等价。这里只是
+        // 避免重复写实体，不承诺「后到覆盖」。
+        let mut seen_entities: HashSet<(String, String, String)> = HashSet::new();
+        // profile 的字段级去重：同一实体可以带多条不同字段的变更。
+        let mut seen_fields: HashSet<(String, String, String)> = HashSet::new();
 
         for c in &ordered {
             // 幂等：这个 uid 已经落过库就跳过
@@ -281,15 +369,42 @@ pub fn import_bundle(
                 continue;
             }
 
-            // LWW：`snapshot` / `profile` 走**实体级**比较，其余仍按 field。
+            // LWW 的维度：
+            // - `snapshot`：整实体（内容不可字段化）
+            // - `profile`：字段级（name / description / tags / content / deleted_at）
+            // - 其余：`field` 维度
             //
-            // 墓碑是 `field = "deleted_at"` 的变更；若按 field 比较，它与内容变更
-            // （`field = null`）会落在两条互不可见的时间线上，旧内容就在删除之后
+            // 墓碑是实体级：删除必须同时压过所有字段，否则旧内容会在删除后
             // 「复活」。
             let local = match c.entity_type.as_str() {
-                "snapshot" | "profile" => latest_for_entity_tx(tx, &c.entity_type, &c.entity_uid)?,
+                "snapshot" => latest_for_entity_tx(tx, &c.entity_type, &c.entity_uid)?,
+                "profile" => {
+                    let field = c.field.as_deref().ok_or_else(|| {
+                        CoreError::new(ErrorCode::SyncFormat, "import", "profile 变更必须带字段名")
+                    })?;
+                    if field == "deleted_at" {
+                        latest_for_entity_tx(tx, &c.entity_type, &c.entity_uid)?
+                    } else {
+                        latest_profile_field_tx(tx, &c.entity_uid, field)?
+                    }
+                }
                 _ => latest_for_tx(tx, &c.entity_type, &c.entity_uid, c.field.as_deref())?,
             };
+
+            // 墓碑优先：本地删除晚于（或等于）远端字段编辑时，编辑不得复活配置。
+            // 严格小于才放行；平局保守保留删除，不制造「删除 vs 编辑」冲突。
+            if c.entity_type == "profile" {
+                if let Some(field) = c.field.as_deref() {
+                    if field != "deleted_at" {
+                        if let Some(tomb) = latest_profile_tombstone_tx(tx, &c.entity_uid)? {
+                            if tomb.lamport >= c.lamport {
+                                report.skipped += 1;
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
             let remote_as_row = ChangeRow {
                 uid: c.uid.clone(),
                 device_id: c.device_id.clone(),
@@ -340,19 +455,54 @@ pub fn import_bundle(
             //
             // 与内容变更共用 `seen_entities` 去重：同一实体在一包里只处理一次。
             if c.content.is_none() && c.field.as_deref() == Some("deleted_at") {
-                let key = (c.entity_type.clone(), c.entity_uid.clone());
+                let key = (
+                    c.entity_type.clone(),
+                    c.entity_uid.clone(),
+                    "deleted_at".to_string(),
+                );
                 if seen_entities.insert(key) {
                     apply_tombstone_tx(tx, &c.entity_type, &c.entity_uid)?;
                 }
             }
 
-            // 应用实体内容（只对带 content 的类型动手）
+            // 应用实体内容（只对带 content 的类型动手）。
+            //
+            // profile 的新包按字段逐条应用；同一 (实体, 字段) 在一包里只应用
+            // 一次。导出侧保证 content 是当前值，重复条目的内容一致。
             if let Some(content) = &c.content {
-                let key = (c.entity_type.clone(), c.entity_uid.clone());
-                // 同一实体在一包里只应用一次：后到的 content 才是当前值。
-                if seen_entities.insert(key)
-                    && apply_entity_tx(tx, &c.entity_type, &c.entity_uid, content, &c.device_id)?
+                let field_key = c.field.as_deref().unwrap_or("");
+                let renamed = if c.entity_type == "profile"
+                    && !field_key.is_empty()
+                    && field_key != "deleted_at"
                 {
+                    let key = (
+                        c.entity_type.clone(),
+                        c.entity_uid.clone(),
+                        field_key.to_string(),
+                    );
+                    if seen_fields.insert(key) {
+                        crate::db::profiles::apply_profile_field_tx(
+                            tx,
+                            &c.entity_uid,
+                            field_key,
+                            content,
+                            &c.device_id,
+                        )?
+                    } else {
+                        false
+                    }
+                } else {
+                    let key = (c.entity_type.clone(), c.entity_uid.clone(), String::new());
+                    seen_entities.insert(key)
+                        && apply_entity_tx(
+                            tx,
+                            &c.entity_type,
+                            &c.entity_uid,
+                            content,
+                            &c.device_id,
+                        )?
+                };
+                if renamed {
                     report.renamed_profiles += 1;
                 }
             }
@@ -453,11 +603,54 @@ fn latest_for_tx(
     Ok(out)
 }
 
+/// 取 profile 某字段的最新本地变更。
+fn latest_profile_field_tx(
+    tx: &rusqlite::Transaction,
+    entity_uid: &str,
+    field: &str,
+) -> Result<Option<ChangeRow>, CoreError> {
+    use rusqlite::OptionalExtension as _;
+
+    tx.query_row(
+        "SELECT uid, device_id, seq, lamport, origin, entity_type, entity_uid,
+                field, old_value, new_value, created_at, applied_at, exported_at
+           FROM changes
+          WHERE entity_type = 'profile' AND entity_uid = ?1 AND field = ?2
+          ORDER BY lamport DESC, device_id DESC
+          LIMIT 1",
+        rusqlite::params![entity_uid, field],
+        map_change_row,
+    )
+    .optional()
+    .map_err(|e| crate::db::db_err("latest_profile_field", e))
+}
+
+/// 取 profile 的最新墓碑（`field = "deleted_at"`）。
+fn latest_profile_tombstone_tx(
+    tx: &rusqlite::Transaction,
+    entity_uid: &str,
+) -> Result<Option<ChangeRow>, CoreError> {
+    use rusqlite::OptionalExtension as _;
+
+    tx.query_row(
+        "SELECT uid, device_id, seq, lamport, origin, entity_type, entity_uid,
+                field, old_value, new_value, created_at, applied_at, exported_at
+           FROM changes
+          WHERE entity_type = 'profile' AND entity_uid = ?1
+            AND field = 'deleted_at'
+          ORDER BY lamport DESC, device_id DESC
+          LIMIT 1",
+        rusqlite::params![entity_uid],
+        map_change_row,
+    )
+    .optional()
+    .map_err(|e| crate::db::db_err("latest_profile_tombstone", e))
+}
+
 /// 取某实体**最新的一条变更（不限 field）**。
 ///
-/// `snapshot` / `profile` 用实体级 LWW：墓碑是 `field = "deleted_at"` 的变更，
-/// 若按 field 比较，它和内容变更（`field = null`）会落在两条互不可见的时间线上，
-/// 旧内容会在删除之后「复活」。
+/// `snapshot` 与 profile 墓碑用实体级 LWW：墓碑必须压过更早的字段变更，
+/// 否则旧内容会在删除之后「复活」。
 fn latest_for_entity_tx(
     tx: &rusqlite::Transaction,
     entity_type: &str,

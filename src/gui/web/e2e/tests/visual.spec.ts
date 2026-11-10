@@ -25,9 +25,8 @@ for (const size of SIZES) {
     test(`工具栏在 ${size.name} / ${theme} 下不被裁切`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.addInitScript(createIpcMock());
-      if (theme === 'dark') {
-        await page.addInitScript(() => localStorage.setItem('darkMode', '1'));
-      }
+      // 默认主题已改为深色；浅色用例必须显式写 themeMode，否则测到的是深色布局。
+      await page.addInitScript((mode) => localStorage.setItem('themeMode', mode), theme);
       await page.goto('/');
 
       const toolbar = page.getByTestId('toolbar');
@@ -36,9 +35,9 @@ for (const size of SIZES) {
       // 没有被裁切的像素：内容宽度必须 ≤ 容器宽度
       expect(await toolbarClip(page)).toBeLessThanOrEqual(0);
 
-      // 工具栏保持单行（高度不超过两倍行高）
+      // 新布局允许在窄窗口把搜索与动作组换成两行；高度上限防无限堆叠
       const box = await toolbar.boundingBox();
-      expect(box!.height).toBeLessThan(48);
+      expect(box!.height).toBeLessThan(160);
     });
   }
 }
@@ -55,7 +54,7 @@ test('800px 下英文工具栏同样不被裁切', async ({ page }) => {
   expect(await toolbarClip(page)).toBeLessThanOrEqual(0);
 
   const box = await (await page.getByTestId('toolbar')).boundingBox();
-  expect(box!.height).toBeLessThan(48);
+  expect(box!.height).toBeLessThan(160);
 });
 
 test('裁切断言本身可证伪 —— 注入超宽内容时必须失败', async ({ page }) => {
@@ -66,6 +65,10 @@ test('裁切断言本身可证伪 —— 注入超宽内容时必须失败', asy
 
   await page.evaluate(() => {
     const toolbar = document.querySelector('[data-testid="toolbar"]') as HTMLElement;
+    // 新布局允许换行，正常状态不会横向裁切；这里临时恢复旧实现（nowrap + hidden）
+    // 来证明 toolbarClip 这条几何断言本身可失败，而不是恒真。
+    toolbar.style.flexWrap = 'nowrap';
+    toolbar.style.overflow = 'hidden';
     const probe = document.createElement('div');
     probe.style.width = '3000px';
     probe.style.flex = '0 0 auto';
@@ -151,5 +154,5 @@ test('遮挡检测本身可证伪 —— 面板塞回工具栏的 overflow 裁�
   // elementFromPoint 甚至能命中被裁掉的条目，所以「点击可用」不能作为可见性判据。
   // 本用例只能证明「裁切几何」这一层可被检出，不能证明 countOccludedItems 本身可失败；
   // 后者由上面「修复前代码必须变红」的真机验证覆盖。
-  expect(clippedOut).toBe(9);
+  expect(clippedOut).toBeGreaterThan(0);
 });

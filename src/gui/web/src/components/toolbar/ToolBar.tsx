@@ -5,6 +5,7 @@ import { SearchInput } from './SearchInput';
 import { ActionButtons } from './ActionButtons';
 import { UndoRedoButtons } from './UndoRedoButtons';
 import { ToolbarMenu } from './ToolbarMenu';
+import { ExportIcon, ImportIcon, SaveIcon, SearchIcon } from '@/components/ui/icons';
 
 interface ToolBarProps {
   onNew: () => void;
@@ -39,8 +40,10 @@ export function ToolBar(props: ToolBarProps) {
 
   return (
     <div className="toolbar" data-testid="toolbar">
-      <SearchInput />
-      <span className="toolbar-sep" aria-hidden="true" />
+      <div className="toolbar-search-wrap">
+        <SearchIcon className="toolbar-search-icon" />
+        <SearchInput />
+      </div>
       <ActionButtons
         onNew={props.onNew}
         onEdit={props.onEdit}
@@ -48,30 +51,38 @@ export function ToolBar(props: ToolBarProps) {
         onMoveUp={props.onMoveUp}
         onMoveDown={props.onMoveDown}
       />
-      <span className="toolbar-sep" aria-hidden="true" />
       <UndoRedoButtons />
-      <div className="flex-1" />
-      <Button disabled={!canWrite} onClick={props.onImport}>
-        {t('button.import')}
-      </Button>
-      <Button onClick={props.onExport}>{t('button.export')}</Button>
-      {/* 未保存指示由状态栏的「● 未保存」（StatusBar）承担：
-          按钮内只有强调底色与前景文字两色，任何标记都会与其中之一同色而不可辨。 */}
-      <Button variant="primary" disabled={!canWrite || !isModified} onClick={props.onSave}>
-        {t('button.savePath')}
-      </Button>
-      <ToolbarMenu
-        onBrowse={props.onBrowse}
-        onClean={props.onClean}
-        onAnalyze={props.onAnalyze}
-        onProfiles={props.onProfiles}
-        onRules={props.onRules ?? (() => {})}
-        onLanguage={props.onLanguage}
-        onDarkMode={props.onDarkMode}
-        onSystemTheme={props.onSystemTheme ?? (() => {})}
-        onHelp={props.onHelp}
-        onCancel={props.onCancel}
-      />
+      <div className="toolbar-right">
+        <div className="toolbar-group" role="group" aria-label={t('toolbar.fileGroup')}>
+          <Button disabled={!canWrite} onClick={props.onImport}>
+            <ImportIcon />
+            <span>{t('button.import')}</span>
+          </Button>
+          <Button onClick={props.onExport}>
+            <ExportIcon />
+            <span>{t('button.export')}</span>
+          </Button>
+        </div>
+        {/* 未保存指示由状态栏的「● 未保存」承担；保存按钮只保留强调色。 */}
+        <div className="toolbar-group" role="group" aria-label={t('toolbar.confirmGroup')}>
+          <Button variant="primary" disabled={!canWrite || !isModified} onClick={props.onSave}>
+            <SaveIcon />
+            <span>{t('button.savePath')}</span>
+          </Button>
+        </div>
+        <ToolbarMenu
+          onBrowse={props.onBrowse}
+          onClean={props.onClean}
+          onAnalyze={props.onAnalyze}
+          onProfiles={props.onProfiles}
+          onRules={props.onRules ?? (() => {})}
+          onLanguage={props.onLanguage}
+          onDarkMode={props.onDarkMode}
+          onSystemTheme={props.onSystemTheme ?? (() => {})}
+          onHelp={props.onHelp}
+          onCancel={props.onCancel}
+        />
+      </div>
     </div>
   );
 }

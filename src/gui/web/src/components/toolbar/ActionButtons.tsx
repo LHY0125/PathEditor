@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
 import { Button } from '@/components/ui/Button';
+import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PlusIcon, TrashIcon } from '@/components/ui/icons';
 
 interface ActionButtonsProps {
   onNew: () => void;
@@ -11,8 +12,8 @@ interface ActionButtonsProps {
 }
 
 /**
- * 主行编辑组 + 排序组。
- * `onBrowse` 已移入 ⋯ 菜单（与「新建」同源，低频），`onClean` 同理。
+ * 编辑组 + 顺序组。
+ * 视觉分组由 `.toolbar-group` 承担；按钮文字保持原样，图标只做辅助识别。
  */
 export function ActionButtons({
   onNew,
@@ -30,32 +31,40 @@ export function ActionButtons({
 
   return (
     <>
-      <Button disabled={disabled} onClick={onNew}>
-        {t('button.new')}
-      </Button>
-      <Button disabled={disabled} onClick={onEdit}>
-        {t('button.edit')}
-      </Button>
-      <Button variant="danger" disabled={disabled} onClick={onDelete}>
-        {t('button.delete')}
-      </Button>
-      <span className="toolbar-sep" aria-hidden="true" />
-      <Button
-        variant="ghost"
-        disabled={disabled}
-        onClick={onMoveUp}
-        aria-label={t('button.moveUp')}
-      >
-        {t('button.moveUp')}
-      </Button>
-      <Button
-        variant="ghost"
-        disabled={disabled}
-        onClick={onMoveDown}
-        aria-label={t('button.moveDown')}
-      >
-        {t('button.moveDown')}
-      </Button>
+      <div className="toolbar-group" role="group" aria-label={t('toolbar.editGroup')}>
+        <Button disabled={disabled} onClick={onNew}>
+          <PlusIcon />
+          <span>{t('button.new')}</span>
+        </Button>
+        <Button disabled={disabled} onClick={onEdit}>
+          <PencilIcon />
+          <span>{t('button.edit')}</span>
+        </Button>
+        <Button variant="danger" disabled={disabled} onClick={onDelete}>
+          <TrashIcon />
+          <span>{t('button.delete')}</span>
+        </Button>
+      </div>
+      <div className="toolbar-group" role="group" aria-label={t('toolbar.orderGroup')}>
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          onClick={onMoveUp}
+          aria-label={t('button.moveUp')}
+        >
+          <ArrowUpIcon />
+          <span>{t('button.moveUp')}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          onClick={onMoveDown}
+          aria-label={t('button.moveDown')}
+        >
+          <ArrowDownIcon />
+          <span>{t('button.moveDown')}</span>
+        </Button>
+      </div>
     </>
   );
 }

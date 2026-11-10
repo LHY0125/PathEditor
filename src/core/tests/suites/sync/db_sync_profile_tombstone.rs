@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
     let mut db = Db::open(&dir.path().join(name)).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     db
 }
 
@@ -46,7 +46,7 @@ fn tombstone_soft_deletes_profile_and_frees_the_name() {
         }}]"#
     );
     let header = BundleHeader {
-        schema_version: 3,
+        schema_version: 7,
         device_id: "dev-x".to_string(),
         exported_at: 0,
         base_lamport: 999,

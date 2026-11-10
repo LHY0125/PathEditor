@@ -13,6 +13,6 @@ use tempfile::TempDir;
 pub fn new_db(name: &str) -> (TempDir, Db) {
     let dir = TempDir::new().expect("创建临时目录失败");
     let mut db = Db::open(&dir.path().join(name)).expect("打开数据库失败");
-    db.migrate_to_current().expect("迁移失败");
+    db.ensure_schema().expect("schema 初始化失败");
     (dir, db)
 }

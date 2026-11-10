@@ -48,7 +48,7 @@ fn retention_protects_current_pinned_profile_and_backup_references() {
     std::env::set_var("PATHEDITOR_CONFIG_FILE", &config);
 
     let mut db = Db::open(&dir.path().join("retention.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     let now = 1_800_000_000_000i64;
     let old = now - 800 * DAY;
 

@@ -2,6 +2,16 @@ import { useTranslation } from 'react-i18next';
 import { useEnvStore } from '@/store/env-store';
 import { envVarKey } from '@/core/env-var';
 import { Button } from '@/components/ui/Button';
+import {
+  PencilIcon,
+  PlusIcon,
+  RedoIcon,
+  RefreshIcon,
+  SaveIcon,
+  SearchIcon,
+  TrashIcon,
+  UndoIcon,
+} from '@/components/ui/icons';
 import type { EnvVarMeta, HiveFilter } from '@/core/env-var';
 
 interface EnvVarToolbarProps {
@@ -60,45 +70,60 @@ export function EnvVarToolbar({
 
   return (
     <div className="toolbar" data-testid="env-var-toolbar">
-      <Button onClick={onCreate}>{t('envVar.newVar')}</Button>
-      <span className="toolbar-sep" aria-hidden="true" />
-      <Button disabled={!canEdit} onClick={onEdit}>
-        {t('button.edit')}
-      </Button>
-      <Button variant="danger" disabled={!canDelete} onClick={onDelete}>
-        {t('button.delete')}
-      </Button>
-      <span className="toolbar-sep" aria-hidden="true" />
-      <Button variant="ghost" onClick={onRefresh}>
-        {t('envVar.refresh')}
-      </Button>
-      <Button onClick={onBackup}>{t('envBackup.title')}</Button>
-      <span className="toolbar-sep" aria-hidden="true" />
-      <Button
-        variant="ghost"
-        disabled={busy || envUndo.length === 0}
-        onClick={() => void undoEnv()}
-      >
-        {t('button.undo')}
-      </Button>
-      <Button
-        variant="ghost"
-        disabled={busy || envRedo.length === 0}
-        onClick={() => void redoEnv()}
-      >
-        {t('button.redo')}
-      </Button>
-      <div className="flex-1" />
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder={t('envVar.search')}
-        aria-label={t('envVar.search')}
-        className="toolbar-search"
-      />
-      <span className="toolbar-sep" aria-hidden="true" />
-      <div className="flex items-center gap-1" role="group" aria-label={t('envVar.source')}>
+      <div className="toolbar-group" role="group" aria-label={t('toolbar.editGroup')}>
+        <Button onClick={onCreate}>
+          <PlusIcon />
+          <span>{t('envVar.newVar')}</span>
+        </Button>
+        <Button disabled={!canEdit} onClick={onEdit}>
+          <PencilIcon />
+          <span>{t('button.edit')}</span>
+        </Button>
+        <Button variant="danger" disabled={!canDelete} onClick={onDelete}>
+          <TrashIcon />
+          <span>{t('button.delete')}</span>
+        </Button>
+      </div>
+      <div className="toolbar-group" role="group" aria-label={t('toolbar.fileGroup')}>
+        <Button variant="ghost" onClick={onRefresh}>
+          <RefreshIcon />
+          <span>{t('envVar.refresh')}</span>
+        </Button>
+        <Button onClick={onBackup}>
+          <SaveIcon />
+          <span>{t('envBackup.title')}</span>
+        </Button>
+      </div>
+      <div className="toolbar-group" role="group" aria-label={t('toolbar.historyGroup')}>
+        <Button
+          variant="ghost"
+          disabled={busy || envUndo.length === 0}
+          onClick={() => void undoEnv()}
+        >
+          <UndoIcon />
+          <span>{t('button.undo')}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={busy || envRedo.length === 0}
+          onClick={() => void redoEnv()}
+        >
+          <RedoIcon />
+          <span>{t('button.redo')}</span>
+        </Button>
+      </div>
+      <div className="toolbar-search-wrap">
+        <SearchIcon className="toolbar-search-icon" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder={t('envVar.search')}
+          aria-label={t('envVar.search')}
+          className="toolbar-search"
+        />
+      </div>
+      <div className="toolbar-group" role="group" aria-label={t('envVar.source')}>
         {FILTERS.map((filter) => (
           <button
             key={filter}
@@ -106,7 +131,7 @@ export function EnvVarToolbar({
             data-hive-filter={filter}
             data-active={hiveFilter === filter}
             aria-pressed={hiveFilter === filter}
-            className="tab-pill text-xs"
+            className="tab-pill"
             onClick={() => setHiveFilter(filter)}
           >
             {t(FILTER_LABEL_KEY[filter])}

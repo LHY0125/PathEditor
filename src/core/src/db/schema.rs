@@ -1,15 +1,15 @@
-//! Schema DDL 与版本迁移。
+//! 当前 schema 的完整 DDL。
 //!
-//! **启动只读 `user_version`；只在建库/迁移事务内写**。
+//! **启动只读 `user_version`；只在建库事务内写**；不提供旧库迁移。
 //! 建表顺序遵循外键依赖：`snapshots` 必须早于引用它的表。
 
-/// 当前 schema 版本。新增迁移时递增并补一个 `DDL_Vn` 分支。
-pub const CURRENT_SCHEMA_VERSION: u32 = 6;
+/// 当前 schema 版本。结构变化时递增；旧版本库直接拒绝。
+pub const CURRENT_SCHEMA_VERSION: u32 = 7;
 
-/// v1 全量 DDL。
+/// 核心表：快照、状态、PATH、环境变量、事件、配置、备份。
 ///
 /// 注意 `app_state` 引用 `snapshots(id)`，因此 `snapshots` 必须先建。
-pub const DDL_V1: &str = r#"
+pub const DDL_CORE: &str = r#"
 CREATE TABLE snapshots (
   id           INTEGER PRIMARY KEY,
   uid          TEXT NOT NULL UNIQUE,
@@ -21,6 +21,7 @@ CREATE TABLE snapshots (
   parent_id    INTEGER REFERENCES snapshots(id),
   note         TEXT,
   updated_at   INTEGER NOT NULL,
+  pinned       INTEGER NOT NULL DEFAULT 0,
   deleted_at   INTEGER
 );
 CREATE INDEX idx_snapshots_time ON snapshots(created_at);
@@ -114,15 +115,9 @@ CREATE TABLE backups (
 );
 CREATE INDEX idx_backups_kind_time ON backups(kind, created_at);
 
-CREATE TABLE migration_imports (
-  source_path  TEXT NOT NULL,
-  content_hash TEXT NOT NULL,
-  imported_at  INTEGER NOT NULL,
-  PRIMARY KEY (source_path, content_hash)
-);
 "#;
 
-/// v2 增量 DDL：派生表（可随时重建，不是真相源）。
+/// 派生表（可随时重建，不是真相源）。
 ///
 /// **逐字照抄设计文档**。这是唯一一处
 /// 「照抄权威文档」的地方，不要发挥——列名与类型必须与设计文档完全一致。
@@ -131,7 +126,7 @@ CREATE TABLE migration_imports (
 /// - `scan_runs`：冲突扫描历史，**不是派生表**（是真实记录，无法从别处重建）；
 /// - `var_references` / `daily_stats` / `search_fts`：派生表，必须能从
 ///   `snapshots` / `events` / `path_entries` 完整重建。
-pub const DDL_V2: &str = r#"
+pub const DDL_DERIVED: &str = r#"
 CREATE TABLE scan_runs (
   id             INTEGER PRIMARY KEY,
   uid            TEXT NOT NULL UNIQUE,
@@ -162,7 +157,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 "#;
 
-/// v3 增量 DDL：同步表。
+/// 同步表。
 ///
 /// 两张表都是**本地状态**，不参与「派生表可从真相重建」的口径——
 /// `changes` 是变更日志本身（真相），`sync_conflicts` 是待人工解决的决定。
@@ -171,7 +166,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 /// - `(device_id, seq)` 支撑「本设备单调序号」及导入时的去重；
 /// - `(entity_type, entity_uid)` 支撑按实体找回当前值；
 /// - `(origin, exported_at)` 支撑 `pending_export()` 的部分索引扫描。
-pub const DDL_V3: &str = r#"
+pub const DDL_SYNC: &str = r#"
 CREATE TABLE changes (
   id           INTEGER PRIMARY KEY,
   uid          TEXT NOT NULL UNIQUE,
@@ -202,29 +197,25 @@ CREATE TABLE sync_conflicts (
   remote_device TEXT NOT NULL,
   created_at    INTEGER NOT NULL,
   resolved_at   INTEGER,
-  resolution    TEXT
+  resolution    TEXT,
+  remote_content TEXT
 );
 CREATE INDEX idx_sync_conflicts_unresolved ON sync_conflicts(resolved_at);
 "#;
 
-/// v4 增量 DDL：同步冲突保留远端实体内容 + 查询索引补齐。
-///
-/// `remote_content` 是「采纳远端」能真正生效的前提：导入时冲突分支没有写实体，
-/// 远端内容必须在那一刻留下，否则用户选择 `remote` 后无从应用（旧实现只记
-/// `new_value` 字符串，实体保持原样）。列可空：旧库里的历史冲突没有内容，
-/// 解决时只能退化为「只记变更」。
-///
-/// 三个索引对应实际查询：`backups.file_path`（索引去重）、
-/// `var_references` 的两个方向（引用图）。
-pub const DDL_V4: &str = r#"
-ALTER TABLE sync_conflicts ADD COLUMN remote_content TEXT;
+/// 查询索引：备份路径、引用图双向。
+pub const DDL_INDEXES: &str = r#"
 CREATE INDEX idx_backups_file_path ON backups(file_path);
 CREATE INDEX idx_refs_from ON var_references(from_name);
 CREATE INDEX idx_refs_to ON var_references(to_name);
 "#;
 
-/// v6：PATH 整理规则与命中历史。
-pub const DDL_V6: &str = r#"
+/// 固定快照索引（保留策略按 `pinned` 过滤）。
+pub const DDL_PINNED_INDEX: &str =
+    "CREATE INDEX idx_snapshots_pinned ON snapshots(pinned) WHERE pinned = 1;";
+
+/// PATH 整理规则与命中历史。
+pub const DDL_RULES: &str = r#"
 CREATE TABLE rules (
   id             INTEGER PRIMARY KEY,
   uid            TEXT NOT NULL UNIQUE,
@@ -244,13 +235,6 @@ CREATE TABLE rule_hits (
   hit_at        INTEGER NOT NULL,
   matched_count INTEGER NOT NULL
 );
-"#;
-
-/// v5：快照可标记为「固定」（保留策略不删）。
-pub const DDL_V5: &str = r#"
-ALTER TABLE snapshots ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
-CREATE INDEX IF NOT EXISTS idx_snapshots_pinned ON snapshots(pinned)
-  WHERE pinned = 1;
 "#;
 
 /// 建库时写入 `app_state` 单行。

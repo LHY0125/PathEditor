@@ -23,7 +23,7 @@
 
 ### A1 `#3` CLI 写后派生表刷新 — **已完成**
 
-- [x] `runtime::refresh_derived_if_stale()`：`open_existing` 静默打开 → `migrate_to_current` → `derived::rebuild_if_stale`
+- [x] `runtime::refresh_derived_if_stale()`：`open_existing` 静默打开 → `ensure_schema` → `derived::rebuild_if_stale`
 - [x] 水位路径改用 `data_home()`，随 `PATHEDITOR_DATA_DIR` 隔离测试
 - [x] `main` 收尾调用（广播 flush 之后）
 - [x] 回归测试 `derived_refresh_rebuilds_only_when_watermark_changes`
@@ -121,10 +121,17 @@
 
 - 顺序按「读 → 操作 → 比较」；#11 复用 #5 的 env 段。
 
-### D4 `#12` 字段级 LWW + D5 `#13` 依赖补齐（同一次 bundle 升级）
+### D4 `#12` 字段级 LWW — **已完成**
+
+- bundle `FORMAT_VERSION = 2`；只接受 v2，旧包直接报 `SyncFormat`。
+- `profile` 创建写四条字段变更（`name` / `description` / `tags` / `content`）；导入按字段 LWW，`profile` 变更必须带字段名。
+- 冲突解决只应用冲突字段；墓碑单独比较，阻止旧编辑复活。
+- 测试：`db_sync_profile_fields` 覆盖不同字段保留、同字段冲突与解决、墓碑、v2 导出往返与幂等。
+
+### D5 `#13` 依赖补齐（未做，需单独协议升级）
 
 - 先做 #13 的 self-contained baseline（纯增量补齐），再切 #12 的字段维度；两者共用 `BUNDLE_VERSION + 1`。
-- 旧包读取测试必须保留；新包在旧端报 `SyncFormat`。
+- 只接受 v2：旧包在版本检查阶段直接报 `SyncFormat`，不做字段回退。
 
 ## 六、Batch E（规则引擎）
 
@@ -148,7 +155,7 @@ npm run test:e2e      # 涉及 UI 的批次必须跑
 | ------------------------------ | --------------------------------------------------------------------- |
 | v5 迁移失败                    | 迁移在事务内；失败不写 `user_version`；#7 的 `.pre-v5.bak` 可手工替换 |
 | 保留策略误删                   | 默认保守阈值；`maintenance prune --dry-run` 先看计划                  |
-| bundle 升级不兼容              | 新版本保留旧包读取；发布说明标注「两端需同时升级」                    |
+| bundle 升级不兼容              | 旧包直接报 `SyncFormat`；发布说明标注「两端需同时升级」               |
 | 事件动作扩展导致历史页解析失败 | 双端同提交；CI 的 `ipc-contract` 与前端单测兜底                       |
 
 ## 九、未决事项

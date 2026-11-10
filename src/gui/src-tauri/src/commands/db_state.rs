@@ -7,8 +7,34 @@ use path_editor_core::{CoreError, ErrorCode};
 use std::sync::Mutex;
 use tauri::State;
 
-/// 全局 DB 句柄。`None` = 降级模式（打开失败）。
-pub struct DbState(pub Mutex<Option<Db>>);
+/// 全局 DB 状态。
+///
+/// `db = None` 表示降级模式；`init_error` 保存导致降级的原始错误。
+/// 只保留通用文案会让前端无法区分「版本不兼容」「旧加密库」「磁盘错误」，
+/// 用户也就无法按正确路径恢复。
+pub struct DbState(pub Mutex<DbStateInner>);
+
+/// [`DbState`] 的内部状态。
+pub struct DbStateInner {
+    /// 可用数据库；`None` = 降级模式。
+    pub db: Option<Db>,
+    /// 初始化失败原因；仅在 `db = None` 时有值。
+    pub init_error: Option<CoreError>,
+}
+
+impl DbState {
+    /// 构造全局 DB 状态。
+    pub fn new(db: Option<Db>, init_error: Option<CoreError>) -> Self {
+        Self(Mutex::new(DbStateInner { db, init_error }))
+    }
+
+    /// 降级模式下返回保存的根因；没有记录时回落到通用文案。
+    fn unavailable(guard: &DbStateInner, op: &'static str) -> CoreError {
+        guard.init_error.clone().unwrap_or_else(|| {
+            CoreError::new(ErrorCode::Database, op, "历史库不可用，当前处于降级模式")
+        })
+    }
+}
 
 /// 从共享状态取 DB；降级模式返回结构化错误。
 pub(crate) fn with_db<T>(
@@ -21,8 +47,9 @@ pub(crate) fn with_db<T>(
         .lock()
         .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
     let db = guard
+        .db
         .as_ref()
-        .ok_or_else(|| CoreError::new(ErrorCode::Database, op, "历史库不可用，当前处于降级模式"))?;
+        .ok_or_else(|| DbState::unavailable(&guard, op))?;
     f(db)
 }
 
@@ -36,9 +63,10 @@ pub(crate) fn with_db_mut<T>(
         .0
         .lock()
         .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
-    let db = guard
-        .as_mut()
-        .ok_or_else(|| CoreError::new(ErrorCode::Database, op, "历史库不可用，当前处于降级模式"))?;
+    if guard.db.is_none() {
+        return Err(DbState::unavailable(&guard, op));
+    }
+    let db = guard.db.as_mut().expect("已检查 db 存在");
     f(db)
 }
 
@@ -52,7 +80,7 @@ pub(crate) fn with_optional_db_mut<T>(
         .0
         .lock()
         .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
-    f(guard.as_mut())
+    f(guard.db.as_mut())
 }
 
 /// 取 DB 的**可选**引用：降级模式传 `None`，由 core 决定回退行为。
@@ -68,5 +96,5 @@ pub(crate) fn with_optional_db<T>(
         .0
         .lock()
         .map_err(|_| CoreError::new(ErrorCode::Internal, op, "数据库状态锁中毒"))?;
-    f(guard.as_ref())
+    f(guard.db.as_ref())
 }

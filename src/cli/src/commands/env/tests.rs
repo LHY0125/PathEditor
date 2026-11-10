@@ -1344,7 +1344,7 @@ fn env_get_writes_reveal_audit_event() {
     let dir = temp_dir("reveal_audit");
     {
         let mut db = core::db::Db::open(&dir.join("patheditor.db")).unwrap();
-        db.migrate_to_current().unwrap();
+        db.ensure_schema().unwrap();
     }
 
     // 取一个真实存在的系统变量；不同机器的系统 hive 内容不同，不能写死名字。

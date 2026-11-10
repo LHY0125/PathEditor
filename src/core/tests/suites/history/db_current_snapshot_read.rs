@@ -21,7 +21,7 @@ fn entry(path: &str, enabled: bool) -> PathEntry {
 fn load_snapshot_reads_db_current_snapshot_and_keeps_disabled_entries() {
     let dir = tempfile::TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("state.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let uid = insert_snapshot(
         &mut db,

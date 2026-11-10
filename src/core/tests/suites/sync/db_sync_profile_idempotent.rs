@@ -14,13 +14,13 @@ fn reimporting_the_same_bundle_does_not_duplicate_profiles_or_revisions() {
         "content": { "uid": "snap-1", "createdAt": 1, "kind": "current",
                      "system": [], "user": [], "env": [] } },
       { "uid": "c-prof", "deviceId": "dev-x", "seq": 2, "lamport": 2,
-        "entityType": "profile", "entityUid": "p-1", "field": null,
+        "entityType": "profile", "entityUid": "p-1", "field": "name",
         "oldValue": null, "newValue": "{}", "createdAt": 0,
         "content": { "uid": "p-1", "name": "Work", "description": null, "tags": [],
                      "createdAt": 1, "updatedAt": 2, "version": 1, "snapshotUid": "snap-1" } }
     ]"#;
     let header = BundleHeader {
-        schema_version: 3,
+        schema_version: 7,
         device_id: "dev-x".to_string(),
         exported_at: 0,
         base_lamport: 10,

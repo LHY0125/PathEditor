@@ -11,10 +11,15 @@
   /* 窗口底色渐变：浅色主题不使用渐变，用纯色兜底 */
   --app-window-gradient: var(--app-bg);
   --app-surface: #ffffff;
+  /* 分区表面：标题栏 / Tab / 工具栏 / 列表 / 状态栏 */
+  --app-surface-1: #f5f6f8;
+  --app-surface-2: #eef0f4;
+  --app-surface-3: #e7eaf0;
   /* 预留：浮起表面；Wave 4.1 起由对话框 .modal-surface 使用 */
   --app-surface-raised: #ffffff;
   --app-border: #e4e4e7;
   --app-border-strong: #d4d4d8;
+  --app-border-subtle: #ececf0;
 
   /* 文字 */
   --app-fg: #18181b;
@@ -29,6 +34,7 @@
   --app-accent-fg: #ffffff;
   --app-accent-bg: #eef2ff;
   --app-accent-text: #4f46e5;
+  --app-accent-border: #c7d2fe;
   --app-accent-glow: none;
 
   /* 行 */
@@ -60,35 +66,42 @@
   /* 几何（两主题一致，不随 .dark 变化） */
   --radius-sm: 6px;
   --radius: 8px;
-  --radius-lg: 10px;
-  /* 预留：行高，下一波次统一表格/列表行高时启用；当前无引用，刻意保留 */
-  --row-h: 28px;
-  --gap: 6px;
+  --radius-lg: 12px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --control-h: 34px;
+  --row-h: 29px;
+  --gap: 8px;
 }
 
 :root.dark {
-  --app-bg: #0d0d12;
-  --app-window-gradient: linear-gradient(160deg, #15151d, #0d0d12);
-  --app-surface: rgb(255 255 255 / 4%);
-  --app-surface-raised: rgb(30 30 40 / 92%);
-  --app-border: rgb(255 255 255 / 9%);
-  --app-border-strong: rgb(255 255 255 / 16%);
+  --app-bg: #0a0c11;
+  --app-window-gradient: linear-gradient(160deg, #121620, #0a0c11);
+  --app-surface: #11151d;
+  --app-surface-1: #0e1219;
+  --app-surface-2: #151a24;
+  --app-surface-3: #1b2230;
+  --app-surface-raised: #1a202b;
+  --app-border: rgb(255 255 255 / 10%);
+  --app-border-strong: rgb(255 255 255 / 18%);
+  --app-border-subtle: rgb(255 255 255 / 6%);
 
-  --app-fg: #f4f4f6;
-  --app-fg-muted: #8b8b96;
-  --app-fg-subtle: #9a9aa2;
-  --app-fg-faint: #63636e;
+  --app-fg: #f4f7fc;
+  --app-fg-muted: #a7b0c0;
+  --app-fg-subtle: #8d96a8;
+  --app-fg-faint: #636b7a;
 
-  --app-accent: #7c6cff;
+  --app-accent: #7c8cff;
   --app-accent-fg: #ffffff;
-  --app-accent-bg: rgb(124 108 255 / 16%);
-  --app-accent-text: #b3a8ff;
-  --app-accent-glow: 0 0 18px rgb(124 108 255 / 50%);
+  --app-accent-bg: rgb(124 140 255 / 18%);
+  --app-accent-text: #cfd6ff;
+  --app-accent-border: rgb(124 140 255 / 40%);
+  --app-accent-glow: 0 0 18px rgb(124 140 255 / 35%);
 
   --app-row-even: transparent;
-  --app-row-odd: rgb(255 255 255 / 2%);
-  --app-row-selected: rgb(124 108 255 / 18%);
-  --app-hover: rgb(255 255 255 / 6%);
+  --app-row-odd: rgb(255 255 255 / 3.5%);
+  --app-row-selected: rgb(124 140 255 / 20%);
+  --app-hover: rgb(255 255 255 / 7%);
 
   --app-danger: #ff6b6b;
   --app-warning: #ffb454;
@@ -129,7 +142,7 @@ body {
     'Segoe UI',
     'Microsoft YaHei',
     sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   background: var(--app-bg);
   color: var(--app-fg);
@@ -550,7 +563,7 @@ input[type='radio'] {
 }
 
 .path-row[data-state='off'] .path-text {
-  color: var(--app-disabled-fg);
+  color: var(--app-fg-muted);
   text-decoration: line-through;
 }
 
@@ -1045,4 +1058,377 @@ input[type='radio'] {
   height: 100%;
   padding: 16px;
   text-align: center;
+}
+
+/* ─────────────────────────── 2026-11 布局重构 ───────────────────────────
+   目标：2K 桌面、125%/150% DPI。所有尺寸使用 CSS 逻辑像素，由 WebView
+   自动乘以系统缩放；不写死物理像素，也不依赖 transform: scale。
+   分区顺序：TitleBar / Tabs / Toolbar / Table / StatusBar。 */
+
+.app-root {
+  background: var(--app-bg);
+}
+
+#tabpanel {
+  background: var(--app-surface);
+}
+
+/* 标题栏：独立表面 + 底部细线 */
+.titlebar {
+  height: 42px;
+  padding: 0 18px;
+  background: var(--app-surface-1);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.titlebar-brand {
+  gap: 10px;
+}
+
+.titlebar-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-control);
+}
+
+.titlebar-title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.titlebar-version {
+  padding: 2px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface-2);
+  color: var(--app-fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tab：更大的点击区域、清晰的选中态；保留横向滚动兜底 */
+.tabs {
+  gap: 6px;
+  padding: 7px 16px;
+  background: var(--app-surface-2);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.tab-pill {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--app-fg-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.tab-pill:hover {
+  background: var(--app-surface-3);
+  color: var(--app-fg);
+}
+
+.tab-pill[data-active='true'] {
+  border-color: var(--app-accent-border);
+  background: var(--app-accent-bg);
+  color: var(--app-accent-text);
+  font-weight: 650;
+  box-shadow: inset 0 -2px 0 var(--app-accent);
+}
+
+/* 工具栏：搜索优先占宽，动作按组排布；窄窗口自动换行而不是挤爆 */
+.toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 54px;
+  padding: 8px 12px;
+  background: var(--app-surface-1);
+  border-bottom: 1px solid var(--app-border);
+  overflow: visible;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding-left: 8px;
+  border-left: 1px solid var(--app-border);
+}
+
+.toolbar-group + .toolbar-group {
+  margin-left: 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--app-border);
+}
+
+.toolbar-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 190px;
+  min-width: 190px;
+}
+
+.toolbar-search-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--app-fg-muted);
+  pointer-events: none;
+}
+
+.toolbar-search {
+  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px 0 34px;
+  border-radius: var(--radius-control);
+  border-color: var(--app-border-strong);
+  background: var(--app-surface-2);
+  color: var(--app-fg);
+  font-size: 13px;
+}
+
+.toolbar-search:hover {
+  border-color: var(--app-border-strong);
+}
+
+.toolbar-search:focus {
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 3px var(--app-accent-bg);
+}
+
+.toolbar-sep {
+  height: 24px;
+}
+
+/* 表格：行高 29px（环境变量表自行使用 34px），分隔线 + 斑马纹；
+   序号 / 勾选 / 路径固定层次 */
+.path-table-head {
+  min-height: 34px;
+  padding: 0 12px;
+  align-items: center;
+  background: var(--app-surface-2);
+  border-bottom: 1px solid var(--app-border-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.path-col-index {
+  width: 46px;
+  flex: 0 0 46px;
+  padding-right: 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--app-fg-muted);
+}
+
+.path-col-check {
+  width: 42px;
+  flex: 0 0 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.path-col-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.path-row {
+  height: var(--row-h);
+  border-bottom: 1px solid var(--app-border-subtle);
+}
+
+/* 表头有 12px 横向内边距；数据行补同样的外内边距，列边界才与表头对齐。
+   路径单元格自己原本再有 12px 左内边距，补行内边距后要清零，否则多缩 12px。 */
+.path-table-row {
+  padding: 0 12px;
+}
+
+.path-table-row .path-text {
+  padding-left: 0;
+}
+
+/* 合并预览没有序号/勾选列，表头路径列本身有 8px 内边距；行内同步补 8px。 */
+.merge-row .path-text {
+  padding-left: 8px;
+}
+
+.path-row[data-odd='true'] {
+  background: var(--app-row-odd);
+}
+
+.path-row:hover {
+  background: var(--app-hover);
+}
+
+.path-row.is-selected {
+  background: var(--app-row-selected);
+  box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.path-row .path-col-index {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 12px;
+}
+
+.path-row .path-col-check {
+  height: 100%;
+}
+
+.path-text {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.path-check-hit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: var(--row-h);
+  cursor: pointer;
+}
+
+.path-check {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.path-check:disabled,
+.path-check-hit:has(.path-check:disabled) {
+  cursor: not-allowed;
+}
+
+/* 状态栏：固定底部、三个信息区，和列表用强分割线隔开 */
+.statusbar {
+  min-height: 40px;
+  padding: 0 18px;
+  gap: 18px;
+  background: var(--app-surface-1);
+  border-top: 1px solid var(--app-border-strong);
+  font-size: 13px;
+}
+
+.statusbar-counts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  color: var(--app-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.statusbar-count + .statusbar-count {
+  padding-left: 14px;
+  border-left: 1px solid var(--app-border);
+}
+
+.statusbar-count strong {
+  color: var(--app-fg);
+  font-weight: 650;
+}
+
+.statusbar-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.statusbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+/* 宽屏让搜索占据更多横向空间；窄屏固定宽度，保证动作组不换行 */
+@media (min-width: 1300px) {
+  .toolbar-search-wrap {
+    flex: 1 1 360px;
+    max-width: none;
+  }
+}
+
+/* 窄窗口：搜索独占一行，避免动作按钮被压缩到不可读 */
+@media (max-width: 1100px) {
+  .toolbar-search-wrap {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .titlebar {
+    height: 42px;
+    padding: 0 12px;
+  }
+
+  .tabs {
+    padding: 6px 10px;
+  }
+
+  .toolbar {
+    padding: 8px 10px;
+  }
+
+  .toolbar-group + .toolbar-group {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .statusbar {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .statusbar-counts {
+    gap: 8px;
+  }
+}
+
+/* 键盘焦点：高 DPI 下仍要清晰可见，且不被分区背景吞掉 */
+.tab-pill:focus-visible,
+.toolbar button:focus-visible,
+.statusbar-theme:focus-visible,
+.path-row:focus-visible,
+.path-check:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.path-row:focus-visible {
+  outline-offset: -2px;
 }

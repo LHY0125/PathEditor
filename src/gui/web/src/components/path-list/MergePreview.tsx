@@ -70,7 +70,7 @@ export function MergePreview() {
               // 与 PathTable 同规则：交替底色按逻辑索引，不用 :nth-child
               data-state={enabled ? 'ok' : 'off'}
               data-odd={rowIdx % 2 === 1}
-              className="path-row"
+              className="path-row path-table-row merge-row"
               // `.path-row` 是 position:absolute + top:0（见 globals.css），
               // 虚拟列表必须自己写 height 与 translateY，否则所有行叠在 y=0。
               style={{

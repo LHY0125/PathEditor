@@ -19,7 +19,7 @@ describe('buttonVariants', () => {
   it('所有变体都含统一圆角与间距', () => {
     for (const v of ['primary', 'secondary', 'ghost', 'danger'] as const) {
       const cls = buttonVariants(v);
-      expect(cls).toContain('rounded-lg');
+      expect(cls).toContain('rounded-[var(--radius-control)]');
       expect(cls).toContain('whitespace-nowrap');
     }
   });

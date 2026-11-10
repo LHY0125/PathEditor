@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { canWriteTarget, targetForTab, useAppStore } from '@/store/app-store';
 import { Button } from '@/components/ui/Button';
+import { RedoIcon, UndoIcon } from '@/components/ui/icons';
 
 export function UndoRedoButtons() {
   const { t } = useTranslation();
@@ -17,12 +18,14 @@ export function UndoRedoButtons() {
   const redo = useAppStore((s) => s.redo);
 
   return (
-    <div className="flex gap-1">
+    <div className="toolbar-group" role="group" aria-label={t('toolbar.historyGroup')}>
       <Button variant="ghost" disabled={!canWrite || !canUndo} onClick={undo}>
-        {t('button.undo')}
+        <UndoIcon />
+        <span>{t('button.undo')}</span>
       </Button>
       <Button variant="ghost" disabled={!canWrite || !canRedo} onClick={redo}>
-        {t('button.redo')}
+        <RedoIcon />
+        <span>{t('button.redo')}</span>
       </Button>
     </div>
   );

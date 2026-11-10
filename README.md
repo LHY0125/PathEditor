@@ -4,13 +4,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-7.0.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-7.0.1-blue" alt="version">
   <img src="https://img.shields.io/badge/tauri-2.x-ffa03a" alt="tauri">
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="react">
   <img src="https://img.shields.io/badge/rust-1.88-000000" alt="rust">
   <img src="https://img.shields.io/badge/typescript-strict-blue" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/tests-808%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-848%20passed-brightgreen" alt="tests">
   <a href="https://codecov.io/gh/LHY0125/PathEditor"><img src="https://codecov.io/gh/LHY0125/PathEditor/branch/main/graph/badge.svg" alt="coverage"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D6" alt="platform">
 </p>
@@ -111,7 +111,7 @@ PATH 之外的所有环境变量统一管理；敏感值默认打码，需先「
 
 PathEditor 是 Windows PATH 环境变量的可视化管理工具。支持系统变量和用户变量的增删改查、拖拽排序、一键清理无效路径、导入导出以及完整的撤销/重做。
 
-v7.0.0 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，数据层是 **本地 SQLite**（不加密）：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
+v7.0.1 使用 **Tauri 2.x + React 19 + TypeScript + Rust**，数据层是 **本地 SQLite**（不加密）：历史时间线、配置版本、备份索引、全文检索、统计、引用图与文件式跨设备同步。**注册表仍是唯一真相源**；数据库不可用时应用照常编辑，只把历史/检索/同步降级。
 
 ## 架构
 
@@ -428,8 +428,8 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 - **同步包**：`Argon2id`（64 MiB / t=3 / p=1）派生密钥 + `ChaCha20-Poly1305` 加密，
   AAD 覆盖包头，**改一个字节都打不开**。口令不落盘、不进 shell 历史，CLI 用隐藏输入。
 - **合并规则**：LWW（`lamport` 高者胜；相同时按 `device_id` 破平）。
-  `snapshot` / `profile` 按**整实体**比较（墓碑与内容变更共用一条时间线），
-  其余实体仍按字段比较。
+  `snapshot` 按**整实体**比较；`profile` 按**字段**（`name` / `description` / `tags` /
+  `content`）比较，墓碑（`deleted_at`）按实体压过更早的字段编辑。
   真正的平局（同 lamport、不同设备、值不同）**不会被静默覆盖**——记一条冲突，由你选。
 - **配置同步**：`profile` / `profile_revision` 会随包落库；与本地同名的配置自动改名为
   「原名 (来自 设备)」，导入提示会显示改名数量。删除的配置以**墓碑**同步（软删除）。
@@ -440,8 +440,8 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 > `profile apply` 或对应的 PATH 命令。这是刻意的：同步是「把配置搬过来」，
 > 不是「替我改系统」。
 >
-> **已知限制**：配置合并是**整实体 LWW**，不是字段级——两台设备同时改同一个配置的
-> 不同字段时会互相覆盖。同步范围不含 `events`（本机操作日志）与备份索引。
+> **同步范围**不含 `events`（本机操作日志）与备份索引。同步包只接受当前协议版本；
+> 旧版本包与旧 schema 库都会明确拒绝，升级时需两端同时更新。
 >
 > **同步包是增量包**：导出只包含「尚未导出的变更」。新设备需要**从第一份包开始按顺序应用**；
 > 只拿到后续包时，配置引用的快照不在本地，整包会被拒绝（`SyncFormat`，退出码 1）。
@@ -462,7 +462,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
   `sync_conflicts`、到期/超限的未保护快照与到期事件；**待导出队列（`exported_at IS NULL`）永不删除**，
   固定快照与被当前快照/配置版本/备份索引引用的快照同样受保护。CLI：
   `patheditor maintenance prune [--dry-run]`、`patheditor maintenance vacuum`。
-- **迁移前备份与健康检查**：schema 升级前自动生成 `.pre-v{n}.bak`（保留 3 份）；
+- **健康检查**：
   `patheditor maintenance health [--json]` 输出完整性、schema、表行数与体积，统计页也有健康卡片。
 - **注册表漂移检测**：启动时发现注册表被本工具之外修改，会在历史里记一条 `drift` 事件
   （同一外部状态只记一次，不自动建快照）。
@@ -501,7 +501,7 @@ patheditor env restore ~/.patheditor/backups/env_backup_20260921_200437_062.peba
 
 **方式一：安装包**
 
-从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_7.0.0_x64-setup.exe` 安装。
+从 [Releases](https://github.com/LHY0125/PathEditor/releases) 下载最新版 `PathEditor_7.0.1_x64-setup.exe` 安装。
 
 **方式二：Scoop（免安装）**
 
@@ -576,8 +576,8 @@ npx tauri build
 | 数据库    | SQLite（rusqlite bundled + FTS5）         |
 | 同步加密  | Argon2id + ChaCha20-Poly1305              |
 | 检索      | SQLite FTS5                               |
-| 前端测试  | Vitest (41 files / 448) + Playwright (59) |
-| Rust 测试 | cargo test (360 passed / 2 ignored)       |
+| 前端测试  | Vitest (46 files / 474) + Playwright (59) |
+| Rust 测试 | cargo test (374 passed / 2 ignored)       |
 | 构建      | Vite + Cargo                              |
 | 打包      | NSIS                                      |
 

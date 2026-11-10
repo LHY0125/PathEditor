@@ -8,7 +8,7 @@ use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
     let mut db = Db::open(&dir.path().join(name)).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     db
 }
 
@@ -20,7 +20,7 @@ fn import_changes(
     count: u32,
 ) -> ImportReport {
     let header = BundleHeader {
-        schema_version: 3,
+        schema_version: 7,
         device_id: "dev-x".to_string(),
         exported_at: 0,
         base_lamport: 100,
@@ -57,7 +57,7 @@ fn older_content_does_not_resurrect_a_deleted_profile() {
     let create = format!(
         r#"[{SNAPSHOT}, {{
           "uid": "c-prof-1", "deviceId": "dev-x", "seq": 2, "lamport": 1,
-          "entityType": "profile", "entityUid": "p-1", "field": null,
+          "entityType": "profile", "entityUid": "p-1", "field": "name",
           "oldValue": null, "newValue": "{{}}", "createdAt": 0,
           "content": {{ "uid": "p-1", "name": "Work", "description": null, "tags": [],
                        "createdAt": 1, "updatedAt": 2, "version": 1, "snapshotUid": "snap-1" }}
@@ -73,13 +73,12 @@ fn older_content_does_not_resurrect_a_deleted_profile() {
     }]"#;
     import_changes(&mut db, &dir, "tomb.pesync", tomb, 1);
 
-    // 3) 旧的 profile 内容（lamport 3）必须被 KeepLocal 跳过。
+    // 3) 晚于删除的 name 字段变更（lamport 3）必须被墓碑压过。
     //
-    // 这是实体级 LWW 的**唯一**判据：若改回字段级（`field = null` 那条线），
-    // 本地看到的最新内容变更仍是 lamport 1，3 > 1 → TakeRemote → 配置复活。
+    // 墓碑单独按实体比较：本地删除 lamport 5 > 3 → KeepLocal，配置不复活。
     let older = r#"[{
       "uid": "c-prof-old", "deviceId": "dev-x", "seq": 4, "lamport": 3,
-      "entityType": "profile", "entityUid": "p-1", "field": null,
+      "entityType": "profile", "entityUid": "p-1", "field": "name",
       "oldValue": null, "newValue": "{}", "createdAt": 0,
       "content": { "uid": "p-1", "name": "Work", "description": null, "tags": [],
                    "createdAt": 1, "updatedAt": 2, "version": 1, "snapshotUid": "snap-1" }

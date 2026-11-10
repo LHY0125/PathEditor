@@ -1,13 +1,13 @@
 //! 启动引导序列。
 //!
 //! 顺序固定：
-//! 1. schema 建库/迁移（失败中止启动）；
+//! 1. schema 建库/校验（失败中止启动）；
 //! 2. 补写上次未落盘的 pending 快照；
 //! 3. 确保 `kind=current` 基线存在；
 //! 4. 备份索引与保留策略清理；
 //! 5. 派生表重建（FTS 首次构建 + `daily_stats` / `var_references` 水位判断）。
 //!
-//! **失败策略**：只有迁移失败会中止启动。其余步骤失败只是记入
+//! **失败策略**：schema 不兼容或数据库打开失败会中止启动。其余步骤失败只是记入
 //! [`BootstrapReport::warnings`]——DB 可用性与注册表编辑优先于派生数据新鲜度，
 //! 且下次启动会重试。调用方（GUI/CLI）负责把 warnings 写入自己的日志系统。
 
@@ -92,7 +92,7 @@ pub fn initialize(
     source: EventSource,
     options: &BootstrapOptions,
 ) -> Result<BootstrapReport, CoreError> {
-    db.migrate_to_current()?;
+    db.ensure_schema()?;
     let mut report = BootstrapReport::default();
 
     // ② 补写上次未落盘的快照

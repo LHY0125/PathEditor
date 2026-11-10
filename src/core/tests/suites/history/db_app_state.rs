@@ -54,13 +54,13 @@ fn app_state_is_seeded_at_creation_and_cas_works() {
         "陈旧 version 的 CAS 必须失败"
     );
 
-    // ⑤ 第二次 migrate_to_current 不得重置 app_state（幂等，不覆盖 device_id）
+    // ⑤ 第二次 ensure_schema 不得重置 app_state（幂等，不覆盖 device_id）
     let before: String = db
         .query_row_with("SELECT device_id FROM app_state WHERE id = 1", [], |r| {
             r.get(0)
         })
         .unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     let after: String = db
         .query_row_with("SELECT device_id FROM app_state WHERE id = 1", [], |r| {
             r.get(0)

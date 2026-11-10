@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
-import { backend, type MultiCompareEntry } from '@/services/backend';
+import { backend, type MultiCompareEntry, type PathDiff } from '@/services/backend';
 import { errorMessage } from '@/core/error';
 
 interface Props {
@@ -9,7 +9,56 @@ interface Props {
   onClose: () => void;
 }
 
-/** N 路快照对比：第一份为基准，其余逐份给出差异计数。 */
+/** 单侧 PATH 差异的逐条明细（不只是计数）。 */
+function PathDiffDetails({ label, diff }: { label: string; diff: PathDiff }) {
+  const { t } = useTranslation();
+  if (
+    diff.added.length === 0 &&
+    diff.removed.length === 0 &&
+    diff.reordered.length === 0 &&
+    diff.toggled.length === 0
+  ) {
+    return null;
+  }
+  return (
+    <div className="mt-1">
+      <div className="font-medium" style={{ color: 'var(--app-fg-muted)' }}>
+        {label}
+      </div>
+      <ul className="font-mono">
+        {diff.added.map((entry) => (
+          <li key={`+${entry.path}`} title={entry.path} className="truncate">
+            + {entry.path}
+          </li>
+        ))}
+        {diff.removed.map((entry) => (
+          <li key={`-${entry.path}`} title={entry.path} className="truncate">
+            − {entry.path}
+          </li>
+        ))}
+        {diff.reordered.map((entry) => (
+          <li key={`↔${entry.path}`} title={entry.path} className="truncate">
+            {t('compare.moved', {
+              path: entry.path,
+              from: entry.leftIndex + 1,
+              to: entry.rightIndex + 1,
+            })}
+          </li>
+        ))}
+        {diff.toggled.map((entry) => (
+          <li key={`◐${entry.path}`} title={entry.path} className="truncate">
+            {t('compare.toggled', {
+              path: entry.path,
+              state: entry.rightEnabled ? t('compare.enabled') : t('compare.disabled'),
+            })}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** N 路快照对比：第一份为基准，其余逐份给出差异计数与逐条明细。 */
 export function MultiCompareDialog({ uids, onClose }: Props) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<MultiCompareEntry[] | null>(null);
@@ -73,6 +122,8 @@ export function MultiCompareDialog({ uids, onClose }: Props) {
                     modified: row.diff.envModified.join(', ') || '—',
                   })}
                 </div>
+                <PathDiffDetails label={t('merge.system')} diff={row.diff.system} />
+                <PathDiffDetails label={t('merge.user')} diff={row.diff.user} />
               </div>
             ))}
           </div>

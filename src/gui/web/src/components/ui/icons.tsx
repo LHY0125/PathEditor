@@ -1,11 +1,8 @@
 /**
  * 手写内联 SVG 图标集 —— 不引入图标库依赖。
  *
- * 模块状态：当前生产代码仅使用 `MoreIcon`（Menu 的 ⋯ 触发按钮）。
- * `PlusIcon` / `PencilIcon` / `TrashIcon` / `ArrowUpIcon` / `ArrowDownIcon` 是为工具栏
- * 规划的图标语言预留的 —— 工具栏改版最终选择了文字标签，点名因此未接线。
- * 本波**刻意保留**并由 `tests/unit/icons.test.tsx` 覆盖，待后续波次决定采用或移除；
- * 不要当作死代码顺手删除，也不要临时接线到工具栏。
+ * 工具栏统一使用「图标 + 文字」：图标只做辅助识别，全部 `aria-hidden`；
+ * 可访问名称仍由按钮文字提供，避免读屏重复朗读。
  */
 
 type IconProps = { className?: string };
@@ -58,6 +55,64 @@ export function ArrowDownIcon({ className }: IconProps) {
   return (
     <svg {...BASE} className={className}>
       <path d="M8 3v10M4 9l4 4 4-4" />
+    </svg>
+  );
+}
+
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <circle cx="7" cy="7" r="4" />
+      <path d="M10 10l3.5 3.5" />
+    </svg>
+  );
+}
+
+export function ImportIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M8 2.5v7M5 7l3 3 3-3M3 12.5h10" />
+    </svg>
+  );
+}
+
+export function ExportIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M8 9.5v-7M5 5l3-3 3 3M3 12.5h10" />
+    </svg>
+  );
+}
+
+export function SaveIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M3 2.5h8l2 2v9H3z" />
+      <path d="M5.5 2.5v3.5h5V2.5M5.5 13v-4h5v4" />
+    </svg>
+  );
+}
+
+export function UndoIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M5.5 5.5H3v-2.5M3 5.5c1.2-2 3.2-3 5.2-3 3 0 5.3 2.2 5.3 5.2S11.2 13 8.2 13c-1.5 0-2.8-.6-3.8-1.6" />
+    </svg>
+  );
+}
+
+export function RedoIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M10.5 5.5H13v-2.5M13 5.5c-1.2-2-3.2-3-5.2-3C4.8 2.5 2.5 4.7 2.5 7.7S4.8 12.9 7.8 12.9c1.5 0 2.8-.6 3.8-1.6" />
+    </svg>
+  );
+}
+
+export function RefreshIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V6H9.5" />
     </svg>
   );
 }

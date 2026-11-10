@@ -36,7 +36,7 @@ use crate::domain::error::{CoreError, ErrorCode};
 /// 并让「8 字节 magic」的文字描述成立。
 const MAGIC: &[u8; 8] = b"PESYNC1\0";
 /// 包格式版本（与 `CURRENT_SCHEMA_VERSION` 无关：前者是**文件格式**，后者是**库结构**）。
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 /// Argon2id 盐长度。
 const SALT_LEN: usize = 16;
 /// ChaCha20-Poly1305 nonce 长度。

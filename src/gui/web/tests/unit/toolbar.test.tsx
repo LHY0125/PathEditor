@@ -60,7 +60,7 @@ function openMenu() {
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
 }
 
-describe('ToolBar 单行结构', () => {
+describe('ToolBar 结构', () => {
   it('主行展示高频按钮，低频动作不在主行', () => {
     setWritable();
     render(<ToolBar {...makeProps()} />);
@@ -89,10 +89,9 @@ describe('ToolBar 单行结构', () => {
     useAppStore.setState({ isModified: true });
     render(<ToolBar {...makeProps()} />);
     const save = screen.getByRole('button', { name: '保存' });
-    // getByRole 的 name 是子串匹配，「保存 已修改」也会命中；用精确可访问名称兜底。
-    // 未保存指示由状态栏承担，按钮内不再有任何标记元素。
+    // 图标 aria-hidden，可访问名称仍只有「保存」；未保存指示由状态栏承担。
     expect(save).toHaveAccessibleName('保存');
-    expect(save.children).toHaveLength(0);
+    expect(save.querySelectorAll('svg')).toHaveLength(1);
   });
 
   it('无写权限时编辑组、导入与保存禁用', () => {

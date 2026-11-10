@@ -136,28 +136,14 @@ pub fn save_profile_tx(
 
     // ── 接线 ──
     //
-    // 两条变更：配置元数据（整实体）+ 它的首个版本。
+    // 配置拆成四个**字段变更** + 一个 revision：
+    // `name` / `description` / `tags` / `content`（content 内是 snapshotUid）。
+    // 这是字段级 LWW 的写入侧：两端改不同字段时，导入侧可以各取所需，
+    // 不会因为后到的整实体覆盖前一个字段。
     //
     // **必须放在所有可能失败的检查之后**：上面 `NameExists` 分支会提前 `return`，
     // 若把记录放在它之前，就会留下「profile 没建成但变更记了」的孤儿行。
-    // 整个函数在同一事务内，任一步失败都会整体回滚——但代码顺序仍应表达
-    // 「先成功、再记账」的意图。
-    let meta = serde_json::json!({
-        "name": name,
-        "description": description,
-        "tags": tags,
-        "snapshotUid": snapshot_uid,
-    });
-    crate::db::sync::change_log::record_change_tx(
-        tx,
-        crate::db::sync::change_log::NewChange {
-            entity_type: "profile".to_string(),
-            entity_uid: uid.clone(),
-            field: None,
-            old_value: String::new(),
-            new_value: meta.to_string(),
-        },
-    )?;
+    record_profile_fields_tx(tx, &uid, name, description, tags, &snapshot_uid)?;
     crate::db::sync::change_log::record_change_tx(
         tx,
         crate::db::sync::change_log::NewChange {
@@ -170,6 +156,43 @@ pub fn save_profile_tx(
     )?;
 
     Ok(uid)
+}
+
+/// 记录配置的四个字段变更（创建/整体写入共用）。
+///
+/// `field` 必须是 `name` / `description` / `tags` / `content` 之一；
+/// 导入侧按同一套键做字段级 LWW。`content` 只带 `snapshotUid`，
+/// 名称/描述/标签各有独立时间线。
+fn record_profile_fields_tx(
+    tx: &Transaction,
+    uid: &str,
+    name: &str,
+    description: Option<&str>,
+    tags: &[String],
+    snapshot_uid: &str,
+) -> Result<(), CoreError> {
+    let fields = [
+        ("name", serde_json::json!(name)),
+        ("description", serde_json::json!(description)),
+        ("tags", serde_json::json!(tags)),
+        (
+            "content",
+            serde_json::json!({ "snapshotUid": snapshot_uid }),
+        ),
+    ];
+    for (field, value) in fields {
+        crate::db::sync::change_log::record_change_tx(
+            tx,
+            crate::db::sync::change_log::NewChange {
+                entity_type: "profile".to_string(),
+                entity_uid: uid.to_string(),
+                field: Some(field.to_string()),
+                old_value: String::new(),
+                new_value: value.to_string(),
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// 同步包里的配置内容（接受侧子集）。
@@ -318,6 +341,127 @@ pub(crate) fn import_profile_content_tx(
         }
     }
     Ok(renamed)
+}
+
+/// 按**单个字段**应用远端配置变更（字段级 LWW 的落库侧）。
+///
+/// 只在本地已有该 uid 时走字段合并；本地没有时退回整实体导入，
+/// 否则一条 `name` 变更会造出一个缺少快照引用的半成品。
+///
+/// 返回值语义与 [`import_profile_content_tx`] 一致：`true` 表示因同名
+/// 自动改名。`name` 之外的字段不会触碰名称，因此恒为 `false`。
+pub(crate) fn apply_profile_field_tx(
+    tx: &Transaction,
+    uid: &str,
+    field: &str,
+    content: &serde_json::Value,
+    device_id: &str,
+) -> Result<bool, CoreError> {
+    let c: ProfileSyncContent = serde_json::from_value(content.clone()).map_err(|e| {
+        CoreError::new(
+            ErrorCode::SyncFormat,
+            "import_profile",
+            format!("配置内容无法解析: {e}"),
+        )
+    })?;
+
+    let existing: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM profiles WHERE uid = ?1",
+            params![uid],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| db_err("find_profile_uid", e))?;
+    let Some(id) = existing else {
+        // 本地从未见过这个实体：字段级合并没有基线，只能整体落库。
+        return import_profile_content_tx(tx, uid, content, device_id);
+    };
+
+    let updated_at = c.updated_at;
+    let version = c.version.max(1);
+    match field {
+        "name" => {
+            validate_name(&c.name).map_err(|e| {
+                CoreError::new(
+                    ErrorCode::SyncFormat,
+                    "import_profile",
+                    format!("配置名称不合法: {}", e.message),
+                )
+            })?;
+            let name = unique_name_tx(tx, &c.name, uid, device_id)?;
+            let renamed = name != c.name;
+            tx.execute(
+                "UPDATE profiles
+                    SET name = ?1, updated_at = ?2, version = MAX(version, ?3),
+                        deleted_at = NULL
+                  WHERE id = ?4",
+                params![name, updated_at, version, id],
+            )
+            .map_err(|e| db_err("import_profile_name", e))?;
+            crate::db::search::index_profile_tx(tx, uid)?;
+            Ok(renamed)
+        }
+        "description" => {
+            tx.execute(
+                "UPDATE profiles
+                    SET description = ?1, updated_at = ?2, version = MAX(version, ?3),
+                        deleted_at = NULL
+                  WHERE id = ?4",
+                params![c.description, updated_at, version, id],
+            )
+            .map_err(|e| db_err("import_profile_description", e))?;
+            crate::db::search::index_profile_tx(tx, uid)?;
+            Ok(false)
+        }
+        "tags" => {
+            let tags_json = serde_json::to_string(&c.tags).unwrap_or_else(|_| "[]".to_string());
+            tx.execute(
+                "UPDATE profiles
+                    SET tags = ?1, updated_at = ?2, version = MAX(version, ?3),
+                        deleted_at = NULL
+                  WHERE id = ?4",
+                params![tags_json, updated_at, version, id],
+            )
+            .map_err(|e| db_err("import_profile_tags", e))?;
+            crate::db::search::index_profile_tx(tx, uid)?;
+            Ok(false)
+        }
+        "content" => {
+            if let Some(snapshot_uid) = &c.snapshot_uid {
+                let snapshot_id: i64 = tx
+                    .query_row(
+                        "SELECT id FROM snapshots WHERE uid = ?1",
+                        params![snapshot_uid],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| db_err("import_profile_snapshot", e))?
+                    .ok_or_else(|| {
+                        CoreError::new(
+                            ErrorCode::SyncFormat,
+                            "import_profile",
+                            format!("配置引用的快照不存在: {snapshot_uid}"),
+                        )
+                    })?;
+                upsert_revision_tx(tx, id, version, updated_at, snapshot_id)?;
+            }
+            tx.execute(
+                "UPDATE profiles
+                    SET updated_at = ?1, version = MAX(version, ?2), deleted_at = NULL
+                  WHERE id = ?3",
+                params![updated_at, version, id],
+            )
+            .map_err(|e| db_err("import_profile_content", e))?;
+            crate::db::search::index_profile_tx(tx, uid)?;
+            Ok(false)
+        }
+        other => Err(CoreError::new(
+            ErrorCode::SyncFormat,
+            "import_profile",
+            format!("未知的配置字段: {other}"),
+        )),
+    }
 }
 
 /// 为导入的配置生成一个本机唯一的未删除名称。

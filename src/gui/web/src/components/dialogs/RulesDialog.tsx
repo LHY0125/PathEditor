@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { errorMessage } from '@/core/error';
 import { useAppStore } from '@/store/app-store';
 import { backend, type Rule, type RuleApplyResult } from '@/services/backend';
 
@@ -25,12 +26,11 @@ export function RulesDialog({ open, onClose }: Props) {
     void backend
       .rulesList()
       .then(setRules)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(errorMessage(err)));
   };
 
   useEffect(() => {
     if (open) load();
-     
   }, [open]);
 
   const create = async () => {
@@ -42,7 +42,7 @@ export function RulesDialog({ open, onClose }: Props) {
       setContains('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -60,7 +60,7 @@ export function RulesDialog({ open, onClose }: Props) {
         onClose();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -121,7 +121,10 @@ export function RulesDialog({ open, onClose }: Props) {
                   checked={rule.enabled}
                   aria-label={t('rules.enabled', { name: rule.name })}
                   onChange={(e) => {
-                    void backend.rulesSetEnabled(rule.uid, e.target.checked).then(load);
+                    void backend
+                      .rulesSetEnabled(rule.uid, e.target.checked)
+                      .then(load)
+                      .catch((err: unknown) => setError(errorMessage(err)));
                   }}
                 />
                 <span className="font-medium">{rule.name}</span>
@@ -132,7 +135,12 @@ export function RulesDialog({ open, onClose }: Props) {
                 <Button
                   size="sm"
                   variant="danger"
-                  onClick={() => void backend.rulesDelete(rule.uid).then(load)}
+                  onClick={() =>
+                    void backend
+                      .rulesDelete(rule.uid)
+                      .then(load)
+                      .catch((err: unknown) => setError(errorMessage(err)))
+                  }
                 >
                   {t('button.delete')}
                 </Button>

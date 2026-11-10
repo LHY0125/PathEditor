@@ -40,7 +40,7 @@ fn backup_index_sees_backups_created_after_first_index() {
     let tmp = TempDir::new().unwrap();
     let key = load_or_create_key(tmp.path()).unwrap();
     let mut db = Db::open(&tmp.path().join("b.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let backup_dir = tmp.path().join("backups");
 

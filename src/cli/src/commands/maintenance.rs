@@ -1,6 +1,6 @@
 //! `maintenance` 子命令：保留策略清理与遗留明文备份清理。
 //!
-//! 维护命令只打开库并迁移 schema，不触发额外的文件导入。
+//! 维护命令只打开库并校验 schema，不触发额外的文件导入。
 
 use crate::runtime::{exit_core_error, open_db_or_exit};
 use path_editor_core as core;
@@ -236,35 +236,4 @@ fn day_end_ms(raw: &str) -> i64 {
         .expect("23:59:59.999 恒合法")
         .and_utc()
         .timestamp_millis()
-}
-
-/// `maintenance backups [--json]`：列出迁移前自动备份。
-pub(crate) fn maintenance_backups(json_out: bool) {
-    let db_path = core::db::crypto::data_home().join("patheditor.db");
-    let backups =
-        core::db::list_migration_backups(&db_path).unwrap_or_else(|e| exit_core_error(&e));
-    if json_out {
-        crate::output::print_json(&backups);
-        return;
-    }
-    if backups.is_empty() {
-        println!("没有迁移前备份。");
-        return;
-    }
-    for item in backups {
-        println!(
-            "v{}  {}  ({:.2} MiB)",
-            item.version,
-            item.path,
-            item.bytes as f64 / (1024.0 * 1024.0)
-        );
-    }
-}
-
-/// `maintenance restore-backup <FILE> --yes`：替换当前数据库。
-pub(crate) fn maintenance_restore_backup(file: String, yes: bool) {
-    let db_path = core::db::crypto::data_home().join("patheditor.db");
-    core::db::restore_migration_backup(&db_path, std::path::Path::new(&file), yes)
-        .unwrap_or_else(|e| exit_core_error(&e));
-    println!("已用备份替换数据库；请重新启动 PathEditor。当前库的保底副本为 patheditor.db.pre-restore.bak");
 }

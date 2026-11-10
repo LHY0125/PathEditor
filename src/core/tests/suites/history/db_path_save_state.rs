@@ -47,7 +47,7 @@ impl PathHiveIo for FakeIo {
 fn cli_save_updates_current_snapshot_changes_and_event() {
     let dir = tempfile::TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("state.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let seed_uid = insert_snapshot(
         &mut db,

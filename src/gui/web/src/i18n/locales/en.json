@@ -192,7 +192,12 @@
     "saveUserFailed": "User PATH: {{error}}",
     "cleanChanged": "The list changed while cleaning; please run clean again",
     "saved_plaintext_backup": "Saved — backup is plaintext (key unavailable). After fixing the key, run patheditor maintenance cleanup-legacy-backups --yes to re-encrypt",
-    "toggleTheme": "Toggle theme"
+    "toggleTheme": "Toggle theme",
+    "systemCount": "System",
+    "userCount": "User",
+    "totalCount": "Total",
+    "countsLabel": "PATH entry counts",
+    "envCountsLabel": "Environment variable counts"
   },
   "dialog": {
     "newPath": "New Path",
@@ -253,6 +258,7 @@
     "comparePick": "Choose another profile…",
     "comparing": "Comparing…",
     "closeCompare": "Back",
+    "description": "Description",
     "tagsDiff": "Tags added: {{added}}; removed: {{removed}}",
     "envDiff": "Env vars added: {{added}}; removed: {{removed}}; modified: {{modified}}"
   },
@@ -286,7 +292,10 @@
     "emptyValue": "(empty)",
     "degradedTitle": "History unavailable",
     "degradedDetail": "The history database could not be opened; running in degraded mode",
-    "degradedHint": "Environment variable editing is unaffected; restart to retry",
+    "degradedHint": "Environment variable editing is unaffected; open the data directory to inspect the old database",
+    "degradedHintMigration": "Open the data directory, back up and remove the old database, then restart",
+    "degradedHintDatabase": "Open the data directory, inspect and back up first; do not delete the database directly",
+    "degradedOpenDataDir": "Open data directory",
     "action": {
       "drift": "Registry drift",
       "save": "Save PATH",
@@ -361,7 +370,8 @@
     "allKinds": "All types",
     "removeSaved": "Remove saved search \"{{query}}\"",
     "from": "From",
-    "to": "To"
+    "to": "To",
+    "dateRangeInvalid": "Start date cannot be later than end date"
   },
   "stats": {
     "healthTitle": "Database health",
@@ -480,7 +490,8 @@
       "name": "Name",
       "description": "Description",
       "tags": "Tags",
-      "content": "Content"
+      "content": "Content",
+      "deleted_at": "Deleted"
     },
     "selectedCount": "{{count}} selected",
     "takeLocalBatch": "Keep local (batch)",
@@ -504,5 +515,12 @@
     "preview": "Preview",
     "apply": "Apply to draft",
     "previewSummary": "{{hits}} paths matched (not written to registry)"
+  },
+  "toolbar": {
+    "editGroup": "Edit actions",
+    "orderGroup": "Reorder",
+    "historyGroup": "Undo and redo",
+    "fileGroup": "File actions",
+    "confirmGroup": "Save"
   }
 }

@@ -155,10 +155,6 @@ fn main() {
             MaintenanceCmd::Prune { dry_run } => commands::maintenance::maintenance_prune(dry_run),
             MaintenanceCmd::Vacuum => commands::maintenance::maintenance_vacuum(),
             MaintenanceCmd::Health { json } => commands::maintenance::maintenance_health(json),
-            MaintenanceCmd::Backups { json } => commands::maintenance::maintenance_backups(json),
-            MaintenanceCmd::RestoreBackup { file, yes } => {
-                commands::maintenance::maintenance_restore_backup(file, yes)
-            }
             MaintenanceCmd::CleanupLegacyBackups { dry_run, yes } => {
                 commands::maintenance::maintenance_cleanup_legacy(dry_run, yes)
             }

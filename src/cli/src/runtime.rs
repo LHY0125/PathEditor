@@ -46,9 +46,9 @@ pub(crate) fn ensure_single_target(system: bool, user: bool) -> &'static str {
     }
 }
 
-/// 打开默认库并迁移 schema；失败按 CLI 退出码约定退出。
+/// 打开默认库并校验 schema；失败按 CLI 退出码约定退出。
 pub(crate) fn open_db_or_exit() -> core::db::Db {
-    core::db::open_and_migrate().unwrap_or_else(|e| exit_core_error(&e))
+    core::db::open_and_ensure_schema().unwrap_or_else(|e| exit_core_error(&e))
 }
 
 /// 尝试打开已存在的默认数据库；不存在或打不开时返回 `None`。
@@ -57,10 +57,10 @@ pub(crate) fn open_db_or_exit() -> core::db::Db {
 /// 或密钥文件——DB 是 GUI 建立的 sidecar，CLI 只使用它。
 fn open_db_optional() -> Option<core::db::Db> {
     match core::db::open_existing() {
-        Ok(Some(mut db)) => match db.migrate_to_current() {
+        Ok(Some(mut db)) => match db.ensure_schema() {
             Ok(()) => Some(db),
             Err(e) => {
-                eprintln!("警告: 数据库迁移失败（{}），降级为文件快照", e.message);
+                eprintln!("警告: 数据库结构不可用（{}），降级为文件快照", e.message);
                 None
             }
         },
@@ -72,13 +72,13 @@ fn open_db_optional() -> Option<core::db::Db> {
     }
 }
 
-/// 审计等 best-effort 用途的静默打开：DB 不存在、打不开或迁移失败都返回 `None`。
+/// 审计等 best-effort 用途的静默打开：DB 不存在、打不开或 schema 校验失败都返回 `None`。
 ///
 /// 与 [`open_db_optional`] 的区别：不向 stderr 打任何警告——读命令不应因为
 /// 副作用性质的操作产生噪声。
 pub(crate) fn open_db_silent() -> Option<core::db::Db> {
     let mut db = core::db::open_existing().ok().flatten()?;
-    db.migrate_to_current().ok()?;
+    db.ensure_schema().ok()?;
     Some(db)
 }
 
@@ -96,7 +96,7 @@ pub(crate) fn refresh_derived_if_stale() {
     let Ok(Some(mut db)) = core::db::open_existing() else {
         return;
     };
-    if db.migrate_to_current().is_err() {
+    if db.ensure_schema().is_err() {
         return;
     }
     match refresh_derived_at(&mut db, &derived_watermark_path()) {
@@ -482,7 +482,7 @@ mod tests {
     fn derived_refresh_rebuilds_only_when_watermark_changes() {
         let dir = tempfile::TempDir::new().unwrap();
         let mut db = core::db::Db::open(&dir.path().join("d.db")).unwrap();
-        db.migrate_to_current().unwrap();
+        db.ensure_schema().unwrap();
         let watermark = dir.path().join("derived.watermark");
 
         assert!(

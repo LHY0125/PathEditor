@@ -3,13 +3,13 @@ export type ButtonSize = 'sm' | 'md';
 
 /** 所有变体共享的基础类 */
 const BASE =
-  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border ' +
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] border ' +
   'font-medium transition-colors select-none ' +
   'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none';
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: 'h-6 px-2 text-xs',
-  md: 'h-7 px-2.5 text-xs',
+  sm: 'h-8 px-3 text-xs',
+  md: 'h-9 px-3.5 text-[13px]',
 };
 
 /**

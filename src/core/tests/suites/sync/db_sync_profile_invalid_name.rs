@@ -17,7 +17,7 @@ fn write_bundle(dir: &TempDir, file: &str, name_json: &str) {
              "content": {{ "uid": "snap-1", "createdAt": 1, "kind": "current",
                           "system": [], "user": [], "env": [] }} }},
           {{ "uid": "c-prof", "deviceId": "dev-x", "seq": 2, "lamport": 2,
-             "entityType": "profile", "entityUid": "p-1", "field": null,
+             "entityType": "profile", "entityUid": "p-1", "field": "name",
              "oldValue": null, "newValue": "{{}}", "createdAt": 0,
              "content": {{ "uid": "p-1", "name": {name_json}, "description": null,
                           "tags": [], "createdAt": 1, "updatedAt": 2, "version": 1,
@@ -25,7 +25,7 @@ fn write_bundle(dir: &TempDir, file: &str, name_json: &str) {
         ]"#
     );
     let header = BundleHeader {
-        schema_version: 3,
+        schema_version: 7,
         device_id: "dev-x".to_string(),
         exported_at: 0,
         base_lamport: 10,

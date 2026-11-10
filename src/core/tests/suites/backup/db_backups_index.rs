@@ -16,7 +16,7 @@ fn pebak_backup_is_indexed_without_decrypting() {
 
     let key = load_or_create_key(dir.path()).unwrap();
     let mut db = Db::open(&dir.path().join("b.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let backup_dir = dir.path().join("backups");
     // `EnvBackupPayload` 没有 `empty_for_test` 构造器，显式构造

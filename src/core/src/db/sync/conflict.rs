@@ -18,7 +18,7 @@ pub struct SyncConflictView {
     pub entity_type: String,
     /// 实体 uid
     pub entity_uid: String,
-    /// 字段名；`None` 表示整实体
+    /// 字段名；`None` 表示非 profile 的整实体
     pub field: Option<String>,
     /// 本地值
     pub local_value: Option<String>,
@@ -281,13 +281,33 @@ fn resolve_one_tx(
                     format!("冲突 {id} 的远端内容无法解析: {e}"),
                 )
             })?;
-            super::import::apply_entity_tx(
-                tx,
-                &target.entity_type,
-                &target.entity_uid,
-                &content,
-                &target.remote_device,
-            )?;
+            // profile 的字段级冲突只写该字段；整体写回会把用户已解决的
+            // 其它字段一起覆盖，正是 D4 要消除的问题。
+            if target.entity_type == "profile" {
+                let field = target.field.as_deref().ok_or_else(|| {
+                    CoreError::new(
+                        ErrorCode::Internal,
+                        "resolve_conflict",
+                        "profile 冲突缺少字段名，无法按字段应用远端内容",
+                    )
+                })?;
+                // `deleted_at` 已在上面处理，这里只剩普通字段。
+                crate::db::profiles::apply_profile_field_tx(
+                    tx,
+                    &target.entity_uid,
+                    field,
+                    &content,
+                    &target.remote_device,
+                )?;
+            } else {
+                super::import::apply_entity_tx(
+                    tx,
+                    &target.entity_type,
+                    &target.entity_uid,
+                    &content,
+                    &target.remote_device,
+                )?;
+            }
         } else {
             log::warn!("冲突 {id} 没有远端内容（旧版本记录），仅记录解决结果");
         }

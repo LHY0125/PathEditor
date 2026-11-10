@@ -13,6 +13,9 @@ export function StatusBar() {
   const isAdmin = useAppStore((s) => s.isAdmin);
   const pathCapabilities = useAppStore((s) => s.pathCapabilities);
   const isModified = useAppStore((s) => s.isModified);
+  const sysPaths = useAppStore((s) => s.sysPaths);
+  const userPaths = useAppStore((s) => s.userPaths);
+  const envSnapshot = useEnvStore((s) => s.snapshot);
   const envStatusMessage = useEnvStore((s) => s.statusMessage);
   const envStatusIsError = useEnvStore((s) => s.statusIsError);
   const envIsLoading = useEnvStore((s) => s.isLoading);
@@ -22,6 +25,12 @@ export function StatusBar() {
   // 「全部变量」下展示环境变量操作的状态（create/remove/reveal 的成败）；
   // 其余 Tab 维持 PATH 语义不变。
   const isAllVars = activeTab === 'allVars';
+  // 计数跟随当前视角：环境变量页统计 env，其余页统计 PATH。
+  // 环境变量快照未就绪时显示 `—`，不要把「尚未加载」伪装成 0。
+  const sysCount = isAllVars ? (envSnapshot?.system.length ?? null) : sysPaths.length;
+  const userCount = isAllVars ? (envSnapshot?.user.length ?? null) : userPaths.length;
+  const totalCount = sysCount === null || userCount === null ? null : sysCount + userCount;
+  const countLabel = isAllVars ? t('status.envCountsLabel') : t('status.countsLabel');
   const statusMessage = isAllVars ? envStatusMessage : pathStatusMessage;
   const isLoading = isAllVars ? envIsLoading : pathIsLoading;
   // 只认结构化布尔：此前用 `statusMessage.includes(t('status.error'))` 判定，
@@ -40,15 +49,26 @@ export function StatusBar() {
 
   return (
     <footer className="statusbar">
-      <div className="flex items-center gap-2" role="status" aria-live="polite">
-        <span>{isLoading ? t('status.loading') : statusMessage}</span>
+      <div className="statusbar-counts" role="group" aria-label={countLabel}>
+        <span className="statusbar-count">
+          {t('status.systemCount')} <strong>{sysCount ?? '—'}</strong>
+        </span>
+        <span className="statusbar-count">
+          {t('status.userCount')} <strong>{userCount ?? '—'}</strong>
+        </span>
+        <span className="statusbar-count">
+          {t('status.totalCount')} <strong>{totalCount ?? '—'}</strong>
+        </span>
+      </div>
+      <div className="statusbar-message" role="status" aria-live="polite">
+        <span className="truncate">{isLoading ? t('status.loading') : statusMessage}</span>
         {hasError && !isLoading && (
           <Button size="sm" onClick={retry}>
             {t('button.retry')}
           </Button>
         )}
       </div>
-      <div className="flex gap-3">
+      <div className="statusbar-actions">
         {isModified && <span className="statusbar-warn">● {t('status.modified')}</span>}
         {!isAdmin && !pathCapabilities.canWriteUser && (
           <span className="statusbar-warn">{t('status.readonly_label')}</span>

@@ -2,11 +2,42 @@ mod commands;
 
 use tauri::Manager;
 
+/// 初始窗口尺寸上限：4K@100% 下若仍按 98% 打开会得到接近 4K 的窗口，
+/// 超出桌面工具的合理默认值；2K 及高缩放场景不受影响。
+const MAX_INITIAL_WIDTH: f64 = 2400.0;
+const MAX_INITIAL_HEIGHT: f64 = 1500.0;
+const MIN_WINDOW_WIDTH: f64 = 1100.0;
+const MIN_WINDOW_HEIGHT: f64 = 700.0;
+const INITIAL_WINDOW_RATIO: f64 = 0.98;
+
+/// 按显示器工作区计算启动窗口尺寸（逻辑像素）。
+///
+/// 工作区已排除任务栏；缩放由调用方用逻辑尺寸交给 Tauri 处理。
+fn initial_window_size(work_width: f64, work_height: f64) -> (f64, f64) {
+    let width = (work_width * INITIAL_WINDOW_RATIO).clamp(MIN_WINDOW_WIDTH, MAX_INITIAL_WIDTH);
+    let height = (work_height * INITIAL_WINDOW_RATIO).clamp(MIN_WINDOW_HEIGHT, MAX_INITIAL_HEIGHT);
+    (width, height)
+}
+
+/// Tauri 的 `set_size` 设置的是客户区，边框和标题栏会额外占用工作区；
+/// 目标外框尺寸必须扣掉实测外框差，否则窗口底边会越过任务栏/屏幕。
+fn inner_size_for_outer(
+    outer_width: f64,
+    outer_height: f64,
+    frame_width: f64,
+    frame_height: f64,
+) -> (f64, f64) {
+    (
+        (outer_width - frame_width).max(MIN_WINDOW_WIDTH),
+        (outer_height - frame_height).max(MIN_WINDOW_HEIGHT),
+    )
+}
+
 /// 启动时的数据库初始化序列。
 ///
 /// 迁移、pending 补写、当前状态基线、备份索引、保留策略、派生表重建
 /// 全部在 `core::app::bootstrap`；这里只负责把结果写进 GUI 的日志。
-/// 引导失败（只有迁移失败会返回 `Err`）由调用方决定是否进入降级模式。
+/// 引导失败（schema 不兼容、旧加密库、磁盘错误等）由调用方决定是否进入降级模式。
 fn setup_database(db: &mut path_editor_core::db::Db) -> Result<(), path_editor_core::CoreError> {
     let report = path_editor_core::app::bootstrap::initialize(
         db,
@@ -68,20 +99,52 @@ pub fn run() {
             //  ② 补写上次未落盘的 pending 快照
             //  ③ 建立当前状态基线
             //  ④ 备份索引 / 保留策略 / 派生表重建
-            let db = match path_editor_core::db::open_default() {
+            let (db, init_error) = match path_editor_core::db::open_default() {
                 Ok(mut db) => match setup_database(&mut db) {
-                    Ok(()) => Some(db),
+                    Ok(()) => (Some(db), None),
                     Err(e) => {
                         log::error!("历史库初始化失败，进入降级模式: {}", e.message);
-                        None
+                        (None, Some(e))
                     }
                 },
                 Err(e) => {
                     log::warn!("历史库打开失败，进入降级模式: {}", e.message);
-                    None
+                    (None, Some(e))
                 }
             };
-            app.manage(commands::db_state::DbState(std::sync::Mutex::new(db)));
+            app.manage(commands::db_state::DbState::new(db, init_error));
+
+            // 2K/高 DPI：按显示器工作区 98% 初始化，最大化利用横向与纵向空间。
+            // 尺寸使用逻辑像素，Windows 125%/150% 缩放会自动换算；保留可缩放。
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(Some(monitor)) = window.current_monitor() {
+                    let scale = monitor.scale_factor();
+                    let logical = monitor.work_area().size.to_logical::<f64>(scale);
+                    let (outer_width, outer_height) =
+                        initial_window_size(logical.width, logical.height);
+                    // 边框/标题栏是外框与客户区的差值；按逻辑像素扣掉后再 set_size。
+                    let frame_width = window
+                        .outer_size()
+                        .map(|outer| {
+                            outer
+                                .width
+                                .saturating_sub(window.inner_size().map_or(0, |i| i.width))
+                        })
+                        .map_or(0.0, |width| f64::from(width) / scale);
+                    let frame_height = window
+                        .outer_size()
+                        .map(|outer| {
+                            outer
+                                .height
+                                .saturating_sub(window.inner_size().map_or(0, |i| i.height))
+                        })
+                        .map_or(0.0, |height| f64::from(height) / scale);
+                    let (width, height) =
+                        inner_size_for_outer(outer_width, outer_height, frame_width, frame_height);
+                    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+                    let _ = window.center();
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -154,4 +217,36 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{initial_window_size, inner_size_for_outer};
+
+    #[test]
+    fn two_k_high_scaling_uses_98_percent_work_area() {
+        // 2560×1440 @125% 的工作区约为 2048×1120
+        let (width, height) = initial_window_size(2048.0, 1120.0);
+        assert!((width - 2007.04).abs() < 0.01);
+        assert!((height - 1097.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn four_k_full_scale_is_capped() {
+        let (width, height) = initial_window_size(3840.0, 2116.0);
+        assert_eq!((width, height), (2400.0, 1500.0));
+    }
+
+    #[test]
+    fn small_work_area_keeps_minimum_size() {
+        let (width, height) = initial_window_size(800.0, 600.0);
+        assert_eq!((width, height), (1100.0, 700.0));
+    }
+
+    #[test]
+    fn frame_is_subtracted_from_outer_target() {
+        let (width, height) = inner_size_for_outer(2007.04, 1128.96, 15.0, 38.0);
+        assert!((width - 1992.04).abs() < 0.01);
+        assert!((height - 1090.96).abs() < 0.01);
+    }
 }

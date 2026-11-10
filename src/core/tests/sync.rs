@@ -26,6 +26,9 @@ mod db_sync_merge;
 #[path = "suites/sync/db_sync_profile_idempotent.rs"]
 mod db_sync_profile_idempotent;
 
+#[path = "suites/sync/db_sync_profile_fields.rs"]
+mod db_sync_profile_fields;
+
 #[path = "suites/sync/db_sync_profile_invalid_name.rs"]
 mod db_sync_profile_invalid_name;
 

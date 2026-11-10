@@ -13,7 +13,7 @@ fn schema_current_adds_all_tables_and_is_idempotent() {
     for t in ["changes", "sync_conflicts", "scan_runs", "search_fts"] {
         assert!(db.table_exists(t).unwrap(), "缺表: {t}");
     }
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     assert_eq!(
         db.schema_version().unwrap(),
         path_editor_core::db::schema::CURRENT_SCHEMA_VERSION,

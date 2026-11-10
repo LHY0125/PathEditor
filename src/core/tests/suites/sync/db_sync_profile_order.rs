@@ -7,13 +7,13 @@ use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
     let mut db = Db::open(&dir.path().join(name)).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     db
 }
 
 fn write_bundle(path: &std::path::Path, changes_json: &str, count: u32) {
     let header = BundleHeader {
-        schema_version: 3,
+        schema_version: 7,
         device_id: "dev-x".to_string(),
         exported_at: 0,
         base_lamport: 9,
@@ -33,7 +33,7 @@ fn profile_is_applied_after_its_snapshot_even_if_bundle_order_is_reversed() {
     let changes = r#"[
       {
         "uid": "c-prof", "deviceId": "dev-x", "seq": 1, "lamport": 1,
-        "entityType": "profile", "entityUid": "p-1", "field": null,
+        "entityType": "profile", "entityUid": "p-1", "field": "name",
         "oldValue": null, "newValue": "{}", "createdAt": 0,
         "content": {
           "uid": "p-1", "name": "Work", "description": null, "tags": ["a"],

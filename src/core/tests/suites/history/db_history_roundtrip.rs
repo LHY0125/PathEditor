@@ -12,7 +12,7 @@ fn snapshot_roundtrip_and_masking() {
     let dir = TempDir::new().unwrap();
 
     let mut db = Db::open(&dir.path().join("h.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let uid = insert_snapshot(
         &mut db,
@@ -92,7 +92,7 @@ fn snapshot_roundtrip_and_masking() {
 fn snapshot_note_and_pin_roundtrip() {
     let dir = TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("note.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let uid = insert_snapshot(
         &mut db,

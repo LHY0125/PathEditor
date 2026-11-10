@@ -284,20 +284,6 @@ pub(crate) enum MaintenanceCmd {
     },
     /// 清理过期数据并压缩数据库（VACUUM，可能短暂锁库）
     Vacuum,
-    /// 列出迁移前自动备份（.pre-vN.bak）
-    Backups {
-        /// JSON 输出
-        #[arg(long)]
-        json: bool,
-    },
-    /// 用迁移前备份替换当前数据库（必须先关闭 GUI）
-    RestoreBackup {
-        /// 备份文件路径
-        file: String,
-        /// 确认覆盖当前数据库
-        #[arg(long)]
-        yes: bool,
-    },
     /// 输出数据库健康状态（schema/完整性/行数/体积/最近清理）
     Health {
         /// JSON 输出

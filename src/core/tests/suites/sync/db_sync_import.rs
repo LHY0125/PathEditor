@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
     let mut db = Db::open(&dir.path().join(name)).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     db
 }
 

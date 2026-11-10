@@ -35,11 +35,11 @@ npm run verify:all    # verify + Playwright E2E
 
 - 覆盖率门槛为 **80% 行覆盖**，统计范围是 `src/gui/web/src/{core,store,hooks}` 与 `services/backend/`（`components/` 不在门槛内）。`services/backend/` 是 IPC 形状校验的安全边界，纳入门槛以免新增命令漏测。
 - 提交前优先运行 `npm run verify:all`。
-- **当前基线（v7.0.0）**：Rust **360 passed / 0 failed / 2 ignored**；前端 **41 files / 448 passed**（行覆盖率 **80.36%**）；E2E **59 passed**。
+- **当前基线（2026-11-10 工作区）**：Rust **374 passed / 0 failed / 2 ignored**；前端 **46 files / 474 passed**（行覆盖率 **80.2%**）；E2E **59 passed**。
   - 基线只在本节维护一份，其他文档（`AGENTS.md` / `README.md`）引用这里的数字，不要各写一套。
-  - Rust 为 2026-11-08 本机实测（GNU 工具链，去掉 SQLCipher 后同一套用例）：
-    `cargo test --workspace` → 360 passed / 2 ignored；前端为同日实测：
-    `npx vitest run` → 41 files / 448 passed，行覆盖率 80.36%；E2E 为同日实测：
+  - Rust 为 2026-11-10 本机实测（GNU 工具链，去掉 SQLCipher 后同一套用例）：
+    `cargo test --workspace` → 374 passed / 2 ignored；前端为同日实测：
+    `npx vitest run` → 46 files / 474 passed，行覆盖率 80.2%；E2E 为同日实测：
     `npm run test:e2e` → 59 passed（Playwright 1.60）。
 
 ## CI

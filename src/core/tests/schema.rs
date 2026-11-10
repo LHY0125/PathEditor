@@ -11,20 +11,8 @@ mod db_schema_current;
 #[path = "suites/schema/db_schema_open.rs"]
 mod db_schema_open;
 
-#[path = "suites/schema/db_schema_v1_to_v2.rs"]
-mod db_schema_v1_to_v2;
-
-#[path = "suites/schema/db_schema_v2.rs"]
-mod db_schema_v2;
+#[path = "suites/schema/db_schema_derived.rs"]
+mod db_schema_derived;
 
 #[path = "suites/schema/db_health.rs"]
 mod db_health;
-
-#[path = "suites/schema/db_migration_restore.rs"]
-mod db_migration_restore;
-
-#[path = "suites/schema/db_migration_backup.rs"]
-mod db_migration_backup;
-
-#[path = "suites/schema/db_schema_v2_to_current.rs"]
-mod db_schema_v2_to_current;

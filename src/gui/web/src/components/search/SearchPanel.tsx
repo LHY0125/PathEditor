@@ -29,6 +29,7 @@ export function SearchPanel() {
   const [kindFilter, setKindFilter] = useState('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const dateRangeInvalid = fromDate !== '' && toDate !== '' && fromDate > toDate;
   const [saved, setSaved] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem('savedSearches');
@@ -205,6 +206,11 @@ export function SearchPanel() {
             onChange={(e) => setToDate(e.target.value)}
           />
         </label>
+        {dateRangeInvalid && (
+          <span role="alert" style={{ color: 'var(--app-danger)' }}>
+            {t('search.dateRangeInvalid')}
+          </span>
+        )}
         {saved.length > 0 && (
           <>
             <span style={{ color: 'var(--app-fg-muted)' }}>{t('search.savedSearches')}</span>

@@ -16,6 +16,13 @@ describe('theme-store', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
+  it('没有历史偏好时默认深色', () => {
+    initDarkMode();
+    expect(useThemeStore.getState().isDark).toBe(true);
+    expect(useThemeStore.getState().mode).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
   it('切换深色模式时同步 DOM 与 localStorage', () => {
     useThemeStore.getState().toggle();
     expect(useThemeStore.getState().isDark).toBe(true);
@@ -28,11 +35,11 @@ describe('theme-store', () => {
     expect(localStorage.getItem('darkMode')).toBe('0');
   });
 
-  it('localStorage 读取异常时回退为浅色', () => {
+  it('localStorage 读取异常时回退为深色', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked');
     });
     expect(() => initDarkMode()).not.toThrow();
-    expect(useThemeStore.getState().isDark).toBe(false);
+    expect(useThemeStore.getState().isDark).toBe(true);
   });
 });

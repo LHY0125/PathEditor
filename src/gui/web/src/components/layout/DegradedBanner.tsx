@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import { backend } from '@/services/backend';
 
 /** 历史库的可用性状态。`null` = 尚未探测完成。 */
@@ -15,7 +16,7 @@ type HistoryAvailability = 'ok' | 'degraded';
  *
  * 探测方式：启动时调用 `history_get_current`。
  * - 返回 `null` 或快照 → 库可用（`null` 只是「还没有当前快照」，不是故障）；
- * - 抛错且 `code` 为 `database` / `crypto` → 降级。
+ * - 抛错且 `code` 为 `database` / `crypto` / `migration` → 降级。
  *
  * **不做定时轮询**：降级是启动期状态（打开失败就一直是 None），
  * 轮询只会增加无谓的 IPC。恢复需要重启，届时这里会重新探测。
@@ -24,6 +25,7 @@ export function DegradedBanner() {
   const { t } = useTranslation();
   const [state, setState] = useState<HistoryAvailability | null>(null);
   const [detail, setDetail] = useState<string>('');
+  const [code, setCode] = useState<string>('');
 
   useEffect(() => {
     let cancelled = false;
@@ -42,9 +44,10 @@ export function DegradedBanner() {
           typeof e === 'object' && e !== null && 'message' in e
             ? String((e as { message: unknown }).message)
             : String(e);
-        if (code === 'database' || code === 'crypto') {
+        if (code === 'database' || code === 'crypto' || code === 'migration') {
           setState('degraded');
           setDetail(message);
+          setCode(code);
         } else {
           setState('ok');
         }
@@ -56,6 +59,10 @@ export function DegradedBanner() {
   }, []);
 
   if (state !== 'degraded') return null;
+
+  // 只有 schema 不兼容与旧 SQLCipher 库是“确定需要重建”的场景；
+  // 其它 database 错误（锁、I/O、损坏）不能直接建议删除。
+  const needsRebuild = code === 'migration' || detail.includes('旧版加密数据库');
 
   return (
     <div
@@ -70,8 +77,21 @@ export function DegradedBanner() {
       <span className="truncate opacity-90" title={detail}>
         {detail || t('history.degradedDetail', '历史库无法打开，当前处于降级模式')}
       </span>
-      <span className="ml-auto shrink-0 opacity-90">
-        {t('history.degradedHint', '环境变量编辑不受影响；重启后可重试')}
+      <span className="ml-auto flex shrink-0 items-center gap-2 opacity-90">
+        <span>
+          {needsRebuild
+            ? t('history.degradedHintMigration', '请打开数据目录，备份后删除旧库再重启')
+            : code === 'database'
+              ? t('history.degradedHintDatabase', '请打开数据目录检查并先备份，不要直接删除数据库')
+              : t('history.degradedHint', '环境变量编辑不受影响；请打开数据目录检查旧库')}
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void backend.openDataDir().catch(() => {})}
+        >
+          {t('history.degradedOpenDataDir', '打开数据目录')}
+        </Button>
       </span>
     </div>
   );

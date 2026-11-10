@@ -12,7 +12,7 @@ fn profile_create_delete_recreate_with_same_name() {
     let dir = TempDir::new().unwrap();
 
     let mut db = Db::open(&dir.path().join("p.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let snap = || NewSnapshot {
         kind: SnapshotKind::Profile,
@@ -82,7 +82,7 @@ fn profile_env_and_diff_are_exposed() {
 
     let dir = TempDir::new().unwrap();
     let mut db = Db::open(&dir.path().join("diff.db")).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
 
     let snap = |env_name: &str, value: &str, revision: &str| NewSnapshot {
         kind: SnapshotKind::Profile,
@@ -126,4 +126,42 @@ fn profile_env_and_diff_are_exposed() {
     assert_eq!(diff.tags_added, vec!["new".to_string()]);
     assert_eq!(diff.tags_removed, vec!["old".to_string()]);
     assert_eq!(diff.paths.env_modified, vec!["JAVA_HOME".to_string()]);
+}
+
+#[test]
+fn profile_creation_records_field_level_changes() {
+    let dir = TempDir::new().unwrap();
+    let mut db = Db::open(&dir.path().join("p-fields.db")).unwrap();
+    db.ensure_schema().unwrap();
+    let uid = save_profile(
+        &mut db,
+        "Work",
+        Some("公司"),
+        &["office".into()],
+        NewSnapshot {
+            kind: SnapshotKind::Profile,
+            source: EventSource::Gui,
+            system: vec![],
+            user: vec![],
+            env: vec![],
+            parent_uid: None,
+        },
+    )
+    .unwrap();
+
+    let fields: String = db
+        .query_row_with(
+            "SELECT group_concat(field, ',') FROM (
+               SELECT field FROM changes
+                WHERE entity_type = 'profile' AND entity_uid = ?1
+                ORDER BY id ASC
+             )",
+            [&uid],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        fields, "name,description,tags,content",
+        "新建配置必须写四个字段变更，而不是一条整实体"
+    );
 }

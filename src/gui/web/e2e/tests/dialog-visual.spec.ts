@@ -14,7 +14,9 @@ for (const c of CASES) {
   test(`PathEditDialog 外壳在${c.name}下使用 token 表面色`, async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.addInitScript(createIpcMock());
-    if (c.dark) await page.addInitScript(() => localStorage.setItem('darkMode', '1'));
+    await page.addInitScript((dark) => {
+      localStorage.setItem('themeMode', dark ? 'dark' : 'light');
+    }, c.dark);
     await page.goto('/');
 
     // P4：先证明主题确实切换成功 —— 该判据在浅色/深色下取值相反，不会双向假绿。
@@ -31,9 +33,9 @@ for (const c of CASES) {
     });
 
     // 表面色逐主题锁定 —— 每个取值只在对应主题下成立（浅色白 / 深色 92% 玻璃面）
-    expect(styles.background).toBe(c.dark ? 'rgba(30, 30, 40, 0.92)' : 'rgb(255, 255, 255)');
-    // 圆角符合 --radius-lg（10px）
-    expect(styles.radius).toBe('10px');
+    expect(styles.background).toBe(c.dark ? 'rgb(26, 32, 43)' : 'rgb(255, 255, 255)');
+    // 圆角符合 --radius-lg（12px）
+    expect(styles.radius).toBe('12px');
   });
 }
 

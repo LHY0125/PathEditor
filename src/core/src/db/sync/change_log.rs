@@ -15,7 +15,7 @@
 use rusqlite::{params, Transaction};
 
 use crate::db::{db_err, Db};
-use crate::domain::error::CoreError;
+use crate::domain::error::{CoreError, ErrorCode};
 
 /// 待写入的一条变更（调用方构造）。
 #[derive(Debug, Clone)]
@@ -24,7 +24,7 @@ pub struct NewChange {
     pub entity_type: String,
     /// 实体 uid（**不是**本地整数主键）
     pub entity_uid: String,
-    /// 字段名；`None` 表示整实体
+    /// 字段名；profile 必须显式给出，`None` 仅用于整实体类型
     pub field: Option<String>,
     /// 旧值 JSON（**仅用于同步**，不写入 `events`，UI 展示须掩码）
     pub old_value: String,
@@ -49,7 +49,7 @@ pub struct ChangeRow {
     pub entity_type: String,
     /// 实体 uid
     pub entity_uid: String,
-    /// 字段名；`None` 表示整实体
+    /// 字段名；profile 必须显式给出，`None` 仅用于整实体类型
     pub field: Option<String>,
     /// 旧值
     pub old_value: Option<String>,
@@ -76,6 +76,19 @@ fn device_id(tx: &Transaction) -> Result<String, CoreError> {
     .map_err(|e| db_err("device_id", e))
 }
 
+/// 读本设备 id（事务外）。
+///
+/// 导入侧用它拒绝「远端包声称自己来自本机」的变更：否则伪造的
+/// `seq = i64::MAX` 会把本地 `next_seq` 的 `MAX(seq) + 1` 顶到 SQLite
+/// 整数溢出，之后本地所有变更写入都会失败。
+pub fn current_device_id(db: &Db) -> Result<String, CoreError> {
+    db.query_row_with(
+        "SELECT COALESCE((SELECT device_id FROM app_state WHERE id = 1), 'local')",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+}
+
 /// 读当前逻辑时钟。
 pub fn current_lamport(db: &Db) -> Result<i64, CoreError> {
     db.query_row_with(
@@ -90,7 +103,13 @@ pub fn current_lamport(db: &Db) -> Result<i64, CoreError> {
 /// 冲突解决时用：用户的选择是一个**更晚的决定**，必须胜过导致冲突的两个值，
 /// 否则第三台设备导入时会按原 lamport 重新判一次，把用户刚做的选择覆盖掉。
 pub fn next_lamport(db: &Db) -> Result<i64, CoreError> {
-    Ok(current_lamport(db)?.saturating_add(1))
+    current_lamport(db)?.checked_add(1).ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::Database,
+            "next_lamport",
+            "逻辑时钟已耗尽，无法继续记录变更",
+        )
+    })
 }
 
 /// 事务内写入一条变更，返回其 uid。
@@ -106,23 +125,37 @@ pub fn record_change_tx(tx: &Transaction, c: NewChange) -> Result<String, CoreEr
     //
     // 为什么 seq 用 `MAX(seq) WHERE device_id = ?` 而不是依赖 id 自增：
     // 导入会把**其它设备**的变更写进同一张表，自增 id 因此不等于本设备序号。
-    let next_seq: i64 = tx
+    // 不用 SQL 的 `+1`：SQLite 在整数溢出时会转成 REAL，随后
+    // `r.get::<i64>` 抛类型错误，把本地记账永久卡死。先读原值，再用
+    // Rust 的 checked_add 显式报错。
+    let max_seq: i64 = tx
         .query_row(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM changes WHERE device_id = ?1",
+            "SELECT COALESCE(MAX(seq), 0) FROM changes WHERE device_id = ?1",
             params![device],
             |r| r.get(0),
         )
         .map_err(|e| db_err("next_seq", e))?;
-    let next_lamport: i64 = tx
-        .query_row::<i64, _, _>(
-            // 不用 SQL 的 `+1`：SQLite 在整数溢出时会转成 REAL，
-            // 随后 `r.get::<i64>` 抛类型错误，把本地记账永久卡死。
+    let next_seq = max_seq.checked_add(1).ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::Database,
+            "next_seq",
+            "本机变更序号已耗尽，无法继续记录同步历史；请检查 changes 表中本机 device_id 是否被外部工具写入了接近 i64::MAX 的 seq",
+        )
+    })?;
+    let current_lamport: i64 = tx
+        .query_row(
             "SELECT COALESCE((SELECT lamport FROM app_state WHERE id = 1), 0)",
             [],
             |r| r.get(0),
         )
-        .map_err(|e| db_err("next_lamport", e))?
-        .saturating_add(1);
+        .map_err(|e| db_err("next_lamport", e))?;
+    let next_lamport = current_lamport.checked_add(1).ok_or_else(|| {
+        CoreError::new(
+            ErrorCode::Database,
+            "next_lamport",
+            "逻辑时钟已耗尽，无法继续记录变更",
+        )
+    })?;
 
     tx.execute(
         "INSERT INTO changes

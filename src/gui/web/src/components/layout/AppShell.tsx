@@ -287,7 +287,7 @@ export function AppShell() {
               setSelectedIndices([]);
               document.getElementById(`tab-${next.id}`)?.focus();
             }}
-            className="tab-pill text-xs"
+            className="tab-pill"
           >
             {tab.label}
           </button>
@@ -297,67 +297,63 @@ export function AppShell() {
       {/* 各 Tab 的工具栏语义不同：PATH 编辑动作只属于 system/user；
           merged 只读；其余面板自带标题/筛选/操作区，不能再显示 PATH 工具栏。 */}
       {activeTab === 'allVars' && (
-        <div className="px-4 py-2">
-          <EnvVarToolbar
-            onCreate={() => setNewVarOpen(true)}
-            onEdit={() => {
-              if (selectedVar) setEditVarKey(selectedVarKey);
-            }}
-            onDelete={() => {
-              if (selectedVar) confirmRemoveVar(selectedVar);
-            }}
-            onRefresh={() => void loadEnvVars()}
-            onBackup={() => setEnvBackupOpen(true)}
-            onSearchChange={setEnvSearch}
-            searchQuery={envSearch}
-            selected={selectedVar}
-          />
-        </div>
+        <EnvVarToolbar
+          onCreate={() => setNewVarOpen(true)}
+          onEdit={() => {
+            if (selectedVar) setEditVarKey(selectedVarKey);
+          }}
+          onDelete={() => {
+            if (selectedVar) confirmRemoveVar(selectedVar);
+          }}
+          onRefresh={() => void loadEnvVars()}
+          onBackup={() => setEnvBackupOpen(true)}
+          onSearchChange={setEnvSearch}
+          searchQuery={envSearch}
+          selected={selectedVar}
+        />
       )}
       {(activeTab === 'system' || activeTab === 'user') && (
-        <div className="px-4 py-2">
-          <ToolBar
-            onNew={actions.handleNew}
-            onEdit={actions.handleEdit}
-            onBrowse={actions.handleBrowse}
-            onDelete={actions.handleDelete}
-            onMoveUp={actions.handleMoveUp}
-            onMoveDown={actions.handleMoveDown}
-            onClean={actions.handleClean}
-            onImport={actions.handleImport}
-            onExport={actions.handleExport}
-            onSave={actions.handleSave}
-            onCancel={() => {
-              const state = useAppStore.getState();
-              // 环境变量草稿尚未提交时同样需要确认，否则关窗会静默丢弃用户输入。
-              const hasPendingChanges = state.isModified || useEnvStore.getState().hasDrafts();
-              if (!hasPendingChanges) {
-                window.close();
-                return;
-              }
-              void backend
-                .confirmDialog(t('dialog.unsavedConfirm'))
-                .then((confirmed) => {
-                  if (confirmed) window.close();
-                })
-                .catch(() => {});
-            }}
-            onHelp={() => setHelpOpen(true)}
-            onLanguage={() => {
-              // 以 i18next 解析后的语言为准，不能读 localStorage 原始值：
-              // 检测器会缓存 'en-US' 这类区域变体，与 'zh-CN' 比较会得出错误结论。
-              const current = i18n.resolvedLanguage ?? i18n.language;
-              // 不在这里手调 syncHtmlLang：changeLanguage 会触发 languageChanged，
-              // 由上面的监听统一更新，避免两条路径各写一份。
-              void i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
-            }}
-            onProfiles={() => setProfilesOpen(true)}
-            onRules={() => setRulesOpen(true)}
-            onAnalyze={() => setAnalyzeOpen(true)}
-            onDarkMode={() => useThemeStore.getState().toggle()}
-            onSystemTheme={() => useThemeStore.getState().setMode('system')}
-          />
-        </div>
+        <ToolBar
+          onNew={actions.handleNew}
+          onEdit={actions.handleEdit}
+          onBrowse={actions.handleBrowse}
+          onDelete={actions.handleDelete}
+          onMoveUp={actions.handleMoveUp}
+          onMoveDown={actions.handleMoveDown}
+          onClean={actions.handleClean}
+          onImport={actions.handleImport}
+          onExport={actions.handleExport}
+          onSave={actions.handleSave}
+          onCancel={() => {
+            const state = useAppStore.getState();
+            // 环境变量草稿尚未提交时同样需要确认，否则关窗会静默丢弃用户输入。
+            const hasPendingChanges = state.isModified || useEnvStore.getState().hasDrafts();
+            if (!hasPendingChanges) {
+              window.close();
+              return;
+            }
+            void backend
+              .confirmDialog(t('dialog.unsavedConfirm'))
+              .then((confirmed) => {
+                if (confirmed) window.close();
+              })
+              .catch(() => {});
+          }}
+          onHelp={() => setHelpOpen(true)}
+          onLanguage={() => {
+            // 以 i18next 解析后的语言为准，不能读 localStorage 原始值：
+            // 检测器会缓存 'en-US' 这类区域变体，与 'zh-CN' 比较会得出错误结论。
+            const current = i18n.resolvedLanguage ?? i18n.language;
+            // 不在这里手调 syncHtmlLang：changeLanguage 会触发 languageChanged，
+            // 由上面的监听统一更新，避免两条路径各写一份。
+            void i18n.changeLanguage(current.startsWith('zh') ? 'en' : 'zh-CN');
+          }}
+          onProfiles={() => setProfilesOpen(true)}
+          onRules={() => setRulesOpen(true)}
+          onAnalyze={() => setAnalyzeOpen(true)}
+          onDarkMode={() => useThemeStore.getState().toggle()}
+          onSystemTheme={() => useThemeStore.getState().setMode('system')}
+        />
       )}
       {activeTab === 'merged' && (
         <div className="merge-hint">

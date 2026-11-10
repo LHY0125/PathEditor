@@ -57,4 +57,12 @@ fn bundle_roundtrips_and_rejects_wrong_passphrase_and_tampering() {
 
     // ⑥ 截断的包 → 拒绝（不能 panic，不能越界）
     assert!(open("correct horse", &sealed[..20]).is_err());
+
+    // ⑦ 旧格式版本 → SyncFormat（不兼容 v1，版本检查在解密前）
+    let mut old_version = sealed.clone();
+    old_version[8..12].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        open("correct horse", &old_version).unwrap_err().code,
+        ErrorCode::SyncFormat
+    );
 }

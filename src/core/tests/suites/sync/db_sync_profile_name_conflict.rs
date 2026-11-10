@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 fn open_db(dir: &TempDir, name: &str) -> Db {
     let mut db = Db::open(&dir.path().join(name)).unwrap();
-    db.migrate_to_current().unwrap();
+    db.ensure_schema().unwrap();
     db
 }
 
@@ -47,7 +47,7 @@ fn same_name_different_uid_is_imported_with_device_suffix() {
       },
       {
         "uid": "c-prof", "deviceId": "dev-x", "seq": 2, "lamport": 11,
-        "entityType": "profile", "entityUid": "p-remote", "field": null,
+        "entityType": "profile", "entityUid": "p-remote", "field": "name",
         "oldValue": null, "newValue": "{}", "createdAt": 0,
         "content": {
           "uid": "p-remote", "name": "Work", "description": null, "tags": [],
@@ -56,10 +56,10 @@ fn same_name_different_uid_is_imported_with_device_suffix() {
       }
     ]"#;
     let header = BundleHeader {
-        schema_version: 3,
+        schema_version: 7,
         device_id: "dev-x".to_string(),
         exported_at: 0,
-        base_lamport: 10,
+        base_lamport: 20,
         change_count: 2,
     };
     let path = dir.path().join("conflict.pesync");

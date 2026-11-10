@@ -1,4 +1,4 @@
-// 数据库是普通 SQLite：验证「建库/迁移/重开」与「拒绝旧版加密库」。
+// 数据库是普通 SQLite：验证「建库/校验/重开」与「拒绝旧版加密库」。
 use path_editor_core::db::{schema::CURRENT_SCHEMA_VERSION, Db};
 use std::io::Write as _;
 use tempfile::TempDir;
@@ -11,15 +11,15 @@ fn db_opens_as_plain_sqlite_and_rejects_legacy_encrypted_file() {
     let mut db = Db::open(&path).expect("打开失败");
     assert_eq!(db.schema_version().unwrap(), 0, "新库版本应为 0");
 
-    db.migrate_to_current().expect("迁移失败");
+    db.ensure_schema().expect("schema 初始化失败");
     assert_eq!(
         db.schema_version().unwrap(),
         CURRENT_SCHEMA_VERSION,
-        "迁移后版本应为当前版本"
+        "建库后版本应为当前版本"
     );
 
-    // 重复迁移必须幂等
-    db.migrate_to_current().expect("二次迁移失败");
+    // 重复校验必须幂等
+    db.ensure_schema().expect("二次 schema 校验失败");
     assert_eq!(db.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
 
     // 关键表存在
@@ -32,7 +32,11 @@ fn db_opens_as_plain_sqlite_and_rejects_legacy_encrypted_file() {
         "profiles",
         "profile_revisions",
         "backups",
-        "migration_imports",
+        "scan_runs",
+        "changes",
+        "sync_conflicts",
+        "rules",
+        "rule_hits",
     ] {
         assert!(db.table_exists(table).unwrap(), "缺少表 {table}");
     }
@@ -80,4 +84,55 @@ fn db_opens_as_plain_sqlite_and_rejects_legacy_encrypted_file() {
         16,
         "拒绝旧库时不得改动该文件"
     );
+}
+
+#[test]
+fn old_schema_versions_are_rejected_without_mutation() {
+    let dir = TempDir::new().unwrap();
+    for version in [4, 5, 6] {
+        let path = dir.path().join(format!("old-{version}.db"));
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(&format!("PRAGMA user_version = {version};"))
+                .unwrap();
+        }
+        let mut db = Db::open(&path).unwrap();
+        let err = db.ensure_schema().unwrap_err();
+        assert_eq!(err.code, path_editor_core::ErrorCode::Migration);
+        assert!(
+            err.message.contains("不受支持"),
+            "错误必须说明旧版本不受支持: {}",
+            err.message
+        );
+        assert_eq!(
+            db.schema_version().unwrap(),
+            version,
+            "拒绝迁移时不得改写版本号"
+        );
+    }
+}
+
+#[test]
+fn non_empty_schema_6_is_rejected_without_touching_tables() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("non-empty-v6.db");
+    {
+        let mut db = Db::open(&path).unwrap();
+        db.ensure_schema().unwrap();
+        db.execute_batch("PRAGMA user_version = 6;").unwrap();
+    }
+
+    let mut db = Db::open(&path).unwrap();
+    let err = db.ensure_schema().unwrap_err();
+    assert_eq!(err.code, path_editor_core::ErrorCode::Migration);
+    assert_eq!(
+        db.schema_version().unwrap(),
+        6,
+        "拒绝旧库时不得改写 user_version"
+    );
+    // 表结构保持原样：拒绝发生在任何 DDL/表访问之前。
+    let n: i64 = db
+        .query_row_with("SELECT count(*) FROM snapshots", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
 }
